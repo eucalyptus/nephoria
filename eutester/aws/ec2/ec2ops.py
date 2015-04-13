@@ -135,11 +135,19 @@ disable_root: false"""
                                   boto_debug=boto_debug,
                                   APIVersion=APIVersion)
 
-    def setup_ec2_connection(self, endpoint=None, aws_access_key_id=None, aws_secret_access_key=None, is_secure=True,host=None ,
-                             region=None, path="/", port=443,  APIVersion='2012-07-20', boto_debug=0):
+    @classmethod
+    def _setup_ec2_connection(cls, endpoint=None, aws_access_key_id=None,
+                              aws_secret_access_key=None, is_secure=True,host=None ,
+                              region=None, path="/", port=443,  APIVersion='2012-07-20',
+                              boto_debug=0, debug_method=None):
+        def _debug(msg):
+            if debug_method:
+                return debug_method(msg)
+            print(msg)
+
         ec2_region = RegionInfo()
         if region:
-            self.debug("Check region: " + str(region))
+            _debug("Check region: " + str(region))
             try:
                 if not endpoint:
                     ec2_region.endpoint = EC2RegionData[region]
@@ -150,10 +158,8 @@ disable_root: false"""
         else:
             ec2_region.name = 'eucalyptus'
             if not host:
-                if endpoint:
-                    ec2_region.endpoint = endpoint
-                else:
-                    ec2_region.endpoint = self.get_ec2_ip()
+                 ec2_region.endpoint = endpoint
+
         connection_args = { 'aws_access_key_id' : aws_access_key_id,
                             'aws_secret_access_key': aws_secret_access_key,
                             'is_secure': is_secure,
@@ -164,17 +170,30 @@ disable_root: false"""
 
         if re.search('2.6', boto.__version__):
             connection_args['validate_certs'] = False
+        ec2_connection_args = copy.copy(connection_args)
+        ec2_connection_args['path'] = path
+        ec2_connection_args['api_version'] = APIVersion
+        ec2_connection_args['region'] = ec2_region
+        connection = boto.connect_ec2(**ec2_connection_args)
+        return connection
 
+    def setup_ec2_connection(self, endpoint=None, aws_access_key_id=None,
+                             aws_secret_access_key=None, is_secure=True,host=None ,
+                             region=None, path="/", port=443,  APIVersion='2012-07-20',
+                             boto_debug=0):
+        endpoint = endpoint or self.get_ec2_ip()
         try:
-            ec2_connection_args = copy.copy(connection_args)
-            ec2_connection_args['path'] = path
-            ec2_connection_args['api_version'] = APIVersion
-            ec2_connection_args['region'] = ec2_region
-            self.connection = boto.connect_ec2(**ec2_connection_args)
+            self.connection = self._setup_ec2_connection(endpoint=endpoint,
+                                                         aws_access_key_id=aws_access_key_id,
+                                                         is_secure=is_secure, host=host,
+                                                         region=region, path=path, port=port,
+                                                         APIVersion=APIVersion,
+                                                         boto_debug=boto_debug,
+                                                         debug_method=self.debug)
         except Exception, e:
             self.critical("Was unable to create ec2 connection because of exception: " + str(e))
-
-        #Source ip on local test machine used to reach instances
+        # Reset the ec2 source ip. This is the ip/interface of the local test machine used to
+        # reach instances
         self.ec2_source_ip = None
 
     def create_tags(self, resource_ids, tags):
