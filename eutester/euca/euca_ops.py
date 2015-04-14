@@ -101,20 +101,28 @@ class Eucaops(Eutester):
         self.region = region
         self.ec2_ip = ec2_ip
         self.ec2_path = ec2_path
+        self._ec2 = None
         self.iam_ip = iam_ip
         self.iam_path = iam_path
+        self._iam = None
         self.s3_ip = s3_ip
         self.s3_path = s3_path
+        self._s3 = None
         self.as_ip = as_ip
         self.as_path = as_path
+        self._as = None
         self.elb_ip = elb_ip
         self.elb_path = elb_path
+        self._elb = None
         self.cw_ip = cw_ip
         self.cw_path = cw_path
+        self._cw = None
         self.cfn_ip = cfn_ip
         self.cfn_path = cfn_path
+        self._cfn = None
         self.sts_ip = sts_ip
         self.sts_path = sts_path
+        self._sts = None
 
         if self.config_file is not None:
             ## read in the config file
@@ -157,9 +165,9 @@ class Eucaops(Eutester):
                 if account is "eucalyptus":
                     self.clc = self.service_manager.get_enabled_clc().machine
 
-        if self.credpath and not aws_access_key_id:
+        if self.credpath and not self.aws_access_key_id:
             self.aws_access_key_id = self.get_access_key()
-        if self.credpath and not aws_secret_access_key:
+        if self.credpath and not self.aws_secret_access_key:
             self.aws_secret_access_key = self.get_secret_key()
         self.test_resources = {}
         self.setup_ec2_resource_trackers()
@@ -195,25 +203,24 @@ class Eucaops(Eutester):
 
     @property
     def ec2(self):
-        if self.credpath and not self.ec2_ip:
-            self.ec2_ip = self.get_ec2_ip()
-        if self.credpath and not self.ec2_path:
-            self.ec2_path = self.get_ec2_path()
-        if 'ec2' not in self.__dict__:
-            ops = EC2ops(endpoint=self.ec2_ip,
-                         path=self.ec2_path,
-                         port=8773,
-                         is_secure=False,
-                         region=self.region,
-                         aws_access_key_id=self.aws_access_key_id,
-                         aws_secret_access_key=self.aws_secret_access_key,
-                         APIVersion='2011-01-01',
-                         boto_debug=self.boto_debug,
-                         credpath=self.credpath,
-                         test_resources=self.test_resources)
-            return ops
-        else:
-            return self.ec2
+        if not self._ec2:
+            if self.credpath and not self.ec2_ip:
+                self.ec2_ip = self.get_ec2_ip()
+            if self.credpath and not self.ec2_path:
+                self.ec2_path = self.get_ec2_path()
+            if 'ec2' not in self.__dict__:
+                self._ec2 = EC2ops(endpoint=self.ec2_ip,
+                                   path=self.ec2_path,
+                                   port=8773,
+                                   is_secure=False,
+                                   region=self.region,
+                                   aws_access_key_id=self.aws_access_key_id,
+                                   aws_secret_access_key=self.aws_secret_access_key,
+                                   #APIVersion='2011-01-01',
+                                   boto_debug=self.boto_debug,
+                                   credpath=self.credpath,
+                                   test_resources=self.test_resources)
+        return self._ec2
 
     @property
     def iam(self):

@@ -43,7 +43,6 @@ import types
 import traceback
 from datetime import datetime, timedelta
 from subprocess import Popen, PIPE
-from boto.ec2.connection import EC2Connection
 
 from boto.ec2.image import Image
 from boto.ec2.instance import Reservation, Instance
@@ -55,6 +54,7 @@ from boto.exception import EC2ResponseError
 from boto.ec2.regioninfo import RegionInfo
 from boto.resultset import ResultSet
 from boto.ec2.securitygroup import SecurityGroup, IPPermissions
+from boto.vpc import VPCConnection
 import boto
 
 from eutester import Eutester
@@ -85,7 +85,7 @@ disable_root: false"""
                  credpath=None,
                  endpoint=None,
                  aws_access_key_id=None,
-                 aws_secret_access_key = None,
+                 aws_secret_access_key=None,
                  username="root",
                  region=None,
                  is_secure=False,
@@ -110,6 +110,8 @@ disable_root: false"""
         :param boto_debug:
         :param APIVersion:
         """
+        self.host = host
+        self.endpoint = endpoint
         self.aws_access_key_id = aws_access_key_id
         self.aws_secret_access_key = aws_secret_access_key
         self.user_id = None
@@ -121,12 +123,15 @@ disable_root: false"""
         self.key_dir = "./"
         self.ec2_source_ip = None  #Source ip on local test machine used to reach instances
         self.connection = None
-
+        print '\nself.host: {0}'.format(self.host)
+        print 'self.endpoint: {0}'.format(self.endpoint)
+        print 'self.aws_secret_access_key: {0}'.format(self.aws_secret_access_key)
+        print 'self.aws_access_key_id: {0}'.format(self.aws_access_key_id)
         super(EC2ops, self).__init__(credpath=credpath)
 
-        self.setup_ec2_connection(host= host,
+        self.setup_ec2_connection(host= self.host,
                                   region=region,
-                                  endpoint=endpoint,
+                                  endpoint=self.endpoint,
                                   aws_access_key_id=self.aws_access_key_id ,
                                   aws_secret_access_key=self.aws_secret_access_key,
                                   is_secure=is_secure,
@@ -136,7 +141,7 @@ disable_root: false"""
                                   APIVersion=APIVersion)
 
     @classmethod
-    def _setup_ec2_connection(cls, endpoint=None, aws_access_key_id=None,
+    def _setup_ec2_connection_orig(cls, endpoint=None, aws_access_key_id=None,
                               aws_secret_access_key=None, is_secure=True,host=None ,
                               region=None, path="/", port=443,  APIVersion='2012-07-20',
                               boto_debug=0, debug_method=None):
@@ -174,8 +179,23 @@ disable_root: false"""
         ec2_connection_args['path'] = path
         ec2_connection_args['api_version'] = APIVersion
         ec2_connection_args['region'] = ec2_region
-        connection = boto.connect_ec2(**ec2_connection_args)
+        try:
+            connection = VPCConnection(**ec2_connection_args)
+        except Exception, e:
+            buf = ""
+            for key, value in connection_args.iteritems():
+                buf += "\t{0} = {1}\n".format(key, value)
+            _debug('Error in ec2 connection attempt while using args:\n{0}'.format(buf))
+            raise e
         return connection
+
+    @classmethod
+    def _setup_ec2_connection(cls, **kwargs):
+        buf = ""
+        for key, value in kwargs.iteritems():
+            buf += "\t{0} = {1}\n".format(key, value)
+        print('setup ec2 connection args:\n{0}'.format(buf))
+        return cls._setup_ec2_connection_orig(**kwargs)
 
     def setup_ec2_connection(self, endpoint=None, aws_access_key_id=None,
                              aws_secret_access_key=None, is_secure=True,host=None ,
@@ -183,15 +203,19 @@ disable_root: false"""
                              boto_debug=0):
         endpoint = endpoint or self.get_ec2_ip()
         try:
-            self.connection = self._setup_ec2_connection(endpoint=endpoint,
-                                                         aws_access_key_id=aws_access_key_id,
-                                                         is_secure=is_secure, host=host,
-                                                         region=region, path=path, port=port,
-                                                         APIVersion=APIVersion,
-                                                         boto_debug=boto_debug,
-                                                         debug_method=self.debug)
+            self.connection = self._setup_ec2_connection(
+                endpoint=endpoint,
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
+                is_secure=is_secure, host=host,
+                region=region, path=path, port=port,
+                APIVersion=APIVersion,
+                boto_debug=boto_debug,
+                debug_method=self.debug)
         except Exception, e:
-            self.critical("Was unable to create ec2 connection because of exception: " + str(e))
+            tb = self.get_traceback()
+            self.critical(str(tb) + "\nWas unable to create ec2 connection because of exception: "
+                          + str(e))
         # Reset the ec2 source ip. This is the ip/interface of the local test machine used to
         # reach instances
         self.ec2_source_ip = None
