@@ -3,13 +3,14 @@ __author__ = 'clarkmatthew'
 from boto.roboto.awsqueryservice import AWSQueryService
 from boto.roboto.awsqueryrequest import AWSQueryRequest
 from boto.roboto.param import Param
+from boto.resultset import ResultSet
 from eutester.aws.ec2.ec2ops import EC2ops
 import sys
 
 class EucaAdminQuery(AWSQueryService):
     APIVersion='eucalyptus'
 
-class EucaAdminObj(object):
+class EucaBaseObj(object):
     # Base Class For Eucalyptus Admin Query Objects
     def __init__(self, connection=None):
         self.connection = connection
@@ -27,12 +28,10 @@ class EucaAdminObj(object):
             setattr(self, ename, value)
 
 
-class EucaServices(object):
-    def __init__(self, connection=None):
-        self.services = []
+class EucaServiceList(ResultSet):
 
     def __repr__(self):
-        return str(self.__class__.__name__) + ":" + str(len(self.services))
+        return str(self.__class__.__name__) + ":(Count:" + str(len(self)) + ")"
 
 
     def startElement(self, name, value, connection):
@@ -40,8 +39,8 @@ class EucaServices(object):
         print 'EucaServices got ename:{0}'.format(ename)
         if ename == 'item':
             print 'EucaServices got item, creating new service...'
-            new_service = EucaBaseService(connection=connection)
-            self.services.append(new_service)
+            new_service = EucaService(connection=connection)
+            self.append(new_service)
             return new_service
         else:
             return None
@@ -51,7 +50,15 @@ class EucaServices(object):
         if ename:
             setattr(self, ename, value)
 
-class EucaUris(EucaAdminObj):
+    def show_list(self, print_method=None):
+        for service in self:
+            if print_method:
+                print_method("{0}:{1}".format(service.type, service.name))
+            else:
+                print "{0}:{1}".format(service.type, service.name)
+
+
+class EucaUris(EucaBaseObj):
     # Base Class for Eucalyptus Service Objects
     def __init__(self, connection=None):
         super(EucaUris, self).__init__(connection)
@@ -71,17 +78,17 @@ class EucaUris(EucaAdminObj):
                 setattr(self, ename, value)
 
 
-class EucaBaseService(EucaAdminObj):
+class EucaService(EucaBaseObj):
     # Base Class for Eucalyptus Service Objects
     def __init__(self, connection=None):
-        super(EucaBaseService, self).__init__(connection)
+        super(EucaService, self).__init__(connection)
         self.name = None
         self.partition = None
         self.uris = []
 
     def startElement(self, name, value, connection):
         ename = name.replace('euca:','')
-        elem = super(EucaBaseService, self).startElement(name,
+        elem = super(EucaService, self).startElement(name,
                                                          value,
                                                          connection)
         if elem is not None:
@@ -102,21 +109,21 @@ class Cluster(object):
         self.nodes = nodes
         self.config_property_map = config_property_map
 
-class EucaClusterControllerService(EucaBaseService):
+class EucaClusterControllerService(EucaService):
     pass
 
-class EucaObjectStorageGatewayService(EucaBaseService):
+class EucaObjectStorageGatewayService(EucaService):
     pass
 
-class EucaStorageControllerService(EucaBaseService):
+class EucaStorageControllerService(EucaService):
     pass
 
-class EucaNode(EucaBaseService):
+class EucaNode(EucaService):
     def __init__(self, connection=None):
         super(EucaNode, self).__init__(connection)
         self.instances=[]
 
-class EucaProperty(EucaAdminObj):
+class EucaProperty(EucaBaseObj):
     # Base Class for Eucalyptus Properties
     def __init__(self, connection=None):
         super(EucaProperty, self).__init__(connection)
@@ -186,7 +193,7 @@ class CloudAdmin():
     def get_services(self, service_type=None, show_event_stacks=None, show_events=None,
                      list_user_services=None, listall=None, list_internal=None,
                      markers = None,
-                     service_class=EucaBaseService):
+                     service_class=EucaService):
         if markers is None:
             #markers = [('euca:serviceStatuses', service_class)]
             markers = [('euca:item', service_class)]
