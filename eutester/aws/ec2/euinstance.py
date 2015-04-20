@@ -61,7 +61,7 @@ from eutester import Eutester
 from eutester import eulogger
 from eutester.aws.ec2.euvolume import EuVolume
 from eutester.taggedresource import TaggedResource
-from eutester.utils import sshconnection
+from eutester.utils.net_utils import sshconnection
 
 
 class EuInstance(Instance, TaggedResource):

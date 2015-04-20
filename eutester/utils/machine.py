@@ -32,10 +32,10 @@
 import select
 import threading
 import time
-import eulogger
+import eutester.utils.testcase_utils.eulogger
 from eutester import Eutester
-from eutester.utils.euconfig import EuConfig
-import sshconnection
+from eutester.utils.file_utils.euconfig import EuConfig
+import eutester.utils.net_utils.sshconnection
 import re
 import os
 import sys

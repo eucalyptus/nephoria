@@ -32,8 +32,8 @@
 
 import re
 import time
-from eutester.utils import sshconnection
-from eutester.utils.sshconnection import SshCbReturn, CommandTimeoutException
+from eutester.utils.net_utils import sshconnection
+from eutester.utils.net_utils.sshconnection import SshCbReturn, CommandTimeoutException
 import types
 import stat
 import eutester

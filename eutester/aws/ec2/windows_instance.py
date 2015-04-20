@@ -63,7 +63,7 @@ from eutester import eulogger
 from eutester.taggedresource import TaggedResource
 from boto.ec2.instance import InstanceState
 from datetime import datetime
-from eutester.utils import winrm_connection
+from eutester.utils.net_utils import winrm_connection
 
 get_line = Eutester.get_line
 

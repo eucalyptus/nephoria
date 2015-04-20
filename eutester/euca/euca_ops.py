@@ -50,11 +50,11 @@ import StringIO
 from eutester.euca.euservice import EuserviceManager
 from boto.ec2.instance import Reservation, Instance
 from boto.exception import EC2ResponseError
-from eutester.utils.euconfig import EuConfig
+from eutester.utils.file_utils.euconfig import EuConfig
 from eutester.euca.euproperties import Euproperty_Manager
 from eutester.utils.machine import Machine
 from eutester.aws.ec2.euvolume import EuVolume
-from eutester.utils import eulogger
+from eutester.utils.testcase_utils import eulogger
 import re
 import os
 

@@ -30,9 +30,12 @@
 #
 # Author: vic.iglesias@eucalyptus.com
 
-import re
 import boto
+import json
+import re
+import urllib
 from eutester import Eutester
+from prettytable import PrettyTable
 
 
 class IAMops(Eutester):
@@ -177,7 +180,7 @@ class IAMops(Eutester):
             retlist.append(user)
         return retlist
 
-    def show_all_accounts(self, account_name=None, account_id=None, search=False ):
+    def show_all_accounts(self, account_name=None, account_id=None, search=False, print_table=True):
         """
         Debug Method to print an account list based on given filter criteria
 
@@ -185,15 +188,22 @@ class IAMops(Eutester):
         :param account_id: regex - to use for account_id
         :param search: boolean - specify whether to use match or search when filtering the returned list
         """
-        list = self.get_all_accounts(account_name=account_name, account_id=account_id, search=search)
-        self.debug('-----------------------------------------------------------------------')
-        self.debug(str('ACCOUNT_NAME:').ljust(25) + "|" + str('ACCT_ID:'))
-        self.debug('-----------------------------------------------------------------------')
+        pt = PrettyTable(['ACCOUNT_NAME', 'ACCOUNT_ID'])
+        pt.hrules = 1
+        pt.align = 'l'
+        list = self.get_all_accounts(account_name=account_name,
+                                     account_id=account_id,
+                                     search=search)
         for account in list:
-            self.debug(str(account['account_name']).ljust(25) + "|" +str(account['account_id']))
-            self.debug('-----------------------------------------------------------------------')
+            pt.add_row([account['account_name'], account['account_id']])
+        if print_table:
+            self.debug("\n" + str(pt) + "\n")
+        else:
+            return pt
 
-    def show_all_groups(self, account_name=None,  account_id=None,  path=None, group_name=None,  group_id=None,  search=False):
+
+    def show_all_groups(self, account_name=None,  account_id=None,  path=None,
+                        group_name=None,  group_id=None,  search=False, print_table=True):
         """
         Print all groups in an account
 
@@ -204,15 +214,22 @@ class IAMops(Eutester):
         :param group_id: regex - to match for user_id
         :param search:  boolean - specify whether to use match or search when filtering the returned list
         """
-        list = self.get_all_groups(account_name=account_name, account_id=account_id, path=path, group_name=group_name, group_id=group_id, search=search)
-        self.debug('-----------------------------------------------------------------------')
-        self.debug(str('ACCOUNT:').ljust(25) + "|" + str('GROUPNAME:').ljust(15) + "|" + str('GROUP_ID:').ljust(25)  )
-        self.debug('-----------------------------------------------------------------------')
+        pt = PrettyTable(['ACCOUNT:', 'GROUPNAME:', 'GROUP_ID:'])
+        pt.hrules = 1
+        pt.align = 'l'
+        list = self.get_all_groups(account_name=account_name, account_id=account_id,
+                                   path=path, group_name=group_name, group_id=group_id,
+                                   search=search)
         for group in list:
-            self.debug(str(group['account_name']).ljust(25) + "|" + str(group['group_name']).ljust(15) + "|" + str(group['group_id']))
-            self.debug('-----------------------------------------------------------------------')
+            pt.add_row([group['account_name'], group['group_name'], group['group_id']])
+        if print_table:
+            self.debug("\n" + str(pt) + "\n")
+        else:
+            return pt
 
-    def show_all_users(self, account_name=None, account_id=None,  path=None, user_name=None,  user_id=None, search=False ):
+
+    def show_all_users(self, account_name=None, account_id=None,  path=None, user_name=None,
+                       user_id=None, search=False, print_table=True ):
         """
         Debug Method to print a user list based on given filter criteria
 
@@ -223,13 +240,26 @@ class IAMops(Eutester):
         :param user_id: regex - to match for user_id
         :param search: boolean - specify whether to use match or search when filtering the returned list
         """
-        list = self.get_all_users(account_name=account_name, account_id=account_id, path=path, user_name=user_name, user_id=user_id, search=search)
+        pt = PrettyTable(['ACCOUNT:', 'USERNAME:', 'USER_ID', 'ACCT_ID'])
+        pt.hrules = 1
+        pt.align = 'l'
+        list = self.get_all_users(account_name=account_name, account_id=account_id, path=path,
+                                  user_name=user_name, user_id=user_id, search=search)
+        '''
         self.debug('-----------------------------------------------------------------------')
         self.debug(str('ACCOUNT:').ljust(25) + "|" + str('USERNAME:').ljust(15) + "|" + str('USER_ID').ljust(25) + "|" + str('ACCT_ID') )
         self.debug('-----------------------------------------------------------------------')
         for user in list:
             self.debug(str(user['account_name']).ljust(25) + "|" + str(user['user_name']).ljust(15) + "|" + str(user['user_id']).ljust(25) + "|" + str(user['account_id']))
             self.debug('-----------------------------------------------------------------------')
+        '''
+        for user in list:
+            pt.add_row([user['account_name'], user['user_name'],
+                        user['user_id'], user['account_id']])
+        if print_table:
+            self.debug("\n" + str(pt) + "\n")
+        else:
+            return pt
     def get_euare_username(self):
         """
         Get all users in the current users account
@@ -242,7 +272,8 @@ class IAMops(Eutester):
         """
         return self.get_all_users(account_id=str(self.get_account_id()))[0]['account_name']
 
-    def get_all_users(self,  account_name=None,  account_id=None,  path=None, user_name=None,  user_id=None,  search=False ):
+    def get_all_users(self,  account_name=None,  account_id=None,  path=None,
+                      user_name=None,  user_id=None,  search=False ):
         """
         Queries all accounts matching given account criteria, returns all users found within these accounts which then match the given user criteria.
         Account info is added to the user dicts
@@ -256,19 +287,25 @@ class IAMops(Eutester):
         :return: List of users with account name tuples
         """
         userlist=[]
-        accounts = self.get_all_accounts(account_id=account_id, account_name=account_name, search=search)
+        accounts = self.get_all_accounts(account_id=account_id, account_name=account_name,
+                                         search=search)
         for account in accounts:
-            if account['account_id'] == self.account_id:
-                users =self.get_users_from_account()
-            else:
-                users = self.get_users_from_account(path=path, user_name=user_name, user_id=user_id, delegate_account=account['account_name'], search=search)
+            #if account['account_id'] == self.account_id:
+            #    users =self.get_users_from_account()
+            #else:
+            users = self.get_users_from_account(path=path,
+                                                user_name=user_name,
+                                                user_id=user_id,
+                                                delegate_account=account['account_name'],
+                                                search=search)
             for user in users:
                 user['account_name']=account['account_name']
                 user['account_id']=account['account_id']
                 userlist.append(user)
         return userlist
 
-    def get_user_policy_names(self, user_name, policy_name=None,delegate_account=None, search=False):
+    def get_user_policy_names(self, user_name, policy_name=None, delegate_account=None,
+                              search=False, ignore_admin_err=True):
         """
         Returns list of policy names associated with a given user, and match given criteria.
 
@@ -287,14 +324,26 @@ class IAMops(Eutester):
         params = {'UserName': user_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        response = self.connection.get_response('ListUserPolicies',params, list_marker='PolicyNames')
-        for name in response['list_user_policies_response']['list_user_policies_result']['policy_names']:
-            if policy_name is not None and not re_meth(policy_name, name):
-                continue
-            retlist.append(name)
+        try:
+            response = self.connection.get_response('ListUserPolicies', params,
+                                                    list_marker='PolicyNames')
+            p_names = response['list_user_policies_response']['list_user_policies_result']\
+                              ['policy_names']
+            for name in p_names:
+                if policy_name is not None and not re_meth(policy_name, name):
+                    continue
+                retlist.append(name)
+        except boto.exception.BotoServerError, BE:
+            err = 'Error fetching policy for params:\n{0}: '.format(params, BE)
+            if BE.status == 403 and ignore_admin_err and str(user_name).strip() == 'admin':
+                self.debug('IGNORING: '+ err)
+            else:
+                self.critical(err)
+                raise
         return retlist
 
-    def get_user_policies(self, user_name, policy_name=None, delegate_account=None, doc=None, search=False):
+    def get_user_policies(self, user_name, policy_name=None, delegate_account=None, doc=None,
+                          search=False, ignore_admin_err=True):
         """
         Returns list of policy dicts associated with a given user, and match given criteria.
 
@@ -302,7 +351,9 @@ class IAMops(Eutester):
         :param policy_name: regex - to match/filter returned policies
         :param delegate_account: string - used for user lookup
         :param doc: policy document to use as a filter
-        :param search: boolean - specify whether to use match or search when filtering the returned list
+        :param search: boolean - specify whether to use match or search when filtering the
+                                 returned list
+        :param ignore_admin_err: boolean- will ignore 403 responses if the user is 'admin'
         :return:
         """
         retlist = []
@@ -311,20 +362,32 @@ class IAMops(Eutester):
             re_meth = re.search
         else:
             re_meth = re.match
-        names = self.get_user_policy_names(user_name, policy_name=policy_name, delegate_account=delegate_account, search=search)
-        
+        names = self.get_user_policy_names(user_name, policy_name=policy_name,
+                                           delegate_account=delegate_account, search=search)
         for p_name in names:
             params = {'UserName': user_name,
                       'PolicyName': p_name}
             if delegate_account:
                 params['DelegateAccount'] = delegate_account
-            policy = self.connection.get_response('GetUserPolicy', params, verb='POST')['get_user_policy_response']['get_user_policy_result']
+            try:
+                policy = self.connection.get_response(
+                    'GetUserPolicy',
+                    params,
+                    verb='POST')['get_user_policy_response']['get_user_policy_result']
+            except boto.exception.BotoServerError, BE:
+                err_msg = 'Error fetching policy for params:\n{0}: "{1}"'.format(params, BE)
+                if BE.status == 403 and ignore_admin_err and str(p_name).strip() == 'admin':
+                    self.debug('IGNORING:' + str(err_msg))
+                else:
+                    self.critical(err_msg)
+                    raise
             if doc is not None and not re_meth(doc, policy['policy_document']):
                 continue
             retlist.append(policy)
         return retlist
         
-    def show_user_policy_summary(self,user_name,policy_name=None,delegate_account=None, doc=None, search=False):
+    def show_user_policy_summary(self,user_name,policy_name=None,delegate_account=None,
+                                 doc=None, search=False, print_table=True):
         """
         Debug method to display policy summary applied to a given user
 
@@ -334,15 +397,29 @@ class IAMops(Eutester):
         :param doc: policy document to use as a filter
         :param search: boolean - specify whether to use match or search when filtering the returned list
         """
-        policies = self.get_user_policies(user_name, policy_name=policy_name, delegate_account=delegate_account, doc=doc, search=search)
-        for policy in policies:
-            self.debug('-------------------------------------')
-            self.debug("\tPOLICY NAME: "+str(policy['policy_name']) +", USER_NAME: " +str(user_name))
-            self.debug('-------------------------------------')
-            for line in str(policy['policy_document']).splitlines():
-                self.debug("\t"+line)
+        title = 'POLICIES FOR USER: {0}'.format(user_name)
+        main_pt = PrettyTable([title])
+        main_pt.hrules = 1
+        main_pt.align = 'l'
+        main_pt.max_width[title] = 120
+        policies = self.get_user_policies(user_name, policy_name=policy_name,
+                                          delegate_account=delegate_account, doc=doc, search=search)
+        if not policies:
+            main_pt.add_row(['-- No Policies --'])
+        else:
+            for policy in policies:
+                main_pt.add_row(['POLICY NAME: "{0}" :'.format(policy['policy_name'])])
+                p_doc = urllib.unquote(policy['policy_document'])
+                p_json = json.loads(p_doc)
+                pretty_json = (json.dumps(p_json, indent=2) or "") + "\n"
+                main_pt.add_row([pretty_json])
+        if print_table:
+            self.debug("\n" + str(main_pt) + "\n")
+        else:
+            return main_pt
     
-    def show_user_summary(self,user_name, delegate_account=None, account_id=None):
+    def show_user_summary(self,user_name, delegate_account=None, account_id=None,
+                          print_table=True):
         """
         Debug method for to display euare/iam info for a specific user.
 
@@ -354,20 +431,47 @@ class IAMops(Eutester):
         if delegate_account is None:
             account_id=self.get_account_id()
             delegate_account= self.get_all_accounts(account_id=account_id)[0]['account_name']
-        self.debug('Fetching user summary for: user_name:'+str(user_name)+" account:"+str(delegate_account)+" account_id:"+str(account_id))
-        self.show_all_users(account_name=delegate_account, account_id=account_id, user_name=user_name)
-        self.show_user_policy_summary(user_name, delegate_account=delegate_account)
+        title = 'USER SUMMARY: user:{0}, account:{1}'.format(user_name, delegate_account)
+        pt = PrettyTable([title])
+        pt.align ='l'
+        self.debug('Fetching user summary for: user_name:' + str(user_name) +
+                   " account:" + str(delegate_account) + " account_id:" + str(account_id))
+        pt.add_row([self.show_all_users(account_name=delegate_account, account_id=account_id,
+                            user_name=user_name, print_table=False)])
+        pt.add_row([self.show_user_policy_summary(user_name, delegate_account=delegate_account,
+                                      print_table=False)])
+        if print_table:
+            self.debug("\n" + str(pt) + "\n")
+        else:
+            return pt
 
-    def show_euare_whoami(self):
+
+    def show_whoami(self, print_table=True):
         """
         Debug method used to display the who am I info related to iam/euare.
         """
+
         user= self.connection.get_user()['get_user_response']['get_user_result']['user']
+
         user_id = user['user_id']
         user_name = user['user_name']
         account_id = self.get_account_id()
-        self.show_all_users(account_id=account_id, user_id=user_id)
-        self.show_user_policy_summary(user_name)
+        account_name = None
+        try:
+            account = self.get_all_accounts(account_id=account_id)[0]
+            account_name = account['account_name']
+        except IndexError:
+            self.critical('Failed to lookup account for user:({0}:{1}), account_id:{2}'
+                             .format(user_name, user_id, account_id))
+        main_pt = PrettyTable(['WHO AM I?  ({0}:{1})'.format(user_name, account_name)])
+        main_pt.align = 'l'
+        main_pt.add_row([str(self.show_all_users(account_id=account_id, user_id=user_id,
+                                                 print_table=False))])
+        main_pt.add_row([str(self.show_user_policy_summary(user_name, print_table=False))])
+        if print_table:
+            self.debug("\n" + str(main_pt) + "\n")
+        else:
+            return main_pt
         
     
     def attach_policy_user(self, user_name, policy_name, policy_json, delegate_account=None):

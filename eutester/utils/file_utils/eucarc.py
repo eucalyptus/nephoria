@@ -3,7 +3,8 @@ import re
 import os
 from prettytable import PrettyTable
 
-class Eucarc(object):
+class Eucarc(dict):
+    _KEY_DIR_STR = '${EUCA_KEY_DIR}'
 
     def __init__(self, filepath=None, string=None, sshconnection=None, keydir=None,
                  debug_method=None):
@@ -19,14 +20,13 @@ class Eucarc(object):
         self._keydir = keydir
         self._string = string
         self._sshconnection = sshconnection
-        self._message = None
+        self._unparsed_lines = None
         if string:
             self._from_string()
         else:
             if not filepath:
                 raise ValueError('Either filepath or string must be provided to Eucarc()')
             self._from_filepath(filepath=filepath, sshconnection=sshconnection)
-
 
     def _debug(self, msg):
         if self._debug_method:
@@ -49,24 +49,28 @@ class Eucarc(object):
                 if line:
                     match = re.search('^\s*export\s+(\w+)=\s*(\S+)$', line)
                     if not match:
-                        print 'Got a message:' + str(line)
+                        # This line does not match our expected format, add it to the messages
                         message += line + "\n"
                     else:
                         key = match.group(1)
                         value = match.group(2)
                         value = str(value).strip('"').strip("'")
-                        if keydir:
-                            value = value.replace('${EUCA_KEY_DIR}', keydir)
-
-
+                        if re.search(self._KEY_DIR_STR, line):
+                            if keydir:
+                                value = value.replace(self._KEY_DIR_STR, keydir)
+                            else:
+                                # Add this line to the messages since this value will not
+                                # resolve without a defined 'keydir'...
+                                message += line + "\n"
+                                continue
                         if not (key and value):
                             raise ValueError('Fix me! Could not find key=value, in this line:"{0}"'
                                              .format(line))
-                        for case_key in [key, str(key).lower()]:
-                            self.__setattr__(case_key,value)
-                            new_dict[case_key] = value
+
+                        self.__setattr__(key.lower(),value)
+                        new_dict[key.lower()] = value
             if message:
-                self._message = message
+                self._unparsed_lines = message
                 new_dict['message'] = message
         return new_dict
 
@@ -94,6 +98,7 @@ class Eucarc(object):
         for key in self.__dict__:
             if not str(key).startswith('_'):
                 pt.add_row([key, self.__dict__[key]])
+        pt.add_row(['UNPARSED LINES', self._unparsed_lines])
         if print_table:
             self._debug(str(pt))
         else:

@@ -58,7 +58,7 @@ from boto.vpc import VPCConnection
 import boto
 
 from eutester import Eutester
-from eutester.utils import sshconnection
+from eutester.utils.net_utils import sshconnection
 from eutester.aws.ec2.euinstance import EuInstance
 from eutester.aws.ec2.windows_instance import WinInstance
 from eutester.aws.ec2.euvolume import EuVolume

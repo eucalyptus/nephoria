@@ -56,7 +56,7 @@ class ResourceGeneration(EutesterTestCase):
         if not self.args.no_cleanup:
             for tester in self.testers:
                 try:
-                    tester.show_euare_whoami()
+                    tester.show_whoami()
                 except: pass
                 tester.cleanup_artifacts()
 
@@ -95,7 +95,7 @@ class ResourceGeneration(EutesterTestCase):
             import random
             assert isinstance(resource_tester, Eucaops)
             try:
-                resource_tester.iam.show_euare_whoami()
+                resource_tester.iam.show_whoami()
             except:pass
             zone = random.choice(resource_tester.ec2.get_zones())
             keypair = resource_tester.ec2.add_keypair(resource_tester.id_generator())
