@@ -1,13 +1,20 @@
 __author__ = 'clarkmatthew'
 
+import boto
+from boto.vpc import VPCConnection
 from boto.roboto.awsqueryservice import AWSQueryService
 from boto.roboto.awsqueryrequest import AWSQueryRequest
 from boto.roboto.param import Param
+from boto.connection import AWSQueryConnection
+from boto.ec2.regioninfo import RegionInfo
 from boto.resultset import ResultSet
-from eutester.aws.ec2.ec2ops import EC2ops
+#from eutester.aws.ec2.ec2ops import EC2ops
+import copy
+import re
 import sys
+import time
 
-class EucaAdminQuery(AWSQueryService):
+class EucaAdminQuery(AWSQueryConnection):
     APIVersion='eucalyptus'
 
 class EucaBaseObj(object):
@@ -27,8 +34,91 @@ class EucaBaseObj(object):
          if ename:
             setattr(self, ename, value)
 
+class EucaServiceType(EucaBaseObj):
+
+    def __init__(self, connection=None):
+        super(EucaServiceType, self).__init__(connection)
+        self.groupmembers=[]
+        self._name = None
+        self._componentname = None
+
+    @property
+    def name(self):
+        if not self._name:
+            self._name = getattr(self, 'componentname', None)
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        self._name = value
+
+    @property
+    def componentname(self):
+        return self._componentname
+
+    @componentname.setter
+    def componentname(self, value):
+        self._name = value
+        self._componentname = value
+
+
+    def startElement(self, name, value, connection):
+        ename = name.replace('euca:','')
+        if ename == 'serviceGroupMembers':
+            groupmembers = ResultSet([('item', EucaSeviceGroupMember),
+                                    ('euca:item', EucaSeviceGroupMember)])
+            self.groupmembers = groupmembers
+            return groupmembers
+        else:
+            return None
+
+    def endElement(self, name, value, connection):
+        ename = name.lower().replace('euca:','')
+        if ename:
+            #print 'service type got ename:{0}'.format(ename)
+            if ename == 'componentname':
+                print 'got componentname!!!!!!!!!!'
+                self.name = value
+            setattr(self, ename, value)
+
+class EucaSeviceGroupMember(EucaBaseObj):
+    def endElement(self, name, value, connection):
+        ename = name.lower().replace('euca:','')
+        if ename:
+            if ename == 'entry':
+                self.name = value
+            setattr(self, ename, value)
+
+class EucaServiceGroupMembers(ResultSet):
+    def __init__(self, connection=None):
+        super(EucaServiceGroupMembers, self).__init__(connection)
+        self.markers = [('item', EucaSeviceGroupMember)]
+
+    def __repr__(self):
+        return str(self.__class__.__name__) + ":(Count:" + str(len(self)) + ")"
+
+    def startElement(self, name, value, connection):
+        ename = name.lower().replace('euca:','')
+        print 'group member: name:{0}, value:{1}'.format(name,value)
+        if ename == 'item':
+            new_member = EucaSeviceGroupMember(connection=connection)
+            self.append(new_member)
+            return new_member
+        else:
+            return None
+
+    def endElement(self, name, value, connection):
+        ename = name.lower().replace('euca:','')
+        if ename:
+            setattr(self, ename, value)
+
+
 
 class EucaServiceList(ResultSet):
+
+    def __init__(self, connection=None):
+        super(EucaServiceList, self).__init__(connection)
+        last_updated = time.time()
 
     def __repr__(self):
         return str(self.__class__.__name__) + ":(Count:" + str(len(self)) + ")"
@@ -36,9 +126,7 @@ class EucaServiceList(ResultSet):
 
     def startElement(self, name, value, connection):
         ename = name.replace('euca:','')
-        print 'EucaServices got ename:{0}'.format(ename)
         if ename == 'item':
-            print 'EucaServices got item, creating new service...'
             new_service = EucaService(connection=connection)
             self.append(new_service)
             return new_service
@@ -65,10 +153,10 @@ class EucaUris(EucaBaseObj):
         self.uris=[]
 
     def startElement(self, name, value, connection):
-        ename = name.replace('euca:','')
         elem = super(EucaUris, self).startElement(name, value, connection)
         if elem is not None:
             return elem
+
     def endElement(self, name, value, connection):
         ename = name.replace('euca:','')
         if ename:
@@ -76,7 +164,6 @@ class EucaUris(EucaBaseObj):
                 self.uris.append(value)
             else:
                 setattr(self, ename, value)
-
 
 class EucaService(EucaBaseObj):
     # Base Class for Eucalyptus Service Objects
@@ -96,10 +183,6 @@ class EucaService(EucaBaseObj):
         if ename == 'uris':
             self.uris = EucaUris(connection=connection)
             return self.uris
-        elif ename:
-            setattr(self, ename, value)
-
-
 
 class Cluster(object):
     def __init__(self, cluster_controllers=[], storage_controllers=[], nodes=[],
@@ -109,16 +192,19 @@ class Cluster(object):
         self.nodes = nodes
         self.config_property_map = config_property_map
 
-class EucaClusterControllerService(EucaService):
+class EucaCloudControllerService(EucaServiceType):
     pass
 
-class EucaObjectStorageGatewayService(EucaService):
+class EucaClusterControllerService(EucaServiceType):
     pass
 
-class EucaStorageControllerService(EucaService):
+class EucaObjectStorageGatewayService(EucaServiceType):
     pass
 
-class EucaNode(EucaService):
+class EucaStorageControllerService(EucaServiceType):
+    pass
+
+class EucaNode(EucaServiceType):
     def __init__(self, connection=None):
         super(EucaNode, self).__init__(connection)
         self.instances=[]
@@ -179,24 +265,53 @@ class CloudAdmin():
         return self._ec2_connection
 
     def _get_ec2_connection(self, endpoint=None, access_key=None, secret_key=None,
-                            port=8773, path='services/compute', is_secure=False, **kwargs):
+                            port=8773, APIVersion='2012-07-20', path='services/compute',
+                            is_secure=False, debug_level=0, **kwargs):
+        ec2_region = RegionInfo()
+        ec2_region.name = 'eucalyptus'
         host = endpoint or self.host
         access_key = access_key or self.aws_access_key_id
         secret_key = secret_key or self. aws_secret_access_key
-        connection = EC2ops._setup_ec2_connection(endpoint=host,
-                                                  aws_access_key_id=access_key,
-                                                  aws_secret_access_key=secret_key,
-                                                  port = 8773, path=path, is_secure=is_secure,
-                                                  **kwargs)
+        connection_args = { 'aws_access_key_id' : access_key,
+                            'aws_secret_access_key': secret_key,
+                            'is_secure': is_secure,
+                            'debug': debug_level,
+                            'port' : port,
+                            'path' : path,
+                            'host' : host}
+        if re.search('2.6', boto.__version__):
+            connection_args['validate_certs'] = False
+        ec2_connection_args = copy.copy(connection_args)
+        ec2_connection_args['path'] = path
+        ec2_connection_args['api_version'] = APIVersion
+        ec2_connection_args['region'] = ec2_region
+        for key in kwargs:
+            ec2_connection_args[key] = kwargs[key]
+        try:
+            connection = VPCConnection(**ec2_connection_args)
+        except Exception, e:
+            buf = ""
+            for key, value in connection_args.iteritems():
+                buf += "\t{0} = {1}\n".format(key, value)
+            print ('Error in ec2 connection attempt while using args:\n{0}'.format(buf))
+            raise e
         return connection
+
+    def get_service_types(self):
+        params = {}
+        return self.query.get_list('DescribeAvailableServiceTypes',
+                                   params,
+                                   [('item', EucaServiceType),
+                                    ('euca:item', EucaServiceType)],
+                                   verb='GET')
 
     def get_services(self, service_type=None, show_event_stacks=None, show_events=None,
                      list_user_services=None, listall=None, list_internal=None,
                      markers = None,
-                     service_class=EucaService):
+                     service_class=EucaServiceList):
         if markers is None:
             #markers = [('euca:serviceStatuses', service_class)]
-            markers = [('euca:item', service_class)]
+            markers = [('euca:serviceStatuses', service_class)]
         params = {}
         if service_type:
             assert isinstance(service_type, basestring)
@@ -217,10 +332,22 @@ class CloudAdmin():
             assert isinstance(list_internal, bool)
             params['ListInternal'] = str(list_internal).lower()
 
-        return self.query.get_list('DescribeServices',
-                                  params,
-                                  markers=markers,
-                                  verb='GET')
+        service_list = self.query.get_list('DescribeServices',
+                                            params,
+                                            markers=markers,
+                                            verb='GET')
+        if service_list:
+            return service_list[0]
+        else:
+            return None
+
+    def get_cloud_controllers(self):
+        params = {}
+        return self.query.get_list('DescribeEucalyptus',
+                                   params,
+                                   [('item', EucaCloudControllerService),
+                                    ('euca:item', EucaClusterControllerService)],
+                                   verb='GET')
 
     def get_clusters(self, get_instances=True, get_storage=True, get_cluster_controllers=True):
         controllers = self.get_cluster_controller_services()
