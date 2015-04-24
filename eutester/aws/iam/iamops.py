@@ -245,14 +245,6 @@ class IAMops(Eutester):
         pt.align = 'l'
         list = self.get_all_users(account_name=account_name, account_id=account_id, path=path,
                                   user_name=user_name, user_id=user_id, search=search)
-        '''
-        self.debug('-----------------------------------------------------------------------')
-        self.debug(str('ACCOUNT:').ljust(25) + "|" + str('USERNAME:').ljust(15) + "|" + str('USER_ID').ljust(25) + "|" + str('ACCT_ID') )
-        self.debug('-----------------------------------------------------------------------')
-        for user in list:
-            self.debug(str(user['account_name']).ljust(25) + "|" + str(user['user_name']).ljust(15) + "|" + str(user['user_id']).ljust(25) + "|" + str(user['account_id']))
-            self.debug('-----------------------------------------------------------------------')
-        '''
         for user in list:
             pt.add_row([user['account_name'], user['user_name'],
                         user['user_id'], user['account_id']])
@@ -260,6 +252,7 @@ class IAMops(Eutester):
             self.debug("\n" + str(pt) + "\n")
         else:
             return pt
+
     def get_euare_username(self):
         """
         Get all users in the current users account
@@ -431,15 +424,23 @@ class IAMops(Eutester):
         if delegate_account is None:
             account_id=self.get_account_id()
             delegate_account= self.get_all_accounts(account_id=account_id)[0]['account_name']
+        self.debug('Fetching user summary for: user_name:' + str(user_name) +
+                   " account:" + str(delegate_account) + " account_id:" + str(account_id))
         title = 'USER SUMMARY: user:{0}, account:{1}'.format(user_name, delegate_account)
         pt = PrettyTable([title])
         pt.align ='l'
-        self.debug('Fetching user summary for: user_name:' + str(user_name) +
-                   " account:" + str(delegate_account) + " account_id:" + str(account_id))
-        pt.add_row([self.show_all_users(account_name=delegate_account, account_id=account_id,
-                            user_name=user_name, print_table=False)])
-        pt.add_row([self.show_user_policy_summary(user_name, delegate_account=delegate_account,
-                                      print_table=False)])
+        user_table = str(self.show_all_users(account_name=delegate_account, account_id=account_id,
+                                      user_name=user_name, print_table=False)) + "\n"
+        pt.add_row([user_table])
+
+        pol_pt = self.show_user_policy_summary(user_name, delegate_account=delegate_account,
+                                      print_table=False)
+        new_title = str(pol_pt._field_names[0]).center(len(user_table.splitlines()[0])-4)
+        new_pt = PrettyTable([new_title])
+        new_pt.align[new_title] = 'l'
+        new_pt.hrules = 1
+        new_pt._rows = pol_pt._rows
+        pt.add_row([new_pt])
         if print_table:
             self.debug("\n" + str(pt) + "\n")
         else:
@@ -497,7 +498,8 @@ class IAMops(Eutester):
 
         :param user_name: string - user to apply policy to
         :param policy_name: Name to upload policy as
-        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
+                                 account to operate on
         """
         self.debug("Detaching the following policy from " + user_name + ":" + policy_name)
         params = {'UserName': user_name,
@@ -506,9 +508,11 @@ class IAMops(Eutester):
             params['DelegateAccount'] = delegate_account
         self.connection.get_response('DeleteUserPolicy', params, verb='POST')
 
-    def get_all_groups(self, account_name=None, account_id=None, path=None, group_name=None, group_id=None, search=False ):
+    def get_all_groups(self, account_name=None, account_id=None, path=None, group_name=None,
+                       group_id=None, search=False ):
         """
-        Queries all accounts matching given account criteria, returns all groups found within these accounts which then match the given user criteria.
+        Queries all accounts matching given account criteria, returns all groups found within
+        these accounts which then match the given user criteria.
         Account info is added to the group dicts
 
         :param account_name: regex - to use for account_name
@@ -516,22 +520,30 @@ class IAMops(Eutester):
         :param path: regex - to match for path
         :param group_name: regex - to match for group_name
         :param group_id: regex - to match for group_id
-        :param search: boolean - specify whether to use match or search when filtering the returned list
+        :param search: boolean - specify whether to use match or search when filtering the
+                                 returned list
         :return:
         """
         grouplist=[]
-        accounts = self.get_all_accounts(account_id=account_id, account_name=account_name, search=search)
+        accounts = self.get_all_accounts(account_id=account_id, account_name=account_name,
+                                         search=search)
         for account in accounts:
-            groups = self.get_groups_from_account(path=path, group_name=group_name, group_id=group_id, delegate_account=account['account_name'], search=search)
+            groups = self.get_groups_from_account(path=path,
+                                                  group_name=group_name,
+                                                  group_id=group_id,
+                                                  delegate_account=account['account_name'],
+                                                  search=search)
             for group in groups:
                 group['account_name']=account['account_name']
                 group['account_id']=account['account_id']
                 grouplist.append(group)
         return grouplist
 
-    def get_groups_from_account(self, path=None, group_name=None, group_id=None, delegate_account=None, search=False):
+    def get_groups_from_account(self, path=None, group_name=None, group_id=None,
+                                delegate_account=None, search=False):
         """
-        Returns groups that match given criteria. By default will return groups from current account.
+        Returns groups that match given criteria. By default will return groups from
+        current account.
 
         :param path: regex - to match for path
         :param group_name: regex - to match for group_name
@@ -540,7 +552,8 @@ class IAMops(Eutester):
         :param search: specify whether to use match or search when filtering the returned list
         :return:
         """
-        self.debug('Attempting to fetch all groups matching- group_id:'+str(group_id)+' group_name:'+str(group_name)+" acct_name:"+str(delegate_account))
+        self.debug('Attempting to fetch all groups matching- group_id:' + str(group_id) +
+                   ' group_name:' + str(group_name) + " acct_name:" + str(delegate_account))
         retlist = []
         params = {}
         if search:
@@ -563,7 +576,8 @@ class IAMops(Eutester):
     def get_users_from_group(self, group_name, delegate_account=None):
         """
         :param group_name: name of the group whose users should be returned.
-        :param delegate_account: specific account name when method is being called from eucalyptus admin user.
+        :param delegate_account: specific account name when method is being called from
+                                 eucalyptus admin user.
         :return: list of users of an IAM group.
         """
         ret_list = []
@@ -576,7 +590,8 @@ class IAMops(Eutester):
             ret_list.append(user)
         return ret_list
 
-    def get_group_policy_names(self, group_name, policy_name=None,delegate_account=None, search=False):
+    def get_group_policy_names(self, group_name, policy_name=None,delegate_account=None,
+                               search=False):
         """
         Returns list of policy names associated with a given group, and match given criteria.
 
@@ -595,14 +610,17 @@ class IAMops(Eutester):
         params = {'GroupName': group_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        response = self.connection.get_response('ListGroupPolicies',params, list_marker='PolicyNames')
-        for name in response['list_group_policies_response']['list_group_policies_result']['policy_names']:
+        response = self.connection.get_response('ListGroupPolicies',
+                                                params, list_marker='PolicyNames')
+        for name in response['list_group_policies_response']['list_group_policies_result']\
+                ['policy_names']:
             if policy_name is not None and not re_meth(policy_name, name):
                 continue
             retlist.append(name)
         return retlist
 
-    def get_group_policies(self, group_name, policy_name=None,delegate_account=None, doc=None, search=False):
+    def get_group_policies(self, group_name, policy_name=None,delegate_account=None, doc=None,
+                           search=False):
         """
         Returns list of policy dicts associated with a given group, and match given criteria.
 
@@ -610,7 +628,8 @@ class IAMops(Eutester):
         :param policy_name: regex - to match/filter returned policies
         :param delegate_account: string - used for group lookup
         :param doc: policy document to use as a filter
-        :param search: boolean - specify whether to use match or search when filtering the returned list
+        :param search: boolean - specify whether to use match or search when filtering the
+                                 returned list
         :return:
         """
         retlist = []
@@ -619,14 +638,16 @@ class IAMops(Eutester):
             re_meth = re.search
         else:
             re_meth = re.match
-        names = self.get_group_policy_names(group_name, policy_name=policy_name, delegate_account=delegate_account, search=search)
+        names = self.get_group_policy_names(group_name, policy_name=policy_name,
+                                            delegate_account=delegate_account, search=search)
 
         for p_name in names:
             params = {'GroupName': group_name,
                       'PolicyName': p_name}
             if delegate_account:
                 params['DelegateAccount'] = delegate_account
-            policy = self.connection.get_response('GetGroupPolicy', params, verb='POST')['get_group_policy_response']['get_group_policy_result']
+            policy = self.connection.get_response('GetGroupPolicy', params, verb='POST')\
+                ['get_group_policy_response']['get_group_policy_result']
             if doc is not None and not re_meth(doc, policy['policy_document']):
                 continue
             retlist.append(policy)
@@ -638,7 +659,8 @@ class IAMops(Eutester):
 
         :param
         :param path: path for group
-        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
+                                 account to operate on
         """
         self.debug("Attempting to create group: " + group_name)
         params = {'GroupName': group_name,
@@ -666,7 +688,8 @@ class IAMops(Eutester):
 
         :param group_name: name of group to add user to
         :param user_name: name of user to add to group
-        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
+                                 account to operate on
         """
         self.debug("Adding user "  +  user_name + " to group " + group_name)
         params = {'GroupName': group_name,
@@ -681,7 +704,8 @@ class IAMops(Eutester):
 
         :param group_name: name of group to remove user from
         :param user_name: name of user to remove from group
-        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
+                                 account to operate on
         """
         self.debug("Removing user "  +  user_name + " to group " + group_name)
         params = {'GroupName': group_name,
@@ -697,7 +721,8 @@ class IAMops(Eutester):
         :param group_name: name of group to remove user from
         :param policy_name: Name to upload policy as
         :param policy_json: Policy text
-        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
+                                 account to operate on
         """
         self.debug("Attaching the following policy to " + group_name + ":" + policy_json)
         params = {'GroupName': group_name,
@@ -713,7 +738,8 @@ class IAMops(Eutester):
 
         :param group_name: name of group to remove user from
         :param policy_name: Name to upload policy as
-        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
+                                 account to operate on
         """
         self.debug("Detaching the following policy from " + group_name + ":" + policy_name)
         params = {'GroupName': group_name,
@@ -727,8 +753,10 @@ class IAMops(Eutester):
         Create a new access key for the user.
 
         :param user_name: Name of user to create access key for to
-        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
-        :return: A tuple of access key and and secret key with keys: 'access_key_id' and 'secret_access_key'
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
+                                 account to operate on
+        :return: A tuple of access key and and secret key with keys: 'access_key_id' and
+                'secret_access_key'
         """
         self.debug("Creating access key for " + user_name )
         params = {'UserName': user_name}
@@ -736,19 +764,38 @@ class IAMops(Eutester):
             params['DelegateAccount'] = delegate_account
         response = self.connection.get_response('CreateAccessKey', params)
         access_tuple = {}
-        access_tuple['access_key_id'] = response['create_access_key_response']['create_access_key_result']['access_key']['access_key_id']
-        access_tuple['secret_access_key'] = response['create_access_key_response']['create_access_key_result']['access_key']['secret_access_key']
+        access_tuple['access_key_id'] = response['create_access_key_response']\
+            ['create_access_key_result']['access_key']['access_key_id']
+        access_tuple['secret_access_key'] = response['create_access_key_response']\
+            ['create_access_key_result']['access_key']['secret_access_key']
         return access_tuple
+
+    def get_aws_access_key(self, username=None, delegate_account=None):
+        if not username and not delegate_account and self.aws_access_key_id:
+            aws_access_key = self.aws_access_key_id or self.get_access_key()
+            if aws_access_key:
+                return  aws_access_key
+        params = {}
+        if username:
+            params['UserName'] = username
+        if delegate_account:
+            params['DelegateAccount'] = delegate_account
+        response = self.connection.get_response('ListAccessKeys', params)
+        result = response['list_access_keys_response']['list_access_keys_result']
+        return result['access_key_metadata']['member']['access_key_id']
+
 
     def upload_server_cert(self, cert_name, cert_body, private_key):
         self.debug("uploading server certificate: " + cert_name)
-        self.connection.upload_server_cert(cert_name=cert_name, cert_body=cert_body, private_key=private_key)
+        self.connection.upload_server_cert(cert_name=cert_name, cert_body=cert_body,
+                                           private_key=private_key)
         if cert_name not in str(self.connection.get_server_certificate(cert_name)):
             raise Exception("certificate " + cert_name + " not uploaded")
 
     def update_server_cert(self, cert_name, new_cert_name=None, new_path=None):
         self.debug("updating server certificate: " + cert_name)
-        self.connection.update_server_cert(cert_name=cert_name, new_cert_name=new_cert_name, new_path=new_path)
+        self.connection.update_server_cert(cert_name=cert_name, new_cert_name=new_cert_name,
+                                           new_path=new_path)
         if (new_cert_name and new_path) not in str(self.connection.get_server_certificate(new_cert_name)):
             raise Exception("certificate " + cert_name + " not updated.")
 

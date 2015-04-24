@@ -208,79 +208,72 @@ class Eucaops(Eutester):
                 self.ec2_ip = self.get_ec2_ip()
             if self.credpath and not self.ec2_path:
                 self.ec2_path = self.get_ec2_path()
-            if 'ec2' not in self.__dict__:
-                self._ec2 = EC2ops(endpoint=self.ec2_ip,
-                                   path=self.ec2_path,
-                                   port=8773,
-                                   is_secure=False,
-                                   region=self.region,
-                                   aws_access_key_id=self.aws_access_key_id,
-                                   aws_secret_access_key=self.aws_secret_access_key,
-                                   #APIVersion='2011-01-01',
-                                   boto_debug=self.boto_debug,
-                                   credpath=self.credpath,
-                                   test_resources=self.test_resources)
+            self._ec2 = EC2ops(endpoint=self.ec2_ip,
+                               path=self.ec2_path,
+                               port=8773,
+                               is_secure=False,
+                               region=self.region,
+                               aws_access_key_id=self.aws_access_key_id,
+                               aws_secret_access_key=self.aws_secret_access_key,
+                               #APIVersion='2011-01-01',
+                               boto_debug=self.boto_debug,
+                               credpath=self.credpath,
+                               test_resources=self.test_resources)
         return self._ec2
 
     @property
     def iam(self):
-        if self.credpath and not self.iam_ip:
-            self.iam_ip = self.get_iam_ip()
-        if self.credpath and not self.iam_path:
-            self.iam_path = self.get_iam_path()
-        if 'ec2' not in self.__dict__:
-            ops = IAMops(endpoint=self.iam_ip,
-                         path=self.iam_path,
-                         port=8773,
-                         is_secure=False,
-                         aws_access_key_id=self.aws_access_key_id,
-                         aws_secret_access_key=self.aws_secret_access_key,
-                         boto_debug=self.boto_debug,
-                         credpath=self.credpath,
-                         test_resources=self.test_resources)
-            return ops
-        else:
-            return self.iam
+        if not self._iam:
+            if self.credpath and not self.iam_ip:
+                self.iam_ip = self.get_iam_ip()
+            if self.credpath and not self.iam_path:
+                self.iam_path = self.get_iam_path()
+            self._iam = IAMops(endpoint=self.iam_ip,
+                               path=self.iam_path,
+                               port=8773,
+                               is_secure=False,
+                               aws_access_key_id=self.aws_access_key_id,
+                               aws_secret_access_key=self.aws_secret_access_key,
+                               boto_debug=self.boto_debug,
+                               credpath=self.credpath,
+                               test_resources=self.test_resources)
+        return self._iam
 
     @property
     def s3(self):
-        if self.credpath and not self.s3_ip:
-            self.s3_ip = self.get_s3_ip()
-        if self.credpath and not self.s3_path:
-            self.s3_path = self.get_s3_path()
-        if 's3' not in self.__dict__:
-            ops = S3ops(endpoint=self.s3_ip,
-                        path=self.s3_path,
-                        port=8773,
-                        is_secure=False,
-                        aws_access_key_id=self.aws_access_key_id,
-                        aws_secret_access_key=self.aws_secret_access_key,
-                        boto_debug=self.boto_debug,
-                        credpath=self.credpath,
-                        test_resources=self.test_resources)
-            return ops
-        else:
-            return self.s3
+        if not self._s3:
+            if self.credpath and not self.s3_ip:
+                self.s3_ip = self.get_s3_ip()
+            if self.credpath and not self.s3_path:
+                self.s3_path = self.get_s3_path()
+            self._s3 = S3ops(endpoint=self.s3_ip,
+                             path=self.s3_path,
+                             port=8773,
+                             is_secure=False,
+                             aws_access_key_id=self.aws_access_key_id,
+                             aws_secret_access_key=self.aws_secret_access_key,
+                             boto_debug=self.boto_debug,
+                             credpath=self.credpath,
+                             test_resources=self.test_resources)
+        return self._s3
 
     @property
     def elb(self):
-        if self.credpath and not self.elb_ip:
-            self.elb_ip = self.get_elb_ip()
-        if self.credpath and not self.elb_path:
-            self.elb_path = self.get_elb_path()
-        if 'elb' not in self.__dict__:
-            ops = ELBops(endpoint=self.elb_ip,
-                         path=self.elb_path,
-                         port=8773,
-                         is_secure=False,
-                         aws_access_key_id=self.aws_access_key_id,
-                         aws_secret_access_key=self.aws_secret_access_key,
-                         boto_debug=self.boto_debug,
-                         credpath=self.credpath,
-                         test_resources=self.test_resources)
-            return ops
-        else:
-            return self.elb
+        if not self._elb:
+            if self.credpath and not self.elb_ip:
+                self.elb_ip = self.get_elb_ip()
+            if self.credpath and not self.elb_path:
+                self.elb_path = self.get_elb_path()
+            self._elb = ELBops(endpoint=self.elb_ip,
+                               path=self.elb_path,
+                               port=8773,
+                               is_secure=False,
+                               aws_access_key_id=self.aws_access_key_id,
+                               aws_secret_access_key=self.aws_secret_access_key,
+                               boto_debug=self.boto_debug,
+                               credpath=self.credpath,
+                               test_resources=self.test_resources)
+        return self._elb
 
     @property
     def autoscaling(self):
@@ -305,63 +298,57 @@ class Eucaops(Eutester):
 
     @property
     def cloudformation(self):
-        if self.credpath and not self.cfn_ip:
-            self.cfn_ip = self.get_cfn_ip()
-        if self.credpath and not self.cfn_path:
-            self.cfn_path = self.get_cfn_path()
-        if 'cloudformation' not in self.__dict__:
-            ops = CFNops(endpoint=self.cfn_ip,
-                         path=self.cfn_path,
-                         port=8773,
-                         region=self.region,
-                         is_secure=False,
-                         aws_access_key_id=self.aws_access_key_id,
-                         aws_secret_access_key=self.aws_secret_access_key,
-                         boto_debug=self.boto_debug,
-                         credpath=self.credpath)
-            return ops
-        else:
-            return self.cloudformation
+        if not self._cfn:
+            if self.credpath and not self.cfn_ip:
+                self.cfn_ip = self.get_cfn_ip()
+            if self.credpath and not self.cfn_path:
+                self.cfn_path = self.get_cfn_path()
+            self._cfn = CFNops(endpoint=self.cfn_ip,
+                               path=self.cfn_path,
+                               port=8773,
+                               region=self.region,
+                               is_secure=False,
+                               aws_access_key_id=self.aws_access_key_id,
+                               aws_secret_access_key=self.aws_secret_access_key,
+                               boto_debug=self.boto_debug,
+                               credpath=self.credpath)
+        return self._cfn
 
     @property
     def cloudwatch(self):
-        if self.credpath and not self.cw_ip:
-            self.cfn_ip = self.get_cw_ip()
-        if self.credpath and not self.cw_path:
-            self.cw_path = self.get_cw_path()
-        if 'cloudwatch' not in self.__dict__:
-            ops = CWops(endpoint=self.cw_ip,
-                        path=self.cw_path,
-                        port=8773,
-                        region=self.region,
-                        is_secure=False,
-                        aws_access_key_id=self.aws_access_key_id,
-                        aws_secret_access_key=self.aws_secret_access_key,
-                        boto_debug=self.boto_debug,
-                        credpath=self.credpath)
-            return ops
-        else:
-            return self.cloudwatch
+        if not self._cw:
+            if self.credpath and not self.cw_ip:
+                self.cfn_ip = self.get_cw_ip()
+            if self.credpath and not self.cw_path:
+                self.cw_path = self.get_cw_path()
+            self._cw = CWops(endpoint=self.cw_ip,
+                             path=self.cw_path,
+                             port=8773,
+                             region=self.region,
+                             is_secure=False,
+                             aws_access_key_id=self.aws_access_key_id,
+                             aws_secret_access_key=self.aws_secret_access_key,
+                             boto_debug=self.boto_debug,
+                             credpath=self.credpath)
+        return self._cw
 
     @property
     def token(self):
-        if self.credpath and not self.sts_ip:
-            self.sts_ip = self.get_sts_ip()
-        if self.credpath and not self.cw_path:
-            self.sts_path = self.get_sts_path()
-        if 'token' not in self.__dict__:
-            ops = STSops(endpoint=self.sts_ip,
-                         path=self.sts_path,
-                         port=8773,
-                         region=self.region,
-                         is_secure=False,
-                         aws_access_key_id=self.aws_access_key_id,
-                         aws_secret_access_key=self.aws_secret_access_key,
-                         boto_debug=self.boto_debug,
-                         credpath=self.credpath)
-            return ops
-        else:
-            return self.token
+        if not self._sts:
+            if self.credpath and not self.sts_ip:
+                self.sts_ip = self.get_sts_ip()
+            if self.credpath and not self.cw_path:
+                self.sts_path = self.get_sts_path()
+            self._sts = STSops(endpoint=self.sts_ip,
+                               path=self.sts_path,
+                               port=8773,
+                               region=self.region,
+                               is_secure=False,
+                               aws_access_key_id=self.aws_access_key_id,
+                               aws_secret_access_key=self.aws_secret_access_key,
+                               boto_debug=self.boto_debug,
+                               credpath=self.credpath)
+        return self._sts
 
 
     @property
