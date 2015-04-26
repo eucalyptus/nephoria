@@ -2,7 +2,9 @@ __author__ = 'clarkmatthew'
 
 from boto.resultset import ResultSet
 from eutester.euca.cloud_admin import EucaBaseObj
-import  time
+import inspect
+import sys
+import time
 
 
 class EucaServiceType(EucaBaseObj):
@@ -95,7 +97,6 @@ class EucaServiceList(ResultSet):
     def __repr__(self):
         return str(self.__class__.__name__) + ":(Count:" + str(len(self)) + ")"
 
-
     def startElement(self, name, value, connection):
         ename = name.replace('euca:','')
         if ename == 'item':
@@ -147,9 +148,7 @@ class EucaService(EucaBaseObj):
 
     def startElement(self, name, value, connection):
         ename = name.replace('euca:','')
-        elem = super(EucaService, self).startElement(name,
-                                                         value,
-                                                         connection)
+        elem = super(EucaService, self).startElement(name, value, connection)
         if elem is not None:
             return elem
         if ename == 'uris':
@@ -168,15 +167,49 @@ class EucaService(EucaBaseObj):
             else:
                 setattr(self, ename, value)
 
+    def _find_service_class(self, service_name):
+        service_name = "euca{0}service".format(str(service_name)).lower()
+        for name, service_class in inspect.getmembers(sys.modules[self.__module__],
+                                                      inspect.isclass):
+            name = name.lower()
+            print 'checking service name:{0} against class:{1}'.format(service_name, name)
+            if name == service_name:
+                print 'got a match!!!'
+                return service_class
+        return None
 
-class EucaCloudControllerService(EucaServiceType):
+class EucaCloudControllerService(EucaService):
     pass
 
-class EucaClusterControllerService(EucaServiceType):
+class EucaClusterControllerService(EucaService):
     pass
 
-class EucaObjectStorageGatewayService(EucaServiceType):
+class EucaObjectStorageGatewayService(EucaService):
     pass
 
-class EucaStorageControllerService(EucaServiceType):
+class EucaStorageControllerService(EucaService):
     pass
+
+class EucaWalrusBackendService(EucaService):
+    pass
+
+class EucaVMwareBrokerService(EucaService):
+    pass
+
+class EucaArbitratorService(EucaService):
+    pass
+
+class EucaNodeService(EucaService):
+    def __init__(self, connection=None):
+        super(EucaNodeService, self).__init__(connection)
+        self.instances = []
+
+    @classmethod
+    def _from_service(cls, service):
+        new_node = cls()
+        new_node.__dict__.update(service.__dict__)
+        return  new_node
+
+
+
+

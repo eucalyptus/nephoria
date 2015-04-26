@@ -8,10 +8,12 @@ from boto.roboto.awsqueryrequest import AWSQueryRequest
 from boto.roboto.param import Param
 from boto.connection import AWSQueryConnection
 from boto.ec2.regioninfo import RegionInfo
-from eutester.euca.cloud_admin.services import EucaServiceType, EucaServiceList,\
+from eutester.euca.cloud_admin.services import EucaService, EucaServiceType, EucaServiceList,\
     EucaCloudControllerService, EucaObjectStorageGatewayService, EucaClusterControllerService,\
-    EucaSeviceGroupMember
+    EucaSeviceGroupMember, EucaStorageControllerService, EucaWalrusBackendService,\
+    EucaVMwareBrokerService, EucaArbitratorService
 from eutester.euca.cloud_admin.nodecontroller import EucaNodeService
+from eutester.euca.cloud_admin.properties import EucaProperty
 from eutester.utils.log_utils import markup
 from prettytable import PrettyTable, ALL
 import copy
@@ -78,6 +80,7 @@ class EucaAdmin(AWSQueryConnection):
         ec2_region = RegionInfo()
         ec2_region.name = 'eucalyptus'
         host = endpoint or self.host
+        ec2_region.endpoint = host
         access_key = access_key or self.aws_access_key_id
         secret_key = secret_key or self. aws_secret_access_key
         connection_args = { 'aws_access_key_id' : access_key,
@@ -105,13 +108,16 @@ class EucaAdmin(AWSQueryConnection):
             raise e
         return connection
 
+    def _get_list_request(self, action='DescribeEucalyptus', service=EucaService, params={},
+                          markers=['item', 'euca:item'], verb='GET'):
+        params = params
+        new_markers=[]
+        for marker in markers:
+            new_markers.append((marker, service))
+        return self.get_list(action, params, new_markers, verb=verb)
+
     def get_service_types(self):
-        params = {}
-        return self.get_list('DescribeAvailableServiceTypes',
-                                   params,
-                                   [('item', EucaServiceType),
-                                    ('euca:item', EucaServiceType)],
-                                   verb='GET')
+        return self._get_list_request('DescribeAvailableServiceTypes', EucaServiceType)
 
     def show_service_types_verbose(self, service_types=None, printmethod=None, print_table=True):
         service_types = service_types or self.get_service_types()
@@ -173,7 +179,7 @@ class EucaAdmin(AWSQueryConnection):
             return self.show_service_types_verbose(service_types=service_types,
                                                    printmethod=printmethod,
                                                    print_table=print_table)
-        def get_service_row(service, markup_method=None, markups=None):
+        def get_service_row(service, markup_method=None, markups=None, indent=''):
             if markup_method:
                 mm = lambda x: markup(x, markups)
             else:
@@ -189,7 +195,7 @@ class EucaAdmin(AWSQueryConnection):
             else:
                 entry = service.entry
             parent = mm(entry)
-            name = mm(service.name)
+            name = mm(indent + str(service.name))
             public = mm(service.publicapiservice)
             description = mm(service.description)
             row = [name, cluster, parent, public, description]
@@ -204,9 +210,9 @@ class EucaAdmin(AWSQueryConnection):
                 # are just strings and the member service types will be printed in the main table
                 for member in service.groupmembers:
                     if isinstance(member, EucaServiceType):
-                        main_pt.add_row(get_service_row(member))
+                        main_pt.add_row(get_service_row(member, indent='  '))
             else:
-                main_pt.add_row(get_service_row(service))
+                main_pt.add_row(get_service_row(service, markup_method=markup, markups=[1,94]))
         if print_table:
             if printmethod:
                 printmethod(str(main_pt))
@@ -266,9 +272,9 @@ class EucaAdmin(AWSQueryConnection):
             params['ListInternal'] = str(list_internal).lower()
 
         service_list = self.get_list('DescribeServices',
-                                            params,
-                                            markers=markers,
-                                            verb='GET')
+                                        params,
+                                        markers=markers,
+                                        verb='GET')
         if service_list:
             return service_list[0]
         else:
@@ -310,20 +316,26 @@ class EucaAdmin(AWSQueryConnection):
             return pt
 
     def get_cloud_controller_services(self):
-        params = {}
-        return self.get_list('DescribeEucalyptus',
-                                   params,
-                                   [('item', EucaCloudControllerService),
-                                    ('euca:item', EucaClusterControllerService)],
-                                   verb='GET')
+        return self.get_list('DescribeEucalyptus', EucaCloudControllerService)
 
     def get_cluster_controller_services(self):
-        params = {}
-        return self.get_list('DescribeClusters',
-                                   params,
-                                   [('item', EucaClusterControllerService),
-                                    ('euca:item', EucaClusterControllerService)],
-                                   verb='GET')
+        return self._get_list_request('DescribeClusters', EucaClusterControllerService)
+
+    def get_object_storage_gateways(self):
+        return self._get_list_request('DescribeObjectStorageGateways',
+                                      EucaObjectStorageGatewayService)
+
+    def get_storage_controllers(self):
+        return self._get_list_request('DescribeStorageControllers',EucaStorageControllerService)
+
+    def get_walrus_backends(self):
+        return self._get_list_request('DescribeWalrusBackends', EucaWalrusBackendService)
+
+    def get_vmware_broker_services(self):
+        return self._get_list_request('DescribeVMwareBrokers', EucaVMwareBrokerService)
+
+    def get_arbitrators(self):
+        return self._get_list_request('DescribeArbitrators', EucaArbitratorService)
 
     def get_cluster_names(self):
         cluster_names = []
@@ -332,8 +344,12 @@ class EucaAdmin(AWSQueryConnection):
             cluster_names.append(cc.partition)
         return cluster_names
 
-    def get_nodes(self, get_instances=True):
-        nodes = self.get_services(service_type='node', listall=True, service_class=EucaNodeService)
+    def get_nodes(self, get_instances=True, cluster=None):
+        services = self.get_services(service_type='node', listall=True,
+                                     service_class=EucaServiceList)
+        nodes = []
+        for service in services:
+            nodes.append(EucaNodeService._from_service(service))
         if get_instances:
             for reservation in self.ec2_connection.get_all_instances(
                     filters={'tag-key':'euca:node'}):
@@ -346,52 +362,107 @@ class EucaAdmin(AWSQueryConnection):
                                 node.instances.append(vm)
         return nodes
 
-    def get_object_storage_gateways(self):
+    def get_properties(self, *prop_names):
+        '''
+        Gets eucalyptus cloud configuration properties
+        examples:
+            get_properties()
+            get_properties('www', 'objectstorage')
+            get_properties('cloud.euca_log_level')
+        :param prop_names: list or property names or the prefix to match against properties.
+        :returns a list of EucaProperty objs
+        '''
         params = {}
-        return self.get_list('DescribeClusters',
-                                  params,
-                                  [('item', EucaObjectStorageGatewayService),
-                                   ('euca:item', EucaObjectStorageGatewayService)],
-                                  verb='GET')
+        x = 0
+        for prop in prop_names:
+            x += 1
+            params['Property.{0}'.format(x)] = prop
+        return self._get_list_request('DescribeProperties', EucaProperty, params=params)
 
+    def show_properties_brief(self, properties=None, grid=ALL, print_table=True):
+        name_hdr = markup('PROPERTY NAME', [1,94])
+        value_hdr = markup('PROPERTY VALUE', [1,94])
+        pt = PrettyTable([name_hdr, value_hdr])
+        pt.max_width[name_hdr] = 70
+        pt.max_width[value_hdr] = 40
+        pt.padding_width = 0
+        pt.align = 'l'
+        pt.hrules = grid or 0
+        properties = properties or self.get_properties()
+        if not isinstance(properties, list):
+            properties = [properties]
+        for prop in properties:
+            if not isinstance(prop, EucaProperty) and isinstance(prop, basestring):
+                props = self.get_properties(prop)
+                if not props:
+                    continue
+            else:
+                props = [prop]
+            for p in props:
+                pt.add_row([p.name, p.value])
+        if print_table:
+            self.debug_method('\n' + str(pt) + '\n')
+        else:
+            return pt
 
-    def _describe_properties(self):
-        class EucaService(AWSQueryService):
-            APIVersion='eucalyptus'
-        class DescribeProperties(AWSQueryRequest):
-            ServiceClass = EucaService
-            ServiceName = 'Property'
-            Description = "Show the cloud's properties or settings"
-            Params = [Param(name='verbose',
-                            short_name='v',
-                            long_name='verbose',
-                            ptype='boolean',
-                            default=False,
-                            optional=True,
-                            doc='Include description information for properties in the '
-                                'returned response.'),
-                      ]
-            Args = [Param(name='properties',
-                          long_name='property prefix',
-                          ptype='string',
-                          cardinality='+',
-                          optional=True,
-                          doc='[PROPERTY-PREFIX] ...')]
+    def show_properties(self, properties=None, verbose=True, print_table=True):
+        if not verbose:
+            return self.show_properties_brief(properties=properties, print_table=print_table)
+        info_len = 60
+        desc_len = 40
+        title = markup('EUCALYPTUS PROPERTIES')
+        main_pt = PrettyTable([title])
+        main_pt.max_width[title] = info_len + desc_len + 10
+        main_pt.align = 'l'
+        main_pt.padding_width = 0
+        main_pt.hrules = 1
+        markup_size = len(markup('\n'))
+        properties = properties or self.get_properties()
+        if not isinstance(properties, list):
+            properties = [properties]
+        for prop in properties:
+            if not isinstance(prop, EucaProperty) and isinstance(prop, basestring):
+                props = self.get_properties(prop)
+                if not props:
+                    continue
+            else:
+                props = [prop]
+            for p in props:
+                pt = PrettyTable(['PROPERTY INFO', 'DESCRIPTION'])
+                pt.max_width['PROPERTY INFO'] = info_len
+                pt.max_width['DESCRIPTION'] = desc_len
+                pt.align = 'l'
+                pt.header=False
+                pt.padding_width = 0
+                pt.hrules = 2
+                info_buf = "NAME: "
+                prefix = ""
+                line_len = info_len - markup_size - len('NAME: ')
+                for i in xrange(0, len(p.name), line_len):
+                    if i:
+                        prefix = "      "
+                    info_buf += (str(prefix +
+                                     markup(p.name[i:i+line_len], [1,94])).ljust(info_len-2)
+                                 + "\n")
+                info_buf += 'VALUE: '
+                prefix = ""
+                line_len = info_len - markup_size - len('VALUE: ')
+                for i in xrange(0, len(p.value), line_len):
+                    if i:
+                        prefix = "       "
+                    info_buf += (prefix + markup(p.value[i:i+line_len]) + "\n")
 
-            def __init__(self, **args):
-                AWSQueryRequest.__init__(self, **args)
-                self.list_markers = ['euca:properties']
-                self.item_markers = ['euca:item']
-                self.verbose = False
+                desc_buf = markup('DESCRIPTION:').ljust(desc_len) + \
+                           str(p.description).ljust(desc_len)
+                pt.add_row([info_buf,desc_buf])
+                #buf = str(pt) + "\n"
+                #buf += p.description
+                main_pt.add_row([str(pt)])
+        if print_table:
+            self.debug_method("\n" + str(main_pt) + "\n")
+        else:
+            return main_pt
 
-        query = DescribeProperties()
-        query.get_connection(path = '/services/Empyrean',
-                             aws_access_key_id = self.aws_access_key_id,
-                             aws_secret_access_key = self.aws_secret_access_key,
-                             port = 8773,
-                             is_secure = False,
-                             host = self.host)
-        return query.send()
 
     def get_clusters(self, name=None, get_instances=True, get_storage=True,
                      get_cluster_controllers=True):
