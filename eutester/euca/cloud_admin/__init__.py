@@ -16,4 +16,4 @@ class EucaBaseObj(object):
     def endElement(self, name, value, connection):
          ename = name.lower().replace('euca:','')
          if ename:
-            setattr(self, ename, value)
+            setattr(self, ename.lower(), value)

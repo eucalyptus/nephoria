@@ -53,7 +53,7 @@ class EucaServiceType(EucaBaseObj):
             #print 'service type got ename:{0}'.format(ename)
             if ename == 'componentname':
                 self.name = value
-            setattr(self, ename, value)
+            setattr(self, ename.lower(), value)
 
 class EucaSeviceGroupMember(EucaBaseObj):
     def endElement(self, name, value, connection):
@@ -61,7 +61,7 @@ class EucaSeviceGroupMember(EucaBaseObj):
         if ename:
             if ename == 'entry':
                 self.name = value
-            setattr(self, ename, value)
+            setattr(self, ename.lower(), value)
 
 class EucaServiceGroupMembers(ResultSet):
     def __init__(self, connection=None):
@@ -84,7 +84,7 @@ class EucaServiceGroupMembers(ResultSet):
     def endElement(self, name, value, connection):
         ename = name.lower().replace('euca:','')
         if ename:
-            setattr(self, ename, value)
+            setattr(self, ename.lower(), value)
 
 
 
@@ -109,7 +109,7 @@ class EucaServiceList(ResultSet):
     def endElement(self, name, value, connection):
         ename = name.lower().replace('euca:','')
         if ename:
-            setattr(self, ename, value)
+            setattr(self, ename.lower(), value)
 
     def show_list(self, print_method=None):
         for service in self:
@@ -136,7 +136,7 @@ class EucaUris(EucaBaseObj):
             if ename == 'entry':
                 self.uris.append(value)
             else:
-                setattr(self, ename, value)
+                setattr(self, ename.lower(), value)
 
 class EucaService(EucaBaseObj):
     # Base Class for Eucalyptus Service Objects
@@ -163,9 +163,9 @@ class EucaService(EucaBaseObj):
             if ename == '_name':
                 if not hasattr(self, 'name') or not self.name:
                     setattr(self, 'name', value)
-                setattr(self, ename, value)
+                setattr(self, ename.lower(), value)
             else:
-                setattr(self, ename, value)
+                setattr(self, ename.lower(), value)
 
     def _find_service_class(self, service_name):
         service_name = "euca{0}service".format(str(service_name)).lower()
@@ -203,12 +203,31 @@ class EucaNodeService(EucaService):
     def __init__(self, connection=None):
         super(EucaNodeService, self).__init__(connection)
         self.instances = []
+        self.localstate = None
+
+    @property
+    def state(self):
+        return self.localstate
+
+    @state.setter
+    def state(self, value):
+        self.localstate = value
 
     @classmethod
     def _from_service(cls, service):
         new_node = cls()
         new_node.__dict__.update(service.__dict__)
         return  new_node
+
+    def endElement(self, name, value, connection):
+        ename = name.replace('euca:','').lower()
+        if ename:
+            if ename == 'localstate':
+                setattr(self, 'state', value)
+                setattr(self, ename, value)
+                return
+        super(EucaNodeService, self).startElement(name, value, connection)
+
 
 
 

@@ -282,9 +282,10 @@ class EucaAdmin(AWSQueryConnection):
 
     def show_services(self, services=None, service_type=None, print_table=True):
         services = services or self.get_services(service_type=service_type)
-        cluster_hdr = markup('CLUSTER')
-        pt = PrettyTable([markup('TYPE'), markup('NAME'), markup('STATE'), cluster_hdr,
-                          markup('URI')])
+        h_marks = [1, 94]
+        cluster_hdr = markup('CLUSTER', h_marks)
+        pt = PrettyTable([markup('TYPE', h_marks), markup('NAME', h_marks),
+                          markup('STATE', h_marks), cluster_hdr, markup('URI', h_marks)])
         pt.align = 'l'
         pt.align[cluster_hdr] = 'c'
         pt.padding_width = 0
@@ -300,9 +301,11 @@ class EucaAdmin(AWSQueryConnection):
                 if stype.name == service.type:
                     service_types.remove(stype)
                     break
-            state = service.localState
+            state = service.localstate
             if state != "ENABLED":
                 markups = [1,4,31]
+            else:
+                state = markup(state, [1,92])
             pt.add_row([markup(service.type, (markups or [1])), markup(service.name, markups),
                         markup(state, markups), markup(partition, markups),
                         markup(service.uri, markups)])
@@ -316,7 +319,7 @@ class EucaAdmin(AWSQueryConnection):
             return pt
 
     def get_cloud_controller_services(self):
-        return self.get_list('DescribeEucalyptus', EucaCloudControllerService)
+        return self._get_list_request('DescribeEucalyptus', EucaCloudControllerService)
 
     def get_cluster_controller_services(self):
         return self._get_list_request('DescribeClusters', EucaClusterControllerService)
@@ -344,23 +347,76 @@ class EucaAdmin(AWSQueryConnection):
             cluster_names.append(cc.partition)
         return cluster_names
 
-    def get_nodes(self, get_instances=True, cluster=None):
+    def get_nodes(self, get_instances=True, cluster=None, fail_on_instance_fetch=False):
         services = self.get_services(service_type='node', listall=True,
                                      service_class=EucaServiceList)
         nodes = []
         for service in services:
             nodes.append(EucaNodeService._from_service(service))
+        remove = []
+        if cluster:
+            for node in nodes:
+                if str(node.partition).lower() != cluster.lower():
+                    remove.append(node)
+            for node in remove:
+                nodes.remove(node)
         if get_instances:
-            for reservation in self.ec2_connection.get_all_instances(
-                    filters={'tag-key':'euca:node'}):
-                for vm in reservation.instances:
-                    # Should this filter exclude terminated, shutdown, and stopped instances?
-                    tag_node_name = vm.tags.get('euca:node')
-                    if tag_node_name:
-                        for node in nodes:
-                            if node.name == tag_node_name:
-                                node.instances.append(vm)
+            try:
+                for reservation in self.ec2_connection.get_all_instances(
+                        filters={'tag-key':'euca:node'}):
+                    for vm in reservation.instances:
+                        # Should this filter exclude terminated, shutdown, and stopped instances?
+                        tag_node_name = vm.tags.get('euca:node')
+                        if tag_node_name:
+                            for node in nodes:
+                                if node.name == tag_node_name:
+                                    node.instances.append(vm)
+            except Exception, NE:
+                self.debug_method('Failed to fetch instances for node:{0}, err:{1}'
+                                  .format(node.name, str(NE)))
+                if fail_on_instance_fetch:
+                    raise NE
         return nodes
+
+    def show_nodes(self, nodes=None, print_table=True):
+        nodes = nodes or self.get_nodes()
+        ins_id_len = 10
+        ins_type_len = 13
+        ins_dev_len = 16
+        ins_st_len = 15
+        zone_hdr = (markup('ZONE'), 20)
+        name_hdr = (markup('NODE NAME'), 30)
+        state_hdr = (markup('STATE'), 20)
+        inst_hdr = (markup('INSTANCES'),
+                    (ins_id_len + ins_dev_len + ins_type_len + ins_st_len) + 5)
+
+        pt = PrettyTable([zone_hdr[0], name_hdr[0], state_hdr[0], inst_hdr[0]])
+        pt.max_width[zone_hdr[0]] = zone_hdr[1]
+        pt.max_width[inst_hdr[0]] = inst_hdr[1]
+        pt.max_width[state_hdr[0]] = state_hdr[1]
+        pt.max_width[name_hdr[0]] = name_hdr[1]
+        pt.padding_width = 0
+        pt.hrules = 1
+        for node in nodes:
+            instances = "".join("{0}({1},{2},{3})"
+                                    .format(str(x.id).ljust(ins_id_len),
+                                            str(x.state).ljust(ins_st_len),
+                                            str(x.instance_type).ljust(ins_type_len),
+                                            str(x.root_device_type).ljust(ins_dev_len))
+                                    .ljust(inst_hdr[1])
+                                 for x in node.instances)
+            instances.strip()
+            if node.state == 'ENABLED':
+                markups = [1,92]
+            else:
+                markups = [1,91]
+            pt.add_row([node.partition, markup(node.name),
+                        markup(node.state, markups), instances])
+        if print_table:
+            self.debug_method('\n' + pt.get_string(sortby=zone_hdr[0]) + '\n')
+        else:
+            return pt
+
 
     def get_properties(self, *prop_names):
         '''
@@ -374,21 +430,29 @@ class EucaAdmin(AWSQueryConnection):
         '''
         params = {}
         x = 0
+        prop_names = prop_names or []
         for prop in prop_names:
+            if not prop:
+                continue
             x += 1
             params['Property.{0}'.format(x)] = prop
         return self._get_list_request('DescribeProperties', EucaProperty, params=params)
 
-    def show_properties_brief(self, properties=None, grid=ALL, print_table=True):
+    def show_properties(self, properties=None, description=True, grid=ALL,
+                        print_table=True, *prop_names):
         name_hdr = markup('PROPERTY NAME', [1,94])
         value_hdr = markup('PROPERTY VALUE', [1,94])
+        desc_hdr = markup('DESCRIPTION', [1,94])
         pt = PrettyTable([name_hdr, value_hdr])
         pt.max_width[name_hdr] = 70
         pt.max_width[value_hdr] = 40
+        if description:
+            pt.add_column(fieldname=desc_hdr, column=[])
+            pt.max_width[desc_hdr]=40
         pt.padding_width = 0
         pt.align = 'l'
         pt.hrules = grid or 0
-        properties = properties or self.get_properties()
+        properties = properties or self.get_properties(prop_names)
         if not isinstance(properties, list):
             properties = [properties]
         for prop in properties:
@@ -399,25 +463,31 @@ class EucaAdmin(AWSQueryConnection):
             else:
                 props = [prop]
             for p in props:
-                pt.add_row([p.name, p.value])
+                row = [markup(p.name, [94]), p.value]
+                if description:
+                    row.append(p.description)
+                pt.add_row(row)
+        if not pt._rows:
+            pt.add_row([markup('NO PROPERTIES RETURNED', [1,91]), ""])
         if print_table:
             self.debug_method('\n' + str(pt) + '\n')
         else:
             return pt
 
-    def show_properties(self, properties=None, verbose=True, print_table=True):
+    def show_properties_narrow(self, properties=None, verbose=True, print_table=True, *prop_names):
         if not verbose:
-            return self.show_properties_brief(properties=properties, print_table=print_table)
+            return self.show_properties(properties=properties, description=False,
+                                        print_table=print_table)
         info_len = 60
         desc_len = 40
-        title = markup('EUCALYPTUS PROPERTIES')
-        main_pt = PrettyTable([title])
-        main_pt.max_width[title] = info_len + desc_len + 10
-        main_pt.align = 'l'
-        main_pt.padding_width = 0
-        main_pt.hrules = 1
         markup_size = len(markup('\n'))
-        properties = properties or self.get_properties()
+        properties = properties or self.get_properties(prop_names)
+        pt = PrettyTable(['PROPERTY INFO', 'DESCRIPTION'])
+        pt.max_width['PROPERTY INFO'] = info_len
+        pt.max_width['DESCRIPTION'] = desc_len
+        pt.align = 'l'
+        pt.padding_width = 0
+        pt.hrules = 1
         if not isinstance(properties, list):
             properties = [properties]
         for prop in properties:
@@ -428,13 +498,6 @@ class EucaAdmin(AWSQueryConnection):
             else:
                 props = [prop]
             for p in props:
-                pt = PrettyTable(['PROPERTY INFO', 'DESCRIPTION'])
-                pt.max_width['PROPERTY INFO'] = info_len
-                pt.max_width['DESCRIPTION'] = desc_len
-                pt.align = 'l'
-                pt.header=False
-                pt.padding_width = 0
-                pt.hrules = 2
                 info_buf = "NAME: "
                 prefix = ""
                 line_len = info_len - markup_size - len('NAME: ')
@@ -455,13 +518,12 @@ class EucaAdmin(AWSQueryConnection):
                 desc_buf = markup('DESCRIPTION:').ljust(desc_len) + \
                            str(p.description).ljust(desc_len)
                 pt.add_row([info_buf,desc_buf])
-                #buf = str(pt) + "\n"
-                #buf += p.description
-                main_pt.add_row([str(pt)])
+        if not pt._rows:
+            pt.add_row([markup('NO PROPERTIES RETURNED', [1,91]), ""])
         if print_table:
-            self.debug_method("\n" + str(main_pt) + "\n")
+            self.debug_method("\n" + str(pt) + "\n")
         else:
-            return main_pt
+            return pt
 
 
     def get_clusters(self, name=None, get_instances=True, get_storage=True,
@@ -470,3 +532,67 @@ class EucaAdmin(AWSQueryConnection):
         for cc in controllers:
             assert isinstance(cc, EucaClusterControllerService)
             new_cluster = cc.partition
+
+    def show_cluster_controllers(self, ccs=None, print_table=True):
+        hostname_hdr = ('HOSTNAME', 24)
+        name_hdr = ('NAME', 24)
+        cluster_hdr = ('CLUSTER', 24)
+        state_hdr = ('STATE', 16)
+        pt = PrettyTable([hostname_hdr[0], name_hdr[0], cluster_hdr[0], state_hdr[0]])
+        pt.max_width[hostname_hdr[0]] = hostname_hdr[1]
+        pt.max_width[name_hdr[0]] = name_hdr[1]
+        pt.max_width[cluster_hdr[0]] = cluster_hdr[1]
+        pt.max_width[state_hdr[0]] = state_hdr[1]
+        pt.align = 'l'
+        pt.padding_width = 0
+        ccs = ccs or self.get_cluster_controller_services()
+        for cc in ccs:
+            if cc.state == 'ENABLED':
+                state = markup(cc.state, [1,92])
+            else:
+                state = markup(cc.state, [1,91])
+            pt.add_row([markup(cc.hostname, [1,94]), cc.name, cc.partition, state])
+        if print_table:
+            self.debug_method('\n' + pt.get_string(sortby=cluster_hdr[0]) + '\n')
+        else:
+            return pt
+
+    def show_storage_controllers(self, scs=None, print_table=True):
+        return self._show_components(scs, self.get_storage_controllers, print_table)
+    
+    def show_objectstorage_gateways(self, osgs=None, print_table=True):
+        return self._show_components(osgs, self.get_object_storage_gateways, print_table)
+
+    def show_cloud_controllers(self, clcs=None, print_table=True):
+        return self._show_components(clcs, self.get_cloud_controller_services, print_table)
+
+    def show_walrus_backends(self, walruses=None, print_table=True):
+        return self._show_components(walruses, self.get_walrus_backends, print_table)
+
+    def _show_components(self, components=None,  get_method=None, print_table=True):
+        if not components:
+            if not get_method:
+                raise ValueError('_show_component(). Components or get_method must be populated')
+            components = get_method()
+        hostname_hdr = ('HOSTNAME', 24)
+        name_hdr = ('NAME', 24)
+        cluster_hdr = ('PARTITION', 24)
+        state_hdr = ('STATE', 16)
+        pt = PrettyTable([hostname_hdr[0], name_hdr[0], cluster_hdr[0], state_hdr[0]])
+        pt.max_width[hostname_hdr[0]] = hostname_hdr[1]
+        pt.max_width[name_hdr[0]] = name_hdr[1]
+        pt.max_width[cluster_hdr[0]] = cluster_hdr[1]
+        pt.max_width[state_hdr[0]] = state_hdr[1]
+        pt.align = 'l'
+        pt.padding_width = 0
+        for component in components:
+            if component.state == 'ENABLED':
+                state = markup(component.state, [1,92])
+            else:
+                state = markup(component.state, [1,91])
+            pt.add_row([markup(component.hostname, [1,94]), component.name,
+                        component.partition, state])
+        if print_table:
+            self.debug_method('\n' + pt.get_string(sortby=cluster_hdr[0]) + '\n')
+        else:
+            return pt
