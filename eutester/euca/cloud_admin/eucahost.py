@@ -56,7 +56,7 @@ class DistroRelease:
         self.number = distro_number
         self.release = distro_release
         self.package_manager = package_manager
-        
+
 class Distro:
     ubuntu_lucid = DistroRelease(DistroName.ubuntu,"10.04",  "lucid",  package_manager="apt")
     ubuntu_precise = DistroRelease(DistroName.ubuntu,  "12.04", "precise",  package_manager="apt")
@@ -77,26 +77,21 @@ class Distro:
             if isinstance(Distro.__dict__[distro], DistroRelease):
                 distros.append(Distro.__dict__[distro])
         return distros
-        
-    
 
-class Machine:
-    def __init__(self, 
-                 hostname, 
-                 distro="", 
-                 distro_ver="", 
-                 arch="", 
-                 source="", 
-                 components="", 
-                 connect=True, 
-                 password=None, 
-                 keypath=None, 
-                 username="root", 
+
+
+class EucaHost():
+    def __init__(self,
+                 hostname,
+                 connect=True,
+                 password=None,
+                 keypath=None,
+                 username="root",
                  timeout=120,
                  retry=2,
-                 debugmethod=None, 
+                 debugmethod=None,
                  verbose = True ):
-        
+
         self.hostname = hostname
         self.distro_ver = distro_ver
         self.arch = arch
@@ -209,8 +204,24 @@ class Machine:
     def get_distro_info_from_machine(self):
         if not self.ssh:
             raise Exception('Need SSH connection to retrieve distribution info from machine')
-        out = self.sys('cat /etc/issue')
-
+        ret_dict = {'distro': '', 'release': ''}
+        out = self.sys('cat /etc/*-release',code=0)
+        for line in out:
+            if not ret_dict['distro']:
+                if re.search('red hat', line, re.IGNORECASE):
+                    ret_dict['distro'] = DistroName.rhel
+                else:
+                    for distro in DistroName.__dict__:
+                        if not str(distro).startswith('_') and re.search(distro,line, re.IGNORECASE):
+                            ret_dict['distro'] = distro
+                            break
+            if not ret_dict['release'] and re.search(r"release", line, re.IGNORECASE):
+                rel = re.search(r"\d+\.\d+",line)
+                if rel:
+                     ret_dict['release'] = rel.group()
+        if not ret_dict['distro'] or not ret_dict['release']:
+            raise Exception('Could not retrieve distro:"' + str(ret_dict['distro']) + '", and release:"' + str(ret_dict['release']) + '"' )
+        return ret_dict
 
 
     def _get_distro(self, distro_name=None, distro_release=None):
@@ -242,7 +253,7 @@ class Machine:
 
     def refresh_ssh(self):
         self.ssh.refresh_connection()
-        
+
     def debug(self,msg):
         """
         Used to print debug, defaults to print() but over ridden by self.debugmethod if not None
@@ -250,7 +261,7 @@ class Machine:
         """
         if self.verbose is True:
                 self.debugmethod(msg)
-                
+
     def refresh_connection(self):
         self.ssh.refresh_connection()
 
@@ -265,7 +276,7 @@ class Machine:
                 self.sys("reboot", timeout=3)
             except Exception, e:
                 pass
-    
+
     def interrupt_network(self, time = 120, interface = "eth0"):
         try:
             self.sys("ifdown " + interface + " && sleep " + str(time) + " && ifup " + interface,  timeout=3)
@@ -278,7 +289,7 @@ class Machine:
         Returns a list of the lines from stdout+stderr as a result of the command
         '''
         return self.ssh.sys(cmd, verbose=verbose, timeout=timeout,listformat=listformat, code=code)
-    
+
     def cmd(self, cmd, verbose=True, timeout=120, listformat=False, cb=None, cbargs=[]):
         '''
         Issues a command against the ssh connection to this instance
@@ -287,10 +298,10 @@ class Machine:
             ['output'] - The std out/err from the executed command
             ['status'] - The exit (exitcode) of the command, in the case a call back fires, this status code is unreliable.
             ['cbfired']  - Boolean to indicate whether or not the provided callback fired (ie returned False)
-            ['elapsed'] - Time elapsed waiting for command loop to end. 
-        cmd - mandatory - string, the command to be executed 
+            ['elapsed'] - Time elapsed waiting for command loop to end.
+        cmd - mandatory - string, the command to be executed
         verbose - optional - boolean flag to enable debug
-        timeout - optional - command timeout in seconds 
+        timeout - optional - command timeout in seconds
         listformat -optional - specifies returned output in list of lines, or single string buffer
         cb - optional - call back function, accepting string buffer, returning true false see sshconnection for more info
         '''
@@ -298,25 +309,25 @@ class Machine:
             return self.ssh.cmd(cmd, verbose=verbose, timeout=timeout, listformat=listformat, cb=cb, cbargs=cbargs)
         else:
             raise Exception("Euinstance ssh connection is None")
-        
+
     def sys_until_found(self, cmd, regex, verbose=True, timeout=120, listformat=True):
         '''
-        Run a command until output of command satisfies/finds regex or EOF is found. 
+        Run a command until output of command satisfies/finds regex or EOF is found.
         returns dict containing:
             ['cmd'] - The command which was executed
             ['output'] - The std out/err from the executed command
             ['status'] - The exit (exitcode) of the command, in the case a call back fires, this status code is unreliable.
             ['cbfired']  - Boolean to indicate whether or not the provided callback fired (ie returned False)
             ['elapsed'] - Time elapsed waiting for command loop to end.
-        cmd - mandatory - string, the command to be executed 
+        cmd - mandatory - string, the command to be executed
         regex - mandatory - regex to look for
         verbose - optional - boolean flag to enable debug
-        timeout - optional - command timeout in seconds 
-        listformat -optional - specifies returned output in list of lines, or single string buffer 
+        timeout - optional - command timeout in seconds
+        listformat -optional - specifies returned output in list of lines, or single string buffer
         '''
         return self.cmd(cmd, verbose=verbose,timeout=timeout,listformat=listformat,cb=self.str_found_cb, cbargs=[regex, verbose])
-        
-        
+
+
     def str_found_cb(self,buf,regex,verbose,search=True):
         '''
         Return sshcbreturn type setting stop to True if given regex matches against given string buf
@@ -324,8 +335,8 @@ class Machine:
         if verbose:
             self.debug(str(buf))
         return sshconnection.SshCbReturn( stop=self.str_found(buf, regex=regex, search=search))
-        
-        
+
+
     def str_found(self, buf, regex, search=True):
         '''
         Return True if given regex matches against given string
@@ -339,8 +350,91 @@ class Machine:
         else:
             return False
 
+    def get_eucalyptus_service_pid(self, eucalyptus_service):
+        """
+        Returns the process id or pid of the eucalyptus service running on this machine. Will return None if not found,
+        which may indicate the process is not running or not intended to run on this machine.
+
+        :param eucalyptus_service: eucalyptus-cloud, eucalyptus-cc, eucalyptus-nc
+        :return: string representing pid
+        """
+        pid = None
+        paths = ["/var/run/eucalyptus/","/opt/eucalyptus/var/run/eucalyptus/"]
+        for path in paths:
+            try:
+                pid = int(self.sys('cat ' + path + str(eucalyptus_service), code=0)[0].strip())
+                break
+            except: pass
+        if pid is None:
+            self.debug("Pid not found at paths: ".join(paths))
+        return pid
+
+    def get_eucalyptus_cloud_pid(self):
+        """
+        :return: Returns the process id for eucalyptus-cloud running on this machine, or None if not found.
+        """
+        return self.get_eucalyptus_service_pid('eucalyptus-cloud.pid')
+
+    def get_eucalyptus_nc_pid(self):
+        """
+        :return: Returns the process id for eucalyptus-nc running on this machine, or None if not found.
+        """
+        return self.get_eucalyptus_service_pid('eucalyptus-nc.pid')
+
+    def get_eucalyptus_cc_pid(self):
+        """
+        :return: Returns the process id for eucalyptus-cc running on this machine, or None if not found.
+        """
+        return self.get_eucalyptus_service_pid('eucalyptus-cc.pid')
+
     def get_uptime(self):
         return int(self.sys('cat /proc/uptime', code=0)[0].split()[1].split('.')[0])
+
+    def get_eucalyptus_cloud_process_uptime(self):
+        """
+        Attempts to look up the elapsed running time of the PID associated with the eucalyptus-cloud process/service.
+        :return: (int) elapsed time in seconds this PID has been running
+        """
+        pid = self.get_eucalyptus_cloud_pid()
+        return self.get_elapsed_seconds_since_pid_started(pid)
+
+    def get_eucalyptus_cc_process_uptime(self):
+        """
+        Attempts to look up the elapsed running time of the PID associated with the eucalyptus-cc process/service.
+        :return: (int) elapsed time in seconds this PID has been running
+        """
+        pid = self.get_eucalyptus_cc_pid()
+        return self.get_elapsed_seconds_since_pid_started(pid)
+
+    def get_eucalyptus_nc_process_uptime(self):
+        """
+        Attempts to look up the elapsed running time of the PID associated with the eucalyptus-nc process/service.
+        :return: (int) elapsed time in seconds this PID has been running
+        """
+        pid = self.get_eucalyptus_nc_pid()
+        return self.get_elapsed_seconds_since_pid_started(pid)
+
+    def get_eucalyptus_cloud_is_running_status(self):
+        """
+        Checks eucalyptus-cloud service status
+        :return: boolean, True if running False if not.
+        """
+        return self.get_service_is_running_status('eucalyptus-cloud')
+
+    def get_eucalyptus_cc_is_running_status(self):
+        """
+        Checks eucalyptus-cc service status
+        :return: boolean, True if running False if not.
+        """
+        return self.get_service_is_running_status('eucalyptus-cc')
+
+    def get_eucalyptus_nc_is_running_status(self):
+        """
+        Checks eucalyptus-nc service status
+        :return: boolean, True if running False if not.
+        """
+        return self.get_service_is_running_status('eucalyptus-nc')
+
 
     def get_service_is_running_status(self, service, code=0):
         """
@@ -397,6 +491,19 @@ class Machine:
             print Eutester.get_traceback()
         return int(elapsed)
 
+    def get_eucalyptus_version(self,versionpath="/etc/eucalyptus/eucalyptus-version"):
+        """
+
+        :param versionpath: path to version file
+        :return: eucalyptus version string
+        """
+        try:
+            return self.sys('cat ' + versionpath, code=0)[0]
+        except Exception, e:
+            return self.sys('cat /opt/eucalyptus' + versionpath, code=0)[0]
+
+
+
     def is_file_present(self, filepath):
         try:
             self.get_file_stat(filepath)
@@ -408,21 +515,22 @@ class Machine:
                 raise io
         return True
 
+
     def get_file_stat(self,path):
         return self.sftp.lstat(path)
-        
+
     def get_file_size(self, path):
         return self.sftp.lstat(path).st_size
-    
+
     def get_file_perms_flag(self,path):
-        return self.sftp.lstat(path).FLAG_PERMISSIONS 
-    
+        return self.sftp.lstat(path).FLAG_PERMISSIONS
+
     def get_file_groupid(self, path):
         return self.sftp.lstat(path).st_gid
-        
+
     def get_file_userid(self,path):
         return self.sftp.lstat(path).st_uid
-    
+
     def get_masked_pass(self, pwd, firstlast=True, charcount=True, show=False):
         '''
         format password for printing
@@ -459,9 +567,8 @@ class Machine:
         self.debug('Ping attempt to host:'+str(host)+", status code:"+str(out['status']))
         if out['status'] != 0:
             raise Exception('Ping returned error:'+str(out['status'])+' to host:'+str(host))
-    
-    def ping_cmd(self, host, count=2, pingtimeout=10, commandtimeout=120, listformat=False,
-                 verbose=True):
+
+    def ping_cmd(self, host, count=2, pingtimeout=10, commandtimeout=120, listformat=False, verbose=True):
         cmd = 'ping -c ' +str(count)+' -t '+str(pingtimeout)
         if verbose:
             cmd += ' -v '
@@ -470,12 +577,11 @@ class Machine:
         if verbose:
             #print all returned attributes from ping command dict
             for item in sorted(out):
-                self.debug(str(item)+" = "+str(out[item]) )  
+                self.debug(str(item)+" = "+str(out[item]) )
         return out
-        
-        
-    def dump_netfail_info(self,ip=None, mac=None, pass1=None, pass2=None, showpass=True,
-                          taillength=50):
+
+
+    def dump_netfail_info(self,ip=None, mac=None, pass1=None, pass2=None, showpass=True, taillength=50):
         """
         Debug method to provide potentially helpful info from current machine when debugging connectivity issues.
         """
@@ -487,7 +593,7 @@ class Machine:
         self.sys('arp -a')
         self.sys('dmesg | tail -'+str(taillength))
         self.sys('cat /var/log/messages | tail -'+str(taillength))
-        
+
     def found(self, command, regex, verbose=True):
         """ Returns a Boolean of whether the result of the command contains the regex"""
         result = self.sys(command, verbose=verbose)
@@ -497,8 +603,8 @@ class Machine:
             found = re.search(regex,line)
             if found:
                 return True
-        return False   
-    
+        return False
+
     def wget_remote_image(self,
                           url,
                           path=None,
@@ -525,12 +631,12 @@ class Machine:
         if ret['status'] != 0:
             raise Exception('wget_remote_image failed with status:'+str(ret['status']))
         self.debug('wget_remote_image succeeded')
-    
+
     def wget_status_cb(self, buf):
         ret = sshconnection.SshCbReturn(stop=False)
         try:
             buf = buf.strip()
-            val = buf.split()[0] 
+            val = buf.split()[0]
             if val != self.wget_last_status:
                 if re.match('^\d+\%',buf):
                     sys.stdout.write("\r\x1b[K"+str(buf))
@@ -543,15 +649,15 @@ class Machine:
         finally:
             return ret
 
+
+
     def get_df_info(self, path=None, verbose=True):
         """
         Return df's output in dict format for a given path.
         If path is not given will give the df info for the current working dir used in the ssh
         session this command is executed in (ie: /home/user or /root).
-        path - optional -string, used to specifiy path to use in df command. Default is PWD of
-                         ssh shelled command
-        verbose - optional -boolean, used to specify whether or debug is printed during
-                            this command.
+        path - optional -string, used to specifiy path to use in df command. Default is PWD of ssh shelled command
+        verbose - optional -boolean, used to specify whether or debug is printed during this command.
         Example:
             dirpath = '/disk1/storage'
             dfout = self.get_df_info(path=dirpath)
@@ -573,7 +679,7 @@ class Machine:
         for field in str(output[line]).split():
             fields.append(str(field).lower())
         # Move line forward and gather columns into the dict to be returned
-        x = 0 
+        x = 0
         line += 1
         # gather columns equal to the number of column headers accounting for newlines...
         while x < (len(fields)-1):
@@ -584,37 +690,36 @@ class Machine:
                 x += 1
             line += 1
         return ret
-    
+
     def upgrade(self, package=None, nogpg=False):
         self.package_manager.upgrade(package, nogpg=nogpg)
-    
+
     def add_repo(self, url, name="test-repo"):
         self.package_manager.add_repo(url,name)
-    
+
     def install(self, package, nogpg=False, timeout=300):
         self.package_manager.install(package,nogpg=nogpg)
 
     def update_repos(self):
         self.package_manager.update_repos()
-    
+
     def get_package_info(self):
         self.package_manager.get_package_info()
-    
+
     def get_installed_packages(self):
         self.package_manager.get_installed_packages()
-            
+
     def get_available(self, path, unit=1):
         """
         Return df output's available field. By default this is KB.
         path - optional -string.
-        unit - optional -integer used to divide return value.
-               Can be used to convert KB to MB, GB, TB, etc..
+        unit - optional -integer used to divide return value. Can be used to convert KB to MB, GB, TB, etc..
         """
         size = int(self.get_df_info(path=path)['available'])
         return size/unit
-    
+
     def poll_log(self, log_file="/var/log/messages"):
-        self.debug( "Starting to poll " + log_file )     
+        self.debug( "Starting to poll " + log_file )
         self.log_channel = self.ssh.connection.invoke_shell()
         self.log_channel.send("tail -f " + log_file + " \n")
         ### Begin polling channel for any new data
@@ -624,18 +729,18 @@ class Machine:
             if len(rl) > 0:
                 self.log_buffers[log_file] += self.log_channel.recv(1024)
             time.sleep(1)
-    
+
     def start_log(self, log_file="/var/log/messages"):
         """Start thread to poll logs"""
         thread = threading.Thread(target=self.poll_log, args=log_file)
         thread.daemon = True
         self.log_threads[log_file]= thread.start()
         self.log_active[log_file] = True
-        
+
     def stop_log(self, log_file="/var/log/messages"):
         """Terminate thread that is polling logs"""
         self.log_active[log_file] = False
-        
+
     def save_log(self, log_file, path="logs"):
         """Save log buffer for log_file to the path to a file"""
         if not os.path.exists(path):
@@ -643,11 +748,50 @@ class Machine:
         FILE = open( path + '/' + log_file,"w")
         FILE.writelines(self.log_buffers[log_file])
         FILE.close()
-        
+
     def save_all_logs(self, path="logs"):
         """Save log buffers to a file"""
         for log_file in self.log_buffers.keys():
             self.save_log(log_file,path)
 
-    def __repr__(self):
-        return "{0}:{1}".format(self.__class__, self.hostname)
+    def get_eucalyptus_conf(self,eof=False,verbose=False):
+        out = None
+        config = None
+        use_path = None
+        paths = [ "/" , "/opt/eucalyptus" ]
+        for path in paths:
+            try:
+                self.sys('ls '+ str(path) + '/etc/eucalyptus/eucalyptus.conf', code=0, verbose=verbose)
+                use_path = path + '/etc/eucalyptus/eucalyptus.conf'
+                break
+            except:
+                pass
+        if not use_path:
+            out = 'eucalyptus.conf not found on this system'
+            if eof:
+                raise Exception(out)
+            else:
+                self.debug(out)
+        else:
+            try:
+                config = EuConfig(filename=use_path, ssh=self.ssh, default_section_name='eucalyptus_conf')
+            except Exception, e:
+                out = 'Error while trying to create euconfig from eucalyptus_conf:' + str(e)
+                if eof:
+                    raise Exception(out)
+                else:
+                    self.debug(out)
+        return config
+
+
+    def __str__(self):
+        s  = "+++++++++++++++++++++++++++++++++++++++++++++++++++++\n"
+        s += "+" + "Hostname:" + str(self.hostname) + "\n"
+        dname = self.distro.name if self.distro else ""
+        s += "+" + "Distro: " + str(dname) +"\n"
+        s += "+" + "Distro Version: " +  str(self.distro_ver) +"\n"
+        s += "+" + "Install Type: " +  str(self.source) +"\n"
+        s += "+" + "Components: " +   str(self.components) +"\n"
+        s += "+++++++++++++++++++++++++++++++++++++++++++++++++++++"
+        return s
+

@@ -15,6 +15,7 @@ from eutester.euca.cloud_admin.services import EucaService, EucaServiceType, Euc
 from eutester.euca.cloud_admin.nodecontroller import EucaNodeService
 from eutester.euca.cloud_admin.properties import EucaProperty
 from eutester.utils.log_utils import markup
+from operator import itemgetter
 from prettytable import PrettyTable, ALL
 import copy
 import re
@@ -246,10 +247,8 @@ class EucaAdmin(AWSQueryConnection):
 
     def get_services(self, service_type=None, show_event_stacks=None, show_events=None,
                      list_user_services=None, listall=None, list_internal=None,
-                     markers = None,
-                     service_class=EucaServiceList):
+                     markers = None, partition=None, service_class=EucaServiceList):
         if markers is None:
-            #markers = [('euca:serviceStatuses', service_class)]
             markers = [('euca:serviceStatuses', service_class)]
         params = {}
         if service_type:
@@ -276,20 +275,76 @@ class EucaAdmin(AWSQueryConnection):
                                         markers=markers,
                                         verb='GET')
         if service_list:
-            return service_list[0]
-        else:
-            return None
+            service_list =  service_list[0] or []
+            if partition:
+                newlist = copy.copy(service_list)
+                for service in service_list:
+                    if service.partition != partition:
+                        newlist.remove(service)
+                return newlist
+            return service_list
+        return None
 
-    def show_services(self, services=None, service_type=None, print_table=True):
-        services = services or self.get_services(service_type=service_type)
+    def show_services(self, services=None, service_type=None, show_part=False, grid=False,
+                      partition=None, print_table=True, do_html=False):
+        html_open = "[+html_open+]"
+        html_close ="[+html_close+]"
+        def n_markup(*args, **kwargs):
+            kwargs['do_html'] = do_html
+            kwargs['html_open'] = html_open
+            kwargs['html_close'] = html_close
+            return markup(*args, **kwargs)
         h_marks = [1, 94]
-        cluster_hdr = markup('CLUSTER', h_marks)
-        pt = PrettyTable([markup('TYPE', h_marks), markup('NAME', h_marks),
-                          markup('STATE', h_marks), cluster_hdr, markup('URI', h_marks)])
+        cluster_hdr = n_markup('CLUSTER', h_marks)
+        name_hdr =  n_markup('NAME', h_marks)
+        type_hdr = n_markup('TYPE', h_marks)
+        state_hdr = n_markup('STATE', h_marks)
+        uri_hdr = n_markup('URI', h_marks)
+        part_hdr = n_markup('PARTITION', h_marks)
+        pt = PrettyTable([type_hdr, name_hdr, state_hdr, cluster_hdr, uri_hdr, part_hdr])
         pt.align = 'l'
         pt.align[cluster_hdr] = 'c'
         pt.padding_width = 0
-        service_types = self.get_service_types()
+        if grid:
+            pt.hrules = ALL
+        service_types = []
+        all_service_types = self.get_service_types()
+        if not service_type and not partition:
+            service_types = all_service_types
+        else:
+            if service_type:
+                if isinstance(service_type, EucaServiceType):
+                    service_types = [service_type]
+                elif isinstance(service_type, basestring):
+                    found_type = None
+                    for s_type in all_service_types:
+                        if s_type.name == service_type:
+                            found_type = s_type
+                            break
+                    if found_type:
+                        service_types = [found_type]
+                if not service_types:
+                    raise ValueError('show_services, unknown type provided for '
+                                     'service_type: "{0}"({1})'
+                                     .format(service_type, type(service_type)))
+            else:
+                service_types = all_service_types
+            if partition:
+                if partition in self.get_cluster_names():
+                    new_list = []
+                    for s_type in service_types:
+                        if str(s_type.partitioned).lower().strip() == "true":
+                            new_list.append(s_type)
+                    service_types = new_list
+                    if not service_types:
+                        raise ValueError('No partitioned services found using filter service_type:'
+                                         '"{0}"'.format(service_type))
+                else:
+                    # If this is filtering a partition that is not a zone/cluster than
+                    # dont show unregistered service types. As of 4/30/15 the API does not
+                    # allow for it.
+                    service_types = []
+        services = services or self.get_services(service_type=service_type, partition=partition)
         clusters = self.get_cluster_names()
         for service in services:
             markups = []
@@ -302,19 +357,35 @@ class EucaAdmin(AWSQueryConnection):
                     service_types.remove(stype)
                     break
             state = service.localstate
+            if (service.partition == 'eucalyptus' and service.type != 'eucalyptus') \
+                    or service.partition == 'bootstrap':
+                markups = [1,2]
             if state != "ENABLED":
                 markups = [1,4,31]
             else:
-                state = markup(state, [1,92])
-            pt.add_row([markup(service.type, (markups or [1])), markup(service.name, markups),
-                        markup(state, markups), markup(partition, markups),
-                        markup(service.uri, markups)])
+                state = n_markup(state, [1,92])
+            pt.add_row([n_markup(service.type, (markups or [1])), n_markup(service.name, markups),
+                        n_markup(state, markups), n_markup(partition, markups),
+                        n_markup(service.uri, markups), n_markup(service.partition, markups)])
         for stype in service_types:
-            pt.add_row([markup(stype.name, [1,2]), markup('??? NOT REGISTERED ???', [1,2]),
-                        markup('MISSING', [1,2]), '',
-                        markup('SERVICE NOT REGISTERED', [1,2])])
+            pt.add_row([n_markup(stype.name, [2,31]), n_markup('NOT REGISTERED?', [2,31]),
+                        n_markup('MISSING', [2,31]), n_markup('--', [2,31]),
+                        n_markup('SERVICE NOT REGISTERED', [2,31]), n_markup('--', [2,31])])
+        if show_part:
+            fields = pt.field_names
+        else:
+            fields = pt.field_names[:-1]
         if print_table:
-            self.debug_method("\n" + str(pt) + "\n")
+            if do_html:
+                html_string = pt.get_html_string(sortby=part_hdr, fields=fields,
+                                                 sort_key=itemgetter(3,2), reversesort=True,
+                                                 format=True, hrules=1)
+                html_string = html_string.replace(html_open, "<")
+                html_string = html_string.replace(html_close, ">")
+                self.debug_method(html_string)
+            else:
+                self.debug_method(pt.get_string(sortby=part_hdr, fields=fields,
+                                                sort_key=itemgetter(3,2), reversesort=True))
         else:
             return pt
 

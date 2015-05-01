@@ -97,7 +97,6 @@ import types
 import sys
 import termios
 import tty
-# from eutester.euca import euca_ops
 
 
 class SshCbReturn():
