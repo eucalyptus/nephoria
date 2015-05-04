@@ -152,14 +152,14 @@ class EucaHost(Machine):
         except Exception, e:
             return self.sys('cat /opt/eucalyptus' + versionpath, code=0)[0]
 
-    def get_eucalyptus_conf(self,eof=False,verbose=False):
+    def get_eucalyptus_conf(self,eof=False, basepaths=[ "/" , "/opt/eucalyptus" ], verbose=False):
         out = None
         config = None
         use_path = None
-        paths = [ "/" , "/opt/eucalyptus" ]
-        for path in paths:
+        for path in basepaths:
             try:
-                self.sys('ls '+ str(path) + '/etc/eucalyptus/eucalyptus.conf', code=0, verbose=verbose)
+                self.sys('ls '+ str(path) + '/etc/eucalyptus/eucalyptus.conf', code=0,
+                         verbose=verbose)
                 use_path = path + '/etc/eucalyptus/eucalyptus.conf'
                 break
             except:
@@ -172,7 +172,8 @@ class EucaHost(Machine):
                 self.debug(out)
         else:
             try:
-                config = EuConfig(filename=use_path, ssh=self.ssh, default_section_name='eucalyptus_conf')
+                config = EuConfig(filename=use_path, ssh=self.ssh,
+                                  default_section_name='eucalyptus_conf')
             except Exception, e:
                 out = 'Error while trying to create euconfig from eucalyptus_conf:' + str(e)
                 if eof:
@@ -185,10 +186,8 @@ class EucaHost(Machine):
     def __str__(self):
         s  = "+++++++++++++++++++++++++++++++++++++++++++++++++++++\n"
         s += "+" + "Hostname:" + str(self.hostname) + "\n"
-        dname = self.distro.name if self.distro else ""
-        s += "+" + "Distro: " + str(dname) +"\n"
+        s += "+" + "Distro: " + str(self.distro) +"\n"
         s += "+" + "Distro Version: " +  str(self.distro_ver) +"\n"
-        s += "+" + "Install Type: " +  str(self.source) +"\n"
         s += "+" + "Components: " +   str(self.components) +"\n"
         s += "+++++++++++++++++++++++++++++++++++++++++++++++++++++"
         return s

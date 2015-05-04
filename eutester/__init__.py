@@ -34,31 +34,21 @@
 
 __version__ = '0.0.10'
 
+
+from eutester.utils.testcase_utils.eulogger import Eulogger
+from eutester.utils.testcase_utils import TimeoutFunctionException, wait_for_result
+from eutester.utils import local
+import eutester.utils.log_utils
+import eutester.utils.file_utils
+import eutester.utils.net_utils
 import re
 import os
 import random
 import time
 import string
-import socket
-import sys
-import traceback
-import StringIO
-from eutester.utils.testcase_utils.eulogger import Eulogger
-import eutester.utils.testcase_utils.log_utils
-import eutester.utils.testcase_utils.file_utils
 import operator
-import fcntl
-import struct
-import subprocess
-import termios
 import types
 from functools import wraps
-
-
-class TimeoutFunctionException(Exception): 
-    """Exception to raise on a timeout""" 
-    pass
-
 
 class Eutester(object):
     def __init__(self, credpath=None):
@@ -73,7 +63,7 @@ class Eutester(object):
         self.credpath = credpath
         
         ### Eutester logs
-        self.logger = eulogger.Eulogger(identifier="EUTESTER")
+        self.logger = Eulogger(identifier="EUTESTER")
         self.debug = self.logger.log.debug
         self.critical = self.logger.log.critical
         self.info = self.logger.log.info
@@ -221,22 +211,6 @@ class Eutester(object):
     def handle_timeout(self, signum, frame): 
         raise TimeoutFunctionException()
 
-    def local(self, cmd):
-        """
-        Run a command on the localhost
-        :param cmd: str representing the command to be run
-        :return: :raise: CalledProcessError on non-zero return code
-        """
-        args = cmd.split()
-        process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=4096)
-        output, unused_err = process.communicate()
-        retcode = process.poll()
-        if retcode:
-            error = subprocess.CalledProcessError(retcode, cmd)
-            error.output = output
-            raise error
-        return output.split("\n")
-
     def found(self, command, regex):
         """ Returns a Boolean of whether the result of the command contains the regex
         """
@@ -246,46 +220,21 @@ class Eutester(object):
             if found:
                 return True
         return False
-    
+
     def ping(self, address, poll_count = 10):
         """
         Ping an IP and poll_count times (Default = 10)
         address      Hostname to ping
         poll_count   The amount of times to try to ping the hostname iwth 2 second gaps in between
         """
-        if re.search("0.0.0.0", address): 
-            self.critical("Address is all 0s and will not be able to ping it") 
-            return False
-        self.debug("Attempting to ping " + address)
-        for x in xrange(0, poll_count):
-            try:
-                self.local("ping -c 1 " + address)
-                self.debug("Was able to ping address")
-                return True
-            except subprocess.CalledProcessError as CPE:
-                self.debug('Output:' + str(CPE.output))
-                self.debug('Ping attempt {0}/{1} failed, err:{2}'
-                           .format(x, poll_count, str(CPE)))
-                self.sleep(2)
-        self.critical("Was unable to ping address")
-        return False
+        return net_utils.ping(address, poll_count = 10)
 
-    
     def scan_port_range(self, ip, start, stop, timeout=1, tcp=True):
         '''
         Attempts to connect to ports, returns list of ports which accepted a connection
         '''
-        ret = []
-        for x in xrange(start,stop+1):
-            try:
-                sys.stdout.write("\r\x1b[K"+str('scanning:'+str(x)))
-                sys.stdout.flush()
-                self.test_port_status(ip, x, timeout=timeout,tcp=tcp, verbose=False)
-                ret.append(x)
-            except socket.error, se:
-                pass
-        return ret
-    
+        return net_utils.scan_port_range(ip, start, stop, timeout=1, tcp=True)
+
     def test_port_status(self,
                          ip,
                          port,
@@ -297,50 +246,15 @@ class Eutester(object):
         '''
         Attempts to connect to tcp port at ip:port within timeout seconds
         '''
-        ret_buf = ""
-        if verbose:
-            debug = self.debug
-        else:
-            debug = lambda msg: None
-        debug('test_port_status, ip:'+str(ip)+', port:'+str(port)+', TCP:'+str(tcp))
-        if tcp:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        else:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,socket.IPPROTO_UDP)
-        s.settimeout(timeout)
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            if tcp:
-                s.connect((ip, port))
-            else:
-                #for UDP always try send
-                if send_buf is None:
-                    send_buf = "--TEST LINE--"
-            if send_buf is not None:
-                s.sendto(send_buf, (ip, port))
-            if recv_size:
-                ret_buf = s.recv(recv_size)
-        except socket.error, se:
-            debug('test_port_status failed socket error:'+str(se[0]))
-            #handle specific errors here, for now just for debug...
-            ecode=se[0]
-            if ecode == socket.errno.ECONNREFUSED:
-                debug("test_port_status: Connection Refused")
-            if ecode == socket.errno.ENETUNREACH:
-                debug("test_port_status: Network unreachable")
-            if ecode == socket.errno.ETIMEDOUT or ecode == "timed out":
-                debug("test_port_status: Connect to "+str(ip)+":" +str(port)+ " timed out")
-            raise se
-        except socket.timeout, st:
-            debug('test_port_status failed socket timeout')
-            raise st
-        finally:
-            s.settimeout(None)
-            s.close()
-        debug('test_port_status, success')
-        return ret_buf
+        return net_utils.test_port_status(ip,
+                                          port,
+                                          timeout=5,
+                                          tcp=True,
+                                          recv_size=0,
+                                          send_buf=None,
+                                          verbose=True)
 
-    def grep(self, string,list):
+    def grep(self, string, list):
         """ Remove the strings from the list that do not match the regex string"""
         expr = re.compile(string)
         return filter(expr.search,list)
@@ -379,11 +293,12 @@ class Eutester(object):
     def render_file_template(src, dest, **kwargs):
         return file_utils.render_file_template(src, dest, **kwargs)
 
-    def id_generator(self, size=6, chars=string.ascii_uppercase + string.ascii_lowercase  + string.digits ):
+    def id_generator(self, size=6, chars=None):
         """Returns a string of size with random charachters from the chars array.
              size    Size of string to return
              chars   Array of characters to use in generation of the string
         """
+        chars = chars or (string.ascii_uppercase + string.ascii_lowercase  + string.digits)
         return ''.join(random.choice(chars) for x in range(size))
 
     @staticmethod
@@ -408,8 +323,6 @@ class Eutester(object):
             line += "-"
             return "\n" + line + "\n"
 
-
-
     @classmethod
     def printinfo(cls, func):
         '''
@@ -419,7 +332,8 @@ class Eutester(object):
         def myfunction(self, arg1, arg2, kwarg1=defaultval):
             stuff = dostuff(arg1, arg2, kwarg1)
             return stuff
-        When the method is run it will produce debug output showing info as to how the method was called, example:
+        When the method is run it will produce debug output showing info as to how the
+        method was called, example:
         
         myfunction(arg1=123, arg2='abc', kwarg='words)
         
@@ -455,7 +369,8 @@ class Eutester(object):
                             not func_kwargs['_args_dict']:
                         func_kwargs['_args_dict'] = {'args':func_args,
                                                      'kwargs':func_kwargs}
-                #iterate on func_args instead of arg_names to make sure we pull out self object if present
+                # iterate on func_args instead of arg_names to make sure we pull out
+                # self object if present
                 for count, arg in enumerate(func_args):
                     if count == 0 and var_names[0] == 'self': #and if hasattr(arg, func.func_name):
                         #self was passed don't print obj addr, and save obj for later
@@ -476,7 +391,9 @@ class Eutester(object):
                         kw_string += str(func_kwargs[kw])
                     else:
                         kw_string += str(kw_defaults[kw])
-                debugstring = '\n--->('+str(os.path.basename(func.func_code.co_filename))+":"+str(func.func_code.co_firstlineno)+")Starting method: "+str(func.func_name)+'('+arg_string+kw_string+')'
+                debugstring = '\n--->(' + str(os.path.basename(func.func_code.co_filename)) + \
+                              ":" + str(func.func_code.co_firstlineno) + ")Starting method: " + \
+                              str(func.func_name) + '(' + arg_string + kw_string + ')'
                 debugmethod = None
                 if selfobj and hasattr(selfobj,'debug'):
                     debug = getattr(selfobj, 'debug')
@@ -499,42 +416,33 @@ class Eutester(object):
                         poll_wait=10,
                         oper=operator.eq,
                         allowed_exception_types=None,
+                        debug_method=None,
                         **callback_kwargs):
         """
-        Wait for the instance to enter the state
+        Repeatedly run and wait for the provided callback to return the expected result,
+        or timeout
 
-        :param instance: Boto instance object to check the state on
+        :param callback: A function/method to run and monitor the result of
         :param result: result from the call back provided that we are looking for
-        :param poll_count: Number of 10 second poll intervals to wait before failure (for legacy test script support)
-        :param timeout: Time in seconds to wait before failure
-        :param oper: operator obj used to evaluate 'result' against callback's result. ie operator.eq, operator.ne, etc..
+        :param poll_wait:Time to wait between callback executions
+        :param timeout: Time in seconds to wait before timing out and returning failure
+        :param allowed_exception_types: list of exception classes that can be caught and allow
+                                        the wait_for_result operation to continue
+        :param oper: operator obj used to evaluate 'result' against callback's
+                     result. ie operator.eq, operator.ne, etc..
+        :param debug_method: optional method to use when writing debug messages
+        :param callback_kwargs: optional kwargs to be provided to 'callback' when its executed
         :return: result upon success
-        :raise: Exception when instance does not enter proper state
+        :raise: TimeoutFunctionException when instance does not enter proper state
         """
-        allowed_exception_types = allowed_exception_types or []
-        self.debug( "Beginning poll loop for result " + str(callback.func_name) + " to go to " + str(result) )
-        start = time.time()
-        elapsed = 0
-        current_state =  callback(**callback_kwargs)
-        ### If the instance changes state or goes to the desired state before my poll count is complete
-        while( elapsed <  timeout and not oper(current_state,result) ):
-            self.debug(  str(callback.func_name) + ' returned: "' + str(current_state) + '" after '
-                       + str(elapsed/60) + " minutes " + str(elapsed%60) + " seconds.")
-            self.sleep(poll_wait)
-            try:
-                current_state = callback(**callback_kwargs)
-            except allowed_exception_types as AE:
-                self.debug('Caught allowed exception:' + str(AE))
-                pass
-            elapsed = int(time.time()- start)
-        self.debug(  str(callback.func_name) + ' returned: "' + str(current_state) + '" after '
-                    + str(elapsed/60) + " minutes " + str(elapsed%60) + " seconds.")
-        if not oper(current_state,result):
-            raise Exception( str(callback.func_name) + " did not return " + str(operator.ne.__name__) +
-                             "(" + str(result) + ") true after elapsed:"+str(elapsed))
-        return current_state
-
-
+        return wait_for_result(callback,
+                               result,
+                               timeout=60,
+                               poll_wait=10,
+                               oper=operator.eq,
+                               allowed_exception_types=None,
+                               debug_method=None,
+                               **callback_kwargs)
     @classmethod
     def get_traceback(cls):
         '''

@@ -721,6 +721,33 @@ class EucaAdmin(AWSQueryConnection):
                         machine_list[url.hostname].append('UFS')
         return machine_list
 
+    def wait_for_service(self, service_type, state = "ENABLED", states=None, attempt_both=True,
+                         timeout=600):
+        interval = 20
+        poll_count = timeout / interval
+        while (poll_count > 0):
+            matching_services = []
+            try:
+                matching_services = self.get_services(service_type)
+                for service in matching_services:
+                    if states:
+                        for state in states:
+                            if re.search(state, service.state):
+                                return service
+                    else:
+                        if re.search(state, service.state):
+                            return service
+            except Exception, e:
+                self.debug_method('Error while fetching services:"{0}"\nRetrying in "{1}" seconds'
+                                  .format(str(e), interval))
+            poll_count -= 1
+            self.tester.sleep(interval)
+        if poll_count is 0:
+            states = states or [state]
+            state_info = ",".join(str(x) for x in states)
+            msg = ("Service: '{0}' did not enter state(s):'{1}'"
+                              .format(service.name, state_info))
+            raise Exception(msg)
 
 
 

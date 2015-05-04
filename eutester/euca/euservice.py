@@ -175,21 +175,23 @@ class Eunode:
         return hypervisor
 
 
-    def get_service_state(self):
+    def get_local_nc_service_state(self):
         service_state = None
-        if self.machine:
+        if self.ssh:
             try:
-                if self.machine.distro.name is not "vmware":
+                if self.machine.distro is not "vmware":
                     self.sys("service eucalyptus-nc status", code=0)
                     service_state = 'running'
                 else:
-                    service_state = 'running'
+                    # Todo add vmware service query here...
+                    service_state = 'unknown'
             except sshconnection.CommandExitCodeException:
                 service_state = 'not_running'
-            except Exception, e:
-                self.debug('Could not get service state from node:' + str(self.hostname) + ", err:"+str(e))
+            except Exception, E:
+                self.debug('Could not get service state from node:"{0}", err:"{1}"'
+                           .format(self.hostname),str(E))
         else:
-            print "No machine object for this eunode:" + str(self.hostname)
+            self.critical("No ssh connection for node controller:'{0}'".format(self.hostname))
         self.service_state = service_state
         return service_state
 

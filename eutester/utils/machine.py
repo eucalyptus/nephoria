@@ -48,12 +48,10 @@ from repoutils import RepoUtils
 class Machine:
     def __init__(self, 
                  hostname, 
-                 distro="", 
-                 distro_ver="", 
-                 arch="", 
-                 source="", 
-                 components="", 
-                 connect=True, 
+                 distro=None,
+                 distro_ver=None,
+                 arch=None,
+                 connect=True,
                  password=None, 
                  keypath=None, 
                  username="root", 
@@ -61,7 +59,14 @@ class Machine:
                  retry=2,
                  debugmethod=None, 
                  verbose = True ):
-        
+        self._arch = None
+        self._ssh = None
+        self._sftp = None
+        self._distroname = None
+        self._distrover = None
+        self._repo_utils = None
+        self._package_manager = None
+        self._config = None
         self.hostname = hostname
         self.distro_ver = distro_ver
         self.arch = arch
@@ -81,13 +86,7 @@ class Machine:
         if self.debugmethod is None:
             logger = Eulogger(identifier= str(hostname) + ":" + str(components))
             self.debugmethod = logger.log.debug
-        self._ssh = None
-        self._sftp = None
-        self._distroname = None
-        self._distrover = None
-        self._repo_utils = None
-        self._package_manager = None
-        self._config = None
+
         self.machine_setup()
 
     def machine_setup(self):
@@ -141,6 +140,16 @@ class Machine:
         self._package_manager = new_package_manager
 
     @property
+    def arch(self):
+        if not self._arch:
+            self._get_arch_info_from_machine()
+        return self._arch
+
+    @arch.setter
+    def arch(self, value):
+        self._arch = value
+
+    @property
     def ssh(self):
         if not self._ssh:
             if self.connect:
@@ -169,22 +178,37 @@ class Machine:
     def sftp(self, newsftp):
         self._sftp = newsftp
 
+    def _get_arch_info_from_machine(self):
+        try:
+            arch = self.sys('uname -p', code=0)[0]
+            self._arch = arch
+            return arch
+        except Exception, UE:
+            self.debug('Failed to get arch info from:"{0}", err:"{1}"'
+                       .format(self.hostname, str(UE)))
+        return None
 
-    def get_distro_info_from_machine(self):
+    def _get_distro_info_from_machine(self):
         """
         Ubuntu 14.04.2
         CentOS release 6.6 (Final)
         """
         if not self.ssh:
             raise Exception('Need SSH connection to retrieve distribution info from machine')
-        out = self.sys('cat /etc/issue')
         try:
-            self.distro = re.match("^\w+", out[0]).group()
-            self.distrover = re.match("\d\S+", out[0]).group()
-        except Exception, DE:
-            self.debug('Could not parse distro info from machine, err:' + str(DE))
-            self.distro = self._distroname or 'UNKNOWN'
-            self.distrover = 'UNKNOWN'
+            out = self.sys('cat /etc/issue', code=0)
+        except CommandExitCodeException,CE:
+            self.debug('Failed to fetch /etc/issue from machine:"{0}", err:"{1}"'
+                       .format(self.hostname, str(CE)))
+            out = None
+        if out:
+            try:
+                self.distro = re.match("^\w+", out[0]).group()
+                self.distrover = re.match("\d\S+", out[0]).group()
+            except Exception, DE:
+                self.debug('Could not parse distro info from machine, err:' + str(DE))
+        self.distro = self._distroname or 'UNKNOWN'
+        self.distrover = self._distrover or 'UNKNOWN'
         return (self._distroname, self._distrover)
 
     def _get_package_manager(self):
