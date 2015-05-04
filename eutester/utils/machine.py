@@ -32,53 +32,18 @@
 import select
 import threading
 import time
-import eutester.utils.testcase_utils.eulogger
-from eutester import Eutester
+from eutester.utils.testcase_utils.eulogger import Eulogger
+from eutester.utils.testcase_utils.log_utils import get_traceback
+#from eutester import Eutester
 from eutester.utils.file_utils.euconfig import EuConfig
-import eutester.utils.net_utils.sshconnection
+from eutester.utils.file_utils import render_file_template
+from eutester.utils.net_utils.sshconnection import SshConnection, SshCbReturn, \
+    CommandExitCodeException
 import re
 import os
 import sys
 import tempfile
 from repoutils import RepoUtils
-
-class DistroName:
-    ubuntu = "ubuntu"
-    rhel = "rhel"
-    centos = "centos"
-    fedora = "fedora"
-    debian = "debian"
-    vmware = "vmware"
-
-class DistroRelease:
-    def __init__(self, distro_name, distro_number,  distro_release = "", package_manager= None):
-        self.name = distro_name
-        self.number = distro_number
-        self.release = distro_release
-        self.package_manager = package_manager
-        
-class Distro:
-    ubuntu_lucid = DistroRelease(DistroName.ubuntu,"10.04",  "lucid",  package_manager="apt")
-    ubuntu_precise = DistroRelease(DistroName.ubuntu,  "12.04", "precise",  package_manager="apt")
-    debian_squeeze = DistroRelease(DistroName.debian, "6", "squeeze",  package_manager="apt")
-    debian_wheezy = DistroRelease(DistroName.debian, "7", "wheezy",  package_manager="apt")
-    rhel_6 = DistroRelease(DistroName.rhel, "6",  package_manager="yum")
-    centos_6 = DistroRelease(DistroName.centos, "6",  package_manager="yum")
-    rhel_5 = DistroRelease(DistroName.rhel, "5",  package_manager="yum")
-    centos_5 = DistroRelease(DistroName.centos, "5",  package_manager="yum")
-    fedora_18 = DistroRelease(DistroName.fedora, "18",  package_manager="yum")
-    vmware_5 = DistroRelease(DistroName.vmware, "5")
-    vmware_4 = DistroRelease(DistroName.vmware, "4")
-
-    @classmethod
-    def get_distros(Distro):
-        distros = []
-        for distro in Distro.__dict__:
-            if isinstance(Distro.__dict__[distro], DistroRelease):
-                distros.append(Distro.__dict__[distro])
-        return distros
-        
-    
 
 class Machine:
     def __init__(self, 
@@ -100,8 +65,6 @@ class Machine:
         self.hostname = hostname
         self.distro_ver = distro_ver
         self.arch = arch
-        self.source = source
-        self.components = components
         self.connect = connect
         self.password = password
         self.keypath = keypath
@@ -116,34 +79,51 @@ class Machine:
         self.log_active = {}
         self.wget_last_status = 0
         if self.debugmethod is None:
-            logger = eulogger.Eulogger(identifier= str(hostname) + ":" + str(components))
+            logger = Eulogger(identifier= str(hostname) + ":" + str(components))
             self.debugmethod = logger.log.debug
         self._ssh = None
         self._sftp = None
-        self._distro = None
+        self._distroname = None
+        self._distrover = None
         self._repo_utils = None
         self._package_manager = None
         self._config = None
+        self.machine_setup()
+
+    def machine_setup(self):
+        # For custom implementations
+        pass
 
     @property
     def distro(self):
-        # If we were given a conf file, and have an ssh/sftp session,
-        # attempt to populate eucalyptus_conf into
-        # a euconfig object for this machine...
-        if not self._distro:
-            self._distro = self._get_distro(distro_name=self._distroname,
-                                            distro_release=self.distro_ver)
-        return self._distro
+        # Linux Distribution information
+
+        if not self._distroname:
+            self.get_distro_info_from_machine()
+        return self._distroname
 
     @distro.setter
     def distro(self, new_distro):
-        self._distro = new_distro
+        # Linux Distribution information
+        self._distroname = new_distro
+
+    @property
+    def distrover(self):
+        # Linux Distribution information
+        if not self._distrover:
+            self.get_distro_info_from_machine()
+        return self._distrover
+
+    @distrover.setter
+    def distrover(self, new_distro):
+        # Linux Distribution information
+        self._distrover = new_distro
 
     @property
     def repo_utils(self):
         if not self._repo_utils:
             if self.distro and self.distro.package_manager is not None:
-                self._repo_utils = RepoUtils(self, self.distro.package_manager)
+                self._repo_utils = RepoUtils(self, self.package_manager)
         return self._repo_utils
 
     @repo_utils.setter
@@ -153,8 +133,7 @@ class Machine:
     @property
     def package_manager(self):
         if not self._package_manager:
-            if self.distro and self.distro.package_manager is not None:
-                self._package_manager = self.repo_utils.package_manager
+            self._get_package_manager()
         return self._package_manager
 
     @package_manager.setter
@@ -162,20 +141,10 @@ class Machine:
         self._package_manager = new_package_manager
 
     @property
-    def config(self):
-        if not self._config:
-            self._config = self.get_eucalyptus_conf()
-        return self._config
-
-    @config.setter
-    def config(self, new_config):
-        self._config = new_config
-
-    @property
     def ssh(self):
         if not self._ssh:
             if self.connect:
-                self._ssh = sshconnection.SshConnection(
+                self._ssh = SshConnection(
                     self.hostname,
                     keypath=self.keypath,
                     password=self.password,
@@ -200,42 +169,49 @@ class Machine:
     def sftp(self, newsftp):
         self._sftp = newsftp
 
-    @property
-    def eucalyptus_conf(self):
-        if hasattr(self.config, 'eucalyptus_conf'):
-            return self.config.eucalyptus_conf
-        return None
 
     def get_distro_info_from_machine(self):
+        """
+        Ubuntu 14.04.2
+        CentOS release 6.6 (Final)
+        """
         if not self.ssh:
             raise Exception('Need SSH connection to retrieve distribution info from machine')
         out = self.sys('cat /etc/issue')
+        try:
+            self.distro = re.match("^\w+", out[0]).group()
+            self.distrover = re.match("\d\S+", out[0]).group()
+        except Exception, DE:
+            self.debug('Could not parse distro info from machine, err:' + str(DE))
+            self.distro = self._distroname or 'UNKNOWN'
+            self.distrover = 'UNKNOWN'
+        return (self._distroname, self._distrover)
 
-
-
-    def _get_distro(self, distro_name=None, distro_release=None):
-        if not distro_name or not distro_release:
-            self.debug('distro_name and/or distro_release were not provided. Attempt to retrieve from ssh...')
-            dist_info = self.get_distro_info_from_machine()
-            distro_name  = dist_info['distro']
-            distro_releae = dist_info['release']
-        return self._convert_to_distro(distro_name=distro_name, distro_release=distro_release)
-
-    def _convert_to_distro(self, distro_name, distro_release):
-        distro_name = distro_name.lower()
-        distro_release = distro_release.lower()
-        for distro in Distro.get_distros():
-            if re.search( distro.name, distro_name,re.IGNORECASE) and \
-                    (re.search( distro.release, distro_release,re.IGNORECASE) or
-                         re.search( distro.number, distro_release,re.IGNORECASE)) :
-                return distro
-        raise Exception("Unable to find distro " + str(distro_name) + " and version "
-                        + str(distro_release) + " for hostname " + str(self.hostname))
+    def _get_package_manager(self):
+        if self.distro:
+            if (re.search(self.distro, 'ubuntu',  re.IGNORECASE) or
+                            re.search(self.distro, 'debian', re.IGNORECASE)):
+                self.package_manager = 'apt'
+                return self.package_manager
+            elif (re.search(self.distro, 'centos',  re.IGNORECASE) or
+                            re.search(self.distro, 'rhel', re.IGNORECASE)):
+                self.package_manager = 'yum'
+                return self.package_manager
+        try:
+            self.sys('which yum', code=0)
+            self.package_manager = 'yum'
+            return self.package_manager
+        except CommandExitCodeException:
+            self.sys('which apt', code=0)
+            self.package_manager = 'apt'
+            return self.package_manager
+        raise RuntimeError('Unable to determine package manager for machine:{0}'
+                           .format(self.hostname))
 
     def put_templated_file(self, local_src, remote_dest, **kwargs):
         tmp = tempfile.mktemp()
         try:
-            Eutester.render_file_template(local_src, tmp, **kwargs)
+            render_file_template(local_src, tmp, **kwargs)
             self.ssh.sftp_put(tmp, remote_dest)
         finally:
             os.remove(tmp)
@@ -297,7 +273,7 @@ class Machine:
         if (self.ssh is not None):
             return self.ssh.cmd(cmd, verbose=verbose, timeout=timeout, listformat=listformat, cb=cb, cbargs=cbargs)
         else:
-            raise Exception("Euinstance ssh connection is None")
+            raise RuntimeError('Can not issue command:"{0}". Ssh connection is None'.format(cmd))
         
     def sys_until_found(self, cmd, regex, verbose=True, timeout=120, listformat=True):
         '''
@@ -314,16 +290,16 @@ class Machine:
         timeout - optional - command timeout in seconds 
         listformat -optional - specifies returned output in list of lines, or single string buffer 
         '''
-        return self.cmd(cmd, verbose=verbose,timeout=timeout,listformat=listformat,cb=self.str_found_cb, cbargs=[regex, verbose])
-        
-        
+        return self.cmd(cmd, verbose=verbose,timeout=timeout,listformat=listformat,
+                        cb=self.str_found_cb, cbargs=[regex, verbose])
+
     def str_found_cb(self,buf,regex,verbose,search=True):
         '''
         Return sshcbreturn type setting stop to True if given regex matches against given string buf
         '''
         if verbose:
             self.debug(str(buf))
-        return sshconnection.SshCbReturn( stop=self.str_found(buf, regex=regex, search=search))
+        return SshCbReturn( stop=self.str_found(buf, regex=regex, search=search))
         
         
     def str_found(self, buf, regex, search=True):
@@ -351,7 +327,7 @@ class Machine:
         try:
             self.sys("service " + str(service) + " status", code=0)
             return True
-        except sshconnection.CommandExitCodeException:
+        except CommandExitCodeException:
             return False
         except Exception, e:
             self.debug('Could not get "'+ str(service) + '" service state from machine:'
@@ -393,8 +369,9 @@ class Machine:
             minutes = int(split_time[1] or 0)
             seconds = int(split_time[2] or 0)
             elapsed = seconds + (minutes*seconds_min) + (hours*seconds_hour) + (days*seconds_day)
-        except:
-            print Eutester.get_traceback()
+        except Exception, ES:
+            self.debug('{0}\n"get_elapsed_seconds_since_pid_started" error: "{1}"'
+                       .format(get_traceback(), str(ES)))
         return int(elapsed)
 
     def is_file_present(self, filepath):
@@ -527,7 +504,7 @@ class Machine:
         self.debug('wget_remote_image succeeded')
     
     def wget_status_cb(self, buf):
-        ret = sshconnection.SshCbReturn(stop=False)
+        ret = SshCbReturn(stop=False)
         try:
             buf = buf.strip()
             val = buf.split()[0] 

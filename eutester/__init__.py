@@ -43,13 +43,15 @@ import socket
 import sys
 import traceback
 import StringIO
-from eutester.utils.testcase_utils import eulogger
-import types
+from eutester.utils.testcase_utils.eulogger import Eulogger
+import eutester.utils.testcase_utils.log_utils
+import eutester.utils.testcase_utils.file_utils
 import operator
 import fcntl
 import struct
 import subprocess
 import termios
+import types
 from functools import wraps
 
 
@@ -375,12 +377,8 @@ class Eutester(object):
 
     @staticmethod
     def render_file_template(src, dest, **kwargs):
-        import jinja2
-        with open(src) as sfile:
-            templ = jinja2.Template(sfile.read())
-            with open(dest, 'w') as dfile:
-                dfile.write(templ.render(kwargs))
-    
+        return file_utils.render_file_template(src, dest, **kwargs)
+
     def id_generator(self, size=6, chars=string.ascii_uppercase + string.ascii_lowercase  + string.digits ):
         """Returns a string of size with random charachters from the chars array.
              size    Size of string to return
@@ -394,20 +392,7 @@ class Eutester(object):
         Attempts to get terminal size. Currently only Linux.
         returns (height, width)
         '''
-        h=30
-        w=80
-        try:
-            # todo Add Windows support
-            t_h,t_w = struct.unpack('hh', fcntl.ioctl(sys.stdout,
-                                                   termios.TIOCGWINSZ,
-                                                   '1234'))
-            #Temp hack. Some env will return <= 1
-            if t_h > 1 and t_w > 1:
-                h = t_h
-                w = t_w
-        except:
-            pass
-        return (h,w)
+        return log_utils.get_terminal_size()
 
     @staticmethod
     def get_line(length=None):
@@ -555,17 +540,10 @@ class Eutester(object):
         '''
         Returns a string buffer with traceback, to be used for debug/info purposes. 
         '''
-        try:
-            out = StringIO.StringIO()
-            traceback.print_exception(*sys.exc_info(),file=out)
-            out.seek(0)
-            buf = out.read()
-        except Exception, e:
-                buf = "Could not get traceback"+str(e)
-        return str(buf) 
+        return log_utils.get_traceback()
     
     def __str__(self):
-        return 'got self'
+        return '{0}'.format(self.__class__)
 
 
 

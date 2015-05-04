@@ -64,8 +64,7 @@ from eutester.aws.ec2.windows_instance import WinInstance
 from eutester.aws.ec2.euvolume import EuVolume
 from eutester.aws.ec2.eusnapshot import EuSnapshot
 from eutester.aws.ec2.euzone import EuZone
-# TODO figure out if this should be in util or not
-from eutester.testcases.images.conversiontask import ConversionTask
+from eutester.aws.ec2.conversiontask import ConversionTask
 
 EC2RegionData = {
     'us-east-1': 'ec2.us-east-1.amazonaws.com',

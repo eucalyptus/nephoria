@@ -3,6 +3,9 @@ __author__ = 'clarkmatthew'
 import os
 import re
 import sys
+import traceback
+import StringIO
+
 # Force ansi escape sequences (markup) in output.
 # This can also be set as an env var
 _EUTESTER_FORCE_ANSI_ESCAPE = False
@@ -150,6 +153,42 @@ def _ascii_markups_to_html_tags(markups, open_bracket="<", close_bracket=">"):
                                     .format(open_bracket, color, close_bracket), start_tag)
         end_tag = "{0}{1}".format(end_tag, "{0}/font{1}".format(open_bracket, close_bracket))
     return (start_tag, end_tag)
+
+def get_traceback():
+        '''
+        Returns a string buffer with traceback, to be used for debug/info purposes.
+        '''
+        try:
+            out = StringIO.StringIO()
+            traceback.print_exception(*sys.exc_info(),file=out)
+            out.seek(0)
+            buf = out.read()
+        except Exception, e:
+                buf = "Could not get traceback"+str(e)
+        return str(buf)
+
+@staticmethod
+def get_terminal_size():
+    '''
+    Attempts to get terminal size. Currently only Linux.
+    returns (height, width)
+    '''
+    h=30
+    w=80
+    try:
+        # todo Add Windows support
+        t_h,t_w = struct.unpack('hh', fcntl.ioctl(sys.stdout,
+                                               termios.TIOCGWINSZ,
+                                               '1234'))
+        #Temp hack. Some env will return <= 1
+        if t_h > 1 and t_w > 1:
+            h = t_h
+            w = t_w
+    except:
+        pass
+    return (h,w)
+
+
 
 
 

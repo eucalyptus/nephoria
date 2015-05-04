@@ -6,6 +6,7 @@ from boto.vpc import VPCConnection
 from boto.roboto.awsqueryservice import AWSQueryService
 from boto.roboto.awsqueryrequest import AWSQueryRequest
 from boto.roboto.param import Param
+from boto.resultset import ResultSet
 from boto.connection import AWSQueryConnection
 from boto.ec2.regioninfo import RegionInfo
 from boto.exception import BotoServerError
@@ -119,8 +120,15 @@ class EucaAdmin(AWSQueryConnection):
             new_markers.append((marker, service))
         return self.get_list(action, params, new_markers, verb=verb)
 
-    def get_service_types(self):
-        return self._get_list_request('DescribeAvailableServiceTypes', EucaServiceType)
+    def get_service_types(self, name=None):
+        service_types = self._get_list_request('DescribeAvailableServiceTypes', EucaServiceType)
+        if name:
+            for service_type in service_types:
+                if service_type.name == name:
+                    new_list = ResultSet()
+                    new_list.append(service_type)
+                    return new_list
+        return service_types
 
     def show_service_types_verbose(self, service_types=None, printmethod=None, print_table=True):
         service_types = service_types or self.get_service_types()
