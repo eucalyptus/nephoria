@@ -8,6 +8,7 @@ from boto.roboto.awsqueryrequest import AWSQueryRequest
 from boto.roboto.param import Param
 from boto.connection import AWSQueryConnection
 from boto.ec2.regioninfo import RegionInfo
+from boto.exception import BotoServerError
 from eutester.euca.cloud_admin.services import EucaService, EucaServiceType, EucaServiceList,\
     EucaCloudControllerService, EucaObjectStorageGatewayService, EucaClusterControllerService,\
     EucaSeviceGroupMember, EucaStorageControllerService, EucaWalrusBackendService,\
@@ -17,6 +18,7 @@ from eutester.euca.cloud_admin.properties import EucaProperty
 from eutester.utils.log_utils import markup
 from operator import itemgetter
 from prettytable import PrettyTable, ALL
+from urlparse import urlparse
 import copy
 import re
 
@@ -282,8 +284,8 @@ class EucaAdmin(AWSQueryConnection):
                     if service.partition != partition:
                         newlist.remove(service)
                 return newlist
-            return service_list
-        return None
+        return service_list
+
 
     def show_services(self, services=None, service_type=None, show_part=False, grid=False,
                       partition=None, print_table=True, do_html=False):
@@ -667,3 +669,51 @@ class EucaAdmin(AWSQueryConnection):
             self.debug_method('\n' + pt.get_string(sortby=cluster_hdr[0]) + '\n')
         else:
             return pt
+
+    def get_all_components(self):
+        components = {}
+        components['WS'] = self.get_walrus_backends()
+        components['SC'] = self.get_storage_controllers()
+        components['OSG'] = self.get_object_storage_gateways()
+        components['CLC'] = self.get_cloud_controller_services()
+        components['CC'] = self.get_cluster_controller_services()
+        components['NC'] = self.get_nodes()
+        return components
+
+    def get_machine_inventory(self):
+        components = self.get_all_components()
+        clusters = self.get_cluster_names()
+        try:
+            components['vmw_list'] = self.get_vmware_broker_services()
+        except BotoServerError, VMWE:
+            self.debug_method('Failed to fetch vmware brokers, vmware may not be supported on '
+                              'this cloud. Err:{0}'.format(VMWE.message))
+        machine_list = {}
+        for component_type, comp_list in components.iteritems():
+            for component in comp_list:
+                type_string = component_type
+                self.debug_method('Inspecting component type:"{0}"'.format(component_type))
+                hostname = getattr(component, 'hostname', component.name)
+                if component.partition in clusters:
+                    type_string = "{0}({1})".format(component_type, component.partition)
+                if hostname not in machine_list:
+                    machine_list[hostname]=[type_string]
+                else:
+                    machine_list[hostname].append(type_string)
+        # Add UFS services by parsing the uri of the service,
+        # since these services dont present a host attr in the response. This may be incorrect
+        # if/when a FQDN is used, or an LB, etc.?
+        for ufs in self.get_services(service_type='user-api'):
+            if getattr(ufs, 'uri', None):
+                url = urlparse(ufs.uri)
+                if url.hostname:
+                    if url.hostname not in machine_list:
+                        machine_list[url.hostname]=['UFS']
+                    else:
+                        machine_list[url.hostname].append('UFS')
+        return machine_list
+
+
+
+
+
