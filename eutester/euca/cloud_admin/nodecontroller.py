@@ -175,7 +175,6 @@ class NodeController(EucaHost):
                 break
         return mpath_dev
 
-
     def get_instance_block_disk_dev_on_node(self, instance, block_dev):
         block_dev = os.path.basename(block_dev)
         if not isinstance(instance,types.StringTypes):
@@ -213,7 +212,6 @@ class NodeController(EucaHost):
         dev_dom = self.get_instance_device_xml_dom(instance_id=instance_id)
         console_dom = dev_dom.getElementsByTagName('console')[0]
         return console_dom.getElementsByTagName('source')[0].attributes.get('path').nodeValue
-
 
     def get_instance_device_xml_dom(self, instance_id):
         if not isinstance(instance_id,types.StringTypes):

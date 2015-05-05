@@ -5,6 +5,9 @@ import re
 import sys
 import traceback
 import StringIO
+import struct
+import fcntl
+import termios
 
 # Force ansi escape sequences (markup) in output.
 # This can also be set as an env var

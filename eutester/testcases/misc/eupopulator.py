@@ -137,7 +137,7 @@ class EuPopulator(object):
     def addresses(self):
         print "Allocating addreses"
         addr_count =  self.config.getint("addresses", "count")
-        for i in xrange(vol_count):
+        for i in xrange(addr_count):
             self.tester.allocate_address()
         
     def snapshots(self):
