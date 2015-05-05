@@ -35,9 +35,9 @@
 __version__ = '0.0.10'
 
 
-from eutester.utils.testcase_utils.eulogger import Eulogger
+from eutester.utils.log_utils.eulogger import Eulogger
 from eutester.utils.testcase_utils import TimeoutFunctionException, wait_for_result
-from eutester.utils import local
+from eutester.utils.system_utils import local
 import eutester.utils.log_utils
 import eutester.utils.file_utils
 import eutester.utils.net_utils
