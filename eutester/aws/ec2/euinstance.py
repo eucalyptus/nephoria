@@ -53,6 +53,7 @@ from eutester.aws.ec2.euvolume import EuVolume
 from eutester.taggedresource import TaggedResource
 from eutester.utils.net_utils.sshconnection import SshConnection, CommandExitCodeException, \
     CommandTimeoutException
+from eutester.utils.system_utils.machine import Machine
 from random import randint
 from prettytable import PrettyTable, ALL
 from datetime import datetime
@@ -65,7 +66,7 @@ import types
 import operator
 
 
-class EuInstance(Instance, TaggedResource):
+class EuInstance(Instance, TaggedResource, Machine):
     @classmethod
     def make_euinstance_from_instance(cls,
                                       instance,
@@ -724,8 +725,10 @@ class EuInstance(Instance, TaggedResource):
                                     enable_debug],
                             get_pty=get_pty)
 
+    '''
     def start_interactive_ssh(self, timeout=180):
         return self.ssh.start_interactive(timeout=timeout)
+    '''
 
     def cmd(self, cmd, verbose=None, enable_debug=False,
             try_non_root_exec=None, timeout=120, listformat=False,
@@ -805,7 +808,7 @@ class EuInstance(Instance, TaggedResource):
         for line in out:
             retlist.append(line.strip())
         return retlist
-
+    """
     def assertFilePresent(self, filepath):
         '''
         Method to check for the presence of a file at 'filepath' on the instance
@@ -817,7 +820,7 @@ class EuInstance(Instance, TaggedResource):
         if out != 0:
             raise Exception("File:" + filepath + " not found on instance:" + self.id)
         self.debug('File ' + filepath + ' is present on ' + self.id)
-
+    """
     def attach_volume(self, volume, dev=None, timeout=180, overwrite=False):
         '''
         Method used to attach a volume to an instance and track it's use by that instance
@@ -1236,6 +1239,7 @@ class EuInstance(Instance, TaggedResource):
         '''
         return self.dd_monitor(ddcmd=ddcmd, poll_interval=poll_interval, tmpfile=tmpfile)
 
+    """
     @Eutester.printinfo
     def dd_monitor(self,
                    ddif=None,
@@ -1484,6 +1488,7 @@ class EuInstance(Instance, TaggedResource):
         self.sys('rm -f ' + str(tmpfile))
         self.sys('rm -f ' + str(tmppidfile))
         return ret
+        """
 
     def vol_write_random_data_get_md5(self, euvolume, srcdev=None, length=32, timepergig=90,
                                       overwrite=False):
@@ -2025,7 +2030,7 @@ class EuInstance(Instance, TaggedResource):
                         msg = msg + "\nVolume:" + vol.id + " Local Dev:" + vol.guestdev
                     raise Exception("Missing volumes post reboot:" + str(msg) + "\n")
         self.debug(self.id + " start_instance_and_verify Success")
-
+    """
     def get_users(self):
         '''
         Attempts to return a list of normal linux users local to this instance.
@@ -2084,7 +2089,7 @@ class EuInstance(Instance, TaggedResource):
             return groups
         except Exception, e:
             self.debug("No group found for user:" + str(username) + ", err:" + str(e))
-
+    """
     def mount_attached_volume(self,
                               volume,
                               mkfs_cmd="mkfs.ext3",

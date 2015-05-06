@@ -6,8 +6,10 @@ import sys
 import traceback
 import StringIO
 import struct
+import types
 import fcntl
 import termios
+from functools import wraps
 
 # Force ansi escape sequences (markup) in output.
 # This can also be set as an env var
@@ -190,6 +192,92 @@ def get_terminal_size():
     except:
         pass
     return (h,w)
+
+def printinfo(func):
+    '''
+    Decorator to print method positional and keyword args when decorated method is called
+    usage:
+    @printinfo
+    def myfunction(self, arg1, arg2, kwarg1=defaultval):
+        stuff = dostuff(arg1, arg2, kwarg1)
+        return stuff
+    When the method is run it will produce debug output showing info as to how the
+    method was called, example:
+
+    myfunction(arg1=123, arg2='abc', kwarg='words)
+
+    2013-02-07 14:46:58,928] [DEBUG]:(mydir/myfile.py:1234) - Starting method: myfunction()
+    2013-02-07 14:46:58,928] [DEBUG]:---> myfunction(self, arg1=123, arg2=abc, kwarg='words')
+    '''
+
+    @wraps(func)
+    def methdecor(*func_args, **func_kwargs):
+        _args_dict = {} # If method has this kwarg populate with args here
+        try:
+            defaults = func.func_defaults
+            kw_count = len(defaults or [])
+            selfobj = None
+            arg_count = func.func_code.co_argcount - kw_count
+            var_names = func.func_code.co_varnames[:func.func_code.co_argcount]
+            arg_names = var_names[:arg_count]
+            kw_names =  var_names[arg_count:func.func_code.co_argcount]
+            kw_defaults = {}
+            for kw_name in kw_names:
+                kw_defaults[kw_name] = defaults[kw_names.index(kw_name)]
+            arg_string=''
+            # If the underlying method is using a special kwarg named
+            # '_args_dict' then provide all the args & kwargs it was
+            # called with in that dict for inspection with that method
+            if 'self' in var_names and len(func_args) <= 1:
+                func_args_empty = True
+            else:
+                func_args_empty = False
+            if (not func_args_empty or func_kwargs) and \
+                            '_args_dict' in kw_names:
+                if not '_args_dict' in func_kwargs or \
+                        not func_kwargs['_args_dict']:
+                    func_kwargs['_args_dict'] = {'args':func_args,
+                                                 'kwargs':func_kwargs}
+            # iterate on func_args instead of arg_names to make sure we pull out
+            # self object if present
+            for count, arg in enumerate(func_args):
+                if count == 0 and var_names[0] == 'self': #and if hasattr(arg, func.func_name):
+                    #self was passed don't print obj addr, and save obj for later
+                    arg_string += 'self'
+                    selfobj = arg
+                elif count >= arg_count:
+                    #Handle case where kw args are passed w/o key word as a positional arg add
+                    #Add it to the kw_defaults so it gets printed later
+                    kw_defaults[var_names[count]] = arg
+                else:
+                    #This is a positional arg so grab name from arg_names list
+                    arg_string += ', '
+                    arg_string += str(arg_names[count])+'='+str(arg)
+            kw_string = ""
+            for kw in kw_names:
+                kw_string += ', '+str(kw)+'='
+                if kw in func_kwargs:
+                    kw_string += str(func_kwargs[kw])
+                else:
+                    kw_string += str(kw_defaults[kw])
+            debugstring = '\n--->(' + str(os.path.basename(func.func_code.co_filename)) + \
+                          ":" + str(func.func_code.co_firstlineno) + ")Starting method: " + \
+                          str(func.func_name) + '(' + arg_string + kw_string + ')'
+            debugmethod = None
+            if selfobj and hasattr(selfobj,'debug'):
+                debug = getattr(selfobj, 'debug')
+                if isinstance(debug, types.MethodType):
+                    debugmethod = debug
+            if debugmethod:
+                debugmethod(debugstring)
+            else:
+                print debugstring
+        except Exception, e:
+            print get_traceback()
+            print 'printinfo method decorator error:'+str(e)
+        return func(*func_args, **func_kwargs)
+    return methdecor
+
 
 
 
