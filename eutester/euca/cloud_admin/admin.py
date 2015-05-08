@@ -3,16 +3,13 @@ __author__ = 'clarkmatthew'
 
 import boto
 from boto.vpc import VPCConnection
-from boto.roboto.awsqueryservice import AWSQueryService
-from boto.roboto.awsqueryrequest import AWSQueryRequest
-from boto.roboto.param import Param
 from boto.resultset import ResultSet
 from boto.connection import AWSQueryConnection
 from boto.ec2.regioninfo import RegionInfo
 from boto.exception import BotoServerError
 from eutester.euca.cloud_admin.services import EucaService, EucaServiceType, EucaServiceList,\
     EucaCloudControllerService, EucaObjectStorageGatewayService, EucaClusterControllerService,\
-    EucaSeviceGroupMember, EucaStorageControllerService, EucaWalrusBackendService,\
+    EucaStorageControllerService, EucaWalrusBackendService,\
     EucaVMwareBrokerService, EucaArbitratorService
 from eutester.euca.cloud_admin.nodecontroller import EucaNodeService
 from eutester.euca.cloud_admin.properties import EucaProperty
@@ -498,7 +495,6 @@ class EucaAdmin(AWSQueryConnection):
         else:
             return pt
 
-
     def get_properties(self, *prop_names):
         '''
         Gets eucalyptus cloud configuration properties
@@ -518,6 +514,33 @@ class EucaAdmin(AWSQueryConnection):
             x += 1
             params['Property.{0}'.format(x)] = prop
         return self._get_list_request('DescribeProperties', EucaProperty, params=params)
+
+    def modify_property(self, prop, value, verbose=True):
+        ret_prop = None
+        params = {}
+        action = 'ModifyPropertyValue'
+        value = value or ""
+        if not isinstance(prop, EucaProperty):
+            props = self.get_properties(prop) or []
+            if props:
+                prop = props[0]
+            else:
+                raise ValueError('modify_property err. Property: "{0}" was not found on system?'
+                                 .format(prop))
+        params['Name'] = prop.name
+        params['Value'] = str(value)
+        markers = ['euca:ModifyPropertyValueResponseType', 'ModifyPropertyValueResponseType']
+        ret_prop_list = self._get_list_request(action=action, service=EucaProperty,
+                                               verb='POST', params=params, markers=markers)
+        if ret_prop_list:
+            ret_prop = ret_prop_list[0]
+            if verbose:
+                self.show_properties(properties=[ret_prop], description=False)
+        else:
+            if verbose:
+                self.debug_method('Could not parse EucaProperty from ModifyPropertyValue '
+                                  'response:"{0}"'.format(prop))
+        return ret_prop
 
     def show_properties(self, properties=None, description=True, grid=ALL,
                         print_table=True, *prop_names):

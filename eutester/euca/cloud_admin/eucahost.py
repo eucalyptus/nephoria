@@ -29,9 +29,11 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 
-from eutester.utils.file_utils.euconfig EuConfig
+import os
+import re
+from argparse import Namespace
 from eutester.utils.net_utils.sshconnection import CommandExitCodeException
-from eutester.utils.machine import Machine
+from eutester.utils.system_utils.machine import Machine
 
 
 class EucaHost(Machine):
@@ -46,20 +48,14 @@ class EucaHost(Machine):
         self.components = {}
 
     @property
-    def config(self):
+    def eucalyptus_conf(self):
         if not self._config:
             self._config = self.get_eucalyptus_conf()
         return self._config
 
-    @config.setter
-    def config(self, new_config):
+    @eucalyptus_conf.setter
+    def eucalyptus_conf(self, new_config):
         self._config = new_config
-
-    @property
-    def eucalyptus_conf(self):
-        if hasattr(self.config, 'eucalyptus_conf'):
-            return self.config.eucalyptus_conf
-        return None
 
     def get_eucalyptus_service_pid(self, eucalyptus_service):
         """
@@ -76,7 +72,7 @@ class EucaHost(Machine):
             try:
                 pid = int(self.sys('cat ' + path + str(eucalyptus_service), code=0)[0].strip())
                 break
-            except:
+            except (CommandExitCodeException, IndexError):
                 pass
         if pid is None:
             self.debug("Pid not found at paths: ".join(paths))
@@ -164,28 +160,52 @@ class EucaHost(Machine):
         except CommandExitCodeException:
             return self.sys('cat /opt/eucalyptus' + versionpath, code=0)[0]
 
-    def get_eucalyptus_conf(self, eof=False, basepaths=["/", "/opt/eucalyptus"], verbose=False):
-        out = None
+    def get_eucalyptus_conf(self, eof=False, basepaths=None, verbose=False):
+        if basepaths is None:
+            basepaths = ["/", "/opt/eucalyptus"]
+        elif not isinstance(basepaths, list):
+            basepaths = [basepaths]
         config = None
-        use_path = None
+        out = None
+        message = ""
         for path in basepaths:
             try:
-                self.sys('ls ' + str(path) + '/etc/eucalyptus/eucalyptus.conf', code=0,
-                         verbose=verbose)
-                use_path = path + '/etc/eucalyptus/eucalyptus.conf'
+                eucalyptus_conf_path = os.path.join(str(path), '/etc/eucalyptus/eucalyptus.conf')
+                out = self.sys('cat {0}'.format(eucalyptus_conf_path), code=0,
+                               verbose=verbose)
+                if verbose:
+                    self.debug('Found eucalyptus.conf at path: "{0}"'.format(eucalyptus_conf_path))
+                self.eucalyptus_conf_path = eucalyptus_conf_path
                 break
-            except:
+            except CommandExitCodeException as CE:
+                # File was not found, not readable, etc at this path
+                message += str(CE) + "\n"
                 pass
-        if not use_path:
-            out = 'eucalyptus.conf not found on this system'
+        if not out:
+            paths_string = ", ".join(str(x) for x in basepaths)
+            err = 'eucalyptus.conf not found on this system at paths:"{0}"\n{1}'\
+                .format(paths_string, message)
             if eof:
-                raise RuntimeError(out)
+                raise RuntimeError(err)
             else:
-                self.debug(out)
+                self.debug(err)
         else:
             try:
-                config = EuConfig(filename=use_path, ssh=self.ssh,
-                                  default_section_name='eucalyptus_conf')
+                eucalyptus_conf = Namespace()
+                message = ""
+                for line in out:
+                    line.strip()
+                    if not re.match('^#', line):
+                         match = re.search('^(\w+)=\s*(\S+)$', line)
+                    if not match:
+                        # This line does not match our expected format, add it to the messages
+                        message += line + "\n"
+                    else:
+                        key = match.group(1)
+                        value = match.group(2)
+                        value = str(value).strip('"').strip("'")
+                        eucalyptus_conf.__setattr__(key, value)
+                self.eucalyptus_conf = eucalyptus_conf
             except Exception, e:
                 out = 'Error while trying to create euconfig from eucalyptus_conf:' + str(e)
                 if eof:
@@ -193,7 +213,7 @@ class EucaHost(Machine):
                     raise
                 else:
                     self.debug(out)
-        return config
+        return eucalyptus_conf
 
     def __str__(self):
         s = "+++++++++++++++++++++++++++++++++++++++++++++++++++++\n"

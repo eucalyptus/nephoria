@@ -2,7 +2,8 @@
 from eutester.euca.cloud_admin import EucaBaseObj
 from eutester.euca.cloud_admin.services import EucaNodeService
 from eutester.euca.cloud_admin.eucahost import EucaHost
-from eutester.sshconnection import CommandExitCodeException, CommandTimeoutException, SshCbReturn
+from eutester.utils.net_utils.sshconnection import CommandExitCodeException, \
+    CommandTimeoutException, SshCbReturn
 import os
 import re
 import stat

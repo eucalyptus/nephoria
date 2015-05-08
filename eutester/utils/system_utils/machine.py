@@ -32,9 +32,8 @@
 import select
 import threading
 import time
-from eutester.utils.testcase_utils.eulogger import Eulogger
-from eutester.utils.testcase_utils.log_utils import get_traceback
-from eutester.utils.file_utils.euconfig import EuConfig
+from eutester.utils.log_utils.eulogger import Eulogger
+from eutester.utils.log_utils import get_traceback
 from eutester.utils.log_utils import printinfo
 from eutester.utils.file_utils import render_file_template
 from eutester.utils.net_utils.sshconnection import SshConnection, SshCbReturn, \
