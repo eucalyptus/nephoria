@@ -11,15 +11,16 @@ from eutester.euca.cloud_admin import EucaResponseException
 from eutester.euca.cloud_admin.services import EucaService, EucaServiceType, EucaServiceList,\
     EucaCloudControllerService, EucaObjectStorageGatewayService, EucaClusterControllerService,\
     EucaStorageControllerService, EucaWalrusBackendService,\
-    EucaVMwareBrokerService, EucaArbitratorService, EucaServiceResponse
+    EucaVMwareBrokerService, EucaArbitratorService, EucaServiceRegResponse
 from eutester.euca.cloud_admin.nodecontroller import EucaNodeService
 from eutester.euca.cloud_admin.properties import EucaProperty
-from eutester.utils.log_utils import markup
+from eutester.utils.log_utils import markup, get_traceback
 from operator import itemgetter
 from prettytable import PrettyTable, ALL
 from urlparse import urlparse
 import copy
 import re
+import time
 
 class EucaAdmin(AWSQueryConnection):
     APIVersion='eucalyptus'
@@ -260,22 +261,34 @@ class EucaAdmin(AWSQueryConnection):
             markers = [('euca:serviceStatuses', service_class)]
         params = {}
         if service_type:
-            assert isinstance(service_type, basestring)
+            assert isinstance(service_type, basestring), \
+                "get_services: service_type not type basestring:{0}{1}"\
+                .format(service_type, type(service_type))
             params['ByServiceType'] = str(service_type)
         if show_event_stacks:
-            assert isinstance(show_event_stacks, bool)
+            assert isinstance(show_event_stacks, bool), \
+                "get_services: show_event_stacks not bool:{0}{1}"\
+                .format(show_event_stacks, type(show_event_stacks))
             params['ShowEventStacks'] = str(show_event_stacks).lower()
         if show_events:
-            assert isinstance(show_events, bool)
+            assert isinstance(show_events, bool), \
+                "get_services: show_events not type bool:{0}{1}"\
+                .format(show_events, type(show_events))
             params['ShowEvents'] = str(show_events).lower()
         if list_user_services:
-            assert isinstance(list_user_services, bool)
+            assert isinstance(list_user_services, bool), \
+                "get_services: list_user_services not type bool:{0}{1}"\
+                    .format(list_user_services, type(list_user_services))
             params['ListUserServices'] = str(list_user_services).lower()
         if listall:
-            assert isinstance(listall, bool)
+            assert isinstance(listall, bool), \
+                'get_services: listall not type bool:{0}{1}'\
+                .format(listall, type(listall))
             params['ListAll'] = str(listall).lower()
         if list_internal:
-            assert isinstance(list_internal, bool)
+            assert isinstance(list_internal, bool), \
+                'get_services: list_internal not type bool:{0}{1}'\
+                .format(list_internal, type(list_internal))
             params['ListInternal'] = str(list_internal).lower()
 
         service_list = self.get_list('DescribeServices',
@@ -316,12 +329,13 @@ class EucaAdmin(AWSQueryConnection):
         messages = ""
         markers = ['RegisterServiceResponseType', 'euca:RegisterServiceResponseType']
         params = {'Type': service_type, 'Host': service_host, 'Partition': partition,
-                  'Name': unique_name, 'Type': service_type, 'Port': port}
-        cmd_string = 'RegisterService({0})'\
-            .format(", ".join("{0}={1}".format(x,y) for x, y in params.iteritems()))
+                  'Name': unique_name, 'Port': port}
+        cmd_string = str(
+            'RegisterService({0})'
+            .format(", ".join('{0}="{1}"'.format(x, y) for x, y in params.iteritems())))
         self.debug_method(cmd_string)
         response = self._get_list_request(action='RegisterService', params=params, markers=markers,
-                                       service=EucaServiceResponse)
+                                          service=EucaServiceRegResponse)
         if response:
             response = response[0]
             if response.services:
@@ -329,13 +343,42 @@ class EucaAdmin(AWSQueryConnection):
                 if verbose:
                     self.show_services(services=[registered_service])
             if not registered_service:
-                raise EucaResponseException("ERROR:{0}:\n\tStatusMessages:{1}"
-                                            .format(cmd_string, response.statusmessages),
-                                            respobj=response)
+                raise EucaResponseException(
+                    "ERROR: {0}:\n\tStatusMessages:{1}"
+                    .format(cmd_string, response.statusmessages),
+                    respobj=response)
         if not registered_service:
             self.debug_method('RegisterService: Failed to parse response for:"{0}"'
                               .format(cmd_string))
         return registered_service
+
+    def deregister_service(self, unique_name, service_type=None, verbose=True):
+        # Params: {'Action': 'DeregisterService', 'Version': 'eucalyptus', 'Type': 'arbitrator', 'Name': 'arb1'}
+        deregistered_service = None
+        messages = ""
+        markers = ['DeregisterServiceResponseType', 'euca:DeregisterServiceResponseType']
+        params = {'Type': service_type, 'Name': unique_name, 'Type': service_type}
+        cmd_string = str(
+            'DeregisterService({0})'
+            .format(", ".join('{0}="{1}"'.format(x, y) for x, y in params.iteritems())))
+        self.debug_method(cmd_string)
+        response = self._get_list_request(action='DeregisterService', params=params,
+                                          markers=markers, service=EucaServiceRegResponse)
+        if response:
+            response = response[0]
+            if response.services:
+                deregistered_service = response.services[0]
+                if verbose:
+                    self.show_services(services=[deregistered_service])
+            if not deregistered_service:
+                raise EucaResponseException(
+                    "ERROR: {0}:\n\tStatusMessages:{1}"
+                    .format(cmd_string, response.statusmessages),
+                    respobj=response)
+        if not deregistered_service:
+            self.debug_method('DeregisterService: Failed to parse response for:"{0}"'
+                              .format(cmd_string))
+        return deregistered_service
 
     def show_services(self, services=None, service_type=None, show_part=False, grid=False,
                       partition=None, print_table=True, do_html=False):
@@ -526,10 +569,10 @@ class EucaAdmin(AWSQueryConnection):
         pt.padding_width = 0
         pt.hrules = 1
         for node in nodes:
-            instances = "".join("{0}({1},{2},{3})"
+            instances = "".join("{0}({1}{2}{3})"
                                     .format(str(x.id).ljust(ins_id_len),
-                                            str(x.state).ljust(ins_st_len),
-                                            str(x.instance_type).ljust(ins_type_len),
+                                            str(x.state + ",").ljust(ins_st_len),
+                                            str(x.instance_type + ",").ljust(ins_type_len),
                                             str(x.root_device_type).ljust(ins_dev_len))
                                     .ljust(inst_hdr[1])
                                  for x in node.instances)
@@ -794,14 +837,43 @@ class EucaAdmin(AWSQueryConnection):
                         machine_list[url.hostname].append('UFS')
         return machine_list
 
-    def wait_for_service(self, service_type, state = "ENABLED", states=None, attempt_both=True,
-                         timeout=600):
-        interval = 20
-        poll_count = timeout / interval
-        while (poll_count > 0):
-            matching_services = []
+    def wait_for_service(self, service, states=None, partition=None,
+                         attempt_both=True, interval=20, timeout=600):
+        if not states:
+            states = ["ENABLED"]
+        elif not isinstance(states, list):
+            states = [states]
+        state_info = ",".join(str(x) for x in states)
+        err_msg = ""
+        service_type = None
+        interval = interval
+        matching_services = []
+        if service:
+            if isinstance(service, EucaService):
+                service_type = service.type
+            elif isinstance(service, basestring):
+                service_types = self.get_service_types(name=str(service))
+                if service_types:
+                    service_type = service_types[0]
+                    service_type = service_type.name
+        if not service_type:
+            raise ValueError('wait_for_service. Unknown service type for:"{0}:{1}"'
+                             .format(service, type(service)))
+        self.debug_method('Waiting for service type:{0} to go to States:{1}'
+                          .format(service_type, state_info))
+        start = time.time()
+        elapsed = 0
+        while (elapsed <  timeout):
+            elapsed = int(time.time() - start)
             try:
-                matching_services = self.get_services(service_type)
+                matching_services = self.get_services(service_type=service_type,
+                                                      partition=partition) or []
+                if matching_services:
+                    self.show_services(services=matching_services)
+                else:
+                    err_msg = 'No service registered of type:"{0}", partition:"{1}", ' \
+                              'elapsed:{2}/{3}'.format(service_type, partition, elapsed, timeout)
+                    self.debug_method(err_msg)
                 for service in matching_services:
                     if states:
                         for state in states:
@@ -810,17 +882,22 @@ class EucaAdmin(AWSQueryConnection):
                     else:
                         if re.search(state, service.state):
                             return service
-            except Exception, e:
-                self.debug_method('Error while fetching services:"{0}"\nRetrying in "{1}" seconds'
-                                  .format(str(e), interval))
-            poll_count -= 1
-            self.tester.sleep(interval)
-        if poll_count is 0:
-            states = states or [state]
-            state_info = ",".join(str(x) for x in states)
-            msg = ("Service: '{0}' did not enter state(s):'{1}'"
-                              .format(service.name, state_info))
-            raise Exception(msg)
+            except Exception, E:
+                err_msg = ('Error while fetching services:"{0}:{1}", elapsed:{2}/{3}'
+                           '\nRetrying in "{4}" seconds'.format(type(E), str(E),
+                                                                elapsed, timeout,interval))
+                err_msg = "{0}\n{1}".format(get_traceback(), err_msg)
+                self.debug_method(err_msg)
+            time.sleep(interval)
+        # No services were found matching the information provided...
+        if matching_services:
+            try:
+                self.show_services(services=matching_services)
+            except:
+                pass
+        msg = ("{0}\nERROR: Service_type:'{1}', partition:{2} did not enter state(s):'{3}'"
+               .format(err_msg, service_type, partition,  state_info))
+        raise RuntimeError(msg)
 
 
 

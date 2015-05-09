@@ -87,18 +87,21 @@ class EucaServiceGroupMembers(ResultSet):
             setattr(self, ename.lower(), value)
 
 
-class EucaServiceResponse(EucaEmpyreanResponse):
+class EucaServiceRegResponse(EucaEmpyreanResponse):
     def __init__(self, connection=None):
         services = []
-        super(EucaServiceResponse, self).__init__(connection)
+        super(EucaServiceRegResponse, self).__init__(connection)
 
     def startElement(self, name, value, connection):
         ename = name.lower().replace('euca:','')
         if ename == 'registeredservices':
             self.services = EucaServiceList(connection=connection)
             return self.services
+        if ename == 'deregisteredservices':
+            self.services = EucaServiceList(connection=connection)
+            return self.services
         else:
-            return super(EucaServiceResponse, self).startElement(ename, value, connection)
+            return super(EucaServiceRegResponse, self).startElement(ename, value, connection)
 
 class EucaServiceList(ResultSet):
 

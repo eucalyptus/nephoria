@@ -48,6 +48,7 @@ class EucaEmpyreanResponse(EucaBaseObj):
 
 
 class EucaEmpyreanMessage(EucaBaseObj):
+
     def __init__(self, connection=None):
         self.statusmessages = ""
         self._return = None
@@ -59,6 +60,7 @@ class EucaEmpyreanMessage(EucaBaseObj):
 
 
 class EucaStatusMessages(EucaBaseObj):
+
     def __init__(self, connection=None):
         self._message_entries = []
         super(EucaStatusMessages, self).__init__(connection)
@@ -78,6 +80,7 @@ class EucaStatusMessages(EucaBaseObj):
             return message_entry
 
 class EucaMessageEntry(EucaBaseObj):
+
     def __init__(self, connection=None):
         self.value = None
         super(EucaMessageEntry, self).__init__(connection)
@@ -100,7 +103,7 @@ class EucaResponseException(Exception):
         self.respobj = respobj
 
     def __str__(self):
-        return str("{0}:{1}".format(self.__class__.__name__, self.value))
+        return str(self.value)
 
     def __repr__(self):
-        return str("{0}:{1}".format(self.__class__.__name__, self.value))
+        return str(self.value)
