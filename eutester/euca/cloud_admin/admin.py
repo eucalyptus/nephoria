@@ -7,10 +7,11 @@ from boto.resultset import ResultSet
 from boto.connection import AWSQueryConnection
 from boto.ec2.regioninfo import RegionInfo
 from boto.exception import BotoServerError
+from eutester.euca.cloud_admin import EucaResponseException
 from eutester.euca.cloud_admin.services import EucaService, EucaServiceType, EucaServiceList,\
     EucaCloudControllerService, EucaObjectStorageGatewayService, EucaClusterControllerService,\
     EucaStorageControllerService, EucaWalrusBackendService,\
-    EucaVMwareBrokerService, EucaArbitratorService
+    EucaVMwareBrokerService, EucaArbitratorService, EucaServiceResponse
 from eutester.euca.cloud_admin.nodecontroller import EucaNodeService
 from eutester.euca.cloud_admin.properties import EucaProperty
 from eutester.utils.log_utils import markup
@@ -212,7 +213,7 @@ class EucaAdmin(AWSQueryConnection):
         for service in service_types:
             if service.groupmembers:
                 # Highlight the parent service type/class
-                main_pt.add_row(get_service_row(service, markup_method=markup, markups=[1,94]))
+                main_pt.add_row(get_service_row(service, markup_method=markup, markups=[1, 94]))
                 # If this list has been sorted, the members have been converted to EucaServiceType
                 # and moved here. They should be printed here under the parent, otherwise these
                 # are just strings and the member service types will be printed in the main table
@@ -220,7 +221,7 @@ class EucaAdmin(AWSQueryConnection):
                     if isinstance(member, EucaServiceType):
                         main_pt.add_row(get_service_row(member, indent='  '))
             else:
-                main_pt.add_row(get_service_row(service, markup_method=markup, markups=[1,94]))
+                main_pt.add_row(get_service_row(service, markup_method=markup, markups=[1, 94]))
         if print_table:
             if printmethod:
                 printmethod(str(main_pt))
@@ -291,6 +292,50 @@ class EucaAdmin(AWSQueryConnection):
                 return newlist
         return service_list
 
+    def modify_service(self, service_name, state, verbose=True):
+        modified_service = None
+        if not service_name:
+            raise ValueError('modify_service: invalid service_name:{0}'.format(service_name))
+        if isinstance(service_name, EucaService):
+            service_name = service_name.name
+        servs = self._get_list_request(action='ModifyService', markers=['ModifyServiceType'],
+                                       service=EucaService)
+        if servs:
+            modified_service = servs[0]
+            if verbose:
+                self.show_services(services=[modified_service])
+        else:
+            if verbose:
+                self.debug_method('ModifyService: Failed to parse response for: "{0}:{1}"'
+                                  .format(service_name, state))
+        return modified_service
+
+    def register_service(self, unique_name, service_type, service_host, partition, port='8773',
+                         verbose=True):
+        registered_service = None
+        messages = ""
+        markers = ['RegisterServiceResponseType', 'euca:RegisterServiceResponseType']
+        params = {'Type': service_type, 'Host': service_host, 'Partition': partition,
+                  'Name': unique_name, 'Type': service_type, 'Port': port}
+        cmd_string = 'RegisterService({0})'\
+            .format(", ".join("{0}={1}".format(x,y) for x, y in params.iteritems()))
+        self.debug_method(cmd_string)
+        response = self._get_list_request(action='RegisterService', params=params, markers=markers,
+                                       service=EucaServiceResponse)
+        if response:
+            response = response[0]
+            if response.services:
+                registered_service = response.services[0]
+                if verbose:
+                    self.show_services(services=[registered_service])
+            if not registered_service:
+                raise EucaResponseException("ERROR:{0}:\n\tStatusMessages:{1}"
+                                            .format(cmd_string, response.statusmessages),
+                                            respobj=response)
+        if not registered_service:
+            self.debug_method('RegisterService: Failed to parse response for:"{0}"'
+                              .format(cmd_string))
+        return registered_service
 
     def show_services(self, services=None, service_type=None, show_part=False, grid=False,
                       partition=None, print_table=True, do_html=False):
@@ -315,7 +360,12 @@ class EucaAdmin(AWSQueryConnection):
         if grid:
             pt.hrules = ALL
         service_types = []
-        all_service_types = self.get_service_types()
+        all_service_types = []
+        if services:
+            if not isinstance(services, list):
+                services = [services]
+        else:
+            all_service_types = self.get_service_types()
         if not service_type and not partition:
             service_types = all_service_types
         else:
@@ -366,18 +416,18 @@ class EucaAdmin(AWSQueryConnection):
             state = service.localstate
             if (service.partition == 'eucalyptus' and service.type != 'eucalyptus') \
                     or service.partition == 'bootstrap':
-                markups = [1,2]
+                markups = [1, 2]
             if state != "ENABLED":
-                markups = [1,4,31]
+                markups = [1, 4, 31]
             else:
-                state = n_markup(state, [1,92])
+                state = n_markup(state, [1, 92])
             pt.add_row([n_markup(service.type, (markups or [1])), n_markup(service.name, markups),
                         n_markup(state, markups), n_markup(partition, markups),
                         n_markup(service.uri, markups), n_markup(service.partition, markups)])
         for stype in service_types:
-            pt.add_row([n_markup(stype.name, [2,31]), n_markup('NOT REGISTERED?', [2,31]),
-                        n_markup('MISSING', [2,31]), n_markup('--', [2,31]),
-                        n_markup('SERVICE NOT REGISTERED', [2,31]), n_markup('--', [2,31])])
+            pt.add_row([n_markup(stype.name, [2, 31]), n_markup('NOT REGISTERED?', [2, 31]),
+                        n_markup('MISSING', [2, 31]), n_markup('--', [2, 31]),
+                        n_markup('SERVICE NOT REGISTERED', [2, 31]), n_markup('--', [2, 31])])
         if show_part:
             fields = pt.field_names
         else:
@@ -385,7 +435,7 @@ class EucaAdmin(AWSQueryConnection):
         if print_table:
             if do_html:
                 html_string = pt.get_html_string(sortby=part_hdr, fields=fields,
-                                                 sort_key=itemgetter(3,2), reversesort=True,
+                                                 sort_key=itemgetter(3, 2), reversesort=True,
                                                  format=True, hrules=1)
                 html_string = html_string.replace(html_open, "<")
                 html_string = html_string.replace(html_close, ">")
@@ -485,9 +535,9 @@ class EucaAdmin(AWSQueryConnection):
                                  for x in node.instances)
             instances.strip()
             if node.state == 'ENABLED':
-                markups = [1,92]
+                markups = [1, 92]
             else:
-                markups = [1,91]
+                markups = [1, 91]
             pt.add_row([node.partition, markup(node.name),
                         markup(node.state, markups), instances])
         if print_table:
@@ -544,9 +594,9 @@ class EucaAdmin(AWSQueryConnection):
 
     def show_properties(self, properties=None, description=True, grid=ALL,
                         print_table=True, *prop_names):
-        name_hdr = markup('PROPERTY NAME', [1,94])
-        value_hdr = markup('PROPERTY VALUE', [1,94])
-        desc_hdr = markup('DESCRIPTION', [1,94])
+        name_hdr = markup('PROPERTY NAME', [1, 94])
+        value_hdr = markup('PROPERTY VALUE', [1, 94])
+        desc_hdr = markup('DESCRIPTION', [1, 94])
         pt = PrettyTable([name_hdr, value_hdr])
         pt.max_width[name_hdr] = 70
         pt.max_width[value_hdr] = 40
@@ -572,7 +622,7 @@ class EucaAdmin(AWSQueryConnection):
                     row.append(p.description)
                 pt.add_row(row)
         if not pt._rows:
-            pt.add_row([markup('NO PROPERTIES RETURNED', [1,91]), ""])
+            pt.add_row([markup('NO PROPERTIES RETURNED', [1, 91]), ""])
         if print_table:
             self.debug_method('\n' + str(pt) + '\n')
         else:
@@ -609,7 +659,7 @@ class EucaAdmin(AWSQueryConnection):
                     if i:
                         prefix = "      "
                     info_buf += (str(prefix +
-                                     markup(p.name[i:i+line_len], [1,94])).ljust(info_len-2)
+                                     markup(p.name[i:i+line_len], [1, 94])).ljust(info_len-2)
                                  + "\n")
                 info_buf += 'VALUE: '
                 prefix = ""
@@ -623,7 +673,7 @@ class EucaAdmin(AWSQueryConnection):
                            str(p.description).ljust(desc_len)
                 pt.add_row([info_buf,desc_buf])
         if not pt._rows:
-            pt.add_row([markup('NO PROPERTIES RETURNED', [1,91]), ""])
+            pt.add_row([markup('NO PROPERTIES RETURNED', [1, 91]), ""])
         if print_table:
             self.debug_method("\n" + str(pt) + "\n")
         else:
@@ -652,10 +702,10 @@ class EucaAdmin(AWSQueryConnection):
         ccs = ccs or self.get_cluster_controller_services()
         for cc in ccs:
             if cc.state == 'ENABLED':
-                state = markup(cc.state, [1,92])
+                state = markup(cc.state, [1, 92])
             else:
-                state = markup(cc.state, [1,91])
-            pt.add_row([markup(cc.hostname, [1,94]), cc.name, cc.partition, state])
+                state = markup(cc.state, [1, 91])
+            pt.add_row([markup(cc.hostname, [1, 94]), cc.name, cc.partition, state])
         if print_table:
             self.debug_method('\n' + pt.get_string(sortby=cluster_hdr[0]) + '\n')
         else:
@@ -691,10 +741,10 @@ class EucaAdmin(AWSQueryConnection):
         pt.padding_width = 0
         for component in components:
             if component.state == 'ENABLED':
-                state = markup(component.state, [1,92])
+                state = markup(component.state, [1, 92])
             else:
-                state = markup(component.state, [1,91])
-            pt.add_row([markup(component.hostname, [1,94]), component.name,
+                state = markup(component.state, [1, 91])
+            pt.add_row([markup(component.hostname, [1, 94]), component.name,
                         component.partition, state])
         if print_table:
             self.debug_method('\n' + pt.get_string(sortby=cluster_hdr[0]) + '\n')

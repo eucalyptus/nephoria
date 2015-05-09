@@ -1,7 +1,7 @@
 __author__ = 'clarkmatthew'
 
 from boto.resultset import ResultSet
-from eutester.euca.cloud_admin import EucaBaseObj
+from eutester.euca.cloud_admin import EucaBaseObj, EucaEmpyreanResponse
 import inspect
 import sys
 import time
@@ -87,6 +87,18 @@ class EucaServiceGroupMembers(ResultSet):
             setattr(self, ename.lower(), value)
 
 
+class EucaServiceResponse(EucaEmpyreanResponse):
+    def __init__(self, connection=None):
+        services = []
+        super(EucaServiceResponse, self).__init__(connection)
+
+    def startElement(self, name, value, connection):
+        ename = name.lower().replace('euca:','')
+        if ename == 'registeredservices':
+            self.services = EucaServiceList(connection=connection)
+            return self.services
+        else:
+            return super(EucaServiceResponse, self).startElement(ename, value, connection)
 
 class EucaServiceList(ResultSet):
 
@@ -141,10 +153,28 @@ class EucaUris(EucaBaseObj):
 class EucaService(EucaBaseObj):
     # Base Class for Eucalyptus Service Objects
     def __init__(self, connection=None):
-        super(EucaService, self).__init__(connection)
         self.name = None
         self.partition = None
         self.uris = []
+        self._state = None
+        self._localstate = None
+        super(EucaService, self).__init__(connection)
+
+    @property
+    def state(self):
+        return self._state or self._localstate
+
+    @state.setter
+    def state(self, value):
+        self._state = value
+
+    @property
+    def localstate(self):
+        return self._localstate or self._state
+
+    @localstate.setter
+    def localstate(self, value):
+        self._localstate = value
 
     def startElement(self, name, value, connection):
         ename = name.replace('euca:','')
@@ -164,8 +194,7 @@ class EucaService(EucaBaseObj):
                 if not hasattr(self, 'name') or not self.name:
                     setattr(self, 'name', value)
                 setattr(self, ename.lower(), value)
-            else:
-                setattr(self, ename.lower(), value)
+            super(EucaService, self).endElement(name, value, connection)
 
     def _find_service_class(self, service_name):
         service_name = "euca{0}service".format(str(service_name)).lower()
