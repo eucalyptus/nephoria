@@ -256,10 +256,17 @@ class EucaAdmin(AWSQueryConnection):
 
     def get_services(self, service_type=None, show_event_stacks=None, show_events=None,
                      list_user_services=None, listall=None, list_internal=None,
-                     markers = None, partition=None, service_class=EucaServiceList):
+                     service_names=None, markers = None, partition=None,
+                     service_class=EucaServiceList):
+        service_names = service_names or []
+        if not isinstance(service_names, list):
+            service_names = [service_names]
         if markers is None:
             markers = [('euca:serviceStatuses', service_class)]
         params = {}
+        x = 0
+        for name in service_names:
+            params['ServiceName.{0}'.format(x)] = name
         if service_type:
             assert isinstance(service_type, basestring), \
                 "get_services: service_type not type basestring:{0}{1}"\
@@ -305,22 +312,80 @@ class EucaAdmin(AWSQueryConnection):
                 return newlist
         return service_list
 
-    def modify_service(self, service_name, state, verbose=True):
+    def modify_service(self, service, state, verbose=True):
+        '''
+        Modify a eucalyptus service's state.
+
+        :params: service: The unique name of a service, or a service object.
+        :params: state: String representing state to transition service to.
+                Possible arguments are:
+                TRANSITIONS
+                    START:DISABLED
+                    STOP:STOPPED
+                    INITIALIZE:INITIALIZED
+                    LOAD:LOADED
+                    DESTROY:PRIMORDIAL
+                    ENABLE:ENABLED
+                    DISABLE:DISABLED
+                    CHECK:null
+                    RESTART:null STATES
+                    BROKEN
+                    PRIMORDIAL
+                    INITIALIZED
+                    LOADED
+                    STOPPED
+                    NOTREADY
+                    DISABLED
+                    ENABLED
+        verbose: bool, to print debug output to self.debug_method()
+        '''
         modified_service = None
+        markers = ['euca:ModifyServiceResponseType', 'ModifyServiceResponseType']
+        service_name = None
+        if isinstance(service, EucaService):
+            service_name = service.name
+        else:
+            if isinstance(service, basestring):
+                service_name = str(service)
         if not service_name:
-            raise ValueError('modify_service: invalid service_name:{0}'.format(service_name))
-        if isinstance(service_name, EucaService):
-            service_name = service_name.name
-        servs = self._get_list_request(action='ModifyService', markers=['ModifyServiceType'],
-                                       service=EucaService)
-        if servs:
-            modified_service = servs[0]
-            if verbose:
-                self.show_services(services=[modified_service])
+            raise ValueError('modify_service: invalid service_name:"{0}/{1}"'
+                             .format(service, type(service)))
+        if not isinstance(state, basestring):
+            raise ValueError('modify_service: Unknown type for "state": "{0}/{1}'
+                             .format(state, type(state)))
+        state = str(state)
+        params = {'Name': service_name, 'State': state}
+        cmd_string = str(
+            'ModifyService({0})'
+            .format(", ".join('{0}="{1}"'.format(x, y) for x, y in params.iteritems())))
+        if verbose:
+            self.debug_method(cmd_string)
+        response = self._get_list_request(action='ModifyService', markers=markers, params=params,
+                                       service=EucaServiceRegResponse)
+        modified_service = self.get_services(service_names=service_name)
+        if modified_service:
+            modified_service = modified_service[0]
+        if verbose:
+            self.show_services(modified_service)
+        if response:
+            response = response[0]
+            if response.eucareturn == 'true':
+                return modified_service
+            else:
+                raise EucaResponseException(
+                    "ERROR: {0}:\n\tStatusMessages:{1}"
+                    .format(cmd_string, response.statusmessages),
+                    respobj=response)
         else:
             if verbose:
                 self.debug_method('ModifyService: Failed to parse response for: "{0}:{1}"'
                                   .format(service_name, state))
+            if not modified_service:
+                raise RuntimeError('Failed to fetch service: "{0}" after modify'
+                                   .format(service_name))
+            if str(modified_service.state).lower() != str(state).lower():
+                raise RuntimeError('Modified service:"{0}" did not transition to desired state:'
+                                   '"{1}", got:"{2}"'.format(service_name, state, service.state))
         return modified_service
 
     def register_service(self, unique_name, service_type, service_host, partition, port='8773',
