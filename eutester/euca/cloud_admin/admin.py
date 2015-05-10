@@ -819,18 +819,6 @@ class EucaAdmin(AWSQueryConnection):
         else:
             return pt
 
-    def show_storage_controllers(self, scs=None, print_table=True):
-        return self._show_components(scs, self.get_storage_controllers, print_table)
-    
-    def show_objectstorage_gateways(self, osgs=None, print_table=True):
-        return self._show_components(osgs, self.get_object_storage_gateways, print_table)
-
-    def show_cloud_controllers(self, clcs=None, print_table=True):
-        return self._show_components(clcs, self.get_cloud_controller_services, print_table)
-
-    def show_walrus_backends(self, walruses=None, print_table=True):
-        return self._show_components(walruses, self.get_walrus_backends, print_table)
-
     def _show_components(self, components=None,  get_method=None, print_table=True):
         if not components:
             if not get_method:
@@ -858,6 +846,18 @@ class EucaAdmin(AWSQueryConnection):
             self.debug_method('\n' + pt.get_string(sortby=cluster_hdr[0]) + '\n')
         else:
             return pt
+
+    def show_storage_controllers(self, scs=None, print_table=True):
+        return self._show_components(scs, self.get_storage_controllers, print_table)
+    
+    def show_objectstorage_gateways(self, osgs=None, print_table=True):
+        return self._show_components(osgs, self.get_object_storage_gateways, print_table)
+
+    def show_cloud_controllers(self, clcs=None, print_table=True):
+        return self._show_components(clcs, self.get_cloud_controller_services, print_table)
+
+    def show_walrus_backends(self, walruses=None, print_table=True):
+        return self._show_components(walruses, self.get_walrus_backends, print_table)
 
     def get_all_components(self):
         components = {}
