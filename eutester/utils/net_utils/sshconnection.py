@@ -125,6 +125,7 @@ class SFTPifc(SFTPClient):
             raise type(pe)('Error during sftp put. Remotepath:"{0}", Localpath:"{1}".\n Err:{2}'
                            .format(remotepath, localpath, str(pe)))
 
+
 class SshCbReturn():
     def __init__(self, stop=False, statuscode=-1, settimer=0, buf=None, sendstring=None,
                  nextargs=None, nextcb=None, removecb=False):
@@ -228,7 +229,7 @@ class SshConnection():
         self.find_keys = find_keys
         self.debug_connect = debug_connect
 
-        #Used to store the last cmd attempted and it's exit code
+        # Used to store the last cmd attempted and it's exit code
         self.lastcmd = ""
         self.lastexitcode = SshConnection.cmd_not_executed_code
 
@@ -268,7 +269,6 @@ class SshConnection():
         else:
             raise Exception("Need either a keypath or username+password to create ssh connection")
 
-
     def get_proxy_transport(self,
                             proxy_host=None,
                             dest_host=None,
@@ -292,8 +292,8 @@ class SshConnection():
         :param proxy_keypath: local path to key used for ssh authentication
         :return: paramiko transport
         """
-        proxy_host = ((proxy_host or self.proxy),port)
-        dest_host = ((dest_host or self.host),port)
+        proxy_host = ((proxy_host or self.proxy), port)
+        dest_host = ((dest_host or self.host), port)
         proxy_username = proxy_username or self.proxy_username
         proxy_password = proxy_password or self.proxy_password
         proxy_keypath = proxy_keypath or self.proxy_keypath
@@ -301,31 +301,31 @@ class SshConnection():
         if key_files and not isinstance(key_files, types.ListType):
             key_files = key_files.split(',')
 
-        #Make sure there is at least one likely way to authenticate...
+        # Make sure there is at least one likely way to authenticate...
         ssh = paramiko.SSHClient()
-        if (proxy_username is not None) and \
-                (key_files or self.find_keys or proxy_keypath is not None or
-                         proxy_password is not None ):
+        if ((proxy_username is not None) and
+                (key_files or self.find_keys or
+                 proxy_keypath is not None or
+                 proxy_password is not None)):
             p_transport = paramiko.Transport(proxy_host)
             ssh._transport = p_transport
             p_transport.start_client()
             if proxy_keypath:
                 priv_key = paramiko.RSAKey.from_private_key_file(proxy_keypath)
-                p_transport.auth_publickey(proxy_username,priv_key)
+                p_transport.auth_publickey(proxy_username, priv_key)
             elif proxy_password:
                 p_transport.auth_password(proxy_username, proxy_password)
             elif self.find_keys:
                 self.debug("Proxy auth -Using local keys, no keypath/password provided",
                            verbose=verbose)
-                ssh._auth(proxy_username, None,None,key_files, True, True)
+                ssh._auth(proxy_username, None, None, key_files, True, True)
                 p_transport = ssh._transport
-            #forward from 127.0.0.1:<free_random_port> to |dest_host|
+            # forward from 127.0.0.1:<free_random_port> to |dest_host|
             channel = p_transport.open_channel('direct-tcpip', dest_host, ('127.0.0.1', 0))
             return paramiko.Transport(channel)
         else:
             raise Exception("Need either a keypath or username+password to create ssh "
                             "proxy connection")
-
 
     def debug(self, msg, verbose=None):
         """
@@ -354,7 +354,6 @@ class SshConnection():
             "SSH Command timer fired after " + str(int(elapsed)) + " seconds. Cmd:'" +
             str(cmd) + "'")
 
-
     def sys(self, cmd, verbose=False, timeout=120, listformat=True, enable_debug=False, code=None):
         """
         Issue a command cmd and return output in list format
@@ -372,13 +371,11 @@ class SshConnection():
         out = self.cmd(cmd, verbose=verbose, timeout=timeout, listformat=listformat,
                        enable_debug=enable_debug)
         output = out['output']
-        if code is not None:
-            if out['status'] != code:
-                self.debug(output)
-                raise CommandExitCodeException('Cmd:' + str(cmd) + ' failed with status code:'
-                                               + str(out['status']) + ", output:" + str(output))
+        if code is not None and out['status'] != code:
+            self.debug(output)
+            raise CommandExitCodeException('Cmd:' + str(cmd) + ' failed with status code:' +
+                                           str(out['status']) + ", output:" + str(output))
         return output
-
 
     def cmd(self,
             cmd,
@@ -391,8 +388,8 @@ class SshConnection():
             get_pty=True,
             shell_delay=2,
             shell_return='\r'):
-        """ 
-        Runs a command 'cmd' within an ssh connection. 
+        """
+        Runs a command 'cmd' within an ssh connection.
         Upon success returns dict representing outcome of the command.
 
         Returns dict:
@@ -402,7 +399,7 @@ class SshConnection():
                          exitcode is unreliable.
             ['cbfired']  - Boolean to indicate whether or not the provided callback fired
                           (ie returned False)
-            ['elapsed'] - Time elapsed waiting for command loop to end. 
+            ['elapsed'] - Time elapsed waiting for command loop to end.
         Arguments:
         :param cmd: - mandatory - string representing the command to be run  against the
                       remote ssh session
@@ -436,6 +433,7 @@ class SshConnection():
         self.lastexitcode = SshConnection.cmd_not_executed_code
         start = time.time()
         status = None
+
         def cmddebug(msg):
             if enable_debug:
                 self.debug(msg)
@@ -489,14 +487,15 @@ class SshConnection():
                         if verbose:
                             cmddebug('ssh cmd: got new data on channel:"' + str(new) + '"')
                         if new is not None:
-                            #We have data to handle...
-                            #Run call back if there is one, let call back handle data read in
+                            # We have data to handle...
+                            # Run call back if there is one, let call back handle data read in
                             if cb is not None:
                                 if enable_debug:
                                     cbname = 'unknown'
                                     try:
                                         cbname = str(cb.im_func.func_code.co_name)
-                                    except: pass
+                                    except:
+                                        pass
                                     self.debug('ssh cmd: sending new data to callback: ' +
                                                str(cbname))
                                 # If cb returns false break, end rx loop, return cmd
@@ -556,8 +555,9 @@ class SshConnection():
                                         cmddebug('channel status after sending string. '
                                                  'Is closed = ' + str(chan.closed))
                             else:
-                                # if no call back then append output to return dict and handle debug
-                                if output == None:
+                                # if no call back then append output to return dict
+                                # and handle debug
+                                if output is None:
                                     output = new
                                 else:
                                     output += new
@@ -578,12 +578,12 @@ class SshConnection():
             if output is None:
                 output = ""
             if listformat:
-                #return output as list of lines
+                # return output as list of lines
                 output = output.splitlines()
                 if output is None:
                     output = []
 
-            #add command outcome in return dict.
+            # add command outcome in return dict.
             if status is None:
                 status = self.lastexitcode = chan.recv_exit_status()
             ret['cmd'] = cmd
@@ -672,15 +672,15 @@ class SshConnection():
             enable_ipv6_dns = self.enable_ipv6_dns
         proxy = proxy or self.proxy
 
-        self.debug("ssh_connect args:\nhostname:" + str(hostname)
-                    + "\nusername:" + str(username)
-                    + "\npassword:" + str(password)
-                    + "\nkeypath:" + str(keypath)
-                    + "\nproxy_username:" + str(proxy_username)
-                    + "\nproxy_password" + str(proxy_password)
-                    + "\nproxy_keypath" + str(proxy_keypath)
-                    + "\ntimeout:" + str(timeout)
-                    + "\nretry:" + str(retry),verbose=verbose)
+        self.debug("ssh_connect args:\nhostname:" + str(hostname) +
+                   "\nusername:" + str(username) +
+                   "\npassword:" + str(password) +
+                   "\nkeypath:" + str(keypath) +
+                   "\nproxy_username:" + str(proxy_username) +
+                   "\nproxy_password" + str(proxy_password) +
+                   "\nproxy_keypath" + str(proxy_keypath) +
+                   "\ntimeout:" + str(timeout) +
+                   "\nretry:" + str(retry), verbose=verbose)
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         hostname = str(hostname.strip())
@@ -692,11 +692,11 @@ class SshConnection():
             # to fail in their response(s). Hack to avoid ipv6 lookups...
             # Try ipv4 dns resolution of 'hostname', and pass the ip instead of a hostname to
             # Paramiko's connect to avoid the potential ipv6 'AAAA' lookup...
-            iplist = self.get_ipv4_lookup(hostname,verbose=verbose)
+            iplist = self.get_ipv4_lookup(hostname, verbose=verbose)
         if not iplist:
             iplist = [hostname]
         attempt = 0
-        #adjust retry count for debug 'readability' ie 'attempt 1' vs 'attempt 0'
+        # adjust retry count for debug 'readability' ie 'attempt 1' vs 'attempt 0'
         retry += 1
         while (attempt < retry) and not connected:
             attempt += 1
@@ -718,7 +718,7 @@ class SshConnection():
                 ssh._transport.start_client()
                 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                 try:
-                    self.debug("SSH connection attempt(" + str(attempt) +" of " + str(retry) +
+                    self.debug("SSH connection attempt(" + str(attempt) + " of " + str(retry) +
                                "), host:'" + str(username) + "@" + str(hostname) +
                                "', using ipv4:" + str(ip) +
                                ", thru proxy:'" + str(proxy_ip) + "'")
@@ -727,13 +727,13 @@ class SshConnection():
                                    str(self.mask_password(password)),
                                    verbose=verbose)
                         ssh._transport.auth_password(username, password)
-                        #ssh.connect(ip, username=username, password=password, timeout=timeout)
+                        # ssh.connect(ip, username=username, password=password, timeout=timeout)
                         connected = True
                         break
                     elif keypath:
                         self.debug("Using Keypath:" + keypath, verbose=verbose)
                         priv_key = paramiko.RSAKey.from_private_key_file(keypath)
-                        ssh._transport.auth_publickey(username,priv_key)
+                        ssh._transport.auth_publickey(username, priv_key)
                         # ssh.connect(ip, port=port, username=username, key_filename=keypath,
                         #             timeout=timeout)
                         connected = True
@@ -741,7 +741,7 @@ class SshConnection():
                     elif key_files or self.find_keys:
                         self.debug("Using local keys, no keypath/password provided.",
                                    verbose=verbose)
-                        #ssh._auth(username, password, None, key_files, True, True)
+                        # ssh._auth(username, password, None, key_files, True, True)
                         ssh.connect(ip, port=port, username=username, key_filename=keypath,
                                     timeout=timeout)
                         connected = True
@@ -754,18 +754,18 @@ class SshConnection():
             if connected:
                 via_string = ''
                 if proxy_transport:
-                    proxy_host,port = ssh._transport.getpeername()
-                    via_string = ' via proxy host:'+str(proxy_host)+':'+str(port)
-                self.debug('SSH - Connected to ' + str(ip)+str(via_string))
+                    proxy_host, port = ssh._transport.getpeername()
+                    via_string = ' via proxy host:' + str(proxy_host) + ':' + str(port)
+                self.debug('SSH - Connected to ' + str(ip) + str(via_string))
                 break
         if not connected:
             raise Exception(
                 'Failed to connect to "' + str(hostname) + '", attempts:' + str(attempt) +
                 ". IPs tried:" + ",".join(iplist))
-            #self.debug("Returning ssh connection to: "+ hostname)
+            # self.debug("Returning ssh connection to: "+ hostname)
         return ssh
 
-    def get_ipv4_lookup(self, hostname, port=22,verbose=False):
+    def get_ipv4_lookup(self, hostname, port=22, verbose=False):
         """
         Do an ipv4 lookup of 'hostname' and return list of any resolved ip addresses
 
@@ -788,22 +788,22 @@ class SshConnection():
             get_ipv4_ip = True
         if get_ipv4_ip:
             try:
-                #ipv4 lookup host for ssh connection...
+                # ipv4 lookup host for ssh connection...
                 addrs = socket.getaddrinfo(hostname, port, socket.AF_INET, socket.IPPROTO_IP,
                                            socket.IPPROTO_TCP)
                 for addr in addrs:
                     iplist.append(str(addr[4][0]))
                 self.debug('Resolved hostname:' + str(hostname) + ' to IP(s):' +
-                           ",".join(iplist),verbose=verbose)
+                           ",".join(iplist), verbose=verbose)
             except Exception, de:
                 self.debug('Error looking up DNS ip for hostname:' + str(hostname) +
                            ", err:" + str(de))
         else:
-            #hostname is an ipv4 address...
+            # hostname is an ipv4 address...
             iplist = [hostname]
         return iplist
 
-    def mask_password(self,pass_string):
+    def mask_password(self, pass_string):
         """
         Replace all but first and last chars with '*' of provided password string.
 
@@ -844,78 +844,79 @@ class SshConnection():
         :
         '''
         ret = SshCbReturn(stop=False)
-        #newbuf = None
+
         def debug(msg, ssh=self):
             if verbose:
                 ssh.debug(msg)
 
         def add_to_buffer(lines_to_add, newbuf):
             for line in lines_to_add:
-                debug('Adding line to buf:"' + str(line) +'"')
+                debug('Adding line to buf:"' + str(line) + '"')
                 if newbuf is None:
-                    newbuf = line+ '\n'
+                    newbuf = line + '\n'
                 else:
                     newbuf += line + '\n'
             return newbuf
-        bufadd = lambda line: add_to_buffer(line, ret.buf)
-        debug('STARTING expect_password_cb: password:' + str(password)+", prompt:"+str(prompt))
+
+        def bufadd(line):
+            return add_to_buffer(line, ret.buf)
+
+        debug('STARTING expect_password_cb: password:' + str(password) + ", prompt:" + str(prompt))
         debug('Starting buf:"' + str(buf) + '"')
-        #Create a callback return obj for the cmd() loop to consume...
-
+        # Create a callback return obj for the cmd() loop to consume...
         lines = buf.splitlines()
-
-        # See if we've already gone through password dialog, if so there may be a left over newline.
-        # Remove it.
+        # See if we've already gone through password dialog, if so there may be a left
+        # over newline. Remove it.
         if password_attempts and lines[0] == "":
             debug('Removing first blank line(s) after sending password')
             lines.pop(0)
             if not lines:
-                #self.debug('Skipping blanklines...')
+                # self.debug('Skipping blanklines...')
                 ret.buf = None
-                ret.nextargs=[password, prompt, nextcb, cbargs, retry, password_attempts, verbose]
+                ret.nextargs = [password, prompt, nextcb, cbargs, retry, password_attempts,
+                                verbose]
                 return ret
-
         # See if we have a prompt for password, assume we only have one match and were blocking
         # waiting on password input
         prompt_indices = [i for i, s in enumerate(lines) if re.match(prompt, s, re.IGNORECASE)]
         if prompt_indices:
             debug('Got password prompt, sending password...')
-            #Check to see if we've already tried a password, and if we should retry or fail
+            # Check to see if we've already tried a password, and if we should retry or fail
             if password_attempts > retry:
                 raise CommandExpectPasswordException(
                     "Password dialog attempts:" + str(password_attempts) +
                     " exceeded retry limit:" + str(retry))
             prompt_index = prompt_indices[0]
-            #Add any lines other than password prompt back to return buffer
-            #Remove line with password prompt first
+            # Add any lines other than password prompt back to return buffer
+            # Remove line with password prompt first
             lines.pop(prompt_index)
             ret.buf = bufadd(lines)
-            #Add password to CbReturn sendstring value to be sent to channel in cmd() loop...
+            # Add password to CbReturn sendstring value to be sent to channel in cmd() loop...
             ret.sendstring = str(password).rstrip() + "\n"
-            #Increment our password attempts value, and args to return obj for next time
+            # Increment our password attempts value, and args to return obj for next time
             # we get called. Expecting to get called at least 1 more time to handle the blank
             # line after password dialog, may also get called for a login, and prompted
             # for a password again...
             password_attempts += 1
             ret.removecb = False
             ret.nextcb = None
-            ret.nextargs=[password, prompt, nextcb, cbargs, retry, password_attempts, verbose]
+            ret.nextargs = [password, prompt, nextcb, cbargs, retry, password_attempts, verbose]
             debug('Ending buf:"' + str(ret.buf) + '"')
             return ret
         else:
             debug('\nPassword prompt not found, continuing. password_attempts:' +
                   str(password_attempts) + ', prompt:' + str(prompt) +
                   ', len lines: ' + str(len(lines)))
-            #Assume the password dialog is complete, pass buffer to next handler,
+            # Assume the password dialog is complete, pass buffer to next handler,
             # attempt to make password portion look transparent
             ret.buf = bufadd(lines)
             if nextcb is not None:
                 debug('Got nextcb, calling it on our buffer now...')
                 ret = nextcb(ret.buf, *cbargs)
                 if ret.nextcb and not ret.removecb:
-                    nextcb=ret.nextcb
+                    nextcb = ret.nextcb
                 else:
-                    nextcb=None
+                    nextcb = None
             # tweak the return values, store the real ones in our nextargs and handle
             # things in this method instead
             ret.nextcb = None
@@ -937,16 +938,14 @@ class SshConnection():
             verbose = self.verbose
         ret = SshCbReturn(stop=False)
         ret.buf = buf
-        #newbuf = None
+
         def debug(msg, ssh=self):
             if verbose:
                 ssh.debug(msg)
         debug('Starting expect_prompt_cb, prompt:' + str(prompt))
         debug('Starting buf:"' + str(buf) + '"')
-        #Create a callback return obj for the cmd() loop to consume...
-
+        # Create a callback return obj for the cmd() loop to consume...
         lines = buf.splitlines()
-
         # See if we have a prompt for password, assume we only have one match and were
         # blocking waiting on password input
         for line in lines:
@@ -969,11 +968,8 @@ class SshConnection():
                 debug('\nPrompt not found, continuing...')
         ret.removecb = False
         ret.nextargs = [command, prompt_match, verbose]
-        #debug('Ending buf:"' + str(ret.buf) + '"')
+        # debug('Ending buf:"' + str(ret.buf) + '"')
         return ret
-
-
-
 
     def start_interactive(self, timeout=180):
         '''
@@ -1000,7 +996,7 @@ class SshConnection():
             while True:
                 time.sleep(0.05)
                 try:
-                    read_ready, wlist, xlist = select.select([fd, sys.stdin], [], [],timeout)
+                    read_ready, wlist, xlist = select.select([fd, sys.stdin], [], [], timeout)
                 except select.error, se:
                     print 'select error:' + str(se)
                     break
@@ -1026,11 +1022,10 @@ class SshConnection():
         finally:
             try:
                 termios.tcsetattr(sys.stdin, termios.TCSADRAIN, oldtty)
-            except:pass
+            except:
+                pass
             if chan:
                 chan.close()
-
-
 
     def open_sftp(self, transport=None):
         transport = transport or self.connection._transport
@@ -1042,8 +1037,7 @@ class SshConnection():
     def close_sftp(self):
         self.sftp.close()
 
-
-    def sftp_put(self,localfilepath,remotefilepath):
+    def sftp_put(self, localfilepath, remotefilepath):
         """
         sftp transfer file from localfilepath to remote system at remotefilepath
         :param localfilepath: path to file on local system
@@ -1069,7 +1063,6 @@ class SshConnection():
         self.sftp.get(remotepath=remotefilepath, localpath=localfilepath)
         self.close_sftp()
 
-
     def close(self):
         self.connection.close()
 
@@ -1081,6 +1074,7 @@ class CommandExitCodeException(Exception):
     def __str__(self):
         return repr(self.value)
 
+
 class CommandTimeoutException(Exception):
     def __init__(self, value):
         self.value = value
@@ -1088,10 +1082,10 @@ class CommandTimeoutException(Exception):
     def __str__(self):
         return repr(self.value)
 
+
 class CommandExpectPasswordException(Exception):
     def __init__(self, value):
         self.value = value
 
     def __str__(self):
         return repr(self.value)
-
