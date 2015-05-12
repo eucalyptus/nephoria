@@ -1,27 +1,30 @@
 
-#### ipython shell capture showing some usage examples:
+EucaAdmin() is the primary interface for fetching, modifying, and displaying Eucalyptus
+admin attributes. This includes system; components/hosts, services, and properties.
+Some examples shown below...
 
 
-### First create an admin connection obj...
+
+
+
+
+
+#### First create an admin connection obj...
 
 ````
+# Reading in a eucarc (local or remote) is quick way to populate the needed creds...
 from cloud_utils.file_utils.eucarc import Eucarc
 ec = Eucarc(filepath='eucarc-10.111.5.100-eucalyptus-admin/eucarc')
+
+# Now create the EucaAdmin obj...
 from cloud_admin.eucaadmin import EucaAdmin
 cloud_admin = EucaAdmin(host='10.111.5.100', aws_access_key_id=ec.aws_access_key,
                         aws_secret_access_key=ec.aws_secret_key)
 
-In [12]: from cloud_utils.file_utils.eucarc import Eucarc
-
-In [13]: ec = Eucarc(filepath='eucarc-10.111.5.100-eucalyptus-admin/eucarc')
-
-In [14]: from cloud_admin.eucaadmin import EucaAdmin
-
-In [15]: cloud_admin  = EucaAdmin(host='10.111.5.100', aws_access_key_id=ec.aws_access_key,
-                                  aws_secret_access_key=ec.aws_secret_key)
 ```
 
-### Fetch admin info from cloud...
+#### ipython shell capture showing some usage examples:
+#### Fetch admin info from cloud...
 ```
 In [20]: cloud_admin.get
 cloud_admin.get_all_arbitrator_services              cloud_admin.get_arbitrator_service                   cloud_admin.get_property
@@ -46,8 +49,11 @@ In [16]: cloud_admin.sho
 cloud_admin.show_cloud_controllers       cloud_admin.show_nodes                   cloud_admin.show_properties_narrow       cloud_admin.show_services
 cloud_admin.show_cluster_controllers     cloud_admin.show_objectstorage_gateways  cloud_admin.show_service_types           cloud_admin.show_storage_controllers
 cloud_admin.show_components_summary      cloud_admin.show_properties              cloud_admin.show_service_types_verbose   cloud_admin.show_walrus_backends
+```
 
+### Show all service and their status
 
+```
 In [16]: cloud_admin.show_services()
 +--------------------+-------------------------------+--------+-------+------------------------------------------------------+
 |TYPE                |NAME                           |STATE   |CLUSTER|URI                                                   |
@@ -81,8 +87,11 @@ In [16]: cloud_admin.show_services()
 |autoscalingbackend  |10.111.5.100                   |ENABLED |       |http://10.111.5.100:8773/services/AutoScalingBackend  |
 |cloudwatchbackend   |10.111.5.100                   |ENABLED |       |http://10.111.5.100:8773/services/CloudWatchBackend   |
 +--------------------+-------------------------------+--------+-------+------------------------------------------------------+
+```
 
+### show all service types possible for this cloud...
 
+```
 In [17]: cloud_admin.show_service_types()
 +------------------+-------+------------------+------+------------------------------------------------------------+
 |NAME              |CLUSTER|      PARENT      |PUBLIC|DESCRIPTION                                                 |
@@ -104,7 +113,20 @@ In [17]: cloud_admin.show_service_types()
 |arbitrator        |  TRUE |        -         |false |The Arbitrator service                                      |
 |cluster           |  TRUE |        -         |false |The Cluster Controller service                              |
 +------------------+-------+------------------+------+------------------------------------------------------------+
+```
 
+### Show node controller services, state and instances
+
+```
+In [5]: cloud_admin.show_nodes()
+
++----+------------+-------+-----------------------------------------------------------+
+|ZONE| NODE NAME  | STATE |                         INSTANCES                         |
++----+------------+-------+-----------------------------------------------------------+
+|one |10.111.5.120|ENABLED|  i-9d2eff51(running,       m3.xlarge,   ebs             ) |
+|    |            |       |  i-22298477(running,       m3.2xlarge,  instance-store  ) |
+|    |            |       |  i-30ddd614(running,       m1.small,    instance-store  ) |
++----+------------+-------+-----------------------------------------------------------+
 
 In [18]: cloud_admin.show_nodes()
 
@@ -115,8 +137,11 @@ In [18]: cloud_admin.show_nodes()
 +----+------------+-------+-----------------------------------------------------------+
 |two |10.111.5.148|ENABLED|                                                           |
 +----+------------+-------+-----------------------------------------------------------+
+```
 
+### Show component/host service states
 
+```
 In [19]: cad.show_components_summary()
 
 +------------+------------------------------+----------------+-------+-------------+
@@ -135,16 +160,14 @@ In [19]: cad.show_components_summary()
 
 ### Query and display properties...
 
+
+##### Retrieve a list of all the cloud properties with get_properties(), or provide a filter
+##### to retrieve a subset (for example: filter all properties with the prefix 'www')
 ```
 Filter example:
 In [20]: wwwprops = cloud_admin.get_properties('www')
 
-In [21]: cloud_admin.sho
-cloud_admin.show_cloud_controllers       cloud_admin.show_nodes                   cloud_admin.show_properties_narrow       cloud_admin.show_services
-cloud_admin.show_cluster_controllers     cloud_admin.show_objectstorage_gateways  cloud_admin.show_service_types           cloud_admin.show_storage_controllers
-cloud_admin.show_components_summary      cloud_admin.show_properties              cloud_admin.show_service_types_verbose   cloud_admin.show_walrus_backends
-
-In [21]: cloud_admin.show_pr
+In [21]: cloud_admin.show_prop
 cloud_admin.show_properties         cloud_admin.show_properties_narrow
 
 In [21]: cloud_admin.show_properties(wwwprops)
@@ -166,8 +189,12 @@ In [21]: cloud_admin.show_properties(wwwprops)
 +-------------------+----------------------------------------+---------------------------------+
 |www.https_protocols|SSLv2Hello,TLSv1,TLSv1.1,TLSv1.2        |SSL protocols for HTTPS listener.|
 +-------------------+----------------------------------------+---------------------------------+
+```
 
+##### Or provide a filter to the show method directly. Example, only show properties
+##### beginning with 'www.https_'
 
+```
 In [22]: cloud_admin.show_properties('www.https_')
 
 +-------------------+----------------------------------------+---------------------------------+
@@ -222,6 +249,8 @@ In [9]: prop.show()
 +----------------------------------+--------------+----------------------------------------+
 ```
 
+
+
 ### Modify Service States...
 
 ```
@@ -261,28 +290,10 @@ ModifyService(State="ENABLED", Name="one-sc-1")
 Out[19]: EucaService:one-sc-1
 ```
 
+
+
 ### Can also produce HTML versions of the ascii tables...
 
-```
-In [5]: cloud_admin.show_services?
-Type:        instancemethod
-String form: <bound method EucaAdmin.show_services of EucaAdmin:10.111.5.100>
-File:        /Users/clarkmatthew/Documents/python_workspace/eutester-reorg/eutester/cloud_admin/eucaadmin.py
-Definition:  cloud_admin.show_services(self, *args, **kwargs)
-Docstring:
-Displays a table summarizing Eucalyptus services
-:param connection: EucaAdmin() query connection
-:param services: list of EucaService objects
-:param service_type: string, eucalyptus service type (ie: 'user-api')
-:param show_part: bool, if true will show all partitions, if false will only show
-                  partitions which are otherwise referred to as  'clusters' or 'zones'
-:param grid: bool, if true will produce grid lines in the table
-:param partition: bool, if true will filter services belonging to this partition
-:param print_table: bool, if True will write the table using connection.debug_method,
-                    if False will return the table obj w/o printing it
-:param do_html: If True will produce an html table instead of an ascii table
-:raise ValueError:
-```
 ##### In [6]: cloud_admin.show_services(do_html=True)
 
 
@@ -509,6 +520,9 @@ Displays a table summarizing Eucalyptus services
 
 
 [SAMPLE FULL HTML TABLE ON GH-PAGES](http://bigschwan.github.io/eutester/cloud_admin/service_types_sample.html)
+
+
+
 
 
 ...or github rendering of table html...

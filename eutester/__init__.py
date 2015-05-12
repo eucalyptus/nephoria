@@ -36,7 +36,7 @@ __version__ = '0.0.10'
 
 
 from cloud_utils.log_utils.eulogger import Eulogger
-from eutester.testcases.testcase_utils import TimeoutFunctionException, wait_for_result
+from eutester.testcase_utils import TimeoutFunctionException, wait_for_result
 import re
 import os
 import random

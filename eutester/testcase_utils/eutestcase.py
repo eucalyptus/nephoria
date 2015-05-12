@@ -1,4 +1,142 @@
 
+"""
+This is the base class for any test case to be included in the Eutester repo. It should include any
+functionality that we expected to be repeated in most of the test cases that will be written.
+This harness is primarily intended to help provide a common means of running and reporting
+'system tests' (vs unit tests).
+For the purposes of this module, a 'system' focused test suite is the sum of a what would
+otherwise be many 'unit tests' in order to produce an end to end flow that might mimic a
+users's experience and test interactions of the system.
+This module is also intended to provide the most commonly shared test attributes amongst the
+existing tests when this was written:
+    cli options/arguments,
+    logging to stdout, err and a file provided via cli arg,
+    option to specify a portions or a single unit by providing a list of units to be looked up
+        by name, method, etc..
+    gathered/summary of results and metrics,
+    sharing of test artifacts (to save time over suite execution),
+    ability to skip tests based on dependencies such as a previous test unit's status, etc..
+    ability to share/extend testcase classes to build upon other test case classes/suites.
+    basic config file parsing (arguments in file are merged with cli args)
+
+
+
+Currently included:
+ - Debug method
+ - Allow parameterized test cases
+ - Method to run test case
+ - Run a list of test cases
+ - Start, end and current status messages
+ - Enum class for possible test results
+
+Necessary to work on:
+ - Argument parsing
+ - Metric tracking (need to define what metrics we want
+ - Standardized result summary
+ - Logging standardization
+ - Use docstring as description for test case
+ - Standardized setUp and tearDown that provides useful/necessary cloud resources
+  (ie group, keypair, image)
+
+
+##################################################################################################
+#                       Sample test and output:                                                  #
+##################################################################################################
+
+from eutester.testcase_utils.eutestcase import EutesterTestCase
+from cloud_utils.net_utils.sshconnection import SshConnection
+
+# Create the testcase object
+testcase = EutesterTestCase()
+
+
+# See 'setup_parser' for all the default cli arguments. These can be negated by setting
+# these to 'false' as shown here...
+testcase.setup_parser(testname='My first test',
+                      description='Sample testcase',
+                      emi=False, # exclude the emi cli option from this test
+                      testlist=False # Exclude the 'testlist' cli option for this test
+                      )
+
+
+# Add an additional CLI argument to this test
+testcase.parser.add_argument('--test_ip',
+                             help='IP address used to create SSH connection sample test',
+                             default=None)
+
+
+# Gather CLI arguments, this will also parse any arguments in any config files
+# that are provided. The cli args and config file args will be merged into testcase.args
+testcase.get_args()
+
+
+# Add a test method, Name is not important to running, but does help organize the suite.
+# Methods will later be used/created when converted to testunit class objs shown later(at bottom)
+def my_first_test_method(ip=None, username=None, password=None):
+    '''
+    Description: This description will be displayed in the test run output and should
+    explain this test's objectives, progression, any artifacts it creates/removes, dependencies,
+    etc..
+    This test attempts to ssh into a remote device (in practice this might be a VM/instance)
+     and verify the end host is alive by executing 2 commands; 'hostname' and 'uptime', verifies
+     the return code of the commands to be '0', and prints the output out at debug level.
+    '''
+    ip = ip or  testcase.args.test_ip # this is the arg we added above
+    password = password or testcase.args.instance_password # instance_password provided
+    username = username or testcase.args.instance_user or 'root' # so is instance_user
+    if not ip or not password:
+        raise ValueError('Need ip and password to run this ssh test! ip={0}, password={1}'
+                         .format(ip, password))
+    # Create an ssh connection using the ip. Using a short timeout and no retry since this
+    # is an example, otherwise defaults are usually good.
+    ssh = SshConnection(host=ip, username=username, password=password, timeout=10, retry=0,
+                        verbose=True)
+
+    # SshConnection.sys() will execute a cmd on the remote system, 'code' will check the return code of the
+    # command and throw an exception if it does not match the value provided.
+    # By default the returned output is a list of lines, but can also be returned as a single
+    # string buffer using 'listformat=False')
+    # The command is monitored and the session will be torn down and a timeout exception will be
+    # thrown if it does not return by 'timeout' seconds.
+    output = ssh.sys('hostname && uptime', listformat=False, code=0, timeout=20)
+
+
+    # default logger writes to stdout and it's debug level method can be used such as...
+    testcase.debug('my_first_test_method passed yay!!')
+    testcase.debug('Heres the output of our two commands:\n{0}'.format(output))
+
+
+# Now add a method that is intended to fail...
+testcase.sample_test_fail_method = lambda: my_first_test_method(ip=None,
+                                                                username='root',
+                                                                password='badpassword')
+
+# Create our test list of test units...
+# this can be done by using a method or the name of a method within the testcase class...
+# by passing a method
+test1 = testcase.create_testunit_from_method(my_first_test_method)
+
+# By passing a name of a method local to the testcase object
+test2 = testcase.create_testunit_by_name('sample_test_fail_method')
+
+result = testcase.run_test_case_list(list = [test1, test2],
+                                     eof=False,
+                                     clean_on_exit=False,
+                                     printresults=True)
+
+exit(result)
+
+
+##################################################################################################
+#                                Output from sample test                                         #
+##################################################################################################
+
+See README.md for test output.
+
+
+
+"""
+
 import unittest
 import inspect
 import time
@@ -16,26 +154,7 @@ from eutester.testcases.testcase_utils.euconfig import EuConfig
 import StringIO
 import copy
 
-'''
-This is the base class for any test case to be included in the Eutester repo. It should include any
-functionality that we expected to be repeated in most of the test cases that will be written.
 
-Currently included:
- - Debug method
- - Allow parameterized test cases
- - Method to run test case
- - Run a list of test cases
- - Start, end and current status messages
- - Enum class for possible test results
- 
-Necessary to work on:
- - Argument parsing
- - Metric tracking (need to define what metrics we want
- - Standardized result summary
- - Logging standardization
- - Use docstring as description for test case
- - Standardized setUp and tearDown that provides useful/necessary cloud resources (ie group, keypair, image)
-'''
 
 
 class EutesterTestResult():
@@ -162,7 +281,8 @@ class TestColor():
     
 class EutesterTestUnit():
     '''
-    Description: Convenience class to run wrap individual methods, and run and store and access results.
+    Description: Convenience class to run wrap individual methods, and run and store and access
+    results.
     
     type method: method
     param method: The underlying method for this object to wrap, run and provide information on 
@@ -171,7 +291,9 @@ class EutesterTestUnit():
     param args: the arguments to be fed to the given 'method'
     
     type eof: boolean
-    param eof: boolean to indicate whether a failure while running the given 'method' should end the test case exectution. 
+    param eof: boolean to indicate whether a failure while running the given 'method' should end t
+    he test case execution.
+
     '''
     def __init__(self,method, *args, **kwargs):
         self.method = method
@@ -787,9 +909,7 @@ class EutesterTestCase(unittest.TestCase):
                 tests_ran += 1
                 self.print_test_unit_startmsg(test)
                 try:
-                    id = t.start()
                     test.run(eof=eof or test.eof)
-                    t.end(id, str(test.name))
                 except Exception, e:
                     self.debug('Testcase:'+ str(test.name)+' error:'+str(e))
                     if eof or (not eof and test.eof):
@@ -805,8 +925,6 @@ class EutesterTestCase(unittest.TestCase):
             elapsed = int(time.time()-start)
             msgout =  "RUN TEST CASE LIST DONE:\n"
             msgout += "Ran "+str(tests_ran)+"/"+str(test_count)+" tests in "+str(elapsed)+" seconds\n"
-            t.finish()
-
             if printresults:
                 try:
                     self.debug("Printing pre-cleanup results:")

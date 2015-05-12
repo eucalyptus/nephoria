@@ -33,6 +33,9 @@
 Created on May 11, 2012
 @author: clarkmatthew
 
+This utility is primarily used to support legacy test configuration formats for Testcases
+developed both in and outside of eutester, as well as run in Eucalyptus legacy QA system(s).
+
 Simple utility to read a given config file and parse out the configuration. 
 Uses python's Config Parser but includes some utils to support legacy qa config files,
 and file operations on local and remote machines containing keypair values.
@@ -80,7 +83,8 @@ import ConfigParser
 import time
 import hashlib
 
-
+# Todo: This utility should be considered for deprecation depending on amount of legacy
+# Todo: ...test and QA env support needed?
 
 class File_Util():
     #Possible file edit actions

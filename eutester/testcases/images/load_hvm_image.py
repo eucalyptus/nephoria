@@ -30,7 +30,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 #
-from eutester.utils.eutestcase import EutesterTestCase
+from eutester.testcase_utils.eutestcase import EutesterTestCase
 from imageutils import ImageUtils
 
 machine=None
