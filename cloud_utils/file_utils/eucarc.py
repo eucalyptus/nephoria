@@ -3,6 +3,7 @@ import re
 import os
 from prettytable import PrettyTable
 
+
 class Eucarc(dict):
     _KEY_DIR_STR = '${EUCA_KEY_DIR}'
 
@@ -66,8 +67,7 @@ class Eucarc(dict):
                         if not (key and value):
                             raise ValueError('Fix me! Could not find key=value, in this line:"{0}"'
                                              .format(line))
-
-                        self.__setattr__(key.lower(),value)
+                        self.__setattr__(key.lower(), value)
                         new_dict[key.lower()] = value
             if message:
                 self._unparsed_lines = message
@@ -87,11 +87,10 @@ class Eucarc(dict):
                 string = f.read()
         return self._from_string(string, keydir=keydir)
 
-
     def _show(self, print_table=True):
         pt = PrettyTable(['KEY', 'VALUE'])
-        pt.hrules=1
-        pt.align='l'
+        pt.hrules = 1
+        pt.align = 'l'
         pt.header = False
         pt.max_width['VALUE'] = 85
         pt.max_width['KEY'] = 35
@@ -103,15 +102,3 @@ class Eucarc(dict):
             self._debug(str(pt))
         else:
             return pt
-
-
-
-
-
-
-
-
-
-
-
-

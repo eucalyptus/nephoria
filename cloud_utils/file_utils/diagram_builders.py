@@ -16,14 +16,18 @@ def _BuildDiagram(diag_class, source_json, filename):
     draw.save()
     return draw
 
+
 def BuildNetworkDiagram(source_json, filename):
     return _BuildDiagram(diag_class=nwdiag, source_json=source_json, filename=filename)
+
 
 def BuildBlockDiagram(source_json, filename):
     return _BuildDiagram(diag_class=blockdiag, source_json=source_json, filename=filename)
 
+
 def BuildSequenceDiagram(source_json, filename):
     return _BuildDiagram(diag_class=seqdiag, source_json=source_json, filename=filename)
+
 
 def BuildActivityDiagram(source_json, filename):
     return _BuildDiagram(diag_class=actdiag, source_json=source_json, filename=filename)
