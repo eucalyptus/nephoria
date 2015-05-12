@@ -32,7 +32,7 @@
 #         
 
 try:
-    from setuptools import setup
+    from setuptools import setup, find_packages
 except ImportError:
     from distutils.core import setup
 import eutester
@@ -55,20 +55,7 @@ setup(name="eutester",
                         'pywinrm',
                         'BeautifulSoup',
                         'requests >= 1'],
-      packages=["eutester",
-                "eutester.aws",
-                "eutester.aws.autoscaling",
-                "eutester.aws.cloudformation",
-                "eutester.aws.cloudwatch",
-                "eutester.aws.ec2",
-                "eutester.aws.elb",
-                "eutester.aws.iam",
-                "eutester.aws.s3",
-                "eutester.aws.sts",
-                "eutester.euca",
-                "eutester.testcases",
-                "eutester.testcases.images",
-                "eutester.utils"],
+      packages=find_packages(),
       package_data={'testcases.cloud_admin.riak_cs.templates': ['*.template']},
       license='BSD (Simplified)',
       platforms='Posix; MacOS X; Windows',

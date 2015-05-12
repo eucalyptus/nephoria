@@ -1,5 +1,5 @@
 
-from eutester.euca.admin.services import EucaComponentService
+from eucaadmin.services import EucaComponentService
 
 
 class EucaArbitratorService(EucaComponentService):

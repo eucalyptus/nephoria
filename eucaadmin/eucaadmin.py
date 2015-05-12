@@ -12,19 +12,19 @@ from boto.connection import AWSQueryConnection
 from boto.ec2.regioninfo import RegionInfo
 from boto.exception import BotoServerError
 
-from eutester.euca.admin import EucaResponseException, EucaNotFoundException
-from eutester.euca.admin.cluster_controller import (
+from eucaadmin import EucaResponseException, EucaNotFoundException
+from eucaadmin.cluster_controller import (
     EucaClusterControllerService,
     SHOW_CLUSTER_CONTROLLER_SERVICES
 )
-from eutester.euca.admin.cloud_controller import EucaCloudControllerService
-from eutester.euca.admin.storage_controller import EucaStorageControllerService
-from eutester.euca.admin.object_storage_gateway import EucaObjectStorageGatewayService
-from eutester.euca.admin.nodecontroller import EucaNodeService, SHOW_NODES
-from eutester.euca.admin.walrus import EucaWalrusBackendService
-from eutester.euca.admin.arbitrator import EucaArbitratorService
-from eutester.euca.admin.vmware_broker import EucaVMwareBrokerService
-from eutester.euca.admin.services import (
+from eucaadmin.cloud_controller import EucaCloudControllerService
+from eucaadmin.storage_controller import EucaStorageControllerService
+from eucaadmin.object_storage_gateway import EucaObjectStorageGatewayService
+from eucaadmin.nodecontroller import EucaNodeService, SHOW_NODES
+from eucaadmin.walrus import EucaWalrusBackendService
+from eucaadmin.arbitrator import EucaArbitratorService
+from eucaadmin.vmware_broker import EucaVMwareBrokerService
+from eucaadmin.services import (
     EucaService,
     EucaServiceList,
     EucaServiceRegResponse,
@@ -34,7 +34,7 @@ from eutester.euca.admin.services import (
     SHOW_SERVICE_TYPES,
     SHOW_SERVICE_TYPES_VERBOSE
 )
-from eutester.euca.admin.eucaproperty import (
+from eucaadmin.eucaproperty import (
     EucaProperty,
     SHOW_PROPERTIES,
     SHOW_PROPERTIES_NARROW

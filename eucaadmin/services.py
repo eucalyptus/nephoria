@@ -1,6 +1,6 @@
 
 from boto.resultset import ResultSet
-from eutester.euca.admin import EucaBaseObj, EucaEmpyreanResponse
+from eucaadmin import EucaBaseObj, EucaEmpyreanResponse
 from eutester.utils.log_utils import markup, get_traceback
 from prettytable import PrettyTable, ALL
 from operator import itemgetter

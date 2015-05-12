@@ -1,5 +1,5 @@
 
-from eutester.euca.admin import EucaBaseObj
+from eucaadmin import EucaBaseObj
 from eutester.utils.log_utils import get_traceback
 from eutester.utils.log_utils import markup
 from prettytable import PrettyTable, ALL

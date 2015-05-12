@@ -1,15 +1,17 @@
-from eutester.euca.admin.eucahost import EucaHost
-from eutester.utils.net_utils.sshconnection import CommandExitCodeException, \
-    CommandTimeoutException, SshCbReturn
-from eutester.euca.admin.services import EucaComponentService
-from eutester.utils.log_utils import markup
-from prettytable import PrettyTable
+
 import os
 import re
 import stat
 import time
 import types
-from xml.dom.minidom import parse, parseString
+from xml.dom.minidom import parseString
+from prettytable import PrettyTable
+
+from eutester.utils.log_utils import markup
+from eutester.utils.net_utils.sshconnection import CommandExitCodeException, \
+    CommandTimeoutException, SshCbReturn
+from eucaadmin.eucahost import EucaHost
+from eucaadmin.services import EucaComponentService
 
 
 def SHOW_NODES(connection, nodes=None, print_table=True):

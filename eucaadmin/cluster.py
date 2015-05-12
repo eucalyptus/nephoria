@@ -1,5 +1,5 @@
 
-from eutester.euca.admin.services import EucaService
+from eucaadmin.services import EucaService
 from prettytable import PrettyTable
 
 
