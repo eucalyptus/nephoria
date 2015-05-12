@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title> "cloud_admin.show_service_types(do_html=True)" </title>
+</head>
+<body>
+<table frame="box" rules="all">
+    <tr>
+        <th style="padding-left: 0em; padding-right: 0em; text-align: center"><b>NAME              </b></th>
+        <th style="padding-left: 0em; padding-right: 0em; text-align: center"><b>CLUSTER</b></th>
+        <th style="padding-left: 0em; padding-right: 0em; text-align: center"><b>      PARENT      </b></th>
+        <th style="padding-left: 0em; padding-right: 0em; text-align: center"><b>PUBLIC</b></th>
+        <th style="padding-left: 0em; padding-right: 0em; text-align: center"><b>DESCRIPTION                                                 </b></th>
+    </tr>
+    <tr>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>user-api</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top"><font color="BLUE"><b>-</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top"><font color="BLUE"><b>        *         </b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>false</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>The service group of all user-facing API endpoint services</b></font></td>
+    </tr>
+    <tr>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">  loadbalancing</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">-</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">user-api</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">true</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">ELB API service</td>
+    </tr>
+    <tr>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">  autoscaling</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">-</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">user-api</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">true</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">Auto Scaling API service</td>
+    </tr>
+    <tr>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">  objectstorage</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">-</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">user-api</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">true</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">S3 API service</td>
+    </tr>
+    <tr>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">  cloudwatch</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">-</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">user-api</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">true</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">CloudWatch API service</td>
+    </tr>
+    <tr>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">  euare</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">-</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">user-api</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">true</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">IAM API service</td>
+    </tr>
+    <tr>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">  compute</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">-</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">user-api</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">true</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">the Eucalyptus EC2 API service</td>
+    </tr>
+    <tr>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">  cloudformation</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">-</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">user-api</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">true</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">Cloudformation API service</td>
+    </tr>
+    <tr>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">  simpleworkflow</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">-</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">user-api</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">true</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">Simple Workflow API service</td>
+    </tr>
+    <tr>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">  tokens</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">-</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">user-api</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">true</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">STS API service</td>
+    </tr>
+    <tr>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">  imaging</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">-</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top">user-api</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">true</td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top">Eucalyptus imaging service</td>
+    </tr>
+    <tr>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>eucalyptus</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top"><font color="BLUE"><b>-</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top"><font color="BLUE"><b>-</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>false</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>eucalyptus service implementation</b></font></td>
+    </tr>
+    <tr>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>walrusbackend</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top"><font color="BLUE"><b>-</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top"><font color="BLUE"><b>-</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>false</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>The legacy Walrus Backend service</b></font></td>
+    </tr>
+    <tr>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>storage</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top"><font color="BLUE"><b>TRUE</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top"><font color="BLUE"><b>-</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>false</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>The Storage Controller service</b></font></td>
+    </tr>
+    <tr>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>arbitrator</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top"><font color="BLUE"><b>TRUE</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top"><font color="BLUE"><b>-</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>false</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>The Arbitrator service</b></font></td>
+    </tr>
+    <tr>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>cluster</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top"><font color="BLUE"><b>TRUE</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: center; vertical-align: top"><font color="BLUE"><b>-</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>false</b></font></td>
+        <td style="padding-left: 0em; padding-right: 0em; text-align: left; vertical-align: top"><font color="BLUE"><b>The Cluster Controller service</b></font></td>
+    </tr>
+</table>
+</body>
+</html>
