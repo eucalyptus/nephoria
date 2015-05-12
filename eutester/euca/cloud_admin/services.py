@@ -12,6 +12,20 @@ import time
 
 def SHOW_SERVICES(connection, services=None, service_type=None, show_part=False, grid=False,
                   partition=None, print_table=True, do_html=False):
+    """
+     Displays a table summarizing Eucalyptus services
+    :param connection: EucaAdmin() query connection
+    :param services: list of EucaService objects
+    :param service_type: string, eucalyptus service type (ie: 'user-api')
+    :param show_part: bool, if true will show all partitions, if false will only show
+                      partitions which are otherwise referred to as  'clusters' or 'zones'
+    :param grid: bool, if true will produce grid lines in the table
+    :param partition: bool, if true will filter services belonging to this partition
+    :param print_table: bool, if True will write the table using connection.debug_method,
+                        if False will return the table obj w/o printing it
+    :param do_html: If True will produce an html table instead of an ascii table
+    :raise ValueError:
+    """
     html_open = "[+html_open+]"
     html_close = "[+html_close+]"
 
@@ -124,6 +138,16 @@ def SHOW_SERVICES(connection, services=None, service_type=None, show_part=False,
 
 def SHOW_SERVICE_TYPES(connection, service_types=None, verbose=False,
                        printmethod=None, print_table=True):
+    """
+    Produces a table summarizing the Eucalyptus Service Types
+    :param connection: EucaAdmin() connection obj
+    :param service_types: a list of service types to query, if None will fetch all service types
+    :param verbose: show debug info while producing this table
+    :param printmethod: Use this method to print the table, otherwise will
+                        use connection.debug_method()
+    :param print_table: bool, if True will attempt to print the table, else will return the
+                        table obj
+    """
     cluster_len = 7
     parent_len = 18
     name_len = 18
@@ -162,7 +186,7 @@ def SHOW_SERVICE_TYPES(connection, service_types=None, verbose=False,
                                                      printmethod=printmethod,
                                                      print_table=print_table)
 
-    def get_service_row(service, markup_method=None, markups=None, indent=''):
+    def _get_service_row(service, markup_method=None, markups=None, indent=''):
         if markup_method:
             def mm(x):
                 return markup_method(x, markups)
@@ -188,15 +212,15 @@ def SHOW_SERVICE_TYPES(connection, service_types=None, verbose=False,
     for service in service_types:
         if service.groupmembers:
             # Highlight the parent service type/class
-            main_pt.add_row(get_service_row(service, markup_method=markup, markups=[1, 94]))
+            main_pt.add_row(_get_service_row(service, markup_method=markup, markups=[1, 94]))
             # If this list has been sorted, the members have been converted to EucaServiceType
             # and moved here. They should be printed here under the parent, otherwise these
             # are just strings and the member service types will be printed in the main table
             for member in service.groupmembers:
                 if isinstance(member, EucaServiceType):
-                    main_pt.add_row(get_service_row(member, indent='  '))
+                    main_pt.add_row(_get_service_row(member, indent='  '))
         else:
-            main_pt.add_row(get_service_row(service, markup_method=markup, markups=[1, 94]))
+            main_pt.add_row(_get_service_row(service, markup_method=markup, markups=[1, 94]))
     if print_table:
         if printmethod:
             printmethod(str(main_pt))
@@ -207,6 +231,11 @@ def SHOW_SERVICE_TYPES(connection, service_types=None, verbose=False,
 
 
 def _sort_service_types(service_types):
+    """
+    Convenience Method for sorting lists of servie_types
+    :param service_types: list of EucaService Type objs
+    :return:
+    """
     partitioned = []
     cloud = copy.copy(service_types)
     for service in service_types:
@@ -230,6 +259,17 @@ def _sort_service_types(service_types):
 
 
 def SHOW_SERVICE_TYPES_VERBOSE(connection, service_types=None, printmethod=None, print_table=True):
+    """
+    Prints a table summarizing Eucalyptus Service type objs.
+    This table shows additional information to SHOW_SERVICE_TYPES(), which shows info most often
+    relevant to an administrator. This table is produced without the additional
+    formatting and sorting.
+    :param connection: EucaAdmin connection
+    :param service_types: EucaServiceType objs
+    :param printmethod: Method used to print this table, default is connection.default_method()
+    :param print_table: bool, if True will print table, if False will return table obj
+    :return: see print_table param.
+    """
     service_types = service_types or connection.get_service_types()
     if not isinstance(service_types, list):
         service_types = [service_types]
@@ -257,6 +297,16 @@ def SHOW_SERVICE_TYPES_VERBOSE(connection, service_types=None, printmethod=None,
 
 
 def SHOW_COMPONENTS(connection, components=None, get_method=None, print_table=True):
+    """
+    Base method for summarizing Eucalyptus components in a table format
+
+    :param connection: EucaAdmin connection
+    :param components: EucaServiceComponent objs
+    :param get_method: method used to retrieve a list of components to summarize
+                      (ie get_all_cluster_controller_services)
+    :param print_table: bool, if True will attempt to print the table to connection.debug_method,
+                        if False will return the table obj
+    """
     if not components:
         if not get_method:
             raise ValueError('_show_component(). Components or get_method must be populated')
