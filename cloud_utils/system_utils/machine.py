@@ -32,12 +32,15 @@
 import select
 import threading
 import time
-from eutester.utils.log_utils.eulogger import Eulogger
-from eutester.utils.log_utils import get_traceback
-from eutester.utils.log_utils import printinfo
-from eutester.utils.file_utils import render_file_template
-from eutester.utils.net_utils.sshconnection import SshConnection, SshCbReturn, \
-    CommandExitCodeException
+from cloud_utils.log_utils.eulogger import Eulogger
+from cloud_utils.log_utils import get_traceback
+from cloud_utils.log_utils import printinfo
+from cloud_utils.file_utils import render_file_template
+from cloud_utils.net_utils.sshconnection import (
+    CommandExitCodeException,
+    SshCbReturn,
+    SshConnection
+)
 import re
 import os
 import sys

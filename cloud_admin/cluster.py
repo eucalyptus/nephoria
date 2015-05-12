@@ -1,5 +1,5 @@
 
-from eucaadmin.services import EucaService
+from cloud_admin.services import EucaService
 from prettytable import PrettyTable
 
 

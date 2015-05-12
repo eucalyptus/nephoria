@@ -1,6 +1,6 @@
 
 
-from eucaadmin.services import EucaComponentService, SHOW_COMPONENTS
+from cloud_admin.services import EucaComponentService, SHOW_COMPONENTS
 
 
 class EucaWalrusBackendService(EucaComponentService):

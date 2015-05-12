@@ -32,8 +32,8 @@
 import os
 import re
 from argparse import Namespace
-from eutester.utils.net_utils.sshconnection import CommandExitCodeException
-from eutester.utils.system_utils.machine import Machine
+from cloud_utils.net_utils.sshconnection import CommandExitCodeException
+from cloud_utils.system_utils.machine import Machine
 
 
 class EucaHost(Machine):

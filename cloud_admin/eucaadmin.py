@@ -12,19 +12,19 @@ from boto.connection import AWSQueryConnection
 from boto.ec2.regioninfo import RegionInfo
 from boto.exception import BotoServerError
 
-from eucaadmin import EucaResponseException, EucaNotFoundException
-from eucaadmin.cluster_controller import (
+from cloud_admin import EucaResponseException, EucaNotFoundException
+from cloud_admin.cluster_controller import (
     EucaClusterControllerService,
     SHOW_CLUSTER_CONTROLLER_SERVICES
 )
-from eucaadmin.cloud_controller import EucaCloudControllerService
-from eucaadmin.storage_controller import EucaStorageControllerService
-from eucaadmin.object_storage_gateway import EucaObjectStorageGatewayService
-from eucaadmin.nodecontroller import EucaNodeService, SHOW_NODES
-from eucaadmin.walrus import EucaWalrusBackendService
-from eucaadmin.arbitrator import EucaArbitratorService
-from eucaadmin.vmware_broker import EucaVMwareBrokerService
-from eucaadmin.services import (
+from cloud_admin.cloud_controller import EucaCloudControllerService
+from cloud_admin.storage_controller import EucaStorageControllerService
+from cloud_admin.object_storage_gateway import EucaObjectStorageGatewayService
+from cloud_admin.nodecontroller import EucaNodeService, SHOW_NODES
+from cloud_admin.walrus import EucaWalrusBackendService
+from cloud_admin.arbitrator import EucaArbitratorService
+from cloud_admin.vmware_broker import EucaVMwareBrokerService
+from cloud_admin.services import (
     EucaService,
     EucaServiceList,
     EucaServiceRegResponse,
@@ -34,12 +34,12 @@ from eucaadmin.services import (
     SHOW_SERVICE_TYPES,
     SHOW_SERVICE_TYPES_VERBOSE
 )
-from eucaadmin.eucaproperty import (
+from cloud_admin.eucaproperty import (
     EucaProperty,
     SHOW_PROPERTIES,
     SHOW_PROPERTIES_NARROW
 )
-from eutester.utils.log_utils import markup, get_traceback
+from cloud_utils.log_utils import get_traceback
 
 ###############################################################################################
 #                        Eucalyptus Admin ('Empyrean') Query Interface                        #
@@ -220,7 +220,7 @@ class EucaAdmin(AWSQueryConnection):
         This table shows additional information to SHOW_SERVICE_TYPES(), which shows info most
         often relevant to an administrator. This table is produced without the additional
         formatting and sorting.
-        :param connection: EucaAdmin connection
+        :param connection: cloud_admin connection
         :param service_types: EucaServiceType objs
         :param printmethod: Method used to print this table, default is connection.default_method()
         :param print_table: bool, if True will print table, if False will return table obj
@@ -231,7 +231,7 @@ class EucaAdmin(AWSQueryConnection):
     def show_service_types(self, *args, **kwargs):
         """
         Produces a table summarizing the Eucalyptus Service Types
-        :param connection: EucaAdmin() connection obj
+        :param connection: cloud_admin() connection obj
         :param service_types: a list of service types to query, if None will fetch all
                               service types
         :param verbose: show debug info while producing this table
@@ -854,18 +854,22 @@ class EucaAdmin(AWSQueryConnection):
             raise ValueError('Unknown type provided for property lookup: "{0}/{1}"'
                              .format(property, type(property)))
         props = self.get_properties(property_name)
-        prop_count = len(props)
+        keep = []
+        for prop in props:
+            if re.match('^{0}$'.format(property_name), prop.name):
+                keep.append(prop)
+        prop_count = len(keep)
         if prop_count < 1:
             raise EucaNotFoundException('get_property:Property not Found', {'property': property})
         if prop_count > 1:
             prop_string = ""
             try:
-                prop_string = ",".join("\t{0}\n".format(x.name) for x in props)
+                prop_string = ",".join("\t{0}\n".format(x.name) for x in keep)
             except:
                 pass
             raise ValueError('get_property: Multiple matches for property name:{0}, found {1} '
                              'matches:\n{2}'.format(property_name, prop_count, prop_string))
-        return props[0]
+        return keep[0]
 
     def get_properties(self, *prop_names):
         '''
@@ -927,7 +931,7 @@ class EucaAdmin(AWSQueryConnection):
         '''
         Summarize Eucalyptus properties in table format
 
-        :param connection: EucaAdmin connection
+        :param connection: cloud_admin connection
         :param properties: list of property names, or Eucaproperties to summarize
         :param description: bool, show property descriptions
         :param grid: bool, show table in grid format
@@ -941,7 +945,7 @@ class EucaAdmin(AWSQueryConnection):
         """
         Narrow formatted table used to summarize Eucalyptus properties
 
-        :param connection: EucaAdmin connection
+        :param connection: cloud_admin connection
         :param properties: list of EucaProperty objs or string names of properties
         :param verbose: show debug information during table creation
         :param print_table: bool, if True will print table using connection.debug_method()

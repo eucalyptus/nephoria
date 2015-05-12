@@ -1,5 +1,5 @@
 
-from eucaadmin.services import EucaComponentService
+from cloud_admin.services import EucaComponentService
 
 
 class EucaArbitratorService(EucaComponentService):

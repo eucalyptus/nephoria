@@ -1,7 +1,7 @@
 
 from boto.resultset import ResultSet
-from eucaadmin import EucaBaseObj, EucaEmpyreanResponse
-from eutester.utils.log_utils import markup, get_traceback
+from cloud_admin import EucaBaseObj, EucaEmpyreanResponse
+from cloud_utils.log_utils import markup, get_traceback
 from prettytable import PrettyTable, ALL
 from operator import itemgetter
 import copy

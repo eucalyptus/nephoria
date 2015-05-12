@@ -1,7 +1,7 @@
 __author__ = 'clarkmatthew'
 
 
-from eutester.utils.net_utils.sshconnection import SshCbReturn
+from cloud_utils.net_utils.sshconnection import SshCbReturn
 import re
 
 def expect_password_cb(buf,

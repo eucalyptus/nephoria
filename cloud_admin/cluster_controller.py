@@ -1,6 +1,6 @@
 
-from eucaadmin.services import EucaComponentService
-from eutester.utils.log_utils import markup
+from cloud_admin.services import EucaComponentService
+from cloud_utils.log_utils import markup
 from prettytable import PrettyTable
 
 

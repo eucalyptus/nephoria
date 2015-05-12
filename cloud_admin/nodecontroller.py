@@ -7,11 +7,11 @@ import types
 from xml.dom.minidom import parseString
 from prettytable import PrettyTable
 
-from eutester.utils.log_utils import markup
-from eutester.utils.net_utils.sshconnection import CommandExitCodeException, \
+from cloud_utils.log_utils import markup
+from cloud_utils.net_utils.sshconnection import CommandExitCodeException, \
     CommandTimeoutException, SshCbReturn
-from eucaadmin.eucahost import EucaHost
-from eucaadmin.services import EucaComponentService
+from cloud_admin.eucahost import EucaHost
+from cloud_admin.services import EucaComponentService
 
 
 def SHOW_NODES(connection, nodes=None, print_table=True):

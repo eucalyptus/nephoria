@@ -4,7 +4,7 @@ import os
 import time
 import random
 from eutester.euca.euca_ops import Eucaops
-from eutester.utils.eutestcase import EutesterTestCase
+from eutester.testcases.testcase_utils.eutestcase import EutesterTestCase
 
 
 class InstanceBasics(EutesterTestCase):

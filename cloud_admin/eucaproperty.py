@@ -1,7 +1,7 @@
 
-from eucaadmin import EucaBaseObj
-from eutester.utils.log_utils import get_traceback
-from eutester.utils.log_utils import markup
+from cloud_admin import EucaBaseObj
+from cloud_utils.log_utils import get_traceback
+from cloud_utils.log_utils import markup
 from prettytable import PrettyTable, ALL
 
 
@@ -119,7 +119,7 @@ class EucaProperty(EucaBaseObj):
     def __init__(self, connection=None):
         super(EucaProperty, self).__init__(connection)
         self.value = None
-        self.description = None
+        self._description = None
 
     def endElement(self, name, value, connection):
         ename = name.lower().replace('euca:', '')
@@ -131,6 +131,16 @@ class EucaProperty(EucaBaseObj):
             self.value = value
         elif ename:
             setattr(self, ename, value)
+
+    @property
+    def description(self):
+        return self._description
+
+    @description.setter
+    def description(self, value):
+        # Hack to prevent updates from overwriting description value
+        if value and str(value).lower().strip() != 'none':
+            self._description = value
 
     def show(self):
         return SHOW_PROPERTIES(self.connection, self)
@@ -165,6 +175,12 @@ class EucaProperty(EucaBaseObj):
         """
         Modify this property's value.
         :param value: The new value to request this property be modified to.
+        :returns: modified EucaProperty
+        :raise: ValueError if modified property value does not match requested value
         """
-        self.update(new_prop=self.connection.modify_property(self, value))
+        self.connection.modify_property(self, value)
+        self.update()
+        if str(self.value) != str(value):
+            raise ValueError('Modified property value does not match requested value:{0}, '
+                             'current:{1}'.format(value, self.value))
         return self

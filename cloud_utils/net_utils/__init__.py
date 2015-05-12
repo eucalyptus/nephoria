@@ -5,7 +5,7 @@ import socket
 import subprocess
 import sys
 import time
-from eutester.utils.system_utils import local
+from cloud_utils.system_utils import local
 
 def test_port_status(ip,
                      port,
