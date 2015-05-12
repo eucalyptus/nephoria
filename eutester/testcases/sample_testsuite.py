@@ -104,24 +104,41 @@ def hope_i_get_to_run():
 ##################################################################################################
 # Create our test list of test units...                                                          #
 # this can be done by using a method or the name of a method within the testcase class...        #
-# by passing a method                                                                            #
+# by passing a method.                                                                           #
+#                                                                                                #
+#                                                                                                #
+# First test is a vanilla passing testcase, created by adding a 'method' from above              #
+# This first test case is using autoarg=True, this will populate the test method using           #
+# any args/kwargs from  testcase.args which match the methods(*args, **kwargs).                  #
 ##################################################################################################
-test1 = testcase.create_testunit_from_method(my_first_test_method)
+test0 = testcase.create_testunit_from_method(my_first_test_method)
+
+##################################################################################################
+# Next run the same method disabling autoarg. Set end of failure flag to false to continue       #
+# Running the test suite upon failure                                                            #
+##################################################################################################
+test1 = testcase.create_testunit_from_method(my_first_test_method, autoarg=False, eof=False)
+
+# Add Another test by method
 test2 = testcase.create_testunit_from_method(too_lazy_to_run)
 
 ##################################################################################################
-# By passing a name of a method local to the testcase object, setting eof to True here will      #
-# abort any remaining tests if this unit fails. This can also be set globally for all test units #
+# Create this testunit obj by passing a name of a method local to the testcase object.           #
+# Setting eof to True here will abort any remaining tests if this unit fails. This can also be   #
+# set globally for all test units                                                                #
 # during run_test_case_list()                                                                    #
 ##################################################################################################
 test3 = testcase.create_testunit_by_name('uh_oh_fail', eof=True)
+
+# Add one more test unit by method, this test should not be attempted since eof is set on a
+# test intended to fail prior to this test
 test4 = testcase.create_testunit_from_method(hope_i_get_to_run)
 
 
 ##################################################################################################
 # Finally run the test list                                                                      #
 ##################################################################################################
-result = testcase.run_test_case_list(list = [test1, test2, test3, test4],
+result = testcase.run_test_case_list(list = [test0, test1, test2, test3, test4],
                                      eof=False,
                                      clean_on_exit=False,
                                      printresults=True)

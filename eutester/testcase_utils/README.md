@@ -110,24 +110,41 @@ def hope_i_get_to_run():
 ##################################################################################################
 # Create our test list of test units...                                                          #
 # this can be done by using a method or the name of a method within the testcase class...        #
-# by passing a method                                                                            #
+# by passing a method.                                                                           #
+#                                                                                                #
+#                                                                                                #
+# First test is a vanilla passing testcase, created by adding a 'method' from above              #
+# This first test case is using autoarg=True, this will populate the test method using           #
+# any args/kwargs from  testcase.args which match the methods(*args, **kwargs).                  #
 ##################################################################################################
-test1 = testcase.create_testunit_from_method(my_first_test_method)
+test0 = testcase.create_testunit_from_method(my_first_test_method)
+
+##################################################################################################
+# Next run the same method disabling autoarg. Set end of failure flag to false to continue       #
+# Running the test suite upon failure                                                            #
+##################################################################################################
+test1 = testcase.create_testunit_from_method(my_first_test_method, autoarg=False, eof=False)
+
+# Add Another test by method
 test2 = testcase.create_testunit_from_method(too_lazy_to_run)
 
 ##################################################################################################
-# By passing a name of a method local to the testcase object, setting eof to True here will      #
-# abort any remaining tests if this unit fails. This can also be set globally for all test units #
+# Create this testunit obj by passing a name of a method local to the testcase object.           #
+# Setting eof to True here will abort any remaining tests if this unit fails. This can also be   #
+# set globally for all test units                                                                #
 # during run_test_case_list()                                                                    #
 ##################################################################################################
 test3 = testcase.create_testunit_by_name('uh_oh_fail', eof=True)
+
+# Add one more test unit by method, this test should not be attempted since eof is set on a
+# test intended to fail prior to this test
 test4 = testcase.create_testunit_from_method(hope_i_get_to_run)
 
 
 ##################################################################################################
 # Finally run the test list                                                                      #
 ##################################################################################################
-result = testcase.run_test_case_list(list = [test1, test2, test3, test4],
+result = testcase.run_test_case_list(list = [test0, test1, test2, test3, test4],
                                      eof=False,
                                      clean_on_exit=False,
                                      printresults=True)
@@ -136,6 +153,7 @@ result = testcase.run_test_case_list(list = [test1, test2, test3, test4],
 # Dont forget to exit with the proper code                                                       #
 ##################################################################################################
 exit(result)
+
 
 ```
 
@@ -160,8 +178,8 @@ logfile:None
 logfile_level:debug
 Starting setup_debugmethod, name:eutestcase
 After populating... setup_debugmethod: testcasename:Nonelog_level:debuglogfile:Nonelogfile_level:debug
-[2015-05-12 12:54:27,255] [eutestcase] [DEBUG]: (setuptestcase:339): <pre>
-[2015-05-12 12:54:27,256] [eutestcase] [DEBUG]: (show_self:1312):
+[2015-05-12 13:32:15,414] [eutestcase] [DEBUG]: (setuptestcase:339): <pre>
+[2015-05-12 13:32:15,415] [eutestcase] [DEBUG]: (show_self:1312):
 -------------------------------------------------------------------------
 TESTCASE INFO:
 ----------
@@ -169,12 +187,12 @@ NAME:                     --->:  eutestcase
 TEST LIST:                --->:  []
 CONFIG FILES:             --->:  []
 -------------------------------------------------------------------------
-[2015-05-12 12:54:27,257] [eutestcase] [DEBUG]: (show_args:1333):
+[2015-05-12 13:32:15,416] [eutestcase] [DEBUG]: (show_args:1333):
 -------------------------------------------------------------------------
 TEST ARGS:                       VALUE:
 ----------                      ------
 debug_method              --->:  <bound method EutesterTestCase.debug of <eutester.eutestcase.EutesterTestCase testMethod=eutestcase>>
-logger                    --->:  <eutester.eulogger.Eulogger object at 0x10db2c810>
+logger                    --->:  <eutester.eulogger.Eulogger object at 0x10ed267d0>
 -------------------------------------------------------------------------
 setup_debugmethod:
 testcasename:None
@@ -183,7 +201,7 @@ logfile:None
 logfile_level:None
 Starting setup_debugmethod, name:eutestcase
 After populating... setup_debugmethod: testcasename:Nonelog_level:debuglogfile:Nonelogfile_level:debug
-[2015-05-12 12:54:27,259] [eutestcase] [DEBUG]: (show_self:1312):
+[2015-05-12 13:32:15,418] [eutestcase] [DEBUG]: (show_self:1312):
 -------------------------------------------------------------------------
 TESTCASE INFO:
 ----------
@@ -198,7 +216,7 @@ Example to retrieve an arg from a testcase obj called 'testcase': testcase.args.
 ```
 
 -------------------------------------------------------------------------
-[2015-05-12 12:54:27,261] [eutestcase] [DEBUG]: (show_args:1333):
+[2015-05-12 13:32:15,420] [eutestcase] [DEBUG]: (show_args:1333):
 -------------------------------------------------------------------------
 TEST ARGS:                       VALUE:
 ----------                      ------
@@ -219,7 +237,7 @@ keypair                   --->:  None
 log_level                 --->:  debug
 logfile                   --->:  None
 logfile_level             --->:  debug
-logger                    --->:  <eutester.eulogger.Eulogger object at 0x10db351d0>
+logger                    --->:  <eutester.eulogger.Eulogger object at 0x10ed31190>
 password                  --->:  foobar
 region                    --->:  None
 test_ip                   --->:  10.111.5.100
@@ -230,30 +248,33 @@ zone                      --->:  None
 -------------------------------------------------------------------------
 
 ```
-Next the testunits are built...
+Next the testunits are built. Notice The first test is populated with testcase.args which
+match the test method's args/kwargs.
+The second test is the same method but has autoarg=False disabling this autopopulation of args.
 ```
 
 Creating testunit:my_first_test_method, args:
-[2015-05-12 12:54:27,262] [eutestcase] [DEBUG]: (populate_testunit_with_args:1351): Attempting to populate testunit:my_first_test_method, with testcase.args...
-[2015-05-12 12:54:27,263] [eutestcase] [DEBUG]: (populate_testunit_with_args:1359): Testunit keyword args:{}
-[2015-05-12 12:54:27,264] [eutestcase] [DEBUG]: (populate_testunit_with_args:1364): Got method args:('ip', 'username', 'password')
-[2015-05-12 12:54:27,265] [eutestcase] [DEBUG]: (populate_testunit_with_args:1372): test unit total args:{}
-[2015-05-12 12:54:27,266] [eutestcase] [DEBUG]: (populate_testunit_with_args:1378): Found matching arg for:password
+[2015-05-12 13:32:15,421] [eutestcase] [DEBUG]: (populate_testunit_with_args:1351): Attempting to populate testunit:my_first_test_method, with testcase.args...
+[2015-05-12 13:32:15,422] [eutestcase] [DEBUG]: (populate_testunit_with_args:1359): Testunit keyword args:{}
+[2015-05-12 13:32:15,423] [eutestcase] [DEBUG]: (populate_testunit_with_args:1364): Got method args:('ip', 'username', 'password')
+[2015-05-12 13:32:15,424] [eutestcase] [DEBUG]: (populate_testunit_with_args:1372): test unit total args:{}
+[2015-05-12 13:32:15,425] [eutestcase] [DEBUG]: (populate_testunit_with_args:1378): Found matching arg for:password
+Creating testunit:my_first_test_method, args:
 Creating testunit:too_lazy_to_run, args:
-[2015-05-12 12:54:27,267] [eutestcase] [DEBUG]: (populate_testunit_with_args:1351): Attempting to populate testunit:too_lazy_to_run, with testcase.args...
-[2015-05-12 12:54:27,268] [eutestcase] [DEBUG]: (populate_testunit_with_args:1359): Testunit keyword args:{}
-[2015-05-12 12:54:27,269] [eutestcase] [DEBUG]: (populate_testunit_with_args:1364): Got method args:()
-[2015-05-12 12:54:27,270] [eutestcase] [DEBUG]: (populate_testunit_with_args:1372): test unit total args:{}
+[2015-05-12 13:32:15,426] [eutestcase] [DEBUG]: (populate_testunit_with_args:1351): Attempting to populate testunit:too_lazy_to_run, with testcase.args...
+[2015-05-12 13:32:15,427] [eutestcase] [DEBUG]: (populate_testunit_with_args:1359): Testunit keyword args:{}
+[2015-05-12 13:32:15,428] [eutestcase] [DEBUG]: (populate_testunit_with_args:1364): Got method args:()
+[2015-05-12 13:32:15,429] [eutestcase] [DEBUG]: (populate_testunit_with_args:1372): test unit total args:{}
 Creating testunit:sample_test_fail_method, args:
-[2015-05-12 12:54:27,271] [eutestcase] [DEBUG]: (populate_testunit_with_args:1351): Attempting to populate testunit:sample_test_fail_method, with testcase.args...
-[2015-05-12 12:54:27,272] [eutestcase] [DEBUG]: (populate_testunit_with_args:1359): Testunit keyword args:{}
-[2015-05-12 12:54:27,273] [eutestcase] [DEBUG]: (populate_testunit_with_args:1364): Got method args:()
-[2015-05-12 12:54:27,274] [eutestcase] [DEBUG]: (populate_testunit_with_args:1372): test unit total args:{}
+[2015-05-12 13:32:15,430] [eutestcase] [DEBUG]: (populate_testunit_with_args:1351): Attempting to populate testunit:sample_test_fail_method, with testcase.args...
+[2015-05-12 13:32:15,431] [eutestcase] [DEBUG]: (populate_testunit_with_args:1359): Testunit keyword args:{}
+[2015-05-12 13:32:15,432] [eutestcase] [DEBUG]: (populate_testunit_with_args:1364): Got method args:()
+[2015-05-12 13:32:15,433] [eutestcase] [DEBUG]: (populate_testunit_with_args:1372): test unit total args:{}
 Creating testunit:hope_i_get_to_run, args:
-[2015-05-12 12:54:27,275] [eutestcase] [DEBUG]: (populate_testunit_with_args:1351): Attempting to populate testunit:hope_i_get_to_run, with testcase.args...
-[2015-05-12 12:54:27,276] [eutestcase] [DEBUG]: (populate_testunit_with_args:1359): Testunit keyword args:{}
-[2015-05-12 12:54:27,277] [eutestcase] [DEBUG]: (populate_testunit_with_args:1364): Got method args:()
-[2015-05-12 12:54:27,278] [eutestcase] [DEBUG]: (populate_testunit_with_args:1372): test unit total args:{}
+[2015-05-12 13:32:15,434] [eutestcase] [DEBUG]: (populate_testunit_with_args:1351): Attempting to populate testunit:hope_i_get_to_run, with testcase.args...
+[2015-05-12 13:32:15,435] [eutestcase] [DEBUG]: (populate_testunit_with_args:1359): Testunit keyword args:{}
+[2015-05-12 13:32:15,436] [eutestcase] [DEBUG]: (populate_testunit_with_args:1364): Got method args:()
+[2015-05-12 13:32:15,437] [eutestcase] [DEBUG]: (populate_testunit_with_args:1372): test unit total args:{}
 
 ```
 And the tests are run, each test prints the test method's
@@ -261,8 +282,7 @@ docstring and the arguments is is being run with.
 This test unit should show a passing test unit...
 ```
 
-
-[2015-05-12 12:54:27,279] [eutestcase] [DEBUG]: (print_test_unit_startmsg:870):
+[2015-05-12 13:32:15,439] [eutestcase] [DEBUG]: (print_test_unit_startmsg:870):
 -------------------------------------------------------------------------
 STARTING TESTUNIT: my_first_test_method
 METHOD:my_first_test_method, TEST DESCRIPTION:
@@ -283,12 +303,12 @@ KWARG:password = foobar
 SSH connection has hostname:10.111.5.100 user:root password:f****r
 SSH connection attempt(1 of 1), host:'root@10.111.5.100', using ipv4:10.111.5.100, thru proxy:'None'
 SSH - Connected to 10.111.5.100
-[2015-05-12 12:54:27,666] [eutestcase] [DEBUG]: (my_first_test_method:60): my_first_test_method passed yay!!
-[2015-05-12 12:54:27,668] [eutestcase] [DEBUG]: (my_first_test_method:61): Heres the output of our two commands:
-[2015-05-12 12:54:27,668] [eutestcase] [DEBUG]: (my_first_test_method:61): c-39.qa1.eucalyptus-systems.com
-[2015-05-12 12:54:27,668] [eutestcase] [DEBUG]: (my_first_test_method:61): 12:54:26 up 101 days, 22:04,  1 user,  load average: 0.00, 0.00, 0.00
-[2015-05-12 12:54:27,668] [eutestcase] [DEBUG]: (my_first_test_method:61):
-[2015-05-12 12:54:27,670] [eutestcase] [DEBUG]: (endtestunit:702):
+[2015-05-12 13:32:15,825] [eutestcase] [DEBUG]: (my_first_test_method:67): my_first_test_method passed yay!!
+[2015-05-12 13:32:15,827] [eutestcase] [DEBUG]: (my_first_test_method:68): Heres the output of our two commands:
+[2015-05-12 13:32:15,827] [eutestcase] [DEBUG]: (my_first_test_method:68): c-39.qa1.eucalyptus-systems.com
+[2015-05-12 13:32:15,827] [eutestcase] [DEBUG]: (my_first_test_method:68): 13:32:14 up 101 days, 22:41,  1 user,  load average: 0.00, 0.00, 0.00
+[2015-05-12 13:32:15,827] [eutestcase] [DEBUG]: (my_first_test_method:68):
+[2015-05-12 13:32:15,828] [eutestcase] [DEBUG]: (endtestunit:702):
 -------------------------------------------------------------------------
 - UNIT ENDED - my_first_test_method
 -------------------------------------------------------------------------
@@ -298,19 +318,64 @@ Test summary is printed at the end of each unit
 This next test shows an example of a test failure
 ```
 
-[2015-05-12 12:54:27,671] [eutestcase] [DEBUG]: (run_test_case_list:809): RESULTS SUMMARY FOR 'eutestcase':
-[2015-05-12 12:54:27,671] [eutestcase] [DEBUG]: (run_test_case_list:809):
-[2015-05-12 12:54:27,672] [eutestcase] [DEBUG]: (run_test_case_list:809): ------------------------------------------------------
-[2015-05-12 12:54:27,672] [eutestcase] [DEBUG]: (run_test_case_list:809): | TOTAL   | FAILED  | PASSED  | NOT_RUN | TIME_ELAPSED
-[2015-05-12 12:54:27,672] [eutestcase] [DEBUG]: (run_test_case_list:809): ------------------------------------------------------
-[2015-05-12 12:54:27,672] [eutestcase] [DEBUG]: (run_test_case_list:809): | 4       | 0       | 1       | 3       | 0
-[2015-05-12 12:54:27,672] [eutestcase] [DEBUG]: (run_test_case_list:809): ------------------------------------------------------
-[2015-05-12 12:54:27,672] [eutestcase] [DEBUG]: (run_test_case_list:809):
+[2015-05-12 13:32:15,830] [eutestcase] [DEBUG]: (run_test_case_list:809): RESULTS SUMMARY FOR 'eutestcase':
+[2015-05-12 13:32:15,830] [eutestcase] [DEBUG]: (run_test_case_list:809):
+[2015-05-12 13:32:15,830] [eutestcase] [DEBUG]: (run_test_case_list:809): ------------------------------------------------------
+[2015-05-12 13:32:15,830] [eutestcase] [DEBUG]: (run_test_case_list:809): | TOTAL   | FAILED  | PASSED  | NOT_RUN | TIME_ELAPSED
+[2015-05-12 13:32:15,830] [eutestcase] [DEBUG]: (run_test_case_list:809): ------------------------------------------------------
+[2015-05-12 13:32:15,830] [eutestcase] [DEBUG]: (run_test_case_list:809): | 5       | 0       | 1       | 4       | 0
+[2015-05-12 13:32:15,830] [eutestcase] [DEBUG]: (run_test_case_list:809): ------------------------------------------------------
+[2015-05-12 13:32:15,830] [eutestcase] [DEBUG]: (run_test_case_list:809):
+
+```
+The next test unit is the same method as the previous test but is not using autoargs.
+This test will fail because the unit was not passed password directly, and is expecting
+the 'instance_password' arg to be set instead of the 'password' arg which is currently set.
+This test has eof (end on failure) set to False which will allow the sequence to continue
+despite this test failing.
+```
+
+[2015-05-12 13:32:15,831] [eutestcase] [DEBUG]: (print_test_unit_startmsg:870):
+-------------------------------------------------------------------------
+STARTING TESTUNIT: my_first_test_method
+METHOD:my_first_test_method, TEST DESCRIPTION:
+Description: This description will be displayed in the test run output and should
+explain this test's objectives, progression, any artifacts it creates/removes, dependencies,
+etc..
+This test attempts to ssh into a remote device (in practice this might be a VM/instance)
+and verify the end host is alive by executing 2 commands; 'hostname' and 'uptime', verifies
+the return code of the commands to be '0', and prints the output out at debug level.
+End on Failure:False
+Passing ARGS:""
+Running list method: "my_first_test_method(username:None,ip:None,password:None)"
+-------------------------------------------------------------------------
+
+TESTUNIT FAILED: my_first_test_methodTraceback (most recent call last):
+  File "/Users/clarkmatthew/Documents/python_workspace/eutester_qa/eutester/eutester/eutestcase.py", line 279, in run
+    ret = self.method()
+  File "test.py", line 51, in my_first_test_method
+    .format(ip, password))
+ValueError: Need ip and password to run this ssh test! ip=10.111.5.100, password=None
+
+[2015-05-12 13:32:15,833] [eutestcase] [DEBUG]: (endtestunit:702):
+-------------------------------------------------------------------------
+- UNIT ENDED - my_first_test_method
+-------------------------------------------------------------------------
+
+[2015-05-12 13:32:15,834] [eutestcase] [DEBUG]: (run_test_case_list:809): RESULTS SUMMARY FOR 'eutestcase':
+[2015-05-12 13:32:15,834] [eutestcase] [DEBUG]: (run_test_case_list:809):
+[2015-05-12 13:32:15,834] [eutestcase] [DEBUG]: (run_test_case_list:809): ------------------------------------------------------
+[2015-05-12 13:32:15,834] [eutestcase] [DEBUG]: (run_test_case_list:809): | TOTAL   | FAILED  | PASSED  | NOT_RUN | TIME_ELAPSED
+[2015-05-12 13:32:15,834] [eutestcase] [DEBUG]: (run_test_case_list:809): ------------------------------------------------------
+[2015-05-12 13:32:15,834] [eutestcase] [DEBUG]: (run_test_case_list:809): | 5       | 1       | 1       | 3       | 0
+[2015-05-12 13:32:15,834] [eutestcase] [DEBUG]: (run_test_case_list:809): ------------------------------------------------------
+[2015-05-12 13:32:15,834] [eutestcase] [DEBUG]: (run_test_case_list:809):
 
 ```
 Next test shows an example of how to skip a test from within the test unit
 ```
-[2015-05-12 12:54:27,673] [eutestcase] [DEBUG]: (print_test_unit_startmsg:870):
+
+[2015-05-12 13:32:15,836] [eutestcase] [DEBUG]: (print_test_unit_startmsg:870):
 -------------------------------------------------------------------------
 STARTING TESTUNIT: too_lazy_to_run
 METHOD:too_lazy_to_run, TEST DESCRIPTION:
@@ -321,25 +386,27 @@ Running list method: "too_lazy_to_run()"
 -------------------------------------------------------------------------
 TESTUNIT SKIPPED:too_lazy_to_run
 'Im too lazy to run right now'
-[2015-05-12 12:54:27,675] [eutestcase] [DEBUG]: (endtestunit:702):
+[2015-05-12 13:32:15,837] [eutestcase] [DEBUG]: (endtestunit:702):
 -------------------------------------------------------------------------
 - UNIT ENDED - too_lazy_to_run
 -------------------------------------------------------------------------
 
-[2015-05-12 12:54:27,676] [eutestcase] [DEBUG]: (run_test_case_list:809): RESULTS SUMMARY FOR 'eutestcase':
-[2015-05-12 12:54:27,676] [eutestcase] [DEBUG]: (run_test_case_list:809):
-[2015-05-12 12:54:27,676] [eutestcase] [DEBUG]: (run_test_case_list:809): ------------------------------------------------------
-[2015-05-12 12:54:27,676] [eutestcase] [DEBUG]: (run_test_case_list:809): | TOTAL   | FAILED  | PASSED  | NOT_RUN | TIME_ELAPSED
-[2015-05-12 12:54:27,676] [eutestcase] [DEBUG]: (run_test_case_list:809): ------------------------------------------------------
-[2015-05-12 12:54:27,676] [eutestcase] [DEBUG]: (run_test_case_list:809): | 4       | 0       | 1       | 3       | 0
-[2015-05-12 12:54:27,676] [eutestcase] [DEBUG]: (run_test_case_list:809): ------------------------------------------------------
-[2015-05-12 12:54:27,676] [eutestcase] [DEBUG]: (run_test_case_list:809):
+[2015-05-12 13:32:15,838] [eutestcase] [DEBUG]: (run_test_case_list:809): RESULTS SUMMARY FOR 'eutestcase':
+[2015-05-12 13:32:15,838] [eutestcase] [DEBUG]: (run_test_case_list:809):
+[2015-05-12 13:32:15,838] [eutestcase] [DEBUG]: (run_test_case_list:809): ------------------------------------------------------
+[2015-05-12 13:32:15,838] [eutestcase] [DEBUG]: (run_test_case_list:809): | TOTAL   | FAILED  | PASSED  | NOT_RUN | TIME_ELAPSED
+[2015-05-12 13:32:15,838] [eutestcase] [DEBUG]: (run_test_case_list:809): ------------------------------------------------------
+[2015-05-12 13:32:15,838] [eutestcase] [DEBUG]: (run_test_case_list:809): | 5       | 1       | 1       | 3       | 0
+[2015-05-12 13:32:15,838] [eutestcase] [DEBUG]: (run_test_case_list:809): ------------------------------------------------------
+[2015-05-12 13:32:15,838] [eutestcase] [DEBUG]: (run_test_case_list:809):
 
 ```
-This test shows an example of a test case which fails...
+This test shows an example of a test case which fails. This test is also using
+the eof (end of failure) flag which will abort the sequence and not run any remaining test
+units.
 ```
 
-[2015-05-12 12:54:27,677] [eutestcase] [DEBUG]: (print_test_unit_startmsg:870):
+[2015-05-12 13:32:15,839] [eutestcase] [DEBUG]: (print_test_unit_startmsg:870):
 -------------------------------------------------------------------------
 STARTING TESTUNIT: sample_test_fail_method
 METHOD:sample_test_fail_method, TEST DESCRIPTION:
@@ -355,9 +422,9 @@ Failed to connect to 10.111.5.100, retry in 10 seconds. Err:Authentication faile
 TESTUNIT FAILED: sample_test_fail_methodTraceback (most recent call last):
   File "/Users/clarkmatthew/Documents/python_workspace/eutester_qa/eutester/eutester/eutestcase.py", line 279, in run
     ret = self.method()
-  File "test.py", line 66, in sample_test_fail_method
+  File "test.py", line 75, in sample_test_fail_method
     return my_first_test_method(ip=None, username='noone', password='badpassword')
-  File "test.py", line 48, in my_first_test_method
+  File "test.py", line 55, in my_first_test_method
     verbose=True)
   File "/Users/clarkmatthew/Documents/python_workspace/eutester_qa/eutester/eutester/sshconnection.py", line 267, in __init__
     verbose=self.debug_connect)
@@ -365,15 +432,12 @@ TESTUNIT FAILED: sample_test_fail_methodTraceback (most recent call last):
     ". IPs tried:" + ",".join(iplist))
 Exception: Failed to connect to "10.111.5.100", attempts:1. IPs tried:10.111.5.100
 
-[2015-05-12 12:54:39,789] [eutestcase] [DEBUG]: (run_test_case_list:801): Testcase:sample_test_fail_method error:Failed to connect to "10.111.5.100", attempts:1. IPs tried:10.111.5.100
-[2015-05-12 12:54:39,791] [eutestcase] [DEBUG]: (endfailure:710):
+[2015-05-12 13:32:28,086] [eutestcase] [DEBUG]: (run_test_case_list:801): Testcase:sample_test_fail_method error:Failed to connect to "10.111.5.100", attempts:1. IPs tried:10.111.5.100
+[2015-05-12 13:32:28,087] [eutestcase] [DEBUG]: (endfailure:710):
 -------------------------------------------------------------------------
 - FAILED - sample_test_fail_method
 -------------------------------------------------------------------------
 
-[2015-05-12 12:54:39,793] [eutestcase] [DEBUG]: (run_test_case_list:819): Printing pre-cleanup results:
-[2015-05-12 12:54:39,795] [eutestcase] [DEBUG]: (<lambda>:966): Test list results for testcase:eutestcase
-[2015-05-12 12:54:39,796] [eutestcase] [DEBUG]: (run_test_case_list:821):
 
 ```
 After all the test have run the summary is printed below. Notice the last test method was not
@@ -381,9 +445,12 @@ run due to test3 failing. Test3 had the eof (end on failure) flag set to True wh
 the sequence.
 ```
 
+[2015-05-12 13:32:28,089] [eutestcase] [DEBUG]: (run_test_case_list:819): Printing pre-cleanup results:
+[2015-05-12 13:32:28,091] [eutestcase] [DEBUG]: (<lambda>:966): Test list results for testcase:eutestcase
+[2015-05-12 13:32:28,092] [eutestcase] [DEBUG]: (run_test_case_list:821):
 -------------------------------------------------------------------------
 RUN TEST CASE LIST DONE:
-Ran 3/4 tests in 12 seconds
+Ran 4/5 tests in 12 seconds
 
 TESTUNIT LIST SUMMARY FOR eutestcase
 
@@ -392,6 +459,13 @@ TESTUNIT LIST SUMMARY FOR eutestcase
                     | TEST NAME: my_first_test_method
                     | TIME : 0
                     | ARGS: my_first_test_method(username:None,ip:None,password:foobar)
+--------------------------------------------------------------------------------
+                    | RESULT: failed
+                    | TEST NAME: my_first_test_method
+                    | TIME : 0
+                    | ARGS: my_first_test_method(username:None,ip:None,password:None)
+ERROR:(my_first_test_method): Need ip and password to run this ssh test! ip=10.111.5.100, password=None
+
 --------------------------------------------------------------------------------
                     | RESULT: not_run
                     | TEST NAME: too_lazy_to_run
@@ -419,9 +493,11 @@ RESULTS SUMMARY FOR 'eutestcase':
 ------------------------------------------------------
 | TOTAL   | FAILED  | PASSED  | NOT_RUN | TIME_ELAPSED
 ------------------------------------------------------
-| 4       | 1       | 1       | 2       | 12
+| 5       | 2       | 1       | 2       | 12
 ------------------------------------------------------
 
 
 -------------------------------------------------------------------------
+passed:1 failed:2 not_run:2 total:5
+
 ```
