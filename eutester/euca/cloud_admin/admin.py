@@ -1,8 +1,5 @@
-__author__ = 'clarkmatthew'
-
 
 import copy
-from prettytable import PrettyTable, ALL
 import re
 import sys
 import time
@@ -47,6 +44,8 @@ from eutester.utils.log_utils import markup, get_traceback
 ###############################################################################################
 #                        Eucalyptus Admin ('Empyrean') Query Interface                        #
 ###############################################################################################
+
+
 class EucaAdmin(AWSQueryConnection):
     APIVersion = 'eucalyptus'
 
@@ -54,13 +53,13 @@ class EucaAdmin(AWSQueryConnection):
                  host,
                  aws_access_key_id,
                  aws_secret_access_key,
-                 path = '/services/Empyrean',
-                 port = 8773,
-                 is_secure = False,
-                 ec2_connection = None,
+                 path='/services/Empyrean',
+                 port=8773,
+                 is_secure=False,
+                 ec2_connection=None,
                  boto_debug_level=0,
-                 debug_method = None,
-                 err_method = None,
+                 debug_method=None,
+                 err_method=None,
                  **kwargs):
         """
         Primary Admin/Empyrean Query interface for a Eucalyptus Cloud
@@ -99,14 +98,14 @@ class EucaAdmin(AWSQueryConnection):
         if err_method:
             self.err_method = err_method
         self._ec2_connection = ec2_connection
-        super(EucaAdmin, self).__init__(path = self.path,
-                                         aws_access_key_id = aws_access_key_id,
-                                         aws_secret_access_key = aws_secret_access_key,
-                                         port =self.port,
-                                         is_secure = self.is_secure,
-                                         host = self.host,
-                                         debug=self.debug
-                                         **kwargs)
+        super(EucaAdmin, self).__init__(path=self.path,
+                                        aws_access_key_id=aws_access_key_id,
+                                        aws_secret_access_key=aws_secret_access_key,
+                                        port=self.port,
+                                        is_secure=self.is_secure,
+                                        host=self.host,
+                                        debug=self.debug,
+                                        **kwargs)
 
     def debug_method(self, msg):
         '''
@@ -156,13 +155,13 @@ class EucaAdmin(AWSQueryConnection):
         ec2_region.endpoint = host
         access_key = access_key or self.aws_access_key_id
         secret_key = secret_key or self. aws_secret_access_key
-        connection_args = { 'aws_access_key_id' : access_key,
-                            'aws_secret_access_key': secret_key,
-                            'is_secure': is_secure,
-                            'debug': debug_level,
-                            'port' : port,
-                            'path' : path,
-                            'host' : host}
+        connection_args = {'aws_access_key_id': access_key,
+                           'aws_secret_access_key': secret_key,
+                           'is_secure': is_secure,
+                           'debug': debug_level,
+                           'port': port,
+                           'path': path,
+                           'host': host}
         if re.search('2.6', boto.__version__):
             connection_args['validate_certs'] = False
         ec2_connection_args = copy.copy(connection_args)
@@ -184,11 +183,10 @@ class EucaAdmin(AWSQueryConnection):
     def _get_list_request(self, action='DescribeEucalyptus', service=EucaService, params={},
                           markers=['item', 'euca:item'], verb='GET'):
         params = params
-        new_markers=[]
+        new_markers = []
         for marker in markers:
             new_markers.append((marker, service))
         return self.get_list(action, params, new_markers, verb=verb)
-
 
     ###############################################################################################
     #                        Eucalyptus 'Service Type' Methods                                    #
@@ -219,7 +217,7 @@ class EucaAdmin(AWSQueryConnection):
 
     def get_services(self, service_type=None, show_event_stacks=None, show_events=None,
                      list_user_services=None, listall=None, list_internal=None,
-                     service_names=None, markers = None, partition=None,
+                     service_names=None, markers=None, partition=None,
                      service_class=EucaServiceList):
         """
         Fetches Eucalyptus Cloud services
@@ -262,7 +260,7 @@ class EucaAdmin(AWSQueryConnection):
         if list_user_services:
             assert isinstance(list_user_services, bool), \
                 "get_services: list_user_services not type bool:{0}{1}"\
-                    .format(list_user_services, type(list_user_services))
+                .format(list_user_services, type(list_user_services))
             params['ListUserServices'] = str(list_user_services).lower()
         if listall:
             assert isinstance(listall, bool), \
@@ -280,11 +278,11 @@ class EucaAdmin(AWSQueryConnection):
                 'type:{0}{1}'.format(partition, type(partition))
             params['ByPartition'] = str(partition)
         service_list = self.get_list('DescribeServices',
-                                        params,
-                                        markers=markers,
-                                        verb='GET')
+                                     params,
+                                     markers=markers,
+                                     verb='GET')
         if service_list:
-            service_list =  service_list[0] or []
+            service_list = service_list[0] or []
             if partition:
                 newlist = copy.copy(service_list)
                 for service in service_list:
@@ -343,7 +341,7 @@ class EucaAdmin(AWSQueryConnection):
         if verbose:
             self.debug_method(cmd_string)
         response = self._get_list_request(action='ModifyService', markers=markers, params=params,
-                                       service=EucaServiceRegResponse)
+                                          service=EucaServiceRegResponse)
         modified_service = self.get_services(service_names=service_name)
         if modified_service:
             modified_service = modified_service[0]
@@ -452,7 +450,6 @@ class EucaAdmin(AWSQueryConnection):
     def show_services(self, *args, **kwargs):
         return SHOW_SERVICES(self, *args, **kwargs)
 
-
     ###############################################################################################
     #                Eucalyptus 'Component-Service' Type Methods                                  #
     ###############################################################################################
@@ -487,7 +484,7 @@ class EucaAdmin(AWSQueryConnection):
         return cluster_names
 
     def get_all_clusters(self, name=None, get_instances=True, get_storage=True,
-                     get_cluster_controllers=True):
+                         get_cluster_controllers=True):
         raise NotImplemented('Finish this!')
         controllers = self.get_all_cluster_controller_services()
         for cc in controllers:
@@ -507,7 +504,7 @@ class EucaAdmin(AWSQueryConnection):
                                     notfounddict={'name': name})
 
     def get_all_storage_controller_services(self):
-        return self._get_list_request('DescribeStorageControllers',EucaStorageControllerService)
+        return self._get_list_request('DescribeStorageControllers', EucaStorageControllerService)
 
     def get_storage_controller_service(self, name):
         scs = self.get_all_storage_controller_services()
@@ -578,7 +575,7 @@ class EucaAdmin(AWSQueryConnection):
         if get_instances:
             try:
                 for reservation in self.ec2_connection.get_all_instances(
-                        filters={'tag-key':'euca:node'}):
+                        filters={'tag-key': 'euca:node'}):
                     for vm in reservation.instances:
                         # Should this filter exclude terminated, shutdown, and stopped instances?
                         tag_node_name = vm.tags.get('euca:node')
@@ -639,8 +636,7 @@ class EucaAdmin(AWSQueryConnection):
         return SHOW_COMPONENTS(scs, self.get_all_storage_controller_services, print_table)
 
     def show_objectstorage_gateways(self, osgs=None, print_table=True):
-        return SHOW_COMPONENTS(osgs, self.get_all_object_storage_gateway_services,
-                                     print_table)
+        return SHOW_COMPONENTS(osgs, self.get_all_object_storage_gateway_services, print_table)
 
     def show_cloud_controllers(self, clcs=None, print_table=True):
         return SHOW_COMPONENTS(clcs, self.get_all_cloud_controller_services, print_table)
@@ -777,7 +773,7 @@ class EucaAdmin(AWSQueryConnection):
                 if component.partition in clusters:
                     type_string = "{0}({1})".format(component_type, component.partition)
                 if hostname not in machine_list:
-                    machine_list[hostname]=[type_string]
+                    machine_list[hostname] = [type_string]
                 else:
                     machine_list[hostname].append(type_string)
         # Add UFS services by parsing the uri of the service,
@@ -788,7 +784,7 @@ class EucaAdmin(AWSQueryConnection):
                 url = urlparse(ufs.uri)
                 if url.hostname:
                     if url.hostname not in machine_list:
-                        machine_list[url.hostname]=['UFS']
+                        machine_list[url.hostname] = ['UFS']
                     else:
                         machine_list[url.hostname].append('UFS')
         return machine_list
@@ -823,7 +819,7 @@ class EucaAdmin(AWSQueryConnection):
                           .format(service_type, state_info))
         start = time.time()
         elapsed = 0
-        while (elapsed <  timeout):
+        while (elapsed < timeout):
             elapsed = int(time.time() - start)
             try:
                 matching_services = self.get_services(service_type=service_type,
@@ -845,7 +841,7 @@ class EucaAdmin(AWSQueryConnection):
             except Exception, E:
                 err_msg = ('Error while fetching services:"{0}:{1}", elapsed:{2}/{3}'
                            '\nRetrying in "{4}" seconds'.format(type(E), str(E),
-                                                                elapsed, timeout,interval))
+                                                                elapsed, timeout, interval))
                 err_msg = "{0}\n{1}".format(get_traceback(), err_msg)
                 self.debug_method(err_msg)
             time.sleep(interval)
@@ -858,9 +854,3 @@ class EucaAdmin(AWSQueryConnection):
         msg = ("{0}\nERROR: Service_type:'{1}', partition:{2} did not enter state(s):'{3}'"
                .format(err_msg, service_type, partition,  state_info))
         raise RuntimeError(msg)
-
-
-
-
-
-
