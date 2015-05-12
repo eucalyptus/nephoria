@@ -188,21 +188,22 @@ class Euproperty_Manager():
         self.tester = tester
         self.debugmethod = debugmethod or tester.debug
         self.verbose = verbose
-        self.work_machine = machine or self.get_clc()
-        self.access_key = self.tester.aws_access_key_id
-        self.secret_key = self.tester.aws_secret_access_key
-        self.service_url = service_url or str(
-            'http://' + str(self.get_clc().hostname) +
-            ':8773/services/Eucalytpus')
-        self.cmdpath = self.tester.eucapath+'/usr/sbin/'
-        self.properties = []
-        self.property_map = Property_Map()
-        self.update_property_list()
-        self.tester.property_manager = self
-        self.zones = self.tester.ec2.get_zones()
 
-    def get_clc(self):
-        return self.tester.service_manager.get_enabled_clc().machine
+        #self.work_machine = machine or self.get_clc()
+        #self.access_key = self.tester.aws_access_key_id
+        #self.secret_key = self.tester.aws_secret_access_key
+        #self.service_url = service_url or str(
+        #    'http://' + str(self.get_clc().hostname) +
+        #    ':8773/services/Eucalytpus')
+        #self.cmdpath = self.tester.eucapath+'/usr/sbin/'
+        self.properties = []
+        #self.property_map = Property_Map()
+        self.update_property_list()
+        #self.tester.property_manager = self
+        #self.zones = self.tester.ec2.get_zones()
+
+    #def get_clc(self):
+    #    return self.tester.service_manager.get_enabled_clc().machine
 
     def debug(self, msg):
         '''

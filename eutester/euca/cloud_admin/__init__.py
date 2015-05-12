@@ -20,7 +20,11 @@ class EucaBaseObj(object):
 
 
 class EucaEmpyreanResponse(EucaBaseObj):
-
+    """
+    Used to parse Base Empyrean response
+    Mainly used to sort out the Empyrean message for return code/status, and to
+    gather information from the status message during failures.
+    """
     @property
     def statusmessages(self):
         if self._statusmessages:
@@ -48,6 +52,10 @@ class EucaEmpyreanResponse(EucaBaseObj):
 
 
 class EucaEmpyreanMessage(EucaBaseObj):
+    """
+    Common Empyrean response fields
+    '_return' is often used to represent the 'status/exit/return code'
+    """
 
     def __init__(self, connection=None):
         self.statusmessages = ""
@@ -60,6 +68,9 @@ class EucaEmpyreanMessage(EucaBaseObj):
 
 
 class EucaStatusMessages(EucaBaseObj):
+    """
+    Upon failures this field may contain information, errors, etc..
+    """
 
     def __init__(self, connection=None):
         self._message_entries = []
@@ -80,6 +91,9 @@ class EucaStatusMessages(EucaBaseObj):
             return message_entry
 
 class EucaMessageEntry(EucaBaseObj):
+    '''
+    Used to parse the actual status message from the entry field
+    '''
 
     def __init__(self, connection=None):
         self.value = None
@@ -99,6 +113,10 @@ class EucaMessageEntry(EucaBaseObj):
 class EucaResponseException(Exception):
 
     def __init__(self, value, respobj=None):
+        """
+        Can be used to handle failed euca empyrean requests, the response can be returned
+        in the exception and may provide value in case of parse errors, debugging etc..
+        """
         self.value = str(value)
         self.respobj = respobj
 
@@ -107,3 +125,33 @@ class EucaResponseException(Exception):
 
     def __repr__(self):
         return str(self.value)
+
+class EucaNotFoundException(Exception):
+
+    def __init__(self, errmsg, notfounddict):
+        """
+        To be used when an administrative lookup can not find an item.
+        ie: a particular service, or property is not found
+        :params: errmsg: string, errmsg to be used
+        :params: notfounddict: dict of items not found. Usually where the key is the name
+                 of the arg provided, ie:'arg name' : 'value'
+        """
+
+        self.errmsg = errmsg
+        self.notfounddict = notfounddict or {}
+
+    @property
+    def value(self):
+        notfounddict = self.notfounddict or {}
+        if not isinstance(notfounddict, dict):
+            searchitems = {}
+        return '{0}. ({1})'.format(
+            self.errmsg,
+            ", ".join('{0}="{1}"'.format(key, value) for key, value in notfounddict.iteritems()))
+    def __str__(self):
+        return str(self.value)
+
+    def __repr__(self):
+        return str(self.value)
+
+
