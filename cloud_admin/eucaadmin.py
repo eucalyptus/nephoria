@@ -479,6 +479,20 @@ class EucaAdmin(AWSQueryConnection):
         return deregistered_service
 
     def show_services(self, *args, **kwargs):
+        """
+        Displays a table summarizing Eucalyptus services
+        :param connection: EucaAdmin() query connection
+        :param services: list of EucaService objects
+        :param service_type: string, eucalyptus service type (ie: 'user-api')
+        :param show_part: bool, if true will show all partitions, if false will only show
+                          partitions which are otherwise referred to as  'clusters' or 'zones'
+        :param grid: bool, if true will produce grid lines in the table
+        :param partition: bool, if true will filter services belonging to this partition
+        :param print_table: bool, if True will write the table using connection.debug_method,
+                            if False will return the table obj w/o printing it
+        :param do_html: If True will produce an html table instead of an ascii table
+        :raise ValueError:
+        """
         return SHOW_SERVICES(self, *args, **kwargs)
 
     ###############################################################################################
