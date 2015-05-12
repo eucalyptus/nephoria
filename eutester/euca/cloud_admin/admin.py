@@ -78,17 +78,16 @@ class EucaAdmin(AWSQueryConnection):
         :raise ValueError: Upon or invalid params
         """
 
+        # Note: aws_access and secret_key get assigned to self during super().__init__()
         self.host = host
-        self.aws_access_key_id = aws_access_key_id
-        self.aws_secret_access_key = aws_secret_access_key
         if not isinstance(self.host, basestring) or \
-                not isinstance(self.aws_access_key_id, basestring) or \
-                not isinstance(self.aws_secret_access_key, basestring):
+                not isinstance(aws_access_key_id, basestring) or \
+                not isinstance(aws_secret_access_key, basestring):
             raise ValueError('Missing or invalide type for required arg. host:"{0}", '
                              'aws_access_key_id:"{1}", aws_secret_access_key:"{2}"'
                              .format(self.host,
-                                     self.aws_access_key_id,
-                                     self.aws_secret_access_key))
+                                     aws_access_key_id,
+                                     aws_secret_access_key))
         self.is_secure = is_secure
         self.port = port
         self.path = path

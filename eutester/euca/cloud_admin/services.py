@@ -1,4 +1,3 @@
-__author__ = 'clarkmatthew'
 
 from boto.resultset import ResultSet
 from eutester.euca.cloud_admin import EucaBaseObj, EucaEmpyreanResponse
@@ -10,18 +9,21 @@ import inspect
 import sys
 import time
 
+
 def SHOW_SERVICES(connection, services=None, service_type=None, show_part=False, grid=False,
                   partition=None, print_table=True, do_html=False):
     html_open = "[+html_open+]"
-    html_close ="[+html_close+]"
+    html_close = "[+html_close+]"
+
     def n_markup(*args, **kwargs):
         kwargs['do_html'] = do_html
         kwargs['html_open'] = html_open
         kwargs['html_close'] = html_close
         return markup(*args, **kwargs)
+
     h_marks = [1, 94]
     cluster_hdr = n_markup('CLUSTER', h_marks)
-    name_hdr =  n_markup('NAME', h_marks)
+    name_hdr = n_markup('NAME', h_marks)
     type_hdr = n_markup('TYPE', h_marks)
     state_hdr = n_markup('STATE', h_marks)
     uri_hdr = n_markup('URI', h_marks)
@@ -115,24 +117,25 @@ def SHOW_SERVICES(connection, services=None, service_type=None, show_part=False,
             connection.debug_method(html_string)
         else:
             connection.debug_method(pt.get_string(sortby=part_hdr, fields=fields,
-                                            sort_key=itemgetter(3,2), reversesort=True))
+                                                  sort_key=itemgetter(3, 2), reversesort=True))
     else:
         return pt
+
 
 def SHOW_SERVICE_TYPES(connection, service_types=None, verbose=False,
                        printmethod=None, print_table=True):
     cluster_len = 7
     parent_len = 18
-    name_len=18
-    public_len=6
-    desc_len=60
+    name_len = 18
+    public_len = 6
+    desc_len = 60
     cluster_hdr = markup(str('CLUSTER').center(cluster_len))
     parent_hdr = markup(str('PARENT').center(parent_len))
     name_hdr = markup(str('NAME').ljust(name_len))
     public_hdr = markup(str('PUBLIC').ljust(public_len))
     desc_hdr = markup(str('DESCRIPTION').ljust(desc_len))
-    main_pt = PrettyTable([name_hdr, cluster_hdr,parent_hdr, public_hdr, desc_hdr])
-    #main_pt.hrules = ALL
+    main_pt = PrettyTable([name_hdr, cluster_hdr, parent_hdr, public_hdr, desc_hdr])
+    # main_pt.hrules = ALL
     main_pt.max_width[cluster_hdr] = cluster_len
     main_pt.max_width[public_hdr] = parent_len
     main_pt.max_width[name_hdr] = name_len
@@ -156,12 +159,13 @@ def SHOW_SERVICE_TYPES(connection, service_types=None, verbose=False,
                                                                               type(service)))
     if verbose:
         return connection.show_service_types_verbose(service_types=service_types,
-                                               printmethod=printmethod,
-                                               print_table=print_table)
+                                                     printmethod=printmethod,
+                                                     print_table=print_table)
 
     def get_service_row(service, markup_method=None, markups=None, indent=''):
         if markup_method:
-            mm = lambda x: markup(x, markups)
+            def mm(x):
+                return markup_method(x, markups)
         else:
             mm = str
         partitioned = '-'
@@ -201,6 +205,7 @@ def SHOW_SERVICE_TYPES(connection, service_types=None, verbose=False,
     else:
         return main_pt
 
+
 def _sort_service_types(service_types):
     partitioned = []
     cloud = copy.copy(service_types)
@@ -211,9 +216,9 @@ def _sort_service_types(service_types):
                 if group_member:
                     for member_service in service_types:
                         if str(member_service.name) == str(group_member.name):
-                            #replace the service group member obj with the service obj
+                            # replace the service group member obj with the service obj
                             new_member_list.append(member_service)
-                            #now remove the service obj from the main list
+                            # now remove the service obj from the main list
                             if member_service in cloud:
                                 cloud.remove(member_service)
             service.groupmembers = new_member_list
@@ -222,6 +227,7 @@ def _sort_service_types(service_types):
             if service in cloud:
                 cloud.remove(service)
     return cloud + partitioned
+
 
 def SHOW_SERVICE_TYPES_VERBOSE(connection, service_types=None, printmethod=None, print_table=True):
     service_types = service_types or connection.get_service_types()
@@ -249,7 +255,8 @@ def SHOW_SERVICE_TYPES_VERBOSE(connection, service_types=None, printmethod=None,
     else:
         return main_pt
 
-def SHOW_COMPONENTS(connection, components=None,  get_method=None, print_table=True):
+
+def SHOW_COMPONENTS(connection, components=None, get_method=None, print_table=True):
     if not components:
         if not get_method:
             raise ValueError('_show_component(). Components or get_method must be populated')
@@ -279,10 +286,12 @@ def SHOW_COMPONENTS(connection, components=None,  get_method=None, print_table=T
     else:
         return pt
 
+
 class EucaService(EucaBaseObj):
     """
     Base Class for Eucalyptus Service Objects
     """
+
     def __init__(self, connection=None):
         self.name = None
         self.partition = None
@@ -344,7 +353,7 @@ class EucaService(EucaBaseObj):
         return self
 
     def startElement(self, name, value, connection):
-        ename = name.replace('euca:','')
+        ename = name.replace('euca:', '')
         elem = super(EucaService, self).startElement(name, value, connection)
         if elem is not None:
             return elem
@@ -353,7 +362,7 @@ class EucaService(EucaBaseObj):
             return self.uris
 
     def endElement(self, name, value, connection):
-        ename = name.replace('euca:','')
+        ename = name.replace('euca:', '')
         if ename:
             if ename == 'entry':
                 self.uris.append(value)
@@ -376,10 +385,9 @@ class EucaService(EucaBaseObj):
 
 
 class EucaServiceType(EucaBaseObj):
-
     def __init__(self, connection=None):
         super(EucaServiceType, self).__init__(connection)
-        self.groupmembers=[]
+        self.groupmembers = []
         self._name = None
         self._componentname = None
         self.description = None
@@ -405,38 +413,42 @@ class EucaServiceType(EucaBaseObj):
         self._componentname = value
 
     def startElement(self, name, value, connection):
-        ename = name.replace('euca:','')
+        ename = name.replace('euca:', '')
         if ename == 'serviceGroupMembers':
             groupmembers = ResultSet([('item', EucaSeviceGroupMember),
-                                    ('euca:item', EucaSeviceGroupMember)])
+                                      ('euca:item', EucaSeviceGroupMember)])
             self.groupmembers = groupmembers
             return groupmembers
         else:
             return None
 
     def endElement(self, name, value, connection):
-        ename = name.lower().replace('euca:','')
+        ename = name.lower().replace('euca:', '')
         if ename:
-            #print 'service type got ename:{0}'.format(ename)
+            # print 'service type got ename:{0}'.format(ename)
             if ename == 'componentname':
                 self.name = value
             setattr(self, ename.lower(), value)
+
 
 class EucaSeviceGroupMember(EucaBaseObj):
     '''
     Used for parsing child service types from parent service types
     '''
+
     def endElement(self, name, value, connection):
-        ename = name.lower().replace('euca:','')
+        ename = name.lower().replace('euca:', '')
         if ename:
             if ename == 'entry':
                 self.name = value
             setattr(self, ename.lower(), value)
 
+
 class EucaServiceGroupMembers(ResultSet):
     '''
     Used to parse and hold a list of child service types under a parent service type
     '''
+
     def __init__(self, connection=None):
         super(EucaServiceGroupMembers, self).__init__(connection)
         self.markers = [('item', EucaSeviceGroupMember)]
@@ -445,8 +457,8 @@ class EucaServiceGroupMembers(ResultSet):
         return str(self.__class__.__name__) + ":(Count:" + str(len(self)) + ")"
 
     def startElement(self, name, value, connection):
-        ename = name.lower().replace('euca:','')
-        print 'group member: name:{0}, value:{1}'.format(name,value)
+        ename = name.lower().replace('euca:', '')
+        print 'group member: name:{0}, value:{1}'.format(name, value)
         if ename == 'item':
             new_member = EucaSeviceGroupMember(connection=connection)
             self.append(new_member)
@@ -455,7 +467,7 @@ class EucaServiceGroupMembers(ResultSet):
             return None
 
     def endElement(self, name, value, connection):
-        ename = name.lower().replace('euca:','')
+        ename = name.lower().replace('euca:', '')
         if ename:
             setattr(self, ename.lower(), value)
 
@@ -464,12 +476,13 @@ class EucaServiceRegResponse(EucaEmpyreanResponse):
     """
     Used to handle responses for administrative service requests.
     """
+
     def __init__(self, connection=None):
         services = []
         super(EucaServiceRegResponse, self).__init__(connection)
 
     def startElement(self, name, value, connection):
-        ename = name.lower().replace('euca:','')
+        ename = name.lower().replace('euca:', '')
         if ename == 'registeredservices':
             self.services = EucaServiceList(connection=connection)
             return self.services
@@ -478,6 +491,7 @@ class EucaServiceRegResponse(EucaEmpyreanResponse):
             return self.services
         else:
             return super(EucaServiceRegResponse, self).startElement(ename, value, connection)
+
 
 class EucaServiceList(ResultSet):
     '''
@@ -492,7 +506,7 @@ class EucaServiceList(ResultSet):
         return str(self.__class__.__name__) + ":(Count:" + str(len(self)) + ")"
 
     def startElement(self, name, value, connection):
-        ename = name.replace('euca:','')
+        ename = name.replace('euca:', '')
         if ename == 'item':
             new_service = EucaService(connection=connection)
             self.append(new_service)
@@ -501,7 +515,7 @@ class EucaServiceList(ResultSet):
             return None
 
     def endElement(self, name, value, connection):
-        ename = name.lower().replace('euca:','')
+        ename = name.lower().replace('euca:', '')
         if ename:
             setattr(self, ename.lower(), value)
 
@@ -517,9 +531,10 @@ class EucaUris(EucaBaseObj):
     """
     Used to parse service URI objects
     """
+
     def __init__(self, connection=None):
         super(EucaUris, self).__init__(connection)
-        self.uris=[]
+        self.uris = []
 
     def startElement(self, name, value, connection):
         elem = super(EucaUris, self).startElement(name, value, connection)
@@ -527,7 +542,7 @@ class EucaUris(EucaBaseObj):
             return elem
 
     def endElement(self, name, value, connection):
-        ename = name.replace('euca:','')
+        ename = name.replace('euca:', '')
         if ename:
             if ename == 'entry':
                 self.uris.append(value)
@@ -540,6 +555,7 @@ class EucaComponentService(EucaService):
     Used to parse Eucalyptus Components per service responses
     (services vs components, confusing? ... yes)
     """
+
     def _update(self, get_method_name, get_method_kwargs=None, new_service=None, silent=True):
         """
         Base update method for updating component service objs
@@ -591,13 +607,3 @@ class EucaComponentService(EucaService):
                              if False will return the table object w/o printing.
         """
         return SHOW_COMPONENTS(self.connection, components=self, print_table=print_table)
-
-
-
-
-
-
-
-
-
-
