@@ -1,9 +1,9 @@
-__author__ = 'clarkmatthew'
 
 from eutester.euca.cloud_admin import EucaBaseObj
 from eutester.utils.log_utils import get_traceback
 from eutester.utils.log_utils import markup
 from prettytable import PrettyTable, ALL
+
 
 def SHOW_PROPERTIES(connection, properties=None, description=True, grid=ALL,
                     print_table=True, *prop_names):
@@ -15,7 +15,7 @@ def SHOW_PROPERTIES(connection, properties=None, description=True, grid=ALL,
     pt.max_width[value_hdr] = 40
     if description:
         pt.add_column(fieldname=desc_hdr, column=[])
-        pt.max_width[desc_hdr]=40
+        pt.max_width[desc_hdr] = 40
     pt.padding_width = 0
     pt.align = 'l'
     pt.hrules = grid or 0
@@ -40,6 +40,7 @@ def SHOW_PROPERTIES(connection, properties=None, description=True, grid=ALL,
         connection.debug_method('\n' + str(pt) + '\n')
     else:
         return pt
+
 
 def SHOW_PROPERTIES_NARROW(self, properties=None, verbose=True, print_table=True, *prop_names):
     if not verbose:
@@ -81,9 +82,8 @@ def SHOW_PROPERTIES_NARROW(self, properties=None, verbose=True, print_table=True
                     prefix = "       "
                 info_buf += (prefix + markup(p.value[i:i+line_len]) + "\n")
 
-            desc_buf = markup('DESCRIPTION:').ljust(desc_len) + \
-                       str(p.description).ljust(desc_len)
-            pt.add_row([info_buf,desc_buf])
+            desc_buf = markup('DESCRIPTION:').ljust(desc_len) + str(p.description).ljust(desc_len)
+            pt.add_row([info_buf, desc_buf])
     if not pt._rows:
         pt.add_row([markup('NO PROPERTIES RETURNED', [1, 91]), ""])
     if print_table:
@@ -100,7 +100,7 @@ class EucaProperty(EucaBaseObj):
         self.description = None
 
     def endElement(self, name, value, connection):
-        ename = name.lower().replace('euca:','')
+        ename = name.lower().replace('euca:', '')
         if ename == 'description':
             self.description = value
         elif ename == 'name':
@@ -127,8 +127,8 @@ class EucaProperty(EucaBaseObj):
             except Exception as LE:
                 if silent:
                     errmsg = "{0}\n{1}\n".format(get_traceback(), str(LE))
-                    self.connection.err_method('{0}Update failed for property:{1}'.format(errmsg,
-                                                                                  self.name))
+                    self.connection.err_method('{0}Update failed for property:{1}'
+                                               .format(errmsg, self.name))
                     return None
                 else:
                     raise

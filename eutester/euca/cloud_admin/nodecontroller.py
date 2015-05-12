@@ -11,6 +11,7 @@ import time
 import types
 from xml.dom.minidom import parse, parseString
 
+
 def SHOW_NODES(connection, nodes=None, print_table=True):
     '''
     Prints table summary of nodes.
@@ -53,12 +54,12 @@ def SHOW_NODES(connection, nodes=None, print_table=True):
     pt.hrules = 1
     for node in nodes_list:
         instances = "".join("{0}({1}{2}{3})"
-                                .format(str(x.id).ljust(ins_id_len),
-                                        str(x.state + ",").ljust(ins_st_len),
-                                        str(x.instance_type + ",").ljust(ins_type_len),
-                                        str(x.root_device_type).ljust(ins_dev_len))
-                                .ljust(inst_hdr[1])
-                             for x in node.instances)
+                            .format(str(x.id).ljust(ins_id_len),
+                                    str(x.state + ",").ljust(ins_st_len),
+                                    str(x.instance_type + ",").ljust(ins_type_len),
+                                    str(x.root_device_type).ljust(ins_dev_len))
+                            .ljust(inst_hdr[1])
+                            for x in node.instances)
         instances.strip()
         if node.state == 'ENABLED':
             markups = [1, 92]
@@ -71,10 +72,12 @@ def SHOW_NODES(connection, nodes=None, print_table=True):
     else:
         return pt
 
+
 class EucaNodeService(EucaComponentService):
     """
     Used to parse Eucalyptus node controller request
     """
+
     def __init__(self, connection=None):
         super(EucaNodeService, self).__init__(connection)
         self.instances = []
@@ -95,7 +98,7 @@ class EucaNodeService(EucaComponentService):
     def _from_service(cls, service):
         new_node = cls()
         new_node.__dict__.update(service.__dict__)
-        return  new_node
+        return new_node
 
     def show(self):
         return SHOW_NODES(self.connection, nodes=self)
@@ -117,16 +120,14 @@ class EucaNodeService(EucaComponentService):
                                                'fullname': self.fullname,
                                                'partition': self.partition,
                                                'get_instances': get_instances},
-                            silent=silent
-                            )
+                            silent=silent)
 
     def modify_service_state(self, state):
         raise NotImplemented('"modify_service_state" not yet implemented for '
                              'node controller services')
 
-
     def endElement(self, name, value, connection):
-        ename = name.replace('euca:','').lower()
+        ename = name.replace('euca:', '').lower()
         if ename:
             if ename == 'localstate':
                 setattr(self, 'state', value)
@@ -136,42 +137,42 @@ class EucaNodeService(EucaComponentService):
 
 
 class NodeController(EucaHost):
+
     def __init__(self, nc_service, *args, **kwargs):
         self.nc_service = nc_service
-        super (NodeController, self).__init__(*args, **kwargs)
-
+        super(NodeController, self).__init__(*args, **kwargs)
 
     def get_hypervisor_from_euca_conf(self):
-            """
+        """
             Attempts to find HYPERVISOR value in <eucalytpus home>/etc/eucalyptus.conf
 
             :return: string representing hypervisor type if found
             """
-            hypervisor =  None
-            out = self.sys("cat /etc/eucalyptus/eucalyptus.conf | grep '^HYPER'")
-            if out and re.search('^HYPERVISOR=',out[0]):
-                hypervisor = out[0].split('=')[1].strip().strip('"')
-            return hypervisor
+        hypervisor = None
+        out = self.sys("cat /etc/eucalyptus/eucalyptus.conf | grep '^HYPER'")
+        if out and re.search('^HYPERVISOR=', out[0]):
+            hypervisor = out[0].split('=')[1].strip().strip('"')
+        return hypervisor
 
     def get_local_nc_service_state(self):
-            service_state = None
-            if self.ssh:
-                try:
-                    if self.distro is not "vmware":
-                        self.sys("service eucalyptus-nc status", code=0)
-                        service_state = 'running'
-                    else:
-                        # Todo add vmware service query here...
-                        service_state = 'unknown'
-                except CommandExitCodeException:
-                    service_state = 'not_running'
-                except Exception, E:
-                    self.debug('Could not get service state from node:"{0}", err:"{1}"'
-                               .format(self.hostname),str(E))
-            else:
-                self.critical("No ssh connection for node controller:'{0}'".format(self.hostname))
-            self.service_state = service_state
-            return service_state
+        service_state = None
+        if self.ssh:
+            try:
+                if self.distro is not "vmware":
+                    self.sys("service eucalyptus-nc status", code=0)
+                    service_state = 'running'
+                else:
+                    # Todo add vmware service query here...
+                    service_state = 'unknown'
+            except CommandExitCodeException:
+                service_state = 'not_running'
+            except Exception, E:
+                self.debug('Could not get service state from node:"{0}", err:"{1}"'
+                           .format(self.hostname), str(E))
+        else:
+            self.critical("No ssh connection for node controller:'{0}'".format(self.hostname))
+        self.service_state = service_state
+        return service_state
 
     def get_virsh_list(self):
         """
@@ -190,7 +191,10 @@ class NodeController(EucaHost):
                     if line == "":
                         continue
                     domain_line = line.split()
-                    instance_list.append({keys[0]:domain_line[0], keys[1]:domain_line[1], keys[2]:domain_line[2]})
+                    instance_list.append(
+                        {keys[0]: domain_line[0],
+                         keys[1]: domain_line[1],
+                         keys[2]: domain_line[2]})
         return instance_list
 
     def tail_instance_console(self,
@@ -205,7 +209,7 @@ class NodeController(EucaHost):
         '''
         if timeout < idle_timeout:
             idle_timeout = timeout
-        if not isinstance(instance,types.StringTypes):
+        if not isinstance(instance, types.StringTypes):
             instance = instance.id
         console_path = self.get_instance_console_path(instance)
         start_time = time.time()
@@ -227,7 +231,6 @@ class NodeController(EucaHost):
                              timeout=idle_timeout)
         except CommandTimeoutException, cte:
             self.debug('Idle timeout fired while tailing console: ' + str(cte))
-
 
     def remote_tail_monitor_cb(self,
                                buf,
@@ -255,14 +258,13 @@ class NodeController(EucaHost):
             ret.stop = True
         finally:
             ret.buf = return_buf
-            ret.nextargs = [instance_id, max_lines, lines_read, start_time,timeout]
+            ret.nextargs = [instance_id, max_lines, lines_read, start_time, timeout]
             return ret
 
-
     def get_instance_multipath_dev_info_for_instance_ebs_volume(self, instance, volume):
-        if not isinstance(instance,types.StringTypes):
+        if not isinstance(instance, types.StringTypes):
             instance = instance.id
-        if isinstance(volume,types.StringTypes):
+        if isinstance(volume, types.StringTypes):
             volume = self.tester.get_volume(volume_id=volume)
         if volume.attach_data and volume.attach_data.instance_id == instance:
             dev = volume.attach_data.device
@@ -270,25 +272,27 @@ class NodeController(EucaHost):
             raise Exception(str(volume.id) + 'Vol not attached to instance: ' + str(instance))
         return self.get_instance_multipath_dev_info_for_instance_block_dev(instance, dev)
 
-
-    def get_instance_multipath_dev_info_for_instance_block_dev(self, instance, ebs_block_dev, verbose=False):
-        if not isinstance(instance,types.StringTypes):
+    def get_instance_multipath_dev_info_for_instance_block_dev(self, instance, ebs_block_dev,
+                                                               verbose=False):
+        if not isinstance(instance, types.StringTypes):
             instance = instance.id
         mpath_dev = self.get_instance_multipath_dev_for_instance_block_dev(instance, ebs_block_dev)
-        mpath_dev_info = self.machine.sys('multipath -ll ' + str(mpath_dev) + " | sed 's/[[:cntrl:]]//g' ",
-                                          verbose=verbose, code=0)
+        mpath_dev_info = self.machine.sys(
+            'multipath -ll ' + str(mpath_dev) + " | sed 's/[[:cntrl:]]//g' ",
+            verbose=verbose, code=0)
         return mpath_dev_info
 
     def get_instance_multipath_dev_for_instance_ebs_volume(self, instance, volume):
-        if not isinstance(instance,types.StringTypes):
+        if not isinstance(instance, types.StringTypes):
             instance = instance.id
-        if isinstance(volume,types.StringTypes):
+        if isinstance(volume, types.StringTypes):
             volume = self.tester.get_volume(volume_id=volume)
 
-    def get_instance_multipath_dev_for_instance_block_dev(self, instance, ebs_block_dev, verbose=False):
+    def get_instance_multipath_dev_for_instance_block_dev(self, instance, ebs_block_dev,
+                                                          verbose=False):
         mpath_dev = None
         ebs_block_dev = os.path.basename(ebs_block_dev)
-        if not isinstance(instance,types.StringTypes):
+        if not isinstance(instance, types.StringTypes):
             instance = instance.id
         dm_dev = self.get_instance_block_disk_dev_on_node(instance, ebs_block_dev)
         sym_links = self.machine.sys('udevadm info --name ' + str(dm_dev) + ' --query symlink',
@@ -301,16 +305,17 @@ class NodeController(EucaHost):
 
     def get_instance_block_disk_dev_on_node(self, instance, block_dev):
         block_dev = os.path.basename(block_dev)
-        if not isinstance(instance,types.StringTypes):
+        if not isinstance(instance, types.StringTypes):
             instance = instance.id
         paths = self.get_instance_block_disk_source_paths(instance)
-        sym_link  = paths[block_dev]
+        sym_link = paths[block_dev]
         real_dev = self.machine.sys('readlink -e ' + sym_link, verbose=False, code=0)[0]
         fs_stat = self.machine.get_file_stat(real_dev)
         if stat.S_ISBLK(fs_stat.st_mode):
             return real_dev
         else:
-            raise(str(instance) + ", dev:" + str(block_dev) + ',Error, device on node is not block type :' + str(real_dev))
+            raise (str(instance) + ", dev:" + str(
+                block_dev) + ',Error, device on node is not block type :' + str(real_dev))
 
     def get_instance_block_disk_source_paths(self, instance, target_dev=None):
         '''
@@ -320,7 +325,7 @@ class NodeController(EucaHost):
         ret_dict = {}
         if target_dev:
             target_dev = os.path.basename(target_dev)
-        if not isinstance(instance,types.StringTypes):
+        if not isinstance(instance, types.StringTypes):
             instance = instance.id
         disk_doms = self.get_instance_block_disk_xml_dom_list(instance_id=instance)
         for disk in disk_doms:
@@ -331,32 +336,33 @@ class NodeController(EucaHost):
         return ret_dict
 
     def get_instance_console_path(self, instance_id):
-        if not isinstance(instance_id,types.StringTypes):
+        if not isinstance(instance_id, types.StringTypes):
             instance = instance_id.id
         dev_dom = self.get_instance_device_xml_dom(instance_id=instance_id)
         console_dom = dev_dom.getElementsByTagName('console')[0]
         return console_dom.getElementsByTagName('source')[0].attributes.get('path').nodeValue
 
     def get_instance_device_xml_dom(self, instance_id):
-        if not isinstance(instance_id,types.StringTypes):
+        if not isinstance(instance_id, types.StringTypes):
             instance = instance_id.id
         dom = self.get_instance_xml_dom(instance_id)
         return dom.getElementsByTagName('devices')[0]
 
     def get_instance_block_disk_xml_dom_list(self, instance_id):
-        if not isinstance(instance_id,types.StringTypes):
+        if not isinstance(instance_id, types.StringTypes):
             instance = instance_id.id
         dev_dom = self.get_instance_xml_dom(instance_id)
         return dev_dom.getElementsByTagName('disk')
 
     def get_instance_xml_dom(self, instance_id):
-        if not isinstance(instance_id,types.StringTypes):
+        if not isinstance(instance_id, types.StringTypes):
             instance = instance_id.id
         output = self.get_instance_xml_text(instance_id)
         dom_xml = parseString(output)
         return dom_xml.getElementsByTagName('domain')[0]
 
     def get_instance_xml_text(self, instance_id):
-        if not isinstance(instance_id,types.StringTypes):
+        if not isinstance(instance_id, types.StringTypes):
             instance = instance_id.id
-        return self.machine.sys('virsh dumpxml ' + str(instance_id),listformat=False, verbose=False, code=0)
+        return self.machine.sys('virsh dumpxml ' + str(instance_id), listformat=False,
+                                verbose=False, code=0)

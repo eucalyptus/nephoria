@@ -196,7 +196,7 @@ class EucaHost(Machine):
                 for line in out:
                     line.strip()
                     if not re.match('^#', line):
-                         match = re.search('^(\w+)=\s*(\S+)$', line)
+                        match = re.search('^(\w+)=\s*(\S+)$', line)
                     if not match:
                         # This line does not match our expected format, add it to the messages
                         message += line + "\n"

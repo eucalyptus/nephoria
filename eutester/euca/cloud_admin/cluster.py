@@ -10,13 +10,8 @@ class Cluster(EucaService):
         self.cluster_controllers = []
         self.storage_controllers = []
         self.nodes = []
-        self.config_properties={}
+        self.config_properties = {}
 
     def show_cluster(self, name):
         title = 'CLUSTER: {0}'.format(name)
         main_pt = PrettyTable()
-
-
-
-
-

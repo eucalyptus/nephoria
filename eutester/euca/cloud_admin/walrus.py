@@ -1,4 +1,3 @@
-__author__ = 'clarkmatthew'
 
 
 from eutester.euca.cloud_admin.services import EucaComponentService, SHOW_COMPONENTS

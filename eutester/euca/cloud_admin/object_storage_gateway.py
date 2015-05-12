@@ -1,4 +1,3 @@
-__author__ = 'clarkmatthew'
 
 from eutester.euca.cloud_admin.services import EucaComponentService, SHOW_COMPONENTS
 
@@ -10,4 +9,3 @@ class EucaObjectStorageGatewayService(EucaComponentService):
 
     def show(self):
         return SHOW_COMPONENTS(self.connection, self)
-

@@ -1,4 +1,3 @@
-__author__ = 'clarkmatthew'
 
 from eutester.euca.cloud_admin.services import EucaComponentService
 from eutester.utils.log_utils import markup
@@ -31,6 +30,7 @@ def SHOW_CLUSTER_CONTROLLER_SERVICES(connection, ccs=None, print_table=True):
         connection.debug_method('\n' + pt.get_string(sortby=cluster_hdr[0]) + '\n')
     else:
         return pt
+
 
 class EucaClusterControllerService(EucaComponentService):
     def update(self, new_service=None, get_instances=True, silent=True):
