@@ -285,7 +285,7 @@ Displays a table summarizing Eucalyptus services
 In [6]: cloud_admin.show_services(do_html=True)
 ```
 
-![Full HTML Table](http://bigschwan.github.io/eutester/cloud_admin/services_status_sample.html)
+[SAMPLE FULL HTML TABLE](http://bigschwan.github.io/eutester/cloud_admin/services_status_sample.html)
 
 
 <table frame="box" rules="all">
@@ -502,7 +502,7 @@ In [5]: cloud_admin.show_service_types(do_html=True)
 ```
 
 
-![Full html table](http://bigschwan.github.io/eutester/cloud_admin/service_types_sample.html)
+[SAMPLE FULL HTML TABLE](http://bigschwan.github.io/eutester/cloud_admin/service_types_sample.html)
 
 
 <table frame="box" rules="all">
