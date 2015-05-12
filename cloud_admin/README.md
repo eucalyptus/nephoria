@@ -499,11 +499,12 @@ Displays a table summarizing Eucalyptus services
     </tr>
 </table>
 
-```
+
+
+
+
 
 ###### In [5]: cloud_admin.show_service_types(do_html=True)
-
-
 
 
 
