@@ -26,8 +26,8 @@ def SHOW_SERVICES(connection, services=None, service_type=None, show_part=False,
     :param do_html: If True will produce an html table instead of an ascii table
     :raise ValueError:
     """
-    html_open = "[+html_open+]"
-    html_close = "[+html_close+]"
+    html_open = "###html_open###"
+    html_close = "###html_close###"
 
     def n_markup(*args, **kwargs):
         kwargs['do_html'] = do_html
@@ -137,7 +137,7 @@ def SHOW_SERVICES(connection, services=None, service_type=None, show_part=False,
 
 
 def SHOW_SERVICE_TYPES(connection, service_types=None, verbose=False,
-                       printmethod=None, print_table=True):
+                       printmethod=None, do_html=False, print_table=True):
     """
     Produces a table summarizing the Eucalyptus Service Types
     :param connection: EucaAdmin() connection obj
@@ -148,16 +148,25 @@ def SHOW_SERVICE_TYPES(connection, service_types=None, verbose=False,
     :param print_table: bool, if True will attempt to print the table, else will return the
                         table obj
     """
+    html_open = "###html_open###"
+    html_close = "###html_close###"
+
+    def n_markup(*args, **kwargs):
+        kwargs['do_html'] = do_html
+        kwargs['html_open'] = html_open
+        kwargs['html_close'] = html_close
+        return markup(*args, **kwargs)
+
     cluster_len = 7
     parent_len = 18
     name_len = 18
     public_len = 6
     desc_len = 60
-    cluster_hdr = markup(str('CLUSTER').center(cluster_len))
-    parent_hdr = markup(str('PARENT').center(parent_len))
-    name_hdr = markup(str('NAME').ljust(name_len))
-    public_hdr = markup(str('PUBLIC').ljust(public_len))
-    desc_hdr = markup(str('DESCRIPTION').ljust(desc_len))
+    cluster_hdr = n_markup(str('CLUSTER').center(cluster_len))
+    parent_hdr = n_markup(str('PARENT').center(parent_len))
+    name_hdr = n_markup(str('NAME').ljust(name_len))
+    public_hdr = n_markup(str('PUBLIC').ljust(public_len))
+    desc_hdr = n_markup(str('DESCRIPTION').ljust(desc_len))
     main_pt = PrettyTable([name_hdr, cluster_hdr, parent_hdr, public_hdr, desc_hdr])
     # main_pt.hrules = ALL
     main_pt.max_width[cluster_hdr] = cluster_len
@@ -212,7 +221,7 @@ def SHOW_SERVICE_TYPES(connection, service_types=None, verbose=False,
     for service in service_types:
         if service.groupmembers:
             # Highlight the parent service type/class
-            main_pt.add_row(_get_service_row(service, markup_method=markup, markups=[1, 94]))
+            main_pt.add_row(_get_service_row(service, markup_method=n_markup, markups=[1, 94]))
             # If this list has been sorted, the members have been converted to EucaServiceType
             # and moved here. They should be printed here under the parent, otherwise these
             # are just strings and the member service types will be printed in the main table
@@ -220,14 +229,21 @@ def SHOW_SERVICE_TYPES(connection, service_types=None, verbose=False,
                 if isinstance(member, EucaServiceType):
                     main_pt.add_row(_get_service_row(member, indent='  '))
         else:
-            main_pt.add_row(_get_service_row(service, markup_method=markup, markups=[1, 94]))
+            main_pt.add_row(_get_service_row(service, markup_method=n_markup, markups=[1, 94]))
+
+    html_string = None
+    if do_html:
+        html_string = main_pt.get_html_string(format=True, hrules=1)
+        html_string = html_string.replace(html_open, "<")
+        html_string = html_string.replace(html_close, ">")
     if print_table:
+        out = html_string or str(main_pt)
         if printmethod:
-            printmethod(str(main_pt))
+            printmethod(out)
         else:
-            connection.debug_method(str(main_pt))
+            connection.debug_method(out)
     else:
-        return main_pt
+        return html_string or main_pt
 
 
 def _sort_service_types(service_types):
