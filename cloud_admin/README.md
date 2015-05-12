@@ -1,8 +1,9 @@
 
-ipython shell capture showing some usage examples:
+#### ipython shell capture showing some usage examples:
 
 
-First create an admin connection obj...
+### First create an admin connection obj...
+
 ````
 from cloud_utils.file_utils.eucarc import Eucarc
 ec = Eucarc(filepath='eucarc-10.111.5.100-eucalyptus-admin/eucarc')
@@ -20,7 +21,7 @@ In [15]: cloud_admin  = EucaAdmin(host='10.111.5.100', aws_access_key_id=ec.aws_
                                   aws_secret_access_key=ec.aws_secret_key)
 ```
 
-Fetch admin info from cloud...
+### Fetch admin info from cloud...
 ```
 In [20]: cloud_admin.get
 cloud_admin.get_all_arbitrator_services              cloud_admin.get_arbitrator_service                   cloud_admin.get_property
@@ -38,7 +39,7 @@ cloud_admin.get_all_walrus_backend_services          cloud_admin.get_properties
 
 
 
-EucaAdmin can provide summarized detail via Tabled output...
+### EucaAdmin can provide summarized detail via Tabled output...
 
 ```
 In [16]: cloud_admin.sho
@@ -183,7 +184,7 @@ In [22]: cloud_admin.show_properties('www.https_')
 
 ```
 
-Modify properties...
+### Modify properties...
 
 ```
 In [5]: prop = cloud_admin.get_property('services.imaging.worker.log_server')
@@ -221,7 +222,7 @@ In [9]: prop.show()
 +----------------------------------+--------------+----------------------------------------+
 ```
 
-Modify Service States...
+### Modify Service States...
 
 ```
 In [15]: storage_service  = cloud_admin.get_services(service_type='storage', partition='one')[0]
@@ -260,7 +261,7 @@ ModifyService(State="ENABLED", Name="one-sc-1")
 Out[19]: EucaService:one-sc-1
 ```
 
-Can also produce HTML versions of the ascii tables...
+### Can also produce HTML versions of the ascii tables...
 
 ```
 In [5]: cloud_admin.show_services?
@@ -281,11 +282,15 @@ Displays a table summarizing Eucalyptus services
                     if False will return the table obj w/o printing it
 :param do_html: If True will produce an html table instead of an ascii table
 :raise ValueError:
-
-In [6]: cloud_admin.show_services(do_html=True)
 ```
+##### In [6]: cloud_admin.show_services(do_html=True)
 
-[SAMPLE FULL HTML TABLE](http://bigschwan.github.io/eutester/cloud_admin/services_status_sample.html)
+
+[SAMPLE FULL HTML TABLE ON GH-PAGES](http://bigschwan.github.io/eutester/cloud_admin/services_status_sample.html)
+
+
+##### ...or github rendering of table html...
+
 
 
 <table frame="box" rules="all">
@@ -496,13 +501,16 @@ In [6]: cloud_admin.show_services(do_html=True)
 
 ```
 
-In [5]: cloud_admin.show_service_types(do_html=True)
+###### In [5]: cloud_admin.show_service_types(do_html=True)
 
 
-```
 
 
-[SAMPLE FULL HTML TABLE](http://bigschwan.github.io/eutester/cloud_admin/service_types_sample.html)
+
+[SAMPLE FULL HTML TABLE ON GH-PAGES](http://bigschwan.github.io/eutester/cloud_admin/service_types_sample.html)
+
+
+...or github rendering of table html...
 
 
 <table frame="box" rules="all">
