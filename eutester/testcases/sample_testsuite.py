@@ -1,4 +1,4 @@
-from eutester.testcase_utils.eutestcase import EutesterTestCase
+from eutester.testcase_utils.eutestcase import EutesterTestCase, SkipTestException
 from cloud_utils.net_utils.sshconnection import SshConnection
 
 # Create the testcase object
@@ -62,19 +62,41 @@ def my_first_test_method(ip=None, username=None, password=None):
 
 
 # Now add a method that is intended to fail...
-testcase.sample_test_fail_method = lambda: my_first_test_method(ip=None,
-                                                                username='root',
-                                                                password='badpassword')
+def sample_test_fail_method():
+    return my_first_test_method(ip=None, username='noone', password='badpassword')
+
+testcase.uh_oh_fail = sample_test_fail_method
+testcase.uh_oh_fail.__doc__ = "Description: This test should demonstrate a failure...\n"
+
+def too_lazy_to_run():
+    """
+    This shows how to throw a 'SkipTestException' in the case a test detects it should not be
+    run. Reasons for not running a test might be; the environment is not for this test, another
+    test has failed and this test depends on an artifact created by that test as a dependency,
+    the code base is not of the correct version (ie the feature this tests is not present), etc..
+    """
+    raise SkipTestException('Im too lazy to run right now')
+
+def hope_i_get_to_run():
+    '''
+    'This test should show a failure of a test which never gets to run'
+                   'due to EOF(End On Failure) set for a failed testcase'
+    '''
+    testcase.debug('This test should show a failure of a test which never gets to run'
+                   'due to EOF(End On Failure) set for a failed testcase')
 
 # Create our test list of test units...
 # this can be done by using a method or the name of a method within the testcase class...
 # by passing a method
 test1 = testcase.create_testunit_from_method(my_first_test_method)
+test2 = testcase.create_testunit_from_method(too_lazy_to_run)
+# By passing a name of a method local to the testcase object, setting eof to True here will
+# abort any remaining tests if this unit fails. This can also be set globally for all test units
+# during run_test_case_list()
+test3 = testcase.create_testunit_by_name('uh_oh_fail', eof=True)
+test4 = testcase.create_testunit_from_method(hope_i_get_to_run)
 
-# By passing a name of a method local to the testcase object
-test2 = testcase.create_testunit_by_name('sample_test_fail_method')
-
-result = testcase.run_test_case_list(list = [test1, test2],
+result = testcase.run_test_case_list(list = [test1, test2, test3, test4],
                                      eof=False,
                                      clean_on_exit=False,
                                      printresults=True)
