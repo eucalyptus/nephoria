@@ -133,7 +133,7 @@ In [19]: cad.show_components_summary()
 +------------+------------------------------+----------------+-------+-------------+
 ```
 
-Query and display properties...
+### Query and display properties...
 
 ```
 Filter example:
