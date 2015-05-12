@@ -8,7 +8,7 @@ from cloud_utils.file_utils.eucarc import Eucarc
 ec = Eucarc(filepath='eucarc-10.111.5.100-eucalyptus-admin/eucarc')
 from cloud_admin.eucaadmin import EucaAdmin
 cloud_admin = EucaAdmin(host='10.111.5.100', aws_access_key_id=ec.aws_access_key,
-                        aws_secret_access_key=ec.aws_secret_key, boto_debug_level=2)
+                        aws_secret_access_key=ec.aws_secret_key, boto_debug_level=0)
 
 In [12]: from cloud_utils.file_utils.eucarc import Eucarc
 
