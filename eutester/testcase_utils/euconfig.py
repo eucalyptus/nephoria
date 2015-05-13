@@ -36,7 +36,7 @@ Created on May 11, 2012
 This utility is primarily used to support legacy test configuration formats for Testcases
 developed both in and outside of eutester, as well as run in Eucalyptus legacy QA system(s).
 
-Simple utility to read a given config file and parse out the configuration. 
+Simple utility to read a given config file and parse out the configuration.
 Uses python's Config Parser but includes some utils to support legacy qa config files,
 and file operations on local and remote machines containing keypair values.
 To use this utility, the config file given must use the following format:
@@ -44,17 +44,17 @@ To use this utility, the config file given must use the following format:
 
 example:
 Add the following lines to a file called /tmp/config.txt
-Note: 
-This example is using the legacy config with ip, distro, and component info. 
+Note:
+This example is using the legacy config with ip, distro, and component info.
 
 >cat /tmp/config.txt
     1.1.1.1   CENTOS  5.7     64      REPO [CLC WS]
     1.1.1.2   CENTOS  5.7     64      REPO [NC00]
-    
+
     [mytest]
     volumes=2
     image=centos.img
-    
+
     [joestest]
     image=ubuntu.img
     name=joe
@@ -69,7 +69,7 @@ To retrieve config info from this file from within a test:
 >
 >print myimage
  centos.img
- 
+
 >print conf.legacybuf
  1.1.1.1   CENTOS  5.7     64      REPO [CLC WS]
  1.1.1.2   CENTOS  5.7     64      REPO [NC00]
@@ -86,8 +86,9 @@ import hashlib
 # Todo: This utility should be considered for deprecation depending on amount of legacy
 # Todo: ...test and QA env support needed?
 
+
 class File_Util():
-    #Possible file edit actions
+    # Possible file edit actions
     ADDTOLINE = 'ADDTOLINE'
     SWAP = 'SWAP'
     ADD = 'ADD'
@@ -118,11 +119,10 @@ class File_Util():
         if self.ssh:
             if not self.ssh.sftp:
                 self.ssh.open_sftp()
-            fileobj= self.ssh.sftp.file(filepath,flags)
+            fileobj = self.ssh.sftp.file(filepath, flags)
         else:
-            fileobj = open(filepath,flags)
+            fileobj = open(filepath, flags)
         return fileobj
-
 
     def file_replace(self, from_path, to_path):
         if self.ssh:
@@ -142,17 +142,16 @@ class File_Util():
         self.md5sum = md5.hexdigest()
         return md5.hexdigest()
 
-
     def has_changed(self):
         if self.md5sum != self.get_md5():
             return True
         else:
             return False
 
-    def sanitize(self,dirty_string):
+    def sanitize(self, dirty_string):
         clean_string = ""
         for c in dirty_string:
-            if re.match('\W',c):
+            if re.match('\W', c):
                 clean_string += '\\' + c
             else:
                 clean_string += c
@@ -201,12 +200,11 @@ class File_Util():
             time.sleep(2)
         print 'No lines gathered in update'
 
-
     def get_file_lines(self):
         lines = []
         cfile = None
         try:
-            cfile = self.file_open(self.filepath,read=True)
+            cfile = self.file_open(self.filepath, read=True)
             cfile.seek(0)
             for line in cfile.readlines():
                 if line.strip() or not self.remove_blank_lines:
@@ -221,15 +219,15 @@ class File_Util():
         return lines
 
     def file_edit_line(self,
-                    new_line,
-                    action = None,
-                    search_pattern=None,
-                    after_pattern=None,
-                    single_action=True,
-                    tempfilepath=None):
+                       new_line,
+                       action=None,
+                       search_pattern=None,
+                       after_pattern=None,
+                       single_action=True,
+                       tempfilepath=None):
         if self.verbose:
             print "Starting file_edit_line..."
-        tempfilepath = tempfilepath or str(self.filepath)+str('.tmp')
+        tempfilepath = tempfilepath or str(self.filepath) + str('.tmp')
         tempfile = self.file_open(tempfilepath, write=True, create=True)
         self.update()
         updated = False
@@ -242,13 +240,13 @@ class File_Util():
             start_write = True
         else:
             start_write = False
-        #If no search criteria is specified, just write the line to the file...
+        # If no search criteria is specified, just write the line to the file...
         if start_write and not search_pattern:
             myfile = open(self.filepath, 'w')
             myfile.write(new_line)
             myfile.close()
             print new_line
-        #Iterate through file, when search patterns have been satisfied, write new_line...
+        # Iterate through file, when search patterns have been satisfied, write new_line...
         try:
             for line in self.lines:
                 if updated and single_action:
@@ -262,29 +260,38 @@ class File_Util():
                     if not search_pattern or re.search(search_pattern, line):
                         print "Found search pattern:" + str(search_pattern)
                         if action == File_Util.ADD:
-                            if self.verbose: print "OLD:" + str(line)
+                            if self.verbose:
+                                print "OLD:" + str(line)
                             line = str(line) + "\n" + new_line
-                            if self.verbose: print "NEW:" + str(line)
+                            if self.verbose:
+                                print "NEW:" + str(line)
                             updated = True
                         elif search_pattern and action == File_Util.ADDTOLINE:
-                            if self.verbose: print "OLD:" + str(line)
+                            if self.verbose:
+                                print "OLD:" + str(line)
                             line = str(line) + new_line
-                            if self.verbose: print "NEW:" + str(line)
+                            if self.verbose:
+                                print "NEW:" + str(line)
                             updated = True
                         elif search_pattern and action == File_Util.SWAP:
-                            if self.verbose: print "OLD:" + str(line)
+                            if self.verbose:
+                                print "OLD:" + str(line)
                             line = new_line
-                            if self.verbose: print "NEW:" + str(line)
+                            if self.verbose:
+                                print "NEW:" + str(line)
                             updated = True
                         elif search_pattern and action == File_Util.REMOVE:
-                            if self.verbose: print "OLD:" + str(line)
-                            if self.verbose: print "NEW:"
+                            if self.verbose:
+                                print "OLD:" + str(line)
+                            if self.verbose:
+                                print "NEW:"
                             updated = True
                             continue
-                if self.verbose: print "writing line:" +str(line)
+                if self.verbose:
+                    print "writing line:" + str(line)
                 tempfile.write(line + "\n")
             if updated:
-                self.file_replace(tempfilepath,self.filepath)
+                self.file_replace(tempfilepath, self.filepath)
         except Exception, e:
             print "Error when editing file:" + str(e)
         finally:
@@ -292,9 +299,7 @@ class File_Util():
             if updated:
                 self.update()
 
-
-
-    def swap_existing_line(self, search_pattern, new_line, after_pattern=None ):
+    def swap_existing_line(self, search_pattern, new_line, after_pattern=None):
         return self.file_edit_line(new_line=new_line,
                                    search_pattern=search_pattern,
                                    after_pattern=after_pattern,
@@ -304,24 +309,24 @@ class File_Util():
         return self.file_edit_line(new_line=new_line,
                                    after_pattern=after_pattern,
                                    action=File_Util.ADD)
+
     def stat_file(self):
         if self.ssh:
             return self.ssh.sftp.stat(self.filepath)
         else:
             return os.stat(self.filepath)
 
-    def add_to_existing_line(self, search_pattern,values_to_add, after_pattern=None):
+    def add_to_existing_line(self, search_pattern, values_to_add, after_pattern=None):
         return self.file_edit_line(new_line=values_to_add,
                                    search_pattern=search_pattern,
                                    after_pattern=after_pattern,
                                    action=File_Util.ADDTOLINE)
 
-    def remove_existing_line(self, search_pattern,after_pattern=None):
+    def remove_existing_line(self, search_pattern, after_pattern=None):
         return self.file_edit_line(new_line='',
                                    search_pattern=search_pattern,
                                    after_pattern=after_pattern,
-                                   action= File_Util.REMOVE)
-
+                                   action=File_Util.REMOVE)
 
 
 class Config_Item():
@@ -334,8 +339,7 @@ class Config_Item():
     def update(self):
         self.config_section = self.config_section.update()
 
-
-    def config_file_set_this_line(self,value, quoted=True):
+    def config_file_set_this_line(self, value, quoted=True):
         new_value = str(value)
         if quoted:
             new_value = '"' + new_value.strip('"') + '"'
@@ -345,7 +349,8 @@ class Config_Item():
         return ret
 
     def config_file_add_to_this_line(self, value_to_add):
-        ret = self.config_section.config_file_add_to_existing_line(search_pattern=self.search_pattern, value_to_add=value_to_add)
+        ret = self.config_section.config_file_add_to_existing_line(
+            search_pattern=self.search_pattern, value_to_add=value_to_add)
         self.update()
         return ret
 
@@ -358,7 +363,6 @@ class Config_Item():
         return "SECTION:" + str(self.config_section.name) + ", VALUE:" + str(self.value)
 
 
-
 class Config_Section():
     def __init__(self, name, config_manager, strip='"'):
         self.name = name
@@ -367,7 +371,6 @@ class Config_Section():
         self.file_util = self.config_manager.file_util
         self.section_pattern = self.get_section_pattern()
         self.update_attributes_for_section()
-
 
     def update(self):
         if self.config_manager.file_util.has_changed():
@@ -394,16 +397,16 @@ class Config_Section():
             item_name = item[0]
             existing_item = self.get_item(name=item_name)
             if self.strip:
-                value =  str(item[1]).strip(self.strip)
+                value = str(item[1]).strip(self.strip)
             else:
                 value = item[1]
-            self.add_item_to_section(item_name,value)
+            self.add_item_to_section(item_name, value)
             if existing_item:
                 existing_items.remove(existing_item)
         if existing_items:
             self.remove_all_items(items=existing_items)
 
-    def write_new_item_to_section_in_config_file(self,key, value):
+    def write_new_item_to_section_in_config_file(self, key, value):
         new_line = str(key) + "=" + '"' + str(value).strip('"') + '"'
         self.config_file_add_new_line_to_section(new_line=new_line)
 
@@ -419,23 +422,22 @@ class Config_Section():
 
     def config_file_add_to_existing_line(self, search_pattern, value_to_add):
         return self.file_util.add_to_existing_line(search_pattern=search_pattern,
-                                            value_to_add=value_to_add,
-                                            after_pattern=self.section_string)
-
+                                                   value_to_add=value_to_add,
+                                                   after_pattern=self.section_string)
 
     def config_file_swap_line(self, search_pattern, new_line):
         return self.file_util.swap_existing_line(search_pattern=search_pattern,
-                                          new_line=new_line,
-                                          after_pattern=self.section_pattern)
+                                                 new_line=new_line,
+                                                 after_pattern=self.section_pattern)
 
     def config_file_remove_line(self, search_pattern):
-        return self.file_util.remove_existing_line(search_pattern=search_pattern, after_pattern=self.section_pattern)
+        return self.file_util.remove_existing_line(search_pattern=search_pattern,
+                                                   after_pattern=self.section_pattern)
 
     def config_file_add_new_line_to_section(self, new_line, over_write=True):
         return self.file_util.add_new_line(new_line=new_line,
-                                    after_pattern=self.section_pattern,
-                                    over_write=over_write)
-
+                                           after_pattern=self.section_pattern,
+                                           over_write=over_write)
 
     def get_all_items(self, item_name=None):
         items = []
@@ -445,7 +447,7 @@ class Config_Section():
                     items.append(self.__dict__[attr])
         return items
 
-    def get_item(self,name):
+    def get_item(self, name):
         item = None
         items = self.get_all_items(item_name=name)
         if item:
@@ -459,7 +461,6 @@ class Config_Section():
 
 
 class EuConfig():
-    
     def __init__(self,
                  filename='../input/2btested.lst',
                  file_util=None,
@@ -472,31 +473,31 @@ class EuConfig():
                  make_section_attrs=True,
                  legacy_qa_config=False,
                  preserve_option_case=True,
-                 strip_values = '"'):
+                 strip_values='"'):
         self.config = None
         self.preserve_option_case = preserve_option_case
         self.legacy_qa_config = legacy_qa_config
         self.file_util = file_util
         self.ssh = ssh
-        self.auto_detect_memo_section=auto_detect_memo_section
+        self.auto_detect_memo_section = auto_detect_memo_section
         self.debugmethod = debugmethod
         self.make_section_attrs = make_section_attrs
         self.strip_values = strip_values
         self.filename = filename
-        self.default_section_name = default_section_name or os.path.basename(self.filename).replace('.','_')
+        self.default_section_name = (default_section_name or
+                                     os.path.basename(self.filename).replace('.', '_'))
         self.verbose = verbose
 
         if not self.file_util:
-            self.file_util = self.create_file_util_from_file(filepath = filename, ssh=ssh, verbose=False)
+            self.file_util = self.create_file_util_from_file(filepath=filename, ssh=ssh,
+                                                             verbose=False)
 
-        #read the file into a list of lines
+        # read the file into a list of lines
         self.lines = config_lines or self.file_util.lines
         self.config = None
         if self.auto_detect_memo_section and self.has_legacy_memo_section_marker(lines=self.lines):
-            self.legacy_qa_config=True
+            self.legacy_qa_config = True
         self.update()
-
-
 
     def check_and_add_default_section(self, default_section_name=None):
         default_section_name = default_section_name or self.default_section_name
@@ -515,13 +516,13 @@ class EuConfig():
 
     def has_a_section(self):
         for line in self.lines:
-            if re.match("^\[\]+",  line):
+            if re.match("^\[\]+", line):
                 return True
         return False
 
-    def update(self,lines=None):
+    def update(self, lines=None):
 
-        #read/re-read the file into a list of lines
+        # read/re-read the file into a list of lines
         if lines:
             self.lines = lines
         else:
@@ -530,22 +531,22 @@ class EuConfig():
             if not self.legacy_qa_config:
                 self.check_and_add_default_section()
 
-        #parse out any legacy config into a separate buffer (to support older test config formats)
+        # parse out any legacy config into a separate buffer (to support older test config formats)
         self.legacybuf = self.get_legacy_config()
 
-        #parse out remaining non-legacy config into another buffer
+        # parse out remaining non-legacy config into another buffer
         self.configbuf = str(self.get_config_buf())
 
-        #create our configParser object using the config buffer
+        # create our configParser object using the config buffer
         self.config = None
 
         self.populate_config_parser_from_buf(buf=self.configbuf)
 
-
     @classmethod
     def create_file_util_from_file(cls, filepath, ssh=None, verbose=False):
         """
-        Creates either a File_Util obj, working on either a local or remote file (if ssh is provided).
+        Creates either a File_Util obj, working on either a local or remote file
+        (if ssh is provided).
         :param filepath: string representing the local or remote file path
         :param ssh: eutester ssh_connection obj if file is remote
         :return: File_Util obj
@@ -553,24 +554,22 @@ class EuConfig():
         file_util = File_Util(filepath=filepath, ssh=ssh)
         return file_util
 
+    def add_new_item_to_config_file_under_section(self, section_name, config_item_name, value):
+        self.debug('Attempting to add new config item:\n' +
+                   'config file:' + str(self.filename) +
+                   'section:' + str(section_name) +
+                   'config_item_name:' + str(config_item_name) +
+                   'value:' + str(value))
 
-    def add_new_item_to_config_file_under_section(self,section_name, config_item_name, value):
-        self.debug('Attempting to add new config item:\n' + \
-                    'config file:' +str(self.filename) + \
-                    'section:' + str(section_name) + \
-                    'config_item_name:' + str(config_item_name) + \
-                    'value:' + str(value))
-        
-    def get(self,section,key):
-        return self.config.get(section,key)
-
+    def get(self, section, key):
+        return self.config.get(section, key)
 
     def populate_config_parser_from_buf(self,
                                         buf=None,
                                         default_section_name=None,
                                         make_section_attrs=None,
                                         strip_values=None):
-        #create our configParser object using the config buffer
+        # create our configParser object using the config buffer
         default_section_name = default_section_name or self.default_section_name
         make_section_attrs = make_section_attrs or self.make_section_attrs
         strip_values = strip_values or self.strip_values
@@ -578,12 +577,12 @@ class EuConfig():
         if self.preserve_option_case:
             self.config.optionxform = str
         buf = buf or self.configbuf
-        default_section_name=default_section_name or self.default_section_name
+        default_section_name = default_section_name or self.default_section_name
         try:
             self.config.readfp(io.BytesIO(buf))
         except ConfigParser.MissingSectionHeaderError, mshe:
             self.debug('Caught MissingSectionHeaderError')
-            #A file with key pair format but no sections may have been fed in...?
+            # A file with key pair format but no sections may have been fed in...?
             if default_section_name:
                 buf = '[' + str(default_section_name) + ']\n' + str(buf)
                 return self.create_config_parser_from_buf(buf=buf, create_default_section=False)
@@ -592,106 +591,103 @@ class EuConfig():
         if make_section_attrs:
             self.make_sections(strip=strip_values)
 
-
-        
     def debug(self, msg):
         if self.verbose:
             if self.debugmethod is not None:
                 self.debugmethod(str(msg))
             else:
                 print(str(msg))
-        
-        
+
     def get_legacy_config(self, lines=None):
         '''
         Gather all lines  from the given config until a section header is reached
         In order to be backwards compatible with previous configuration files
         will return a buffer of file read until the first section header
         '''
-        buf=""
+        buf = ""
         if lines is None:
             lines = self.lines
         for line in lines:
-            #read file until first section  header
+            # read file until first section  header
             if re.match("^\[", line):
-                #self.debug("Found section header, returning buf")
+                # self.debug("Found section header, returning buf")
                 return buf
             else:
-                #filter out comments and blank lines
-                if re.match("^\s+#",line) or re.match("^\s+$",line):
-                    #self.debug("Ignoring legacy line:"+str(line))
+                # filter out comments and blank lines
+                if re.match("^\s+#", line) or re.match("^\s+$", line):
+                    # self.debug("Ignoring legacy line:"+str(line))
                     continue
                 else:
-                    #self.debug("Adding line to legacy buf:"+str(line))
-                    buf=buf+line
+                    # self.debug("Adding line to legacy buf:"+str(line))
+                    buf = buf + line
         return buf
 
     def uncomment_line(self, config_item):
         new_conf = []
         for line in self.lines:
-            if re.match("^\s+#",line) and re.search(config_item,line):
-                #self.debug("Ignoring legacy line:"+str(line))
+            if re.match("^\s+#", line) and re.search(config_item, line):
+                # self.debug("Ignoring legacy line:"+str(line))
                 new_conf.append(line.strip('#'))
             else:
                 new_conf.append(line)
         self.lines = new_conf
-    
-    def get_config_buf(self,lines=None, default_section_name=None):
+
+    def get_config_buf(self, lines=None, default_section_name=None):
         '''
-        Gather config lines into list. 
-        To support legacy config, will exclude all lines read prior to detecting a section header. 
-        Will ignore blank lines and lines starting with "#" representing comments 
+        Gather config lines into list.
+        To support legacy config, will exclude all lines read prior to detecting a section header.
+        Will ignore blank lines and lines starting with "#" representing comments
         '''
-        buf=""
-        start=False
+        buf = ""
+        start = False
         got_section = False
         if lines is None:
             lines = self.lines
         for line in lines:
             if re.match("^MEMO\s+", line):
-                line = '['+str(line).strip()+']\n'
+                line = '[' + str(line).strip() + ']\n'
                 got_section = True
             if re.match("^END_MEMO", line):
                 continue
-            #read file until first section  header
+            # read file until first section  header
             if not start:
                 if re.match("^\[", line):
-                    #self.debug("Found fist section header, start reading in config buff")
+                    # self.debug("Found fist section header, start reading in config buff")
                     got_section = True
-                    buf=buf+line
-                    start=True
+                    buf = buf + line
+                    start = True
             else:
-                if re.match("^\s*#",line) or re.match("^\s+$",line) or not re.search("=",line):
-                    #self.debug("Ignoring line for config buf:"+str(line))
+                if re.match("^\s*#", line) or re.match("^\s+$", line) or not re.search("=", line):
+                    # self.debug("Ignoring line for config buf:"+str(line))
                     continue
                 else:
-                    #self.debug("Adding line to config buff:"+str(line))
+                    # self.debug("Adding line to config buff:"+str(line))
                     if not line.endswith('\n'):
-                        line = line+"\n"
-                    buf=buf+line
+                        line = line + "\n"
+                    buf = buf + line
 
         return str(buf)
-                
 
     def make_sections(self, strip='"'):
         '''
-        Creates section objects within this euconfig instance. These are dynamic for python console dev/debugging use,
-        the use of these in testcases should be avoided.
-        Example: The machine classes may have a file called eucalyptus_conf and create a section '[eucalyptus_conf]'
-        This will add the section to self.config.sections, as well as create a Config_Section() object with attributes
-        for each item which contain that item's value.
+        Creates section objects within this euconfig instance. These are dynamic for python console
+        dev/debugging use,the use of these in testcases should be avoided.
+        Example: The machine classes may have a file called eucalyptus_conf and create a
+        section '[eucalyptus_conf]'
+        This will add the section to self.config.sections, as well as create a Config_Section()
+        object with attributes for each item which contain that item's value.
         For a machine called 'clc' values out of this config file can be access like this...
             >print clc.config.eucalyptus_conf.hypervisor
             > kvm
-
             >print clc.config.eucalyptus_conf.cloud_opts
             >-Debs.storage.manager=SANManager -Debs.san.provider=NetappProvider --debug
         '''
         if not self.config or not self.config.sections():
-            self.debug('No config sections for:'+str(self.filename))
+            self.debug('No config sections for:' + str(self.filename))
             return
         existing_sections = self.get_all_sections()
-        #Check for any new sections, update any existing sections, and remove any that are no longer found
+        # Check for any new sections, update any existing sections, and remove any that
+        # are no longer found
         for section in self.config.sections():
             self.debug('Creating/updating section: ' + str(section))
             existing_section = self.get_section(section)
@@ -701,9 +697,9 @@ class EuConfig():
                 existing_sections.remove(existing_section)
             else:
                 self.debug('Adding section:' + str(section))
-                new_section = Config_Section(section,self, strip=strip)
+                new_section = Config_Section(section, self, strip=strip)
                 setattr(self, section, new_section)
-        #Remove any pre-existing sections that no longer exist
+        # Remove any pre-existing sections that no longer exist
         if existing_sections:
             self.remove_all_sections(sections=existing_sections)
 
@@ -715,7 +711,7 @@ class EuConfig():
                     sections.append(self.__dict__[attr])
         return sections
 
-    def get_section(self,name):
+    def get_section(self, name):
         section = None
         sections = self.get_all_sections(section_name=name)
         if sections:
@@ -726,11 +722,5 @@ class EuConfig():
         sections = sections or self.get_all_sections(section_name=section_name)
         for section in sections:
             if not section_name or section.name == section_name:
-                self.debug('Removing section:' +str(section.name))
+                self.debug('Removing section:' + str(section.name))
                 delattr(self, section.name)
-
-    
-        
-            
-        
-        

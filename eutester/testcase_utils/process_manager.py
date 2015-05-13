@@ -36,6 +36,7 @@ from multiprocessing import Queue
 import inspect
 import uuid
 
+
 class ProcessManager():
     def __init__(self):
         self.process_pool = {}
@@ -44,13 +45,13 @@ class ProcessManager():
     def lookup_process(self, id):
         try:
             return self.process_pool[id]
-        except KeyError,e:
+        except KeyError, e:
             raise KeyError("Unable to find thread: " + str(id))
 
     def lookup_queue(self, id):
         try:
             return self.queue_pool[id]
-        except KeyError,e:
+        except KeyError, e:
             raise KeyError("Unable to find queue: " + str(id))
 
     def run_method_as_process(self, method, *args, **kwargs):
@@ -64,7 +65,8 @@ class ProcessManager():
         queue = Queue()
         id = uuid.uuid1().hex
         self.queue_pool[id] = queue
-        process = Process(target=self.__run_method, args=(method, queue, self.__get_arguments(method,args,kwargs),))
+        process = Process(target=self.__run_method,
+                          args=(method, queue, self.__get_arguments(method, args, kwargs)))
         self.process_pool[id] = process
         process.daemon = daemonize
         process.start()
@@ -114,4 +116,3 @@ class ProcessManager():
         for process in self.process_pool:
                 result_list.append(self.wait_for_process(process))
         return result_list
-
