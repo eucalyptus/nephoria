@@ -925,9 +925,16 @@ class SshConnection():
     def close(self):
         self.connection.close()
 
-    def _get_local_unused_port(self, start=None, checklimit=100):
-        if start is None:
-            start = 9900
+    def _get_local_unused_port(self, start=990, checklimit=100):
+        """
+        Test a range of local ports starting from int 'start' to 'start+checklimit'.
+        Returns the int of the first available port.
+
+        :param start: int, the port to start checking from
+        :param checklimit: The number of ports to check (until an available one
+                           is found) starting from 'start'.
+        :returns : int representing the first available port
+        """
         for port in xrange(start, (start+checklimit)):
             if self._can_connect_to_local_port(port, addr='127.0.0.1'):
                 return port
@@ -935,6 +942,12 @@ class SshConnection():
                          .format(start, start+checklimit))
 
     def _can_connect_to_local_port(self, port, addr='127.0.0.1'):
+        """
+        Test to see if a local port is available
+
+        :param port:
+        :param addr:
+        """
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             result = sock.connect_ex((addr, port))
@@ -950,6 +963,17 @@ class SshConnection():
 
     def create_http_fwd_connection(self, destport, dest_addr='127.0.0.1', peer=None,
                                    localport=None, trans=None, httpaddr='127.0.0.1'):
+        """
+        Create an http connection with port fowarding over this ssh session.
+
+        :param destport: port to forward (ie 80 for http)
+        :param dest_addr: addr used for remote request
+        :param peer: Remote host
+        :param localport: Local port used to forward
+        :param trans: ssh transport obj
+        :param httpaddr: addr used for http connection
+        :returns HTTP connection obj
+        """
         trans = trans or self.connection._transport
         assert isinstance(trans, paramiko.Transport)
         if peer is None:
@@ -969,8 +993,30 @@ class SshConnection():
     def http_fwd_request(self, url, body=None, headers={}, method='GET', trans=None,
                          localport=9797, destport=None):
         """
-        Attempts to forward an http request over the current ssh session.
+        Attempts to forward a single http request over the current ssh session.
+
+        :param url: URL to use in the reuqest ie
+        :param body: http request body
+        :param headers: http request headers
+        :param method: http request method, default: 'GET'
+        :param trans: ssh transport obj
+        :param localport:  Local port used to forward
+        :param destport: port to forward (ie 80 for http), default is derived from the provided url
+                         if present, otherwise port 80.
+        :returns Http response obj
+
+        Example:
+            # Make a request to midonet api hosted at 10.111.5.156, over an session.
+            # This will appear on the remote server as a request to port 8080 from it's
+            # localhost...
+            ssh = SshConnection(host='10.111.5.156', password='foobar', verbose=True)
+            url = 'http://127.0.0.1:8080/midonet-api/routers/'
+            response = ssh.http_fwd_request(url)
+            print response.status
+                 200
+            data = response.read()
         """
+        # Todo - Use http connection pools
         if destport is None:
             urlp = urlparse(url)
             destport = urlp.port or 80
