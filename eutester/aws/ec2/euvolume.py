@@ -38,7 +38,7 @@ Place holder for volume test specific convenience methods+objects to extend boto
 import re
 from boto.ec2.volume import Volume
 import time
-from eutester.taggedresource import TaggedResource
+from eutester.euca.taggedresource import TaggedResource
 from datetime import datetime, timedelta
 
 

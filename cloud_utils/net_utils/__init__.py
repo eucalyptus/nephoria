@@ -1,4 +1,4 @@
-__author__ = 'clarkmatthew'
+
 
 import re
 import socket
@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 from cloud_utils.system_utils import local
+
 
 def test_port_status(ip,
                      port,
@@ -24,19 +25,21 @@ def test_port_status(ip,
                 def debug(msg):
                     print str(msg)
         else:
-            debug = lambda msg: None
+            def debug(msg):
+                pass
+
         debug('test_port_status, ip:'+str(ip)+', port:'+str(port)+', TCP:'+str(tcp))
         if tcp:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         else:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,socket.IPPROTO_UDP)
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         s.settimeout(timeout)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             if tcp:
                 s.connect((ip, port))
             else:
-                #for UDP always try send
+                # for UDP always try send
                 if send_buf is None:
                     send_buf = "--TEST LINE--"
             if send_buf is not None:
@@ -45,14 +48,14 @@ def test_port_status(ip,
                 ret_buf = s.recv(recv_size)
         except socket.error, se:
             debug('test_port_status failed socket error:'+str(se[0]))
-            #handle specific errors here, for now just for debug...
-            ecode=se[0]
+            # handle specific errors here, for now just for debug...
+            ecode = se[0]
             if ecode == socket.errno.ECONNREFUSED:
                 debug("test_port_status: Connection Refused")
             if ecode == socket.errno.ENETUNREACH:
                 debug("test_port_status: Network unreachable")
             if ecode == socket.errno.ETIMEDOUT or ecode == "timed out":
-                debug("test_port_status: Connect to "+str(ip)+":" +str(port)+ " timed out")
+                debug("test_port_status: Connect to " + str(ip) + ":" + str(port) + " timed out")
             raise se
         except socket.timeout, st:
             debug('test_port_status failed socket timeout')
@@ -69,17 +72,18 @@ def scan_port_range(ip, start, stop, timeout=1, tcp=True):
     Attempts to connect to ports, returns list of ports which accepted a connection
     '''
     ret = []
-    for x in xrange(start,stop+1):
+    for x in xrange(start, stop+1):
         try:
             sys.stdout.write("\r\x1b[K"+str('scanning:'+str(x)))
             sys.stdout.flush()
-            test_port_status(ip, x, timeout=timeout,tcp=tcp, verbose=False)
+            test_port_status(ip, x, timeout=timeout, tcp=tcp, verbose=False)
             ret.append(x)
         except socket.error, se:
             pass
     return ret
 
-def ping(address, poll_count = 10, interval=2, logger=None):
+
+def ping(address, poll_count=10, interval=2, logger=None):
         """
         :param: Ping an IP and poll_count times (Default = 10)
         :param: address      Hostname to ping
@@ -94,8 +98,10 @@ def ping(address, poll_count = 10, interval=2, logger=None):
         else:
             def debug(msg):
                 print str(msg)
+
             def critical(msg):
                 print sys.stderr, str(msg)
+
         if re.search("0.0.0.0", address):
             critical("Address is all 0s and will not be able to ping it")
             return False
@@ -111,6 +117,6 @@ def ping(address, poll_count = 10, interval=2, logger=None):
             except subprocess.CalledProcessError as CPE:
                 debug('Output:' + str(CPE.output))
                 debug('Ping attempt {0}/{1} failed, err:{2}'
-                           .format(x, poll_count, str(CPE)))
+                      .format(x, poll_count, str(CPE)))
         critical("Was unable to ping address")
         return False

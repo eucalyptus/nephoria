@@ -50,11 +50,11 @@ import StringIO
 from eutester.euca.euservice import EuserviceManager
 from boto.ec2.instance import Reservation, Instance
 from boto.exception import EC2ResponseError
-from eutester.utils.file_utils.euconfig import EuConfig
+from eutester.testcase_utils.euconfig import EuConfig
 from eutester.euca.euproperties import Euproperty_Manager
-from eutester.utils.machine import Machine
+from cloud_utils.system_utils.machine import Machine
 from eutester.aws.ec2.euvolume import EuVolume
-from eutester.utils.testcase_utils import eulogger
+from cloud_utils.log_utils import eulogger
 import re
 import os
 
@@ -997,3 +997,5 @@ class Eucaops(Eutester):
                 buf = "Could not get traceback"+str(e)
         return str(buf) 
     
+
+

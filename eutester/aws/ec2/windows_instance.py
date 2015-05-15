@@ -59,11 +59,11 @@ from boto.ec2.instance import Instance
 from eutester import Eutester
 #from eucaops import Eucaops
 from eutester.aws.ec2.euvolume import EuVolume
-from eutester import eulogger
-from eutester.taggedresource import TaggedResource
+from cloud_utils.log_utils import eulogger
+from eutester.euca.taggedresource import TaggedResource
 from boto.ec2.instance import InstanceState
 from datetime import datetime
-from eutester.utils.net_utils import winrm_connection
+from cloud_utils.net_utils import winrm_connection
 
 get_line = Eutester.get_line
 

@@ -46,7 +46,10 @@ def SHOW_PROPERTIES(connection, properties=None, description=True, grid=ALL,
                 row.append(p.description)
             pt.add_row(row)
     if not pt._rows:
-        pt.add_row([markup('NO PROPERTIES RETURNED', [1, 91]), ""])
+        err_row = [markup('NO PROPERTIES RETURNED', [1, 91])]
+        for x in xrange(1, len(pt._field_names)):
+            err_row.append("")
+        pt.add_row(err_row)
     if print_table:
         connection.debug_method('\n' + str(pt) + '\n')
     else:

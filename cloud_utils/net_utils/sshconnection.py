@@ -90,17 +90,19 @@ example with proxy:
 """
 
 import copy
+from httplib import HTTPConnection
 import os
 import paramiko
+from paramiko.sftp_client import SFTPClient
 import re
 import select
 import socket
 import time
 import types
 import sys
+from urlparse import urlparse
 import termios
 import tty
-from paramiko.sftp_client import SFTPClient
 
 
 class SFTPifc(SFTPClient):
@@ -268,6 +270,9 @@ class SshConnection():
                                                       verbose=self.debug_connect)
         else:
             raise Exception("Need either a keypath or username+password to create ssh connection")
+
+    def __repr__(self):
+        return "{0}:{1}".format(self.__class__.__name__, self.host)
 
     def get_proxy_transport(self,
                             proxy_host=None,
@@ -920,6 +925,32 @@ class SshConnection():
     def close(self):
         self.connection.close()
 
+    def http_request_over_ssh(self, url, body=None, headers={}, method='GET',
+                              trans=None, localport=9797, destport=None):
+        trans = trans or self.connection._transport
+        assert isinstance(trans, paramiko.Transport)
+        if destport is None:
+            urlp = urlparse(url)
+            destport = urlp.port or 80
+        peer = trans.getpeername()[0]
+        self.debug('Making forwarded request from "localhost:{0}" to "{1}:{2}"'
+                   .format(localport, peer, destport))
+        self.debug('open_channel(kind="{0}", dest_addr=("{1}", {2}), src_addr=("{3}", {4})'
+                   .format('direct-tcpip', '127.0.0.1', destport, peer, localport))
+        chan = trans.open_channel(kind='direct-tcpip', dest_addr=('127.0.0.1', destport),
+                                  src_addr=(peer, localport))
+        http = HTTPConnection('127.0.0.1', destport)
+        http.sock = chan
+        req = http.request(method=method, url=url, body=body, headers=headers)
+        status = getattr(req, 'status', None)
+        if status:
+            self.debug('{0}:{1}, req status:{2}'.format(method, url, status))
+        resp = http.getresponse()
+        status = getattr(resp, 'status', None)
+        if status:
+            self.debug('{0}:{1}, resp status:{2}'.format(method, url, status))
+        return resp
+
 
 class CommandExitCodeException(Exception):
     def __init__(self, value):
@@ -935,4 +966,3 @@ class CommandTimeoutException(Exception):
 
     def __str__(self):
         return repr(self.value)
-

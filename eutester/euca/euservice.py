@@ -32,14 +32,14 @@
 
 import re
 import time
-from eutester.utils.net_utils import sshconnection
-from eutester.utils.net_utils.sshconnection import SshCbReturn, CommandTimeoutException
+from cloud_utils.net_utils import sshconnection
+from cloud_utils.net_utils.sshconnection import SshCbReturn, CommandTimeoutException
 import types
 import stat
 import eutester
 import copy
 import os
-from eutester.utils import machine
+from cloud_utils.system_utils import machine
 from xml.dom.minidom import parse, parseString
 import dns.resolver
 

@@ -55,16 +55,56 @@ from boto.ec2.regioninfo import RegionInfo
 from boto.resultset import ResultSet
 from boto.ec2.securitygroup import SecurityGroup, IPPermissions
 from boto.vpc import VPCConnection
+from boto.vpc.subnet import Subnet as BotoSubnet
+from boto.vpc.vpc import VPC
+from boto.vpc import VPCConnection
 import boto
 
 from eutester import Eutester
-from eutester.utils.net_utils import sshconnection
+from cloud_utils.net_utils import sshconnection
 from eutester.aws.ec2.euinstance import EuInstance
 from eutester.aws.ec2.windows_instance import WinInstance
 from eutester.aws.ec2.euvolume import EuVolume
 from eutester.aws.ec2.eusnapshot import EuSnapshot
 from eutester.aws.ec2.euzone import EuZone
 from eutester.aws.ec2.conversiontask import ConversionTask
+
+
+class EucaSubnet(BotoSubnet):
+    def __init__(self, *args, **kwargs):
+        super(self.__class__, self).__init__(*args, **kwargs)
+        self._defaultForAz = None
+        self._mapPublicIpOnLaunch = None
+
+    @property
+    def defaultForAz(self):
+        return self._defaultForAz
+
+    @defaultForAz.setter
+    def defaultForAz(self, value):
+        if re.search('true', value, flags=re.IGNORECASE):
+            self._defaultForAz = True
+        else:
+            self._defaultForAz = False
+
+    @property
+    def mapPublicIpOnLaunch(self):
+        return self._mapPublicIpOnLaunch
+
+    @mapPublicIpOnLaunch.setter
+    def mapPublicIpOnLaunch(self, value):
+        if re.search('true', value, flags=re.IGNORECASE):
+            self._mapPublicIpOnLaunch = True
+        else:
+            self._mapPublicIpOnLaunch = False
+
+    def endElement(self, name, value, connection):
+        BotoSubnet.endElement(self, name, value, connection)
+        if name == 'mapPublicIpOnLaunch':
+            self.mapPublicIpOnLaunch = value
+        elif name == 'defaultForAz':
+            self.defaultForAz = value
+
 
 EC2RegionData = {
     'us-east-1': 'ec2.us-east-1.amazonaws.com',
@@ -4631,6 +4671,492 @@ disable_root: false"""
     def unmonitor_instances(self, instance_ids):
         self.debug('Disabling monitoring for instance(s) ' + str(instance_ids))
         self.connection.unmonitor_instances(instance_ids)
+
+
+    def show_images(self, images=None, verbose=False, basic_image=False, printmethod=None):
+        printmethod = printmethod or self.debug
+        buf = "\n"
+        if not images:
+            try:
+                images = self.get_images(emi='',basic_image=basic_image, state=None) or []
+            except ResourceNotFoundException, nfe:
+                printmethod("\nNo images found\n")
+                return
+        for image in images:
+            buf += str(self.show_image(image=image, verbose=verbose, printme=False)) + "\n"
+        printmethod(buf)
+
+    def show_image(self, image, verbose=True, printmethod=None,
+                   header_markups=[1,4], printme=True):
+        if isinstance(image, basestring):
+            image = self.get_emi(emi=image, state=None)
+            if not image:
+                raise ResourceNotFoundException('Image:"{0}" not found'.format(image))
+        if not isinstance(image, Image):
+            raise ValueError('Unknown type provided for image:"{0}:{1}"'.format(image,
+                                                                                type(image)))
+        def header(text):
+            return self.markup(text=text, markups=header_markups)
+
+        title =self.markup("IMAGE ID: {0},    IMAGE NAME:{1}".format(image.id, image.name),
+                           markups=[1,94])
+
+        main_pt = PrettyTable([title])
+        main_pt.align[title] = 'l'
+        main_pt.padding_width = 0
+        mainbuf = ""
+        if verbose:
+            mainbuf += header("IMAGE SUMMARY:\n")
+        platform = str(image.platform or "LINUX").upper()
+        summary_pt = PrettyTable(["VIRT TYPE", "PUBLIC", "OWNER ID", "KERNEL ID", "RAMDISK ID",
+                                  "PLATFORM", "ROOT DEV TYPE", "STATE"])
+        summary_pt.padding_width = 0
+        row = [image.virtualization_type, image.is_public, image.owner_id, image.kernel_id,
+               image.ramdisk_id, platform, image.root_device_type, image.state]
+        summary_pt.add_row(row)
+        mainbuf += str(summary_pt)
+        if verbose:
+            mainbuf += header("\n\nIMAGE MANIFEST PATH:\n")
+            locpt = PrettyTable(['IMAGE LOCATION:'])
+            locpt.add_row([image.location])
+            mainbuf += str(locpt) + "\n"
+            mainbuf += header("\nIMAGE BLOCK DEVICE MAPPING:")
+            if not image.block_device_mapping:
+                mainbuf += " N/A\n"
+            else:
+                mainbuf += "\n" + str(self.show_block_device_map(image.block_device_mapping,
+                                                                  printme=False)) + "\n"
+            mainbuf += header("\nIMAGE TAGS:\n")
+            mainbuf += str(self.show_tags(image.tags, printme=False)) + "\n"
+        main_pt.add_row([mainbuf])
+        if printme:
+            printmethod = printmethod or self.debug
+            printmethod( "\n" + str(main_pt) + "\n")
+        else:
+            return main_pt
+
+        def show_addresses(self, addresses=None, verbose=True, printme=True):
+        """
+        Print table to debug output showing all addresses available to
+        cloud admin using verbose filter
+        :param addresses:
+        """
+        pt = PrettyTable([self.markup('PUBLIC IP'), self.markup('ACCOUNT NAME'),
+                          self.markup('REGION'), self.markup('ADDRESS INFO')])
+        pt.align = 'l'
+        show_addresses = []
+        get_addresses = []
+        try:
+            if addresses:
+                if not isinstance(addresses, list):
+                    addresses = [addresses]
+                for address in addresses:
+                    if isinstance(addresses, basestring):
+                        get_addresses.append(address)
+                    elif isinstance(address, Address):
+                        show_addresses.append(address)
+                    else:
+                        raise ValueError('Show_addresses(). Got unknown address type: {0}:{1}'
+                                         .format(address, type(address)))
+                if get_addresses and verbose:
+                    get_addresses.append('verbose')
+                ad_list = show_addresses.extend(self.ec2.get_all_addresses(
+                    addresses=get_addresses))
+            else:
+                if verbose:
+                    get_addresses = ['verbose']
+                else:
+                    get_addresses = None
+                ad_list = self.ec2.get_all_addresses(addresses=get_addresses)
+            for ad in ad_list:
+                instance_id = ad.instance_id
+                public_ip = ad.public_ip
+                region = None
+                if ad.region:
+                    region = ad.region.name
+                account_name = ""
+                match = re.findall('\(arn:*.*\)', ad.instance_id)
+                if match:
+                    try:
+                        match = match[0]
+                        account_id = match.split(':')[4]
+                        account_name = self.get_all_accounts(account_id=account_id)[0]['account_name']
+                        if account_name:
+                            account_name = self.markup(account_name)
+                            instance_id = self.markup(instance_id)
+                            public_ip = self.markup(public_ip)
+                            region = self.markup(region)
+                    except:pass
+                pt.add_row([public_ip, account_name, region, instance_id])
+        except Exception, e:
+            tb = self.get_traceback()
+            self.critical( str(tb) + "\n ERROR in show_all_addresses_verbose:" + str(e))
+        if not printme:
+            return pt
+        self.debug("\n" + str(pt) + "\n")
+
+    def show_instance(self, instance, printme=True):
+        if not isinstance(instance, EuInstance):
+            orig_instance = instance
+            if isinstance(instance, str):
+                try:
+                    instance = self.get_instances(idstring=instance)[0]
+                except IndexError: pass
+            if isinstance(instance, Instance):
+                instance = self.convert_instance_to_euisntance(instance=instance,
+                                                               auto_connect=False)
+            else:
+                raise ValueError('Unknown type for instance: "{0}:{1}"'
+                                 .format(orig_instance, type(orig_instance)))
+        return instance.show_summary(printme=printme)
+
+
+    def show_instances(self,
+                       euinstance_list=None,
+                       state=None,
+                       instance_id=None,
+                       reservation=None,
+                       root_device_type=None,
+                       zone=None,
+                       key=None,
+                       public_ip=None,
+                       private_ip=None,
+                       ramdisk=None,
+                       kernel=None,
+                       image_id=None,
+                       printme=True
+                       ):
+        """
+        Display or return a table of instances and summary information
+        :param euinstance_list: list of euinstance objs, otherwise all instances will be shown
+        :param state: filter to be applied if no instance list is provided
+        :param instance_id: filter to be applied if no instance list is provided
+        :param reservation: filter to be applied if no instance list is provided
+        :param root_device_type: filter to be applied if no instance list is provided
+        :param zone: filter to be applied if no instance list is provided
+        :param key: filter to be applied if no instance list is provided
+        :param public_ip: filter to be applied if no instance list is provided
+        :param private_ip: filter to be applied if no instance list is provided
+        :param ramdisk: filter to be applied if no instance list is provided
+        :param kernel: filter to be applied if no instance list is provided
+        :param image_id: filter to be applied if no instance list is provided
+        :param printme: boolean flag, if True will print the table with self.debug, else will
+                        return the PrettyTable obj
+
+        :returns: None if printme is True, else will return the PrettyTable obj
+        """
+        plist = []
+        if not euinstance_list:
+            euinstance_list = []
+            instances = self.get_instances(state=state,
+                                           idstring=instance_id,
+                                           reservation=reservation,
+                                           rootdevtype=root_device_type,
+                                           zone=zone,
+                                           key=key,
+                                           pubip=public_ip,
+                                           privip=private_ip,
+                                           ramdisk=ramdisk,
+                                           kernel=kernel,
+                                           image_id=image_id)
+            for instance in instances:
+                if instance:
+                    instance_res = getattr(instance, 'reservation', None)
+                    euinstance_list.append(self.convert_instance_to_euisntance(
+                        instance, reservation=instance_res, auto_connect=False))
+        if not euinstance_list:
+            self.debug('No instances to print')
+            return
+        for instance in euinstance_list:
+            if not isinstance(instance,EuInstance) and not isinstance(instance, WinInstance):
+                self.debug("print instance list passed non-EuInstnace type")
+                instance = self.convert_instance_to_euisntance(instance, auto_connect=False)
+            plist.append(instance)
+        first = plist.pop(0)
+        # Build upon a table created from a euinstance class obj
+        maintable = first.printself(printme=False)
+        maintable.hrules = 1
+        count = 0
+        # The first row of the table returned from a euinstance.printself() is a sudo header
+        new_header = maintable._rows[0]
+        for instance in plist:
+            count += 1
+            if not count % 5:
+                # Add a header every 5th row to make the tables easier to read
+                maintable.add_row(new_header)
+            pt = instance.printself(printme=False)
+            if pt._rows:
+                maintable.add_row(pt._rows[1])
+            # Adjust the table's column widths to allow the largest entries
+            for key in pt._max_width:
+                pt_max = pt._max_width[key] or 0
+                max = maintable._max_width.get(key, 0)
+                if pt_max > max:
+                    maintable._max_width[key] = pt_max
+        if printme:
+            self.debug("\n"+str(maintable)+"\n")
+        else:
+            return maintable
+
+        def show_bundle_task(self,bundle, header=True, footer=True, printout=True):
+
+        """
+        Prints formatted output of bundle task attributes.
+        :param bundle: BundleInstanceTask object to be printed
+        :param header: boolean to print header containing column titles
+        :param footer: boolean to print footer containing closing row line
+        :param printout: boolean to print output using self.debug, else will return a buffer to be printed later.
+        :return: string containing formatted output.
+        """
+        id_len = 15
+        instance_id_len = 12
+        bucket_len = 36
+        prefix_len = 36
+        state_len = 15
+        start_time_len = 25
+        update_time_len = 25
+        buf = ""
+        line = "-----------------------------------------------------------------------------------------------------" \
+               "--------------------------------------------------------------"
+        if header:
+            buf += str("\n" + line +"\n")
+            buf += str('BUNDLE_ID').center(id_len) + '|' \
+                   + str('INSTANCE').center(instance_id_len) + '|' \
+                   + str('BUCKET').center(bucket_len) + '|' \
+                   + str('PREFIX').center(prefix_len) + '|' \
+                   + str('STATE').center(state_len) + '|' \
+                   + str('START_TIME').center(start_time_len) + '|' \
+                   + str('UPDATE_TIME').center(update_time_len) + '\n'
+            buf += str(line + "\n")
+        buf += str(bundle.id).center(id_len) + '|' \
+               + str(bundle.instance_id).center(instance_id_len) + '|' \
+               + str(bundle.bucket).center(bucket_len) + '|' \
+               + str(bundle.prefix).center(prefix_len) + '|' \
+               + str(bundle.state).center(state_len) + '|' \
+               + str(bundle.start_time).center(start_time_len) + '|' \
+               + str(bundle.update_time).center(update_time_len)
+        if footer:
+            buf += str("\n" + line)
+        if printout:
+            self.debug(buf)
+        return buf
+
+    def show_conversion_task_list(self,
+                                   clist=None,
+                                   doprint=True,
+                                   printmethod=None):
+        clist = clist or self.get_all_conversion_tasks()
+        printmethod = printmethod or self.debug
+        taskidlen = 19
+        statusmsglen = 24
+        availzonelen=14
+        volumelen=16
+        snaplen=13
+        instancelen=13
+        imagelen=13
+        header = ('TASKID'.center(taskidlen) + " | " +
+                  'SNAPSHOTS'.center(snaplen) + " | " +
+                  'INSTANCE'.center(instancelen) + " | " +
+                  'IMAGE ID'.center(imagelen) + " | " +
+                  'ZONE'.center(availzonelen) + " | " +
+                  'VOLUMES'.center(volumelen) + " | " +
+                  'STATUS MSG'.center(statusmsglen) + " |\n" )
+        line = ""
+        for x in xrange(0, len(header)):
+            line += '-'
+        line += "\n"
+        buf = "\n" + line + header + line
+        for task in clist:
+            sizestr = None
+            instancestr = "???"
+            instancestatus = ""
+            imagesize = None
+            vollist = []
+            volbytes = []
+            for importvol in task.importvolumes:
+                bytesconverted = importvol.bytesconverted
+                volume_id = importvol.volume_id
+                if importvol.image:
+                    imagesize = long(importvol.image.size)
+                if imagesize is not None:
+                    sizegb = "%.3f" % float(
+                        long(imagesize) / float(1073741824))
+                    gbconverted = "%.3f" % float(
+                        long(bytesconverted) / float(1073741824))
+                    sizestr = ("{0}/{1}gb".format(gbconverted, sizegb))
+                vollist.append(str(volume_id))
+                volbytes.append(sizestr)
+            volumes = ",".join(vollist)
+            volbytescon = ",".join(volbytes)
+            volstatus = ",".join([str('(' + str(vol.status) + ':' +
+                                      str(vol.size) + ')')
+                                  for vol in task.volumes]) or "???"
+            snaps = ",".join([str(snap.id ) for snap in task.snapshots]) or \
+                    "???"
+            snapstatus = ",".join([str('(' + snap.status + ')')
+                                   for snap in task.snapshots])
+            if task.instance:
+                instancestr = str(task.instance.id)
+                instancestatus = '(' + str(task.instance.state) + ')'
+            image_id = task.image_id or "???"
+            buf += (str(task.conversiontaskid).center(taskidlen) + " | " +
+
+                    str(snaps).center(snaplen) + " | " +
+                    str(instancestr).center(instancelen) + " | " +
+                    str(image_id ).center(imagelen) + " | " +
+                    str(task.availabilityzone).center(availzonelen) + " | " +
+                    str(volumes).center(volumelen) + " | " +
+                    str(task.statusmessage[:statusmsglen]).ljust(statusmsglen)
+                    + " |\n")
+            buf += (str('(' + task.state + ')').center(taskidlen) + " | " +
+                    str(snapstatus).center(snaplen) + " | " +
+                    str(instancestatus).center(instancelen) + " | " +
+                    str('').center(imagelen) + " | " +
+                    str('').center(availzonelen) + " | " +
+                    str(volstatus).center(volumelen) + " | " +
+                    str(task.statusmessage[
+                        statusmsglen:(2*statusmsglen)]).ljust(statusmsglen)
+                    + " |\n")
+            buf += (str('').center(taskidlen) + " | " +
+                    str('').center(snaplen) + " | " +
+                    str('').center(instancelen) + " | " +
+                    str('').center(imagelen) + " | " +
+                    str('').center(availzonelen) + " | " +
+                    str(volbytescon).center(volumelen) + " | " +
+                    str(task.statusmessage[
+                        (2*statusmsglen):(3*statusmsglen)]).ljust(statusmsglen)
+                    + " |\n")
+            buf += line
+        if doprint:
+            printmethod(buf)
+        else:
+            return buf
+
+    def show_block_device_map(self,block_device_map, printmethod=None, printme=True ):
+        printmethod = printmethod or self.debug
+
+        title = 'BLOCK DEVICE MAP'
+        main_pt = PrettyTable([title])
+        main_pt.align[title] = 'l'
+        main_pt.padding_width = 0
+
+        headers = ['DEVICE', 'VOLUME_ID', 'SNAP_ID', 'D.O.T.', 'SIZE', 'EPHEMERAL',
+                  'NO DEV', 'ATTACH TM', 'STATUS']
+        pt = PrettyTable(headers)
+        pt.padding_width = 0
+
+        for device in block_device_map:
+            bdm = block_device_map[device]
+            row =  [str(device), str(bdm.volume_id), str(bdm.snapshot_id),
+                    str(bdm.delete_on_termination), str(bdm.size), str(bdm.ephemeral_name),
+                    str(bdm.no_device), str(bdm.attach_time), str(bdm.status)]
+            pt.add_row(row)
+        main_pt.add_row([str(pt)])
+        if printme:
+            printmethod("\n" + str(main_pt) + "\n")
+        else:
+            return main_pt
+
+    def show_vm_types(self,zone=None, debugmethod=None):
+        debugmethod = debugmethod or self.debug
+        buf = "\n"
+        if zone:
+            zones = [zone]
+        else:
+            zones = self.ec2.get_all_zones()
+        for zone in zones:
+            buf += "------------------------( " + str(zone) + " )--------------------------------------------\n"
+            for vm in self.get_vm_type_list_from_zone(zone):
+                vminfo = self.get_all_attributes(vm, verbose=False)
+                buf +=  "---------------------------------"
+                buf += self.get_all_attributes(vm, verbose=False)
+        debugmethod(buf)
+
+    def show_security_groups(self, groups=None, verbose=True, printme=True):
+        ret_buf = ""
+        groups = groups or self.ec2.get_all_security_groups()
+        for group in groups:
+            ret_buf += "\n" + str(self.show_security_group(group, printme=False))
+        if printme:
+            self.debug(ret_buf)
+        else:
+            return ret_buf
+
+
+    def show_security_group(self, group, printme=True):
+        try:
+            from prettytable import PrettyTable, ALL
+        except ImportError as IE:
+            self.debug('No pretty table import failed:' + str(IE))
+            return
+        group = self.get_security_group(id=group.id)
+        if not group:
+            raise ValueError('Show sec group failed. Could not fetch group:'
+                             + str(group))
+        title = self.markup("Security Group: {0}/{1}, VPC: {2}"
+                            .format(group.name, group.id, group.vpc_id))
+        maintable = PrettyTable([title])
+        table = PrettyTable(["CIDR_IP", "SRC_GRP_NAME",
+                             "SRC_GRP_ID", "OWNER_ID", "PORT",
+                             "END_PORT", "PROTO"])
+        maintable.align["title"] = 'l'
+        #table.padding_width = 1
+        for rule in group.rules:
+            port = rule.from_port
+            end_port = rule.to_port
+            proto = rule.ip_protocol
+            for grant in rule.grants:
+                table.add_row([grant.cidr_ip, grant.name,
+                               grant.group_id, grant.owner_id, port,
+                               end_port, proto])
+        table.hrules = ALL
+        maintable.add_row([str(table)])
+        if printme:
+            self.debug("\n{0}".format(str(maintable)))
+        else:
+            return maintable
+
+    def show_security_groups_for_instance(self, instance, printmethod=None, printme=True):
+        buf = ""
+        title = self.markup("EUCA SECURITY GROUPS FOR INSTANCE:{0}".format(instance.id))
+        pt = PrettyTable([title])
+        pt.align['title'] = 'l'
+        for group in instance.groups:
+            buf += str(self.show_security_group(group=group, printme=False))
+        pt.add_row([buf])
+        if printme:
+            printmethod = printmethod or self.debug
+            printmethod('\n{0}\n'.format(pt))
+        else:
+            return pt
+
+    def show_account_attributes(self, attribute_names=None, printmethod=None, printme=True):
+        attrs = self.ec2.describe_account_attributes(attribute_names=attribute_names)
+
+        main_pt = PrettyTable([self.markup('ACCOUNT ATTRIBUTES')])
+        pt = PrettyTable([self.markup('NAME'), self.markup('VALUE')])
+        pt.hrules = ALL
+        for attr in attrs:
+            pt.add_row([attr.attribute_name, attr.attribute_values])
+        main_pt.add_row([str(pt)])
+        if printme:
+            printmethod = printmethod or self.debug
+            printmethod( "\n" + str(main_pt) + "\n")
+        else:
+            return main_pt
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 class VolumeStateException(Exception):
     def __init__(self, value):

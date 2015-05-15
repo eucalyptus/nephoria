@@ -1,8 +1,8 @@
-__author__ = 'clarkmatthew'
 
 
 from cloud_utils.net_utils.sshconnection import SshCbReturn
 import re
+
 
 def expect_password_cb(buf,
                        password,
@@ -108,7 +108,8 @@ def expect_password_cb(buf,
     debug('Ending buf:"' + str(ret.buf) + '"')
     return ret
 
-def expect_prompt_cb(self,
+
+def expect_prompt_cb(sshconnection,
                      buf,
                      command=None,
                      prompt_match="^\w+(>|#|\$)",
@@ -119,11 +120,11 @@ def expect_prompt_cb(self,
     if command is not None:
         start_match = prompt + "\s*" + command + "\s*$"
     if verbose is None:
-        verbose = self.verbose
+        verbose = sshconnection.verbose
     ret = SshCbReturn(stop=False)
     ret.buf = buf
 
-    def debug(msg, ssh=self):
+    def debug(msg, ssh=sshconnection):
         if verbose:
             if debug_method:
                 debug_method(msg)
@@ -136,14 +137,14 @@ def expect_prompt_cb(self,
     # See if we have a prompt for password, assume we only have one match and were
     # blocking waiting on password input
     for line in lines:
-        self.debug('line:' + str(line))
+        sshconnection.debug('line:' + str(line))
         if re.search(prompt, line):
             debug('Got prompt match in buffer. start_match:{0}, Line:"{1}"'
                   .format(start_match, line))
             if start_match:
                 if re.search(start_match, line):
-                    self.debug('Found match for start_match:{0}, line:{1}'
-                               .format(start_match, line))
+                    sshconnection.debug('Found match for start_match:{0}, line:{1}'
+                                        .format(start_match, line))
                     command = None
                     start_match = None
             else:
