@@ -36,6 +36,7 @@ __version__ = '0.0.10'
 
 
 from cloud_utils.log_utils.eulogger import Eulogger
+from cloud_utils.log_utils import get_traceback
 from eutester.testcase_utils import TimeoutFunctionException, wait_for_result
 import re
 import os
@@ -444,7 +445,7 @@ class Eutester(object):
         '''
         Returns a string buffer with traceback, to be used for debug/info purposes. 
         '''
-        return log_utils.get_traceback()
+        return get_traceback()
     
     def __str__(self):
         return '{0}'.format(self.__class__)

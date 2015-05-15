@@ -8,11 +8,12 @@ from midonetclient.host import Host
 from midonetclient.host_interface_port import HostInterfacePort
 from midonetclient.host_interface import HostInterface
 from midonetclient.ip_addr_group import IpAddrGroup
-from eucaops import Eucaops
-from eutester import WaitForResultException
-from eutester.sshconnection import SshConnection
-from eutester.euinstance import EuInstance
-from eutester.eulogger import Eulogger
+from eutester.euca.euca_ops import Eucaops
+from eutester.testcase_utils import WaitForResultException
+from cloud_utils.net_utils.sshconnection import SshConnection
+from cloud_utils.log_utils import markup
+from eutester.aws.ec2.euinstance import EuInstance
+from cloud_utils.log_utils.eulogger import Eulogger
 from boto.ec2.group import Group as BotoGroup
 from boto.ec2.instance import Instance
 from boto.ec2.securitygroup import SecurityGroup,IPPermissions
@@ -116,11 +117,11 @@ class Midget(object):
 
 
     def _header(self, text):
-        return self.tester.markup(text=text, markups=[1,94])
+        return markup(text=text, markups=[1,94])
 
 
     def _bold(self, text, value=1):
-        return self.tester.markup(text=text, markups=[value])
+        return markup(text=text, markups=[value])
 
     def _highlight_buf_for_instance(self, buf, instance):
         ret_buf = ""
@@ -870,8 +871,8 @@ class Midget(object):
         self.debug('{0} unsynced rules out of {1} total rules found for group:"{2}"'
                    .format(len(unsynced_rules), len(group.rules), group.name))
         if unsynced_rules and show_rules:
-            title = self.tester.markup('The following rules for group:"{0}" were not found) on '
-                               'backend'.format(group.name), [1,91,7])
+            title = markup('The following rules for group:"{0}" were not found) on '
+                           'backend'.format(group.name), [1,91,7])
             main_pt = PrettyTable([title])
             pt = PrettyTable(['cidr_ip', 'src_grp_name','src_grp_id', 'protocol', 'port_range'])
             for rule in unsynced_rules:

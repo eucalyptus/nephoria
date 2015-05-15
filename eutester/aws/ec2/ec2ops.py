@@ -38,6 +38,7 @@ import socket
 import hmac
 import hashlib
 import base64
+from prettytable import PrettyTable, ALL
 import time
 import types
 import traceback
@@ -54,6 +55,7 @@ from boto.exception import EC2ResponseError
 from boto.ec2.regioninfo import RegionInfo
 from boto.resultset import ResultSet
 from boto.ec2.securitygroup import SecurityGroup, IPPermissions
+from boto.ec2.address import Address
 from boto.vpc import VPCConnection
 from boto.vpc.subnet import Subnet as BotoSubnet
 from boto.vpc.vpc import VPC
@@ -4735,7 +4737,7 @@ disable_root: false"""
         else:
             return main_pt
 
-        def show_addresses(self, addresses=None, verbose=True, printme=True):
+    def show_addresses(self, addresses=None, verbose=True, printme=True):
         """
         Print table to debug output showing all addresses available to
         cloud admin using verbose filter
@@ -4898,7 +4900,7 @@ disable_root: false"""
         else:
             return maintable
 
-        def show_bundle_task(self,bundle, header=True, footer=True, printout=True):
+    def show_bundle_task(self,bundle, header=True, footer=True, printout=True):
 
         """
         Prints formatted output of bundle task attributes.
@@ -5144,17 +5146,6 @@ disable_root: false"""
             printmethod( "\n" + str(main_pt) + "\n")
         else:
             return main_pt
-
-
-
-
-
-
-
-
-
-
-
 
 
 

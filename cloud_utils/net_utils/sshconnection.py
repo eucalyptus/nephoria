@@ -925,22 +925,57 @@ class SshConnection():
     def close(self):
         self.connection.close()
 
-    def http_request_over_ssh(self, url, body=None, headers={}, method='GET',
-                              trans=None, localport=9797, destport=None):
+    def _get_local_unused_port(self, start=None, checklimit=100):
+        if start is None:
+            start = 9900
+        for port in xrange(start, (start+checklimit)):
+            if self._can_connect_to_local_port(port, addr='127.0.0.1'):
+                return port
+        raise ValueError('Could not find an available local port in range: {0} - {1}'
+                         .format(start, start+checklimit))
+
+    def _can_connect_to_local_port(self, port, addr='127.0.0.1'):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            result = sock.connect_ex((addr, port))
+        except:
+            return False
+        finally:
+            sock.close()
+        if result == 0:
+            # Couldnt connect to this socket, dont use it
+            return True
+        # could connect
+        return False
+
+    def create_http_fwd_connection(self, destport, dest_addr='127.0.0.1', peer=None,
+                                   localport=None, trans=None, httpaddr='127.0.0.1'):
         trans = trans or self.connection._transport
         assert isinstance(trans, paramiko.Transport)
-        if destport is None:
-            urlp = urlparse(url)
-            destport = urlp.port or 80
-        peer = trans.getpeername()[0]
+        if peer is None:
+            peer = trans.getpeername()[0]
+        if localport is None:
+            localport = self._get_local_unused_port(start=9000)
         self.debug('Making forwarded request from "localhost:{0}" to "{1}:{2}"'
                    .format(localport, peer, destport))
         self.debug('open_channel(kind="{0}", dest_addr=("{1}", {2}), src_addr=("{3}", {4})'
-                   .format('direct-tcpip', '127.0.0.1', destport, peer, localport))
-        chan = trans.open_channel(kind='direct-tcpip', dest_addr=('127.0.0.1', destport),
+                   .format('direct-tcpip', dest_addr, destport, peer, localport))
+        chan = trans.open_channel(kind='direct-tcpip', dest_addr=(dest_addr, destport),
                                   src_addr=(peer, localport))
-        http = HTTPConnection('127.0.0.1', destport)
+        http = HTTPConnection(httpaddr, destport)
         http.sock = chan
+        return http
+
+    def http_fwd_request(self, url, body=None, headers={}, method='GET', trans=None,
+                         localport=9797, destport=None):
+        """
+        Attempts to forward an http request over the current ssh session.
+        """
+        if destport is None:
+            urlp = urlparse(url)
+            destport = urlp.port or 80
+        http = self.create_http_fwd_connection(destport=destport, dest_addr='127.0.0.1',
+                                               httpaddr='127.0.0.1', localport=localport)
         req = http.request(method=method, url=url, body=body, headers=headers)
         status = getattr(req, 'status', None)
         if status:
