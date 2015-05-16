@@ -34,9 +34,20 @@ import re
 from argparse import Namespace
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 from cloud_utils.system_utils.machine import Machine
+from cloud_admin.nodecontroller import NodeController
 
 
 class EucaHost(Machine):
+
+    def __init__(self, services, *args, **kwargs):
+        self.euca_source = None
+        self.components = {}
+        self.services = services
+        super(EucaHost, self).__init__(*args, **kwargs)
+        for service in services:
+            if service.type == 'node':
+                NodeController(self).__init__(*args, **kwargs)
+
 
     @property
     def _identifier(self):
@@ -44,8 +55,7 @@ class EucaHost(Machine):
                                       ",".join(str(x) for x, y, in self.components.iteritems())))
 
     def machine_setup(self):
-        self.euca_source = None
-        self.components = {}
+        pass
 
     @property
     def eucalyptus_conf(self):
@@ -216,10 +226,5 @@ class EucaHost(Machine):
         return eucalyptus_conf
 
     def __str__(self):
-        s = "+++++++++++++++++++++++++++++++++++++++++++++++++++++\n"
-        s += "+" + "Hostname:" + str(self.hostname) + "\n"
-        s += "+" + "Distro: " + str(self.distro) + "\n"
-        s += "+" + "Distro Version: " + str(self.distro_ver) + "\n"
-        s += "+" + "Components: " + str(self.components) + "\n"
-        s += "+++++++++++++++++++++++++++++++++++++++++++++++++++++"
-        return s
+        return "{0}:{1}".format(self.__class__.__name__, self.hostname)
+

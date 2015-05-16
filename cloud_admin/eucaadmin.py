@@ -79,7 +79,6 @@ cad.show_storage_controllers()
 |10.111.1.116|two-sc-1|two      |ENABLED|storage|
 +------------+--------+---------+-------+-------+
 
-
 """
 
 import copy
@@ -330,8 +329,8 @@ class EucaAdmin(AWSQueryConnection):
     #                           Eucalyptus 'Service' Methods                                      #
     ###############################################################################################
 
-    def get_services(self, service_type=None, show_event_stacks=None, show_events=None,
-                     list_user_services=None, listall=None, list_internal=None,
+    def get_services(self, service_type=None, show_event_stacks=None, show_events=True,
+                     list_user_services=None, listall=True, list_internal=None,
                      service_names=None, markers=None, partition=None,
                      service_class=EucaServiceList):
         """
@@ -1066,13 +1065,14 @@ class EucaAdmin(AWSQueryConnection):
     #                           Misc Service/Host Methods                                         #
     ###############################################################################################
 
-    def get_machine_inventory(self):
+    def get_machine_inventory(self, username='root', password=None, keypath=None,
+                              proxy=None):
         """
         Attempts to derive and return a list of the individual machines in use by a
         Eucalyptus service
         """
         components = self.get_all_components()
-        clusters = self.get_all_cluster_names()
+        cluster_names = self.get_all_cluster_names()
         try:
             components['vmw_list'] = self.get_all_vmware_broker_services()
         except BotoServerError, VMWE:
@@ -1084,7 +1084,7 @@ class EucaAdmin(AWSQueryConnection):
                 type_string = component_type
                 self.debug_method('Inspecting component type:"{0}"'.format(component_type))
                 hostname = getattr(component, 'hostname', component.name)
-                if component.partition in clusters:
+                if component.partition in cluster_names:
                     type_string = "{0}({1})".format(component_type, component.partition)
                 if hostname not in machine_list:
                     machine_list[hostname] = [type_string]
@@ -1108,6 +1108,15 @@ class EucaAdmin(AWSQueryConnection):
         """
         Attempts to wait for a specific service to transition to one of the states provided in
         'states' by the given timeout, or raise RunTimeError
+        The first service meeting the criteria provided found is returned.
+
+        :param service: Eucaservice obj or name of a service type
+        :param states:  The state(s) to match for the given service type
+        :param partition: The name of the partition for the service
+        :param interval: Interval to wait between querying the services
+        :param timeout: Timeout in seconds before giving up
+        :raises : RunTimeError() if a service is not found within the timeout period
+        :returns a EucaServiceObj matching the provided criteria
         """
         if not states:
             states = ["ENABLED"]

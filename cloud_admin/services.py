@@ -44,6 +44,7 @@ def SHOW_SERVICES(connection, services=None, service_type=None, show_part=False,
     uri_hdr = n_markup('URI', h_marks)
     part_hdr = n_markup('PARTITION', h_marks)
     pt = PrettyTable([type_hdr, name_hdr, state_hdr, cluster_hdr, uri_hdr, part_hdr])
+    pt.max_width[uri_hdr] = 64
     pt.align = 'l'
     pt.align[cluster_hdr] = 'c'
     pt.padding_width = 0
@@ -362,14 +363,15 @@ class EucaService(EucaBaseObj):
     """
 
     def __init__(self, connection=None):
+        self._host = None
+        self._hostname = None
+        self._localstate = None
+        self._state = None
+        self.message = None
         self.name = None
         self.partition = None
-        self.uris = []
-        self._state = None
-        self._hostname = None
-        self._host = None
         self.type = None
-        self._localstate = None
+        self.uris = []
         super(EucaService, self).__init__(connection)
 
     @property

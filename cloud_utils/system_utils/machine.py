@@ -1,34 +1,5 @@
-# Software License Agreement (BSD License)
-#
-# Copyright (c) 2009-2011, Eucalyptus Systems, Inc.
-# All rights reserved.
-#
-# Redistribution and use of this software in source and binary forms, with or
-# without modification, are permitted provided that the following conditions
-# are met:
-#
-#   Redistributions of source code must retain the above
-#   copyright notice, this list of conditions and the
-#   following disclaimer.
-#
-#   Redistributions in binary form must reproduce the above
-#   copyright notice, this list of conditions and the
-#   following disclaimer in the documentation and/or other
-#   materials provided with the distribution.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
-# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.
-#
-# Author: vic.iglesias@eucalyptus.com
+
+
 import select
 import threading
 import time
@@ -45,43 +16,83 @@ import re
 import os
 import sys
 import tempfile
-from repoutils import RepoUtils
+from repoutils import Yum, Apt
 
 
-class Machine:
+class Machine(object):
+
     def __init__(self,
                  hostname,
+                 username="root",
+                 password=None,
+                 keypath=None,
+                 proxy_host=None,
+                 proxy_username='root',
+                 proxy_password=None,
+                 proxy_keypath=None,
+                 do_ssh_connect=True,
                  distro=None,
                  distro_ver=None,
                  arch=None,
-                 connect=True,
-                 password=None,
-                 keypath=None,
-                 username="root",
                  timeout=120,
-                 retry=2,
+                 ssh_retry=2,
                  debugmethod=None,
                  verbose=True):
-        self._arch = None
+        """
+        A basic (primarily Linux) Machine interface. This interface is intended to provide a
+        base set of utilities for working with a Linux machine in a Cloud system environment.
+        The class is intended to be built upon adding more pointed utlities for VMs,
+        Cloud components, etc..
+        By default init() will attempt to create an sshconnection using the parameters provided.
+        The primary method for interacting with the ssh session will be the machine.sys() method.
+        Most utiltiy methods within this class are wrapping the sys() method and issuing common
+        linux commands on the remote machine.
+
+        :param hostname: The hostname or IP of the machine
+        :param username: The ssh username used to for ssh login
+        :param password: The password associate with 'username'
+        :param keypath:  The path to an ssh key to be used, (defaults to the usual local key dirs)
+        :param proxy_host: (optional) A ssh proxy hostname or ip
+        :param proxy_username: (optional) Proxy username for ssh login
+        :param proxy_password: (optional) Proxy password associated with proxy username
+        :param proxy_keypath: (optional) ssh key path, otherwise will try the default ssh dir(s)
+        :param do_ssh_connect: (optional) bool, if True will attempt an ssh connection.
+        :param distro: (optional), string for distro name, otherwise will try to find it
+        :param distro_ver: (optional) string for distro version, otherwise will try to find it
+        :param arch: (optional) string for arch type, otherwise will try to find it
+        :param timeout: (optional) time in seconds to allow for ssh connection to complete
+        :param ssh_retry: (optional) int, number of ssh connection attempts
+        :param debugmethod: (optional) A method used for writing debug information
+        :param verbose: bool option to enable/disable some verbose logging
+        """
+        self._arch = arch
         self._ssh = None
         self._sftp = None
-        self._distroname = None
-        self._distrover = None
+        self._distroname = distro
+        self._distrover = distro_ver
         self._repo_utils = None
         self._package_manager = None
         self._config = None
         self.hostname = hostname
-        self.distro_ver = distro_ver
         self.arch = arch
-        self.connect = connect
-        self.password = password
-        self.keypath = keypath
+        self._do_ssh_connect = do_ssh_connect
         self.username = username
-        self.timeout = timeout
-        self.retry = retry
+        self.password = password
         self.debugmethod = debugmethod
         self.verbose = verbose
-        self._distroname = distro
+        self.ssh_connect_kwargs = {'host': self.hostname,
+                                   'username': self.username,
+                                   'password': self.password,
+                                   'keypath': keypath,
+                                   'proxy': proxy_host,
+                                   'proxy_username': proxy_username,
+                                   'proxy_password': proxy_password,
+                                   'proxy_keypath': proxy_keypath,
+                                   'timeout': timeout,
+                                   'retry': ssh_retry,
+                                   'debugmethod': self.debugmethod,
+                                   'verbose': self.verbose
+                                   }
         self.log_threads = {}
         self.log_buffers = {}
         self.log_active = {}
@@ -102,9 +113,10 @@ class Machine:
     @property
     def distro(self):
         # Linux Distribution information
-
         if not self._distroname:
-            self.get_distro_info_from_machine()
+            distro, ver = self._get_distro_info_from_machine()
+            self._distroname = distro
+            self._distrover = ver
         return self._distroname
 
     @distro.setter
@@ -113,32 +125,23 @@ class Machine:
         self._distroname = new_distro
 
     @property
-    def distrover(self):
+    def distro_ver(self):
         # Linux Distribution information
         if not self._distrover:
-            self.get_distro_info_from_machine()
+            distro, ver = self._get_distro_info_from_machine()
+            self._distroname = distro
+            self._distrover = ver
         return self._distrover
 
-    @distrover.setter
-    def distrover(self, new_distro):
+    @distro_ver.setter
+    def distro_ver(self, new_distro):
         # Linux Distribution information
         self._distrover = new_distro
 
     @property
-    def repo_utils(self):
-        if not self._repo_utils:
-            if self.distro and self.distro.package_manager is not None:
-                self._repo_utils = RepoUtils(self, self.package_manager)
-        return self._repo_utils
-
-    @repo_utils.setter
-    def repo_utils(self, new_repotutils):
-        self._repo_utils = new_repotutils
-
-    @property
     def package_manager(self):
         if not self._package_manager:
-            self._get_package_manager()
+            self._package_manager = self._get_package_manager()
         return self._package_manager
 
     @package_manager.setter
@@ -158,16 +161,8 @@ class Machine:
     @property
     def ssh(self):
         if not self._ssh:
-            if self.connect:
-                self._ssh = SshConnection(
-                    self.hostname,
-                    keypath=self.keypath,
-                    password=self.password,
-                    username=self.username,
-                    timeout=self.timeout,
-                    retry=self.retry,
-                    debugmethod=self.debugmethod,
-                    verbose=True)
+            if self._do_ssh_connect:
+                self._ssh = SshConnection(**self.ssh_connect_kwargs)
         return self._ssh
 
     @ssh.setter
@@ -184,9 +179,12 @@ class Machine:
     def sftp(self, newsftp):
         self._sftp = newsftp
 
-    def _get_arch_info_from_machine(self):
+    def _get_arch_info_from_machine(self, verbose=False):
+        '''
+        Attempt to detect and assign the arch info for this machine
+        '''
         try:
-            arch = self.sys('uname -p', code=0)[0]
+            arch = self.sys('uname -p', code=0, verbose=verbose)[0]
             self._arch = arch
             return arch
         except Exception, UE:
@@ -194,7 +192,7 @@ class Machine:
                        .format(self.hostname, str(UE)))
         return None
 
-    def _get_distro_info_from_machine(self):
+    def _get_distro_info_from_machine(self, verbose=False):
         """
         Ubuntu 14.04.2
         CentOS release 6.6 (Final)
@@ -202,45 +200,44 @@ class Machine:
         if not self.ssh:
             raise Exception('Need SSH connection to retrieve distribution info from machine')
         try:
-            out = self.sys('cat /etc/issue', code=0)
+            out = self.sys('cat /etc/issue', listformat=False, code=0, verbose=verbose)
         except CommandExitCodeException, CE:
             self.debug('Failed to fetch /etc/issue from machine:"{0}", err:"{1}"'
                        .format(self.hostname, str(CE)))
             out = None
         if out:
             try:
-                self.distro = re.match("^\w+", out[0]).group()
-                self.distrover = re.match("\d\S+", out[0]).group()
+                self.distro = str(re.match("^\w+", out).group()).strip().lower()
+                self.distro_ver = str(re.search("\s(\d+[\d, .]*)\s", out).group()).strip().lower()
             except Exception, DE:
                 self.debug('Could not parse distro info from machine, err:' + str(DE))
-        self.distro = self._distroname or 'UNKNOWN'
-        self.distrover = self._distrover or 'UNKNOWN'
-        return (self._distroname, self._distrover)
+        self.distro = self.distro or "UNKNOWN"
+        self.distro_ver = self.distro_ver or "UNKNOWN"
+        return (self.distro, self.distro_ver)
 
-    def _get_package_manager(self):
-        if self.distro:
-            if (re.search(self.distro, 'ubuntu', re.IGNORECASE) or
-                    re.search(self.distro, 'debian', re.IGNORECASE)):
-                self.package_manager = 'apt'
-                return self.package_manager
-            elif (re.search(self.distro, 'centos', re.IGNORECASE) or
-                  re.search(self.distro, 'rhel', re.IGNORECASE)):
-                self.package_manager = 'yum'
-                return self.package_manager
+    def _get_package_manager(self, verbose=False):
+        """
+        Attempts to create a package manager obj based upon the detected package manager
+        type.
+        """
         try:
             self.sys('which yum', code=0)
-            self.package_manager = 'yum'
+            self.package_manager = Yum(self)
             return self.package_manager
         except CommandExitCodeException:
             try:
-                self.sys('which apt', code=0)
-                self.package_manager = 'apt'
+                self.sys('which apt', code=0, verbose=verbose)
+                self.package_manager = Apt(self)
                 return self.package_manager
             except CommandExitCodeException:
-                raise RuntimeError('Unable to determine package manager for machine:{0}'
-                                   .format(self.hostname))
+                pass
+        raise RuntimeError('Unable to determine package manager for machine:{0}'
+                           .format(self.hostname))
 
     def put_templated_file(self, local_src, remote_dest, **kwargs):
+        '''
+        jinja file template aid
+        '''
         tmp = tempfile.mktemp()
         try:
             render_file_template(local_src, tmp, **kwargs)
@@ -260,9 +257,15 @@ class Machine:
             self.debugmethod(msg)
 
     def refresh_connection(self):
+        '''
+        Attempt to restart/re-create a the machine's ssh connection
+        '''
         self.ssh.refresh_connection()
 
     def reboot(self, force=True):
+        '''
+        Reboot the machine using 'reboot' on the host
+        '''
         if force:
             try:
                 self.sys("reboot -f", timeout=3)
@@ -274,7 +277,23 @@ class Machine:
             except Exception, e:
                 pass
 
-    def interrupt_network(self, time=120, interface="eth0"):
+    def interrupt_network(self, time=120, interface=None):
+        '''
+        Bounce a network interface on the remote machine.
+        Used for test purposes
+        '''
+        defaults = ['eth1', 'em1']
+        if not interface:
+            for interface in defaults:
+                try:
+                    self.sys('ifconfig {0}'.format(interface), code=0)
+                    break
+                except CommandExitCodeException:
+                    interface = None
+                    pass
+        if not interface:
+            raise ValueError('interrupt_network. No interface provided, and defaults({0}) '
+                             'not found on system'.format(", ".join(str(x) for x in defaults)))
         try:
             self.sys("ifdown " + interface + " && sleep " + str(time) + " && ifup " + interface,
                      timeout=3)
@@ -563,7 +582,7 @@ class Machine:
         finally:
             return ret
 
-    def get_df_info(self, path=None, verbose=True):
+    def get_df_info(self, path=None, verbose=False):
         """
         Return df's output in dict format for a given path.
         If path is not given will give the df info for the current working dir used in the ssh
@@ -585,7 +604,7 @@ class Machine:
         cmd = 'df ' + str(path)
         if verbose:
             self.debug('get_df_info cmd:' + str(cmd))
-        output = self.sys(cmd, code=0)
+        output = self.sys(cmd, code=0, verbose=verbose)
         # Get the presented fields from commands output,
         # Convert to lowercase, use this as our dict keys
         fields = []
@@ -670,7 +689,7 @@ class Machine:
             self.save_log(log_file, path)
 
     def __repr__(self):
-        return "{0}:{1}".format(self.__class__, self.hostname)
+        return "{0}:{1}".format(self.__class__.__name__, self.hostname)
 
     @printinfo
     def dd_monitor(self,

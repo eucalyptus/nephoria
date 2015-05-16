@@ -61,7 +61,7 @@ class PackageManager:
     def update_repos(self):
         raise NotImplementedError("Method not implemented for package manager " + str(self.name))
     
-    def get_package_info(self):
+    def get_package_info(self, package_name):
         raise NotImplementedError("Method not implemented for package manager " + str(self.name))
     
     def get_installed_packages(self):
@@ -86,6 +86,9 @@ class Yum(PackageManager):
         if not package:
             package = ""
         self.machine.sys("yum upgrade -y " + gpg_flag +  " " + package, timeout=480)
+
+    def get_package_info(self, package_name):
+        return self.machine.sys('yum info {0}'.format(package_name), code=0)
     
     def add_repo(self, url, name= None):
         if name is None:
@@ -114,6 +117,9 @@ class Apt(PackageManager):
         if package is None:
             package = ""
         self.machine.sys("export DEBIAN_FRONTEND=noninteractive; apt-get dist-upgrade %s %s " % (self.apt_options, str(package)) )
+
+    def get_package_info(self, package_name):
+        return self.machine.sys('apt-cache show {0}'.format(package_name), code=0)
     
     def add_repo(self, url, name= None):
         if name is None:

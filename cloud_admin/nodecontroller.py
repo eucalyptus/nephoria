@@ -10,7 +10,8 @@ from prettytable import PrettyTable
 from cloud_utils.log_utils import markup
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException, \
     CommandTimeoutException, SshCbReturn
-from cloud_admin.eucahost import EucaHost
+# from cloud_admin.eucahost import EucaHost
+from cloud_utils.system_utils.machine import Machine
 from cloud_admin.services import EucaComponentService
 
 
@@ -77,7 +78,8 @@ def SHOW_NODES(connection, nodes=None, print_table=True):
 
 class EucaNodeService(EucaComponentService):
     """
-    Used to parse Eucalyptus node controller request
+    Represents the Eucalyptus service type 'node' as is represented by the cloud.
+    Used to parse the node service type describe, and modify requests/responses.
     """
 
     def __init__(self, connection=None):
@@ -150,11 +152,15 @@ class EucaNodeService(EucaComponentService):
         super(EucaNodeService, self).startElement(name, value, connection)
 
 
-class NodeController(EucaHost):
-
+class NodeController(Machine):
+    """
+    Represents a machine hosting the node controller service.
+    """
+    """
     def __init__(self, nc_service, *args, **kwargs):
         self.nc_service = nc_service
         super(NodeController, self).__init__(*args, **kwargs)
+    """
 
     def get_hypervisor_from_euca_conf(self):
         """

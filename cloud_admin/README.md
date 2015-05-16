@@ -652,11 +652,12 @@ Out[19]: EucaService:one-sc-1
 
 
 
+##### More EXAMPLES...
 
 
-###############################################################################################
-####   SSH tunnel/fwd Example:   How to forward the requests over an ssh encrypted session... #
-###############################################################################################
+
+
+####   Example: How to forward the requests over an ssh encrypted session... #
 
 
  - Where '10.111.5.156' is the CLC serving the empyrean requests/service.
@@ -667,13 +668,13 @@ from cloud_admin.eucaadmin import EucaAdmin
 from cloud_utils.net_utils.sshconnection import SshConnection
 
 # Create an sshconnection to the CLC...
-ssh = SshConnection(host='10.111.5.156', password='foobar', verbose=True)
+ssh_to_clc = SshConnection(host='10.111.5.156', password='foobar', verbose=True)
 
 # For ease of reading in access and secret keys build a eucarc obj from a local or remote eucarc
-# local eucarc:
+# read in a local eucarc:
 ec = Eucarc(filepath='eucarc-10.111.5.156-eucalyptus-admin/eucarc')
-# remote eucarc:
-ec = Eucarc(filepath='/root/eucarc', sshconnection=ssh)
+# or read in a eucarc on a remote system...
+ec = Eucarc(filepath='/root/eucarc', sshconnection=ssh_to_clc)
 
 # Create a EucaAdmin interface with the admin's access and secret key, since this is being
 # forward from a local port, set the host to localhost...
@@ -684,7 +685,7 @@ cad = EucaAdmin(host='127.0.0.1', aws_access_key_id=ec.aws_access_key,
 # returning the connection from the ssh obj's create_http_fwd_connection()
 def gethttp(*args, **kwargs):
      http_connection_kwargs = cad.http_connection_kwargs.copy()
-     return ssh.create_http_fwd_connection(destport=cad.port, localport=9797)
+     return ssh_to_clc.create_http_fwd_connection(destport=cad.port, localport=9797)
 
 # now swap in the newly created method...
 cad._pool.get_http_connection = gethttp
