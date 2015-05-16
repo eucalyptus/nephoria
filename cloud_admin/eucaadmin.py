@@ -1,4 +1,87 @@
 
+"""
+
+###############################################################################################
+#                                   Basic example:                                            #
+###############################################################################################
+
+from cloud_admin.eucaadmin import EucaAdmin
+
+# Create a EucaAdmin interface with the admin's access and secret key
+cad = EucaAdmin(host='1.2.3.4',
+                aws_access_key_id="ABCD123456789",
+                aws_secret_access_key="ABCD123456789")
+
+# Then make requests...
+prop = cad.get_property('services.imaging.worker.log_server')
+
+prop.show()
+
++----------------------------------+--------------+----------------------------------------+
+|PROPERTY NAME                     |PROPERTY VALUE|DESCRIPTION                             |
++----------------------------------+--------------+----------------------------------------+
+|services.imaging.worker.log_server|              |address/ip of the server that collects  |
+|                                  |              |logs from imaging wokrers               |
++----------------------------------+--------------+----------------------------------------+
+
+cad.show_nodes()
+
++----+------------+-------+-----------------------------------------------------------+
+|ZONE| NODE NAME  | STATE |                         INSTANCES                         |
++----+------------+-------+-----------------------------------------------------------+
+|one |10.111.5.151|ENABLED|                                                           |
++----+------------+-------+-----------------------------------------------------------+
+|two |10.111.5.85 |ENABLED|  i-44274273(running,       m1.small,    instance-store  ) |
+|    |            |       |  i-51475876(running,       m1.small,    instance-store  ) |
++----+------------+-------+-----------------------------------------------------------+
+
+
+
+
+###############################################################################################
+#   SSH tunnel/fwd Example:   How to forward the requests over an ssh encrypted session...    #
+###############################################################################################
+ - Where '10.111.5.156' is the CLC serving the empyrean requests/service.
+
+from cloud_utils.file_utils.eucarc import Eucarc
+from cloud_admin.eucaadmin import EucaAdmin
+from cloud_utils.net_utils.sshconnection import SshConnection
+
+# Create an sshconnection to the CLC...
+ssh = SshConnection(host='10.111.5.156', password='foobar', verbose=True)
+
+# For ease of reading in access and secret keys build a eucarc obj from a local or remote eucarc
+# local eucarc:
+ec = Eucarc(filepath='eucarc-10.111.5.156-eucalyptus-admin/eucarc')
+# remote eucarc:
+ec = Eucarc(filepath='/root/eucarc', sshconnection=ssh)
+
+# Create a EucaAdmin interface with the admin's access and secret key, since this is being
+# forward from a local port, set the host to localhost...
+cad = EucaAdmin(host='127.0.0.1', aws_access_key_id=ec.aws_access_key,
+                aws_secret_access_key=ec.aws_secret_key)
+
+# Replace the underlying method of creating an http connection w/ something like this
+# returning the connection from the ssh obj's create_http_fwd_connection()
+def gethttp(*args, **kwargs):
+     http_connection_kwargs = cad.http_connection_kwargs.copy()
+     return ssh.create_http_fwd_connection(destport=cad.port, localport=9797)
+
+# now swap in the newly created method...
+cad._pool.get_http_connection = gethttp
+
+# now fire away requests...
+cad.show_storage_controllers()
++------------+--------+---------+-------+-------+
+|HOSTNAME    |NAME    |PARTITION|STATE  |TYPE   |
++------------+--------+---------+-------+-------+
+|10.111.5.180|one-sc-1|one      |ENABLED|storage|
+|10.111.1.116|two-sc-1|two      |ENABLED|storage|
++------------+--------+---------+-------+-------+
+
+
+"""
+
 import copy
 import re
 import sys
@@ -18,6 +101,7 @@ from cloud_admin.cluster_controller import (
     SHOW_CLUSTER_CONTROLLER_SERVICES
 )
 from cloud_admin.cloud_controller import EucaCloudControllerService
+from cloud_admin.dns_service import EucaDnsService
 from cloud_admin.storage_controller import EucaStorageControllerService
 from cloud_admin.object_storage_gateway import EucaObjectStorageGatewayService
 from cloud_admin.nodecontroller import EucaNodeService, SHOW_NODES
@@ -680,6 +764,16 @@ class EucaAdmin(AWSQueryConnection):
                 return arb
         raise EucaNotFoundException('get_arbitrator_service. ARB not found for args:',
                                     notfounddict={'name': name})
+
+    def get_all_dns_services(self):
+        return self.get_services(service_type='dns', service_class=EucaDnsService)
+
+    def get_dns_service(self, name):
+        for serv in self.get_all_dns_services():
+            if serv.name == name:
+                return serv
+        raise EucaNotFoundException('get_dns_service. DNS not found for args:',
+                                     notfounddict={'name': name})
 
     def get_all_node_controller_services(self, get_instances=True,
                                          fail_on_instance_fetch=False, filter_name=None,

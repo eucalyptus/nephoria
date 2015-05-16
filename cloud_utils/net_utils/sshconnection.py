@@ -925,7 +925,7 @@ class SshConnection():
     def close(self):
         self.connection.close()
 
-    def _get_local_unused_port(self, start=990, checklimit=100):
+    def _get_local_unused_port(self, start=8500, checklimit=100):
         """
         Test a range of local ports starting from int 'start' to 'start+checklimit'.
         Returns the int of the first available port.
@@ -962,7 +962,8 @@ class SshConnection():
         return False
 
     def create_http_fwd_connection(self, destport, dest_addr='127.0.0.1', peer=None,
-                                   localport=None, trans=None, httpaddr='127.0.0.1'):
+                                   localport=None, trans=None, httpaddr='127.0.0.1',
+                                   **connection_kwargs):
         """
         Create an http connection with port fowarding over this ssh session.
 
@@ -986,7 +987,11 @@ class SshConnection():
                    .format('direct-tcpip', dest_addr, destport, peer, localport))
         chan = trans.open_channel(kind='direct-tcpip', dest_addr=(dest_addr, destport),
                                   src_addr=(peer, localport))
-        http = HTTPConnection(httpaddr, destport)
+        connection_kwargs = connection_kwargs or {}
+        connection_kwargs['host'] = httpaddr
+        connection_kwargs['port'] = destport
+        self.debug('Creating HTTP connection with kwargs:\n{0}\n'.format(connection_kwargs))
+        http = HTTPConnection(**connection_kwargs)
         http.sock = chan
         return http
 

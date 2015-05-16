@@ -6,6 +6,7 @@ from prettytable import PrettyTable, ALL
 from operator import itemgetter
 import copy
 import inspect
+import re
 import sys
 import time
 
@@ -365,6 +366,9 @@ class EucaService(EucaBaseObj):
         self.partition = None
         self.uris = []
         self._state = None
+        self._hostname = None
+        self._host = None
+        self.type = None
         self._localstate = None
         super(EucaService, self).__init__(connection)
 
@@ -377,12 +381,86 @@ class EucaService(EucaBaseObj):
         self._state = value
 
     @property
+    def hostname(self):
+        if self._hostname:
+            return self._hostname
+        if self._host:
+            return self._host
+        return None
+
+    @hostname.setter
+    def hostname(self, value):
+        self._hostname = value
+
+    @property
+    def host(self):
+        if self._host:
+            return self._host
+        if self._hostname:
+            return self._hostname
+        return None
+
+    @host.setter
+    def host(self, value):
+        self._host = value
+
+    @property
     def localstate(self):
         return self._localstate or self._state
 
     @localstate.setter
     def localstate(self, value):
         self._localstate = value
+
+    def debug_method(self, *args, **kwargs):
+        return self.connection.debug_method(*args, **kwargs)
+
+    def err_method(self, *args, **kwargs):
+        return self.connection.err_method(*args, **kwargs)
+
+    def isEnabled(self):
+        return 'ENABLED' == self.state
+
+    def disable(self):
+        return self.modify_service_state(self, 'DISABLE')
+
+    def enable(self):
+        return self.modify_service_state(self, 'ENABLE')
+
+    def get_linux_service_name(self):
+        '''
+        Return the name of the linux process for this service type
+        '''
+        if self.type == 'cluster':
+            return 'eucalyptus-cc'
+        elif self.type == 'node':
+            return 'eucalyptus-nc'
+        elif self.type == 'eucanetd':
+            return 'eucanetd'
+        else:
+            return 'eucalyptus-cloud'
+
+    def getAllServicePeers(self):
+        '''
+        Returns all services of this type, in this partition
+        for active-active services this could be a list, for non-active-active this
+        will likely be a single service obj
+        '''
+        if not self.type or self.partition:
+            raise ValueError('({0}). Can not request active active peers w/o both '
+                             'type:("{0}") and partition populated:("{1}")'
+                             .format(self.name, self.type, self.partition))
+        return self.connection.get_services(service_type=self.type, partition=self.partition)
+
+    def isActiveActive(self):
+        '''
+        Returns true if there are other registered services of this type in the same
+        partition
+        '''
+        if len(self.getAllServicePeers()) > 1:
+            return True
+        else:
+            return False
 
     def update(self, new_service=None, silent=True):
         """
@@ -417,7 +495,12 @@ class EucaService(EucaBaseObj):
         return SHOW_SERVICES(self.connection, services=self)
 
     def modify_service_state(self, state):
-        self.update(new_service=self.connection.modify_service(service=self, state=state))
+        """
+        Modifies service state and updates self with response data
+        """
+        new_service=self.connection.modify_service(service=self, state=state)
+        if new_service:
+            self.update(new_service)
         return self
 
     def startElement(self, name, value, connection):
