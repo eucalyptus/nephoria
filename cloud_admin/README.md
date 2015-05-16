@@ -661,6 +661,7 @@ Out[19]: EucaService:one-sc-1
 
  - Where '10.111.5.156' is the CLC serving the empyrean requests/service.
 
+```
 from cloud_utils.file_utils.eucarc import Eucarc
 from cloud_admin.eucaadmin import EucaAdmin
 from cloud_utils.net_utils.sshconnection import SshConnection
@@ -696,3 +697,4 @@ cad.show_storage_controllers()
 |10.111.5.180|one-sc-1|one      |ENABLED|storage|
 |10.111.1.116|two-sc-1|two      |ENABLED|storage|
 +------------+--------+---------+-------+-------+
+```
