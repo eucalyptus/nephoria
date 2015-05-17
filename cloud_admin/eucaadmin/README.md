@@ -1,7 +1,7 @@
 
 ###### AdminApi() is the primary interface for fetching, modifying, and displaying Eucalyptus
-admin attributes. This includes system; components/hosts, services, and properties.
-Some examples shown below...
+###### admin attributes. This includes system; components/hosts, services, and properties.
+###### Some examples shown below...
 
 
 
