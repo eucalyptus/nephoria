@@ -7,7 +7,7 @@
     ##### log_utils
         Utilties intended to help with logging, such as; creating loggers with sane defaults,
         formatting log output, helper methods and annotations for gathering debug, getting etc..
-    
+
     ##### net_utils
         Network related utilities. Modules for creating connections such as ssh, sftp, winrm, etc..
         Utilities to help with network tests, gathering network information, etc..

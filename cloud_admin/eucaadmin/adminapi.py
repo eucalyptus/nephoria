@@ -621,13 +621,22 @@ class AdminApi(AWSQueryConnection):
         raise EucaNotFoundException('get_cloud_controller_service. CLC not found for args:',
                                     notfounddict={'name': name})
 
-    def get_all_cluster_controller_services(self):
+    def get_all_cluster_controller_services(self, partition=None):
         """
         Fetch all cluster controller service components
 
         :return: list of EucaClusterControllerService objs
         """
-        return self._get_list_request('DescribeClusters', EucaClusterControllerService)
+        retlist = []
+        ccs = self._get_list_request('DescribeClusters', EucaClusterControllerService)
+        if not partition:
+            return ccs
+        else:
+            for cc in ccs:
+                if cc.partition == partition:
+                    retlist.append(cc)
+            return retlist
+
 
     def get_cluster_controller_service(self, name):
         """
