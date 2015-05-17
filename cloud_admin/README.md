@@ -2,20 +2,20 @@
 ### Cloud admin modules:
 
 ##### backends:
-Cloud backend modules. This may include backend modules for:
-    - Block storage modules for the backing HW or SW (ie SAN, DAS, Ceph, etc)
-    - Network modules (ie: Network HW, SDN component interfaces, etc. )
-    - Hyperisor module (ie: vmware api, etc)
-    - Object Storage modules (ie: Riak, etc)
+    Cloud backend modules. This may include backend modules for:
+        - Block storage modules for the backing HW or SW (ie SAN, DAS, Ceph, etc)
+        - Network modules (ie: Network HW, SDN component interfaces, etc. )
+        - Hyperisor module (ie: vmware api, etc)
+        - Object Storage modules (ie: Riak, etc)
 
 ##### eucaadmin:
-Eucalyptus specific modules. This may include:
-    - Eucalyptus Administrative Services
-    - Eucalyptus Administrative Properties
-    - Eucalyptus Administrative API
+    Eucalyptus specific modules. This may include:
+        - Eucalyptus Administrative Services
+        - Eucalyptus Administrative Properties
+        - Eucalyptus Administrative API
 
 ##### hosts:
-Host machine modules. This may include:
-   - Eucalyptus Host machine modules and service specific machine helper modules. These will
-     be primarily for Linux machines which are hosting the Eucalyptus services.
-   - Utlities to manage the host machines.
+    Host machine modules. This may include:
+       - Eucalyptus Host machine modules and service specific machine helper modules. These will
+         be primarily for Linux machines which are hosting the Eucalyptus services.
+       - Utlities to manage the host machines.
