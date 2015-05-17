@@ -64,7 +64,7 @@ class PackageManager:
     def get_package_info(self, package_name):
         raise NotImplementedError("Method not implemented for package manager " + str(self.name))
     
-    def get_installed_packages(self):
+    def get_installed_packages(self, searchstring=None):
         raise NotImplementedError("Method not implemented for package manager " + str(self.name))
  
 class Yum(PackageManager):
@@ -102,7 +102,15 @@ class Yum(PackageManager):
         
     def update_repos(self):
         self.machine.sys("yum clean all")
-        
+
+    def get_installed_packages(self, searchstring=None):
+        if searchstring:
+            searchstring = " | grep {0}".format(searchstring)
+        else:
+            searchstring = ""
+        cmd = "yum list installed {0}".format(searchstring)
+        self.machine.sys(cmd, code=0)
+
 class Apt(PackageManager):
     def __init__(self, machine):
         self.machine = machine

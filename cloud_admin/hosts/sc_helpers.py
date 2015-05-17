@@ -1,15 +1,5 @@
 
-from cloud_admin.services import EucaComponentService, SHOW_COMPONENTS
-from cloud_admin import EucaMachineHelpers
-
-class EucaStorageControllerService(EucaComponentService):
-
-    def update(self, new_service=None, get_instances=True, silent=True):
-        return self._update(get_method_name='get_storage_controller_service',
-                            get_method_kwargs=None, new_service=new_service, silent=silent)
-
-    def show(self):
-        return SHOW_COMPONENTS(self.connection, self)
+from cloud_admin.hosts import EucaMachineHelpers
 
 
 class StorageControllerHelpers(EucaMachineHelpers):
@@ -34,4 +24,3 @@ class StorageControllerHelpers(EucaMachineHelpers):
 
     def create_ebs_backend_volume(self, id):
         raise NotImplementedError('create_ebs_backend_volume')
-

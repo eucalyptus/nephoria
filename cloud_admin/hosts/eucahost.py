@@ -34,11 +34,11 @@ import re
 from argparse import Namespace
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 from cloud_utils.system_utils.machine import Machine
-from cloud_admin.nodecontroller import NodeControllerHelpers
-from cloud_admin.cluster_controller import ClusterControllerHelpers
-from cloud_admin.storage_controller import StorageControllerHelpers
-from cloud_admin.cloud_controller import CloudControllerHelpers
-from cloud_admin.walrus import WalrusHelpers
+from cloud_admin.hosts.nc_helpers import NodeControllerHelpers
+from cloud_admin.hosts.cc_helpers import ClusterControllerHelpers
+from cloud_admin.hosts.sc_helpers import StorageControllerHelpers
+from cloud_admin.hosts.clc_helpers import CloudControllerHelpers
+from cloud_admin.hosts.walrus_helpers import WalrusHelpers
 
 
 class EucaHost(Machine):
@@ -137,6 +137,8 @@ class EucaHost(Machine):
         return self._euca_osg_helpers
 
 
+    def get_installed_eucalyptus_packages(self, searchstring='euca'):
+        return self.package_manager.get_installed_packages(searchstring=searchstring)
 
     def get_eucalyptus_service_pid(self, eucalyptus_service):
         """

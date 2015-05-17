@@ -94,20 +94,20 @@ from boto.connection import AWSQueryConnection
 from boto.ec2.regioninfo import RegionInfo
 from boto.exception import BotoServerError
 
-from cloud_admin import EucaResponseException, EucaNotFoundException
-from cloud_admin.cluster_controller import (
+from cloud_admin.eucaadmin import EucaResponseException, EucaNotFoundException
+from cloud_admin.eucaadmin.cluster_controller_service import (
     EucaClusterControllerService,
     SHOW_CLUSTER_CONTROLLER_SERVICES
 )
-from cloud_admin.cloud_controller import EucaCloudControllerService
-from cloud_admin.dns_service import EucaDnsService
-from cloud_admin.storage_controller import EucaStorageControllerService
-from cloud_admin.object_storage_gateway import EucaObjectStorageGatewayService
-from cloud_admin.nodecontroller import EucaNodeService, SHOW_NODES
-from cloud_admin.walrus import EucaWalrusBackendService
-from cloud_admin.arbitrator import EucaArbitratorService
-from cloud_admin.vmware_broker import EucaVMwareBrokerService
-from cloud_admin.services import (
+from cloud_admin.eucaadmin.cloud_controller_service import EucaCloudControllerService
+from cloud_admin.eucaadmin.dns_service import EucaDnsService
+from cloud_admin.eucaadmin.storage_controller_service import EucaStorageControllerService
+from cloud_admin.eucaadmin.osg_service import EucaObjectStorageGatewayService
+from cloud_admin.eucaadmin.node_service import EucaNodeService, SHOW_NODES
+from cloud_admin.eucaadmin.walrus_service import EucaWalrusBackendService
+from cloud_admin.eucaadmin.arbitrator_service import EucaArbitratorService
+from cloud_admin.eucaadmin.vmware_broker_service import EucaVMwareBrokerService
+from cloud_admin.eucaadmin.services import (
     EucaService,
     EucaServiceList,
     EucaServiceRegResponse,
@@ -117,7 +117,7 @@ from cloud_admin.services import (
     SHOW_SERVICE_TYPES,
     SHOW_SERVICE_TYPES_VERBOSE
 )
-from cloud_admin.eucaproperty import (
+from cloud_admin.eucaadmin.eucaproperty import (
     EucaProperty,
     SHOW_PROPERTIES,
     SHOW_PROPERTIES_NARROW
@@ -129,7 +129,7 @@ from cloud_utils.log_utils import get_traceback
 ###############################################################################################
 
 
-class EucaAdmin(AWSQueryConnection):
+class AdminApi(AWSQueryConnection):
     APIVersion = 'eucalyptus'
 
     def __init__(self,
@@ -180,7 +180,7 @@ class EucaAdmin(AWSQueryConnection):
         if err_method:
             self.err_method = err_method
         self._ec2_connection = ec2_connection
-        super(EucaAdmin, self).__init__(path=self.path,
+        super(AdminApi, self).__init__(path=self.path,
                                         aws_access_key_id=aws_access_key_id,
                                         aws_secret_access_key=aws_secret_access_key,
                                         port=self.port,

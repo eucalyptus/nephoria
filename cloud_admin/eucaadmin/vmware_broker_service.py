@@ -1,6 +1,6 @@
 
 
-from cloud_admin.services import EucaComponentService
+from cloud_admin.eucaadmin.services import EucaComponentService
 
 
 class EucaVMwareBrokerService(EucaComponentService):

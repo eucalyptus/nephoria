@@ -1,7 +1,6 @@
 
 
-from cloud_admin.services import EucaComponentService, SHOW_COMPONENTS
-from cloud_admin import EucaMachineHelpers
+from cloud_admin.eucaadmin.services import EucaComponentService, SHOW_COMPONENTS
 
 
 
@@ -14,11 +13,3 @@ class EucaWalrusBackendService(EucaComponentService):
 
     def show(self):
         return SHOW_COMPONENTS(self.connection, self)
-
-
-class WalrusHelpers(EucaMachineHelpers):
-    '''
-    Place holder for Walrus specific machine helper methods
-    '''
-    pass
-
