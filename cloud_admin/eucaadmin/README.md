@@ -1,5 +1,5 @@
 
-EucaAdmin() is the primary interface for fetching, modifying, and displaying Eucalyptus
+###### AdminApi() is the primary interface for fetching, modifying, and displaying Eucalyptus
 admin attributes. This includes system; components/hosts, services, and properties.
 Some examples shown below...
 
@@ -16,9 +16,9 @@ Some examples shown below...
 from cloud_utils.file_utils.eucarc import Eucarc
 ec = Eucarc(filepath='eucarc-10.111.5.100-eucalyptus-admin/eucarc')
 
-# Now create the EucaAdmin obj...
-from cloud_admin.eucaadmin import EucaAdmin
-cloud_admin = EucaAdmin(host='10.111.5.100', aws_access_key_id=ec.aws_access_key,
+# Now create the AdminApi obj...
+from cloud_admin.eucaadmin.adminapi import AdminApi
+cloud_admin = AdminApi(host='10.111.5.100', aws_access_key_id=ec.aws_access_key,
                         aws_secret_access_key=ec.aws_secret_key)
 
 ```
@@ -42,7 +42,7 @@ cloud_admin.get_all_walrus_backend_services          cloud_admin.get_properties
 
 
 
-### EucaAdmin can provide summarized detail via Tabled output...
+### AdminApi can provide summarized detail via Tabled output...
 
 ```
 In [16]: cloud_admin.sho
@@ -664,7 +664,7 @@ Out[19]: EucaService:one-sc-1
 
 ```
 from cloud_utils.file_utils.eucarc import Eucarc
-from cloud_admin.eucaadmin import EucaAdmin
+from cloud_admin.eucaadmin.adminapi import AdminApi
 from cloud_utils.net_utils.sshconnection import SshConnection
 
 # Create an sshconnection to the CLC...
@@ -676,9 +676,9 @@ ec = Eucarc(filepath='eucarc-10.111.5.156-eucalyptus-admin/eucarc')
 # or read in a eucarc on a remote system...
 ec = Eucarc(filepath='/root/eucarc', sshconnection=ssh_to_clc)
 
-# Create a EucaAdmin interface with the admin's access and secret key, since this is being
+# Create a AdminApi interface with the admin's access and secret key, since this is being
 # forward from a local port, set the host to localhost...
-cad = EucaAdmin(host='127.0.0.1', aws_access_key_id=ec.aws_access_key,
+cad = AdminApi(host='127.0.0.1', aws_access_key_id=ec.aws_access_key,
                 aws_secret_access_key=ec.aws_secret_key)
 
 # Replace the underlying method of creating an http connection w/ something like this
