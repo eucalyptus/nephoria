@@ -74,7 +74,7 @@ class Midget(object):
                           username=self.midonet_username, password=self.midonet_password)
 
         self.tester = tester
-        if not self.tester:
+        if not self.tester and eutester_config:
             self.tester = Eucaops(config_file=eutester_config, password=eutester_password)
         self.logger = Eulogger(identifier='MidoDebug:{0}'.format(self.midonet_api_host))
         self.default_indent = ""
@@ -82,7 +82,7 @@ class Midget(object):
         self._protocols = {}
 
     def debug(self, msg):
-        self.logger.log.debug(msg)
+        self.logger.debug(msg)
 
     def _indent_table_buf(self, table, indent=None):
         if indent is None:
