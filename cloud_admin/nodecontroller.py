@@ -10,8 +10,7 @@ from prettytable import PrettyTable
 from cloud_utils.log_utils import markup
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException, \
     CommandTimeoutException, SshCbReturn
-# from cloud_admin.eucahost import EucaHost
-from cloud_utils.system_utils.machine import Machine
+from cloud_admin import EucaMachineHelpers
 from cloud_admin.services import EucaComponentService
 
 
@@ -75,6 +74,9 @@ def SHOW_NODES(connection, nodes=None, print_table=True):
     else:
         return pt
 
+##################################################################################################
+#                       Eucalyptus internal service class 'node'                                 #
+##################################################################################################
 
 class EucaNodeService(EucaComponentService):
     """
@@ -152,15 +154,21 @@ class EucaNodeService(EucaComponentService):
         super(EucaNodeService, self).startElement(name, value, connection)
 
 
-class NodeController(Machine):
+##################################################################################################
+#               The Node Controller 'Machine' or 'Host' helper methods...                        #
+##################################################################################################
+
+
+class NodeControllerHelpers(EucaMachineHelpers):
     """
     Represents a machine hosting the node controller service.
     """
-    """
-    def __init__(self, nc_service, *args, **kwargs):
-        self.nc_service = nc_service
-        super(NodeController, self).__init__(*args, **kwargs)
-    """
+    @property
+    def node_controller_service(self):
+        for service in self.services:
+            if service.type == 'node':
+                return service
+        return None
 
     def get_hypervisor_from_euca_conf(self):
         """

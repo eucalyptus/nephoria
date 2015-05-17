@@ -1,7 +1,9 @@
 
 from cloud_admin.services import EucaComponentService
+from cloud_utils.system_utils.machine import Machine
 from cloud_utils.log_utils import markup
 from prettytable import PrettyTable
+
 
 
 def SHOW_CLUSTER_CONTROLLER_SERVICES(connection, ccs=None, print_table=True):
@@ -33,9 +35,25 @@ def SHOW_CLUSTER_CONTROLLER_SERVICES(connection, ccs=None, print_table=True):
 
 
 class EucaClusterControllerService(EucaComponentService):
+
     def update(self, new_service=None, get_instances=True, silent=True):
         return self._update(get_method_name='get_cluster_controller_service',
                             get_method_kwargs=None, new_service=new_service, silent=silent)
 
     def show(self):
         return SHOW_CLUSTER_CONTROLLER_SERVICES(self.connection, self)
+
+
+class ClusterControllerHelpers(object):
+    """
+    Represents a machine hosting the cluster controller service.
+    """
+    @property
+    def cluster_controller_service(self):
+        for service in self.services:
+            if service.type == 'cluster':
+                return service
+        return None
+
+    def show_iptables(self):
+        self.debug(self.sys('iptables-save', code=0, listformat=False))

@@ -34,28 +34,55 @@ import re
 from argparse import Namespace
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 from cloud_utils.system_utils.machine import Machine
-from cloud_admin.nodecontroller import NodeController
+from cloud_admin.nodecontroller import NodeControllerHelpers
+from cloud_admin.cluster_controller import ClusterControllerHelpers
+from cloud_admin.storage_controller import StorageControllerHelpers
+from cloud_admin.cloud_controller import CloudControllerHelpers
+from cloud_admin.walrus import WalrusHelpers
 
 
 class EucaHost(Machine):
 
-    def __init__(self, services, *args, **kwargs):
+    def __init__(self, hostname, services, **kwargs):
+        self._euca_cc_helpers = None
+        self._euca_clc_helpers = None
+        self._euca_dns_helpers = None
+        self._euca_nc_helpers = None
+        self._euca_osg_helpers = None
+        self._euca_sc_helpers = None
+        self._euca_ufs_helpers = None
+        self._euca_ws_helpers = None
+        self.__helpers = None
+        self._nc_helpers = None
         self.euca_source = None
         self.components = {}
+        services = services or []
+        if not isinstance(services, list):
+            services = [services]
         self.services = services
-        super(EucaHost, self).__init__(*args, **kwargs)
-        for service in services:
-            if service.type == 'node':
-                NodeController(self).__init__(*args, **kwargs)
-
-
-    @property
-    def _identifier(self):
-        return str("{0}:({1})".format(self.hostname,
-                                      ",".join(str(x) for x, y, in self.components.iteritems())))
+        kwargs['hostname'] = hostname
+        super(EucaHost, self).__init__(**kwargs)
 
     def machine_setup(self):
         pass
+
+    @property
+    def euca_service_codes(self):
+        ret = []
+        for serv in self.services:
+            ret.append(serv.service_code)
+        return ret
+
+    @property
+    def euca_service_codes(self):
+        ret = []
+        for serv in self.services:
+            ret.append(serv.service_code)
+        return ret
+
+    @property
+    def _identifier(self):
+        return str("{0}:({1})".format(self.hostname, self.euca_service_codes))
 
     @property
     def eucalyptus_conf(self):
@@ -66,6 +93,50 @@ class EucaHost(Machine):
     @eucalyptus_conf.setter
     def eucalyptus_conf(self, new_config):
         self._config = new_config
+
+    @property
+    def euca_nc_helpers(self):
+        if not self._euca_nc_helpers:
+            self._euca_nc_helpers = NodeControllerHelpers(self)
+        return self._euca_nc_helpers
+
+    @property
+    def euca_cc_helpers(self):
+        if not self._euca_cc_helpers:
+            self._euca_cc_helpers = ClusterControllerHelpers(self)
+        return self._euca_cc_helpers
+
+    @property
+    def euca_sc_helpers(self):
+        if not self._euca_sc_helpers:
+            self._euca_sc_helpers = StorageControllerHelpers(self)
+        return self._euca_sc_helpers
+
+    @property
+    def euca_clc_helpers(self):
+        if not self._euca_clc_helpers:
+            self._euca_clc_helpers = CloudControllerHelpers(self)
+        return self._euca_clc_helpers
+
+    @property
+    def euca_ws_helpers(self):
+        if not self._euca_ws_helpers:
+            self._euca_ws_helpers = WalrusHelpers(self)
+        return self._euca_ws_helpers
+
+    @property
+    def euca_osg_helpers(self):
+        if not self._euca_osg_helpers:
+            self._euca_osg_helpers = NodeControllerHelpers(self)
+        return self._euca_osg_helpers
+
+    @property
+    def euca_ufs_helpers(self):
+        # if not self._euca_ufs_helpers:
+            # self._euca_ufs_helpers = <ADD UFS HELPERS>(self)
+        return self._euca_osg_helpers
+
+
 
     def get_eucalyptus_service_pid(self, eucalyptus_service):
         """
@@ -85,7 +156,7 @@ class EucaHost(Machine):
             except (CommandExitCodeException, IndexError):
                 pass
         if pid is None:
-            self.debug("Pid not found at paths: ".join(paths))
+            self.log.debug("Pid not found at paths: ".join(paths))
         return pid
 
     def get_eucalyptus_cloud_pid(self):
@@ -184,7 +255,7 @@ class EucaHost(Machine):
                 out = self.sys('cat {0}'.format(eucalyptus_conf_path), code=0,
                                verbose=verbose)
                 if verbose:
-                    self.debug('Found eucalyptus.conf at path: "{0}"'.format(eucalyptus_conf_path))
+                    self.log.debug('Found eucalyptus.conf at path: "{0}"'.format(eucalyptus_conf_path))
                 self.eucalyptus_conf_path = eucalyptus_conf_path
                 break
             except CommandExitCodeException as CE:
@@ -198,7 +269,7 @@ class EucaHost(Machine):
             if eof:
                 raise RuntimeError(err)
             else:
-                self.debug(err)
+                self.log.debug(err)
         else:
             try:
                 eucalyptus_conf = Namespace()
@@ -219,10 +290,10 @@ class EucaHost(Machine):
             except Exception, e:
                 out = 'Error while trying to create euconfig from eucalyptus_conf:' + str(e)
                 if eof:
-                    self.debug(out)
+                    self.log.debug(out)
                     raise
                 else:
-                    self.debug(out)
+                    self.log.debug(out)
         return eucalyptus_conf
 
     def __str__(self):

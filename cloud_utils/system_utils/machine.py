@@ -36,7 +36,7 @@ class Machine(object):
                  arch=None,
                  timeout=120,
                  ssh_retry=2,
-                 debugmethod=None,
+                 logger=None,
                  verbose=True):
         """
         A basic (primarily Linux) Machine interface. This interface is intended to provide a
@@ -78,8 +78,10 @@ class Machine(object):
         self._do_ssh_connect = do_ssh_connect
         self.username = username
         self.password = password
-        self.debugmethod = debugmethod
         self.verbose = verbose
+        if logger is None:
+            logger = Eulogger(identifier=self._identifier)
+        self.log = logger
         self.ssh_connect_kwargs = {'host': self.hostname,
                                    'username': self.username,
                                    'password': self.password,
@@ -90,17 +92,15 @@ class Machine(object):
                                    'proxy_keypath': proxy_keypath,
                                    'timeout': timeout,
                                    'retry': ssh_retry,
-                                   'debugmethod': self.debugmethod,
+                                   'debugmethod': self.log.debug,
                                    'verbose': self.verbose
                                    }
         self.log_threads = {}
         self.log_buffers = {}
         self.log_active = {}
         self.wget_last_status = 0
-        if self.debugmethod is None:
-            logger = Eulogger(identifier=self._identifier)
-            self.debugmethod = logger.log.debug
         self.machine_setup()
+
 
     def machine_setup(self):
         # For custom implementations
@@ -188,7 +188,7 @@ class Machine(object):
             self._arch = arch
             return arch
         except Exception, UE:
-            self.debug('Failed to get arch info from:"{0}", err:"{1}"'
+            self.log.debug('Failed to get arch info from:"{0}", err:"{1}"'
                        .format(self.hostname, str(UE)))
         return None
 
@@ -202,7 +202,7 @@ class Machine(object):
         try:
             out = self.sys('cat /etc/issue', listformat=False, code=0, verbose=verbose)
         except CommandExitCodeException, CE:
-            self.debug('Failed to fetch /etc/issue from machine:"{0}", err:"{1}"'
+            self.log.debug('Failed to fetch /etc/issue from machine:"{0}", err:"{1}"'
                        .format(self.hostname, str(CE)))
             out = None
         if out:
@@ -210,7 +210,7 @@ class Machine(object):
                 self.distro = str(re.match("^\w+", out).group()).strip().lower()
                 self.distro_ver = str(re.search("\s(\d+[\d, .]*)\s", out).group()).strip().lower()
             except Exception, DE:
-                self.debug('Could not parse distro info from machine, err:' + str(DE))
+                self.log.debug('Could not parse distro info from machine, err:' + str(DE))
         self.distro = self.distro or "UNKNOWN"
         self.distro_ver = self.distro_ver or "UNKNOWN"
         return (self.distro, self.distro_ver)
@@ -250,11 +250,12 @@ class Machine(object):
 
     def debug(self, msg):
         """
+        Note: Should use self.log.debug instead.
         Used to print debug, defaults to print() but over ridden by self.debugmethod if not None
         msg - mandatory -string, message to be printed
         """
         if self.verbose is True:
-            self.debugmethod(msg)
+            self.log.debug(msg)
 
     def refresh_connection(self):
         '''
@@ -358,7 +359,7 @@ class Machine(object):
         given string buf
         """
         if verbose:
-            self.debug(str(buf))
+            self.log.debug(str(buf))
         return SshCbReturn(stop=self.str_found(buf, regex=regex, search=search))
 
     def str_found(self, buf, regex, search=True):
@@ -389,7 +390,7 @@ class Machine(object):
         except CommandExitCodeException:
             return False
         except Exception, e:
-            self.debug('Could not get "{0}" service state from machine: {1}, err:{2}'
+            self.log.debug('Could not get "{0}" service state from machine: {1}, err:{2}'
                        .format(service, self.hostname, str(e)))
 
     def get_elapsed_seconds_since_pid_started(self, pid):
@@ -407,7 +408,7 @@ class Machine(object):
             if not pid:
                 raise Exception('Empty pid passed to get_elapsed_seconds_since_pid_started')
             cmd = "ps -eo pid,etime | grep " + str(pid) + " | awk '{print $2}'"
-            self.debug('starting get pid uptime"' + str(cmd) + '"...')
+            self.log.debug('starting get pid uptime"' + str(cmd) + '"...')
             # expected format: days-HH:MM:SS
             out = self.sys(cmd, code=0)[0]
             out = out.strip()
@@ -430,7 +431,7 @@ class Machine(object):
             elapsed = seconds + (minutes * seconds_min) + (hours * seconds_hour) + (
                 days * seconds_day)
         except Exception, ES:
-            self.debug('{0}\n"get_elapsed_seconds_since_pid_started" error: "{1}"'
+            self.log.debug('{0}\n"get_elapsed_seconds_since_pid_started" error: "{1}"'
                        .format(get_traceback(), str(ES)))
         return int(elapsed)
 
@@ -494,7 +495,7 @@ class Machine(object):
 
     def ping_check(self, host):
         out = self.ping_cmd(host)
-        self.debug('Ping attempt to host:' + str(host) + ", status code:" + str(out['status']))
+        self.log.debug('Ping attempt to host:' + str(host) + ", status code:" + str(out['status']))
         if out['status'] != 0:
             raise Exception('Ping returned error:' + str(out['status']) + ' to host:' + str(host))
 
@@ -508,7 +509,7 @@ class Machine(object):
         if verbose:
             # print all returned attributes from ping command dict
             for item in sorted(out):
-                self.debug(str(item) + " = " + str(out[item]))
+                self.log.debug(str(item) + " = " + str(out[item]))
         return out
 
     def dump_netfail_info(self, ip=None, mac=None, pass1=None, pass2=None, showpass=True,
@@ -517,7 +518,7 @@ class Machine(object):
         Debug method to provide potentially helpful info from current machine when debugging
          connectivity issues.
         """
-        self.debug('Attempting to dump network information, args: ip:{0}, mac:{1}, '
+        self.log.debug('Attempting to dump network information, args: ip:{0}, mac:{1}, '
                    'pass1:{2}, pass2:{3}'.format(ip,
                                                  mac,
                                                  self.get_masked_pass(pass1, show=True),
@@ -546,7 +547,7 @@ class Machine(object):
                           password=None,
                           retryconn=True,
                           timeout=300):
-        self.debug('wget_remote_image, url:' + str(url) + ", path:" + str(path))
+        self.log.debug('wget_remote_image, url:' + str(url) + ", path:" + str(path))
         cmd = 'wget '
         if path:
             cmd = cmd + " -P " + str(path)
@@ -559,11 +560,11 @@ class Machine(object):
         if retryconn:
             cmd += ' --retry-connrefused '
         cmd = cmd + ' ' + str(url)
-        self.debug('wget_remote_image cmd: ' + str(cmd))
+        self.log.debug('wget_remote_image cmd: ' + str(cmd))
         ret = self.cmd(cmd, timeout=timeout, cb=self.wget_status_cb)
         if ret['status'] != 0:
             raise Exception('wget_remote_image failed with status:' + str(ret['status']))
-        self.debug('wget_remote_image succeeded')
+        self.log.debug('wget_remote_image succeeded')
 
     def wget_status_cb(self, buf):
         ret = SshCbReturn(stop=False)
@@ -603,7 +604,7 @@ class Machine(object):
             path = '${PWD}'
         cmd = 'df ' + str(path)
         if verbose:
-            self.debug('get_df_info cmd:' + str(cmd))
+            self.log.debug('get_df_info cmd:' + str(cmd))
         output = self.sys(cmd, code=0, verbose=verbose)
         # Get the presented fields from commands output,
         # Convert to lowercase, use this as our dict keys
@@ -619,7 +620,7 @@ class Machine(object):
             for value in str(output[line]).split():
                 ret[fields[x]] = value
                 if verbose:
-                    self.debug(str('DF FIELD: ' + fields[x]) + ' = ' + str(value))
+                    self.log.debug(str('DF FIELD: ' + fields[x]) + ' = ' + str(value))
                 x += 1
             line += 1
         return ret
@@ -653,7 +654,7 @@ class Machine(object):
         return size / unit
 
     def poll_log(self, log_file="/var/log/messages"):
-        self.debug("Starting to poll " + log_file)
+        self.log.debug("Starting to poll " + log_file)
         self.log_channel = self.ssh.connection.invoke_shell()
         self.log_channel.send("tail -f " + log_file + " \n")
         # Begin polling channel for any new data
@@ -746,7 +747,7 @@ class Machine(object):
         # this tmp file will be created on remote instance to write stderr from dd to...
         if not tmpfile:
             tstamp = time.time()
-            tmpfile = '/tmp/eutesterddcmd.' + str(int(tstamp))
+            tmpfile = '/tmp/eutesterddcmd.{0}.{1}'.format(self.hostname, str(int(tstamp))[-4:])
         tmppidfile = tmpfile + ".pid"
         # init return dict
         ret = {
@@ -794,150 +795,158 @@ class Machine(object):
         # Due to the ssh psuedo tty, this is done in an ugly manner to get output of
         # future usr1 signals for dd status updates and allow this to run with nohup in the
         # background. Added sleep so cmd is nohup'd before tty is terminated (maybe?)
-
-        cmd = 'nohup ' + str(ddcmd) + ' 2> ' + str(tmpfile) + ' & echo $! && sleep 2'
-        # Execute dd command and store echo'd pid from output
         try:
-            dd_pid = self.sys(cmd, code=0)[0]
-        except CommandExitCodeException, se:
-            dbg_buf = ""
-            file_contents = self.sys('cat ' + str(tmpfile))
-            if file_contents:
-                dbg_buf = "\n".join(file_contents)
-            raise Exception('Failed dd cmd:"' + str(cmd) + '", tmpfile contents:\n' + str(dbg_buf))
+            cmd = 'nohup ' + str(ddcmd) + ' 2> ' + str(tmpfile) + ' & echo $! && sleep 2'
+            # Execute dd command and store echo'd pid from output
+            try:
+                dd_pid = self.sys(cmd, code=0)[0]
+            except CommandExitCodeException, se:
+                dbg_buf = ""
+                file_contents = self.sys('cat ' + str(tmpfile))
+                if file_contents:
+                    dbg_buf = "\n".join(file_contents)
+                raise Exception('Failed dd cmd:"' + str(cmd) + '", tmpfile contents:\n' +
+                                str(dbg_buf))
 
-        # Form the table headers for printing dd status...
-        linediv = '\n------------------------------------------------------------------------' \
-                  '----------------------------------------------------\n'
-        databuf = str('BYTES').ljust(15)
-        databuf += '|' + str('MBs').center(15)
-        databuf += '|' + str('GIGs').center(8)
+            # Form the table headers for printing dd status...
+            linediv = '\n---------------------------------------------------------------' \
+                      '-------------------------------------------------------------\n'
+            databuf = str('BYTES').ljust(15)
+            databuf += '|' + str('MBs').center(15)
+            databuf += '|' + str('GIGs').center(8)
 
-        timebuf = '|' + str('DD TIME').center(10)
-        timebuf += '|' + str('TEST TIME').center(10)
+            timebuf = '|' + str('DD TIME').center(10)
+            timebuf += '|' + str('TEST TIME').center(10)
 
-        ratebuf = '|' + str('DD RATE').center(12)
-        ratebuf += '|' + str('TEST RATE').center(12)
+            ratebuf = '|' + str('DD RATE').center(12)
+            ratebuf += '|' + str('TEST RATE').center(12)
 
-        recbuf = '|' + str('REC_IN').center(18)
-        recbuf += '|' + str('REC_OUT').center(18)
+            recbuf = '|' + str('REC_IN').center(18)
+            recbuf += '|' + str('REC_OUT').center(18)
 
-        info_header = str('DD DATA INFO').ljust(len(databuf))
-        info_header += '|' + str('DD TIME INFO').center(len(timebuf) - 1)
-        info_header += '|' + str('DD RATE INFO').center(len(ratebuf) - 1)
-        info_header += '|' + str('DD RECORDS FULL/PARTIAL INFO').center(len(recbuf) - 1)
+            info_header = str('DD DATA INFO').ljust(len(databuf))
+            info_header += '|' + str('DD TIME INFO').center(len(timebuf) - 1)
+            info_header += '|' + str('DD RATE INFO').center(len(ratebuf) - 1)
+            info_header += '|' + str('DD RECORDS FULL/PARTIAL INFO').center(len(recbuf) - 1)
 
-        buf = linediv
-        buf += info_header
-        buf += linediv
-        buf += databuf + timebuf + ratebuf + recbuf
-        buf += linediv
-        sys.stdout.write(buf)
-        sys.stdout.flush()
-        dd_exit_code = -1
-        # Keep getting and printing dd status until done...
-        while not done and (elapsed < timeout):
-            # send sig usr1 to have dd process dump status to stderr redirected to tmpfile
-            output = self.cmd('kill -USR1 ' + str(dd_pid), verbose=False)
-            cmdstatus = int(output['status'])
-            if cmdstatus != 0:
-                done = True
-                cmdout = self.cmd('wait {0}'.format(dd_pid), verbose=False)
-                dd_exit_code = int(cmdout['status'])
-                # if the command returned error, process is done
-                out = self.sys('cat ' + str(tmpfile) + "; rm -f " + str(tmpfile), code=0,
-                               verbose=False)
-            else:
-                # if the above command didn't error out then dd ps is still running, grab status
-                # from tmpfile, and clear it
-                out = self.sys('cat ' + str(tmpfile) + " && echo '' > " + str(tmpfile) +
-                               ' 2>&1 > /dev/null', code=0, verbose=False)
-            for line in out:
-                line = str(line)
-                try:
-                    if re.search('records in', line):
-                        ret['dd_records_in'] = str(line.split()[0]).strip()
-                        ret['dd_full_rec_in'] = str(ret['dd_records_in'].split("+")[0].strip())
-                        # dd_full_rec_in = int(dd_full_rec_in)
-                        ret['dd_partial_rec_in'] = str(ret['dd_records_in'].split("+")[1].strip())
-                        # dd_partial_rec_in = int(dd_partial_rec_in)
-                    elif re.search('records out', line):
-                        ret['dd_records_out'] = str(line.split()[0]).strip()
-                        ret['dd_full_rec_out'] = str(ret['dd_records_out'].split("+")[0].strip())
-                        # dd_ful_rec_out = int(dd_full_rec_out)
-                        ret['dd_partial_rec_out'] = str(ret['dd_records_out'].split("+")[1]
-                                                        .strip())
-                        # dd_partial_rec_out = int(dd_partial_rec_out)
-                    elif re.search('copied', line):
-                        # 123456789 bytes (123 MB) copied, 12.34 s, 123.45 MB/s
-                        summary = line.split()
-                        ret['dd_bytes'] = int(summary[0])
-                        ret['dd_mb'] = float("{0:.2f}".format(ret['dd_bytes'] / float(mb)))
-                        ret['dd_gig'] = float("{0:.2f}".format(ret['dd_bytes'] / float(gig)))
-                        ret['dd_elapsed'] = float(summary[5])
-                        ret['dd_rate'] = float(summary[7])
-                        ret['dd_units'] = str(summary[8])
-                except Exception, e:
-                    # catch any exception in the data parsing and show it as info/debug later...
-                    tb = self.tester.get_traceback()
-                    infobuf = '\n\nCaught exception while processing line:"' + str(line) + '"'
-                    infobuf += '\n' + str(tb) + "\n" + str(e) + '\n'
-            elapsed = float(time.time() - start)
-            ret['test_rate'] = float("{0:.2f}".format(ret['dd_mb'] / elapsed))
-            ret['test_time'] = "{0:.4f}".format(elapsed)
-            # Create and format the status output buffer, then print it...
-            buf = str(ret['dd_bytes']).ljust(15)
-            buf += '|' + str(ret['dd_mb']).center(15)
-            buf += '|' + str(ret['dd_gig']).center(8)
-            buf += '|' + str(ret['dd_elapsed']).center(10)
-            buf += '|' + str(ret['test_time']).center(10)
-            buf += '|' + str(str(ret['dd_rate']) + " " + str(ret['dd_units'])).center(12)
-            buf += '|' + str(str(ret['test_rate']) + " " + str('MB/s')).center(12)
-            buf += '|' + str("F:" + str(ret['dd_full_rec_in']) + " P:" +
-                             str(ret['dd_partial_rec_in'])).center(18)
-            buf += '|' + str("F:" + str(ret['dd_full_rec_out']) + " P:" +
-                             str(ret['dd_partial_rec_out'])).center(18)
-            sys.stdout.write("\r\x1b[K" + str(buf))
+            buf = linediv
+            buf += info_header
+            buf += linediv
+            buf += databuf + timebuf + ratebuf + recbuf
+            buf += linediv
+            sys.stdout.write(buf)
             sys.stdout.flush()
-            time.sleep(poll_interval)
-        sys.stdout.write(linediv)
-        sys.stdout.flush()
-        elapsed = int(time.time() - start)
-        if not done:
-            # Attempt to kill dd process...
-            self.sys('kill ' + str(dd_pid))
-            raise Exception('dd_monitor timed out before dd cmd completed, elapsed:' +
-                            str(elapsed) + '/' + str(timeout))
-        else:
-            # sync to ensure writes to dev
-            if sync:
-                self.sys('sync', code=0)
-                elapsed = int(time.time() - start)
-        # if we have any info from exceptions caught during parsing, print that here...
-        if infobuf:
-            print infobuf
-        # format last output for debug in case of errors
-        if out:
-            outbuf = "\n".join(out)
-        # Check for exit code of dd command, 127 may indicate dd process ended before wait pid,
-        # use additional checks below to determine a failure when 127 is returned.
-        if dd_exit_code != 127 and dd_exit_code != 0:
-            raise CommandExitCodeException('dd cmd failed with exit code:' + str(dd_exit_code))
-        # if we didn't transfer any bytes of data, assume the cmd failed and wrote to stderr
-        # now in outbuf...
-        if not ret['dd_full_rec_out'] and not ret['dd_partial_rec_out']:
-            raise CommandExitCodeException('Did not transfer any data using dd cmd:' +
-                                           str(ddcmd) + "\nstderr: " + str(outbuf))
-        if ((ret['dd_full_rec_in'] != ret['dd_full_rec_out']) or
-                (ret['dd_partial_rec_out'] != ret['dd_partial_rec_in'])):
-            raise CommandExitCodeException('dd in records do not match out records in transfer')
-        self.debug('Done with dd, copied:{0} bytes, {1} fullrecords, {2} partrecords - '
-                   'over elapsed:{3}'.format(ret['dd_bytes'],
-                                             ret['dd_full_rec_out'],
-                                             ret['dd_partial_rec_out'],
-                                             elapsed))
-        self.sys('rm -f ' + str(tmpfile))
-        self.sys('rm -f ' + str(tmppidfile))
+            dd_exit_code = -1
+            # Keep getting and printing dd status until done...
+            while not done and (elapsed < timeout):
+                # send sig usr1 to have dd process dump status to stderr redirected to tmpfile
+                output = self.cmd('kill -USR1 ' + str(dd_pid), verbose=False)
+                cmdstatus = int(output['status'])
+                if cmdstatus != 0:
+                    done = True
+                    cmdout = self.cmd('wait {0}'.format(dd_pid), verbose=False)
+                    dd_exit_code = int(cmdout['status'])
+                    # if the command returned error, process is done
+                    out = self.sys('cat ' + str(tmpfile) + "; rm -f " + str(tmpfile), code=0,
+                                   verbose=False)
+                else:
+                    # if the above command didn't error out then dd ps is still running,
+                    # grab status from tmpfile, and clear it
+                    out = self.sys('cat ' + str(tmpfile) + " && echo '' > " + str(tmpfile) +
+                                   ' 2>&1 > /dev/null', code=0, verbose=False)
+                for line in out:
+                    line = str(line)
+                    try:
+                        if re.search('records in', line):
+                            ret['dd_records_in'] = str(line.split()[0]).strip()
+                            ret['dd_full_rec_in'] = \
+                                str(ret['dd_records_in'].split("+")[0].strip())
+                            # dd_full_rec_in = int(dd_full_rec_in)
+                            ret['dd_partial_rec_in'] = \
+                                str(ret['dd_records_in'].split("+")[1].strip())
+                            # dd_partial_rec_in = int(dd_partial_rec_in)
+                        elif re.search('records out', line):
+                            ret['dd_records_out'] = str(line.split()[0]).strip()
+                            ret['dd_full_rec_out'] = \
+                                str(ret['dd_records_out'].split("+")[0].strip())
+                            # dd_ful_rec_out = int(dd_full_rec_out)
+                            ret['dd_partial_rec_out'] = str(ret['dd_records_out'].split("+")[1]
+                                                            .strip())
+                            # dd_partial_rec_out = int(dd_partial_rec_out)
+                        elif re.search('copied', line):
+                            # 123456789 bytes (123 MB) copied, 12.34 s, 123.45 MB/s
+                            summary = line.split()
+                            ret['dd_bytes'] = int(summary[0])
+                            ret['dd_mb'] = float("{0:.2f}".format(ret['dd_bytes'] / float(mb)))
+                            ret['dd_gig'] = float("{0:.2f}".format(ret['dd_bytes'] / float(gig)))
+                            ret['dd_elapsed'] = float(summary[5])
+                            ret['dd_rate'] = float(summary[7])
+                            ret['dd_units'] = str(summary[8])
+                    except Exception, e:
+                        # catch any exception in the data parsing and show it as info/debug later...
+                        tb = get_traceback()
+                        infobuf = '\n\nCaught exception while processing line:"' + str(line) + '"'
+                        infobuf += '\n' + str(tb) + "\n" + str(e) + '\n'
+                elapsed = float(time.time() - start)
+                ret['test_rate'] = float("{0:.2f}".format(ret['dd_mb'] / elapsed))
+                ret['test_time'] = "{0:.4f}".format(elapsed)
+                # Create and format the status output buffer, then print it...
+                buf = str(ret['dd_bytes']).ljust(15)
+                buf += '|' + str(ret['dd_mb']).center(15)
+                buf += '|' + str(ret['dd_gig']).center(8)
+                buf += '|' + str(ret['dd_elapsed']).center(10)
+                buf += '|' + str(ret['test_time']).center(10)
+                buf += '|' + str(str(ret['dd_rate']) + " " + str(ret['dd_units'])).center(12)
+                buf += '|' + str(str(ret['test_rate']) + " " + str('MB/s')).center(12)
+                buf += '|' + str("F:" + str(ret['dd_full_rec_in']) + " P:" +
+                                 str(ret['dd_partial_rec_in'])).center(18)
+                buf += '|' + str("F:" + str(ret['dd_full_rec_out']) + " P:" +
+                                 str(ret['dd_partial_rec_out'])).center(18)
+                sys.stdout.write("\r\x1b[K" + str(buf))
+                sys.stdout.flush()
+                time.sleep(poll_interval)
+            sys.stdout.write(linediv)
+            sys.stdout.flush()
+            elapsed = int(time.time() - start)
+            if not done:
+                # Attempt to kill dd process...
+                self.sys('kill ' + str(dd_pid))
+                raise RuntimeError('dd_monitor timed out before dd cmd completed, elapsed:' +
+                                    str(elapsed) + '/' + str(timeout))
+            else:
+                # sync to ensure writes to dev
+                if sync:
+                    self.sys('sync', code=0)
+                    elapsed = int(time.time() - start)
+            # if we have any info from exceptions caught during parsing, print that here...
+            if infobuf:
+                print infobuf
+            # format last output for debug in case of errors
+            if out:
+                outbuf = "\n".join(out)
+            # Check for exit code of dd command, 127 may indicate dd process ended before wait pid,
+            # use additional checks below to determine a failure when 127 is returned.
+            if dd_exit_code != 127 and dd_exit_code != 0:
+                raise CommandExitCodeException('dd cmd failed with exit code:' + str(dd_exit_code))
+            # if we didn't transfer any bytes of data, assume the cmd failed and wrote to stderr
+            # now in outbuf...
+            if not ret['dd_full_rec_out'] and not ret['dd_partial_rec_out']:
+                raise CommandExitCodeException('Did not transfer any data using dd cmd:' +
+                                               str(ddcmd) + "\nstderr: " + str(outbuf))
+            if ((ret['dd_full_rec_in'] != ret['dd_full_rec_out']) or
+                    (ret['dd_partial_rec_out'] != ret['dd_partial_rec_in'])):
+                raise CommandExitCodeException('dd in records do not match out records in '
+                                               'transfer')
+            self.log.debug('Done with dd, copied:{0} bytes, {1} fullrecords, {2} partrecords - '
+                       'over elapsed:{3}'.format(ret['dd_bytes'],
+                                                 ret['dd_full_rec_out'],
+                                                 ret['dd_partial_rec_out'],
+                                                 elapsed))
+            self.sys('rm -f ' + str(tmpfile))
+            self.sys('rm -f ' + str(tmppidfile))
+        except:
+            self.sys('rm -f ' + str(tmpfile))
+            raise
         return ret
 
     def assertFilePresent(self, filepath):
@@ -947,10 +956,10 @@ class Machine(object):
         '''
         filepath = str(filepath).strip()
         out = self.cmd("ls " + filepath)['status']
-        self.debug('exit code:' + str(out))
+        self.log.debug('exit code:' + str(out))
         if out != 0:
             raise Exception("File:" + filepath + " not found on instance:" + self.id)
-        self.debug('File ' + filepath + ' is present on ' + self.id)
+        self.log.debug('File ' + filepath + ' is present on ' + self.id)
 
     def get_users(self):
         '''
@@ -967,11 +976,11 @@ class Machine(object):
                                      str(uid_min) + " && $3 <= " + str(uid_max) +
                                      " ) print $0}' ")[0]).split(":")[0]
             except IndexError, ie:
-                self.debug("No users found, passing exception:" + str(ie))
+                self.log.debug("No users found, passing exception:" + str(ie))
                 pass
             return users
         except Exception, e:
-            self.debug("Failed to get local users. Err:" + str(e))
+            self.log.debug("Failed to get local users. Err:" + str(e))
 
     def get_user_password(self, username):
         '''
@@ -983,7 +992,7 @@ class Machine(object):
         password = None
         out = self.sys("cat /etc/passwd | grep '^" + str(username) + "'")
         if out != []:
-            self.debug("pwd out:" + str(out[0]))
+            self.log.debug("pwd out:" + str(out[0]))
             if (str(out[0]).split(":")[1] == "x"):
                 out = self.sys("cat /etc/shadow | grep '^" + str(username) + "'")
                 if out != []:
@@ -1009,7 +1018,7 @@ class Machine(object):
                 groups = groups[index:len(groups)]
             return groups
         except Exception, e:
-            self.debug("No group found for user:" + str(username) + ", err:" + str(e))
+            self.log.debug("No group found for user:" + str(username) + ", err:" + str(e))
 
     def start_interactive_ssh(self, timeout=180):
         """

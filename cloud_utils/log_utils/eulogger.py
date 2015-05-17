@@ -37,8 +37,8 @@
     self.logger = eulogger.Eulogger(name='euca')
     self.log = self.logger.log
     
-    self.log.debug("This is a debug message")
-    self.log.critical("this is a critical message")
+    self.debug("This is a debug message")
+    self.critical("this is a critical message")
 '''
 
 import os
@@ -46,7 +46,7 @@ import sys
 import logging
 import time
 
-class Eulogger(object):
+class Eulogger(logging.Logger):
     #constructor for the Eulogger
     def __init__(self,
                  parent_logger_name = 'eutester',
@@ -58,6 +58,7 @@ class Eulogger(object):
                  make_log_file_global=True,
                  use_global_log_files=True,
                  file_format = None,
+                 show_init = False,
                  clear_file = False):
         """
         This class basically sets up a child debugger for testing purposes.
@@ -77,20 +78,17 @@ class Eulogger(object):
                                      will attempt to create a handler that writes to this file as well.
         :param use_global_log_files: boolean, will query the parent logger for any file handlers and will attemp to
                                      create a handler for this child logger using the same file
-
-        #Debug for init...
-        print ( "-----------------------------------------------" \
-                + "\nparent_logger_name:" + str(parent_logger_name) \
-                + "\neulogger init:" \
-                + "\nidentifier:" + str(identifier) \
-                + "\nstdout_level:" + str(stdout_level) \
-                + "\nstdout_format:" + str(stdout_format) \
-                + "\nlogfile:" + str(logfile) \
-                + "\nlogfile_level:" + str(logfile_level) \
-                + "\nfile_format:" + str(file_format) \
-                + "\nclear_file:" + str(clear_file) \
-                + "\n-----------------------------------------------" )
         """
+        # Debug for init...
+        if show_init:
+            print (
+            "-----------------------------------------------\nparent_logger_name:{0}\neulogger "
+            "init:\nidentifier:{1}\nstdout_level:{2}\nstdout_format:{3}\nlogfile:{"
+            "4}\nlogfile_level:{5}\nfile_format:{6}\nclear_file:{"
+            "7}\n-----------------------------------------------".format(
+                str(parent_logger_name), str(identifier), str(stdout_level), str(stdout_format),
+                str(logfile), str(logfile_level), str(file_format), str(clear_file)) )
+
         self.logfile = os.path.join(logfile)
         self.clear_file = clear_file
 
@@ -99,7 +97,8 @@ class Eulogger(object):
         self.identifier = identifier
         self.name = identifier + str(time.time())
         self.parent_logger = logging.getLogger(self.parent_logger_name)
-        self.log = self.getChild(self.parent_logger, self.name)
+        logger = self.getChild(self.parent_logger, self.name)
+        self.__dict__.update(logger.__dict__)
         self.file_info_list = []
 
         #map string for log level to 'logging' class type or default to logging.DEBUG if string isn't found
@@ -111,9 +110,9 @@ class Eulogger(object):
             self.logger_level = self.stdout_level
         else:
             self.logger_level = self.logfile_level
-        if self.log.level > self.logger_level or self.log.level == 0:
-            self.log.setLevel(self.logfile_level)
-        if self.parent_logger > self.logger_level or self.log.level == 0:
+        if self.level > self.logger_level or self.level == 0:
+            self.setLevel(self.logfile_level)
+        if self.parent_logger > self.logger_level or self.level == 0:
             self.parent_logger.setLevel(self.logfile_level)
 
 
@@ -130,9 +129,9 @@ class Eulogger(object):
         self.stdout_handler.setFormatter(self.default_format)
         self.stdout_handler.setLevel(self.stdout_level)
         #Add filter so only log records from this child logger are handled
-        self.stdout_handler.addFilter(Allow_Logger_By_Name(self.log.name))
-        if self.stdout_handler not in self.log.handlers:
-            self.log.addHandler(self.stdout_handler)
+        self.stdout_handler.addFilter(Allow_Logger_By_Name(self.name))
+        if self.stdout_handler not in self.handlers:
+            self.addHandler(self.stdout_handler)
         else:
             print "Not adding stdout handler for this eulogger:" +str(self.identifier)
 
@@ -154,21 +153,21 @@ class Eulogger(object):
             file_hdlr.setFormatter(self.file_format)
             file_hdlr.setLevel(fileinfo.level)
             #Add filter so only log records from this child logger are handled
-            file_hdlr.addFilter(Allow_Logger_By_Name(self.log.name))
+            file_hdlr.addFilter(Allow_Logger_By_Name(self.name))
             #Make sure this is not a duplicate handler or this file is a dup of another handler
-            if file_hdlr not in self.log.handlers:
+            if file_hdlr not in self.handlers:
                 add = True
-                for h in self.log.handlers:
+                for h in self.handlers:
                     if h.stream.name == file_hdlr.stream.name:
                         add = False
-                        self.log.debug('File already has log handler:' + str(logfile.filepath))
+                        self.debug('File already has log handler:' + str(logfile.filepath))
                         break
                 if add:
-                    self.log.addHandler(file_hdlr)
+                    self.addHandler(file_hdlr)
             else:
                 print "Not adding logfile handler for this eulogger:" +str(self.identifier)
 
-    def add_muted_file_handler_to_parent_logger(self,filepath, level):
+    def add_muted_file_handler_to_parent_logger(self, filepath, level):
         file_handler = logging.FileHandler(filepath)
         file_handler.setLevel(level)
         file_handler.addFilter(Mute_Filter())
@@ -201,7 +200,8 @@ class File_Handler_Info():
 
 class Allow_Logger_By_Name(logging.Filter):
     """
-    Only messages from this logger are allow through to prevent duplicates from other loggers of same level, etc..
+    Only messages from this logger are allow through to prevent duplicates from other
+    loggers of same level, etc..
     """
     def __init__(self, name=""):
         logging.Filter.__init__(self, name)

@@ -325,6 +325,22 @@ class EucaAdmin(AWSQueryConnection):
         """
         return SHOW_SERVICE_TYPES(self, *args, **kwargs)
 
+    def is_user_api_member(self, service_type):
+        '''
+        Quick lookup of all 'user-api' service and group member types. Returns true if the
+        provided service_type is a member.
+        :param service_type: string, service type
+        :returns bool: True if is a 'user-api' service type member, else False
+        '''
+        names =['user-api']
+        user_api_service = self.get_service_types('user-api')[0]
+        for member in user_api_service.groupmembers:
+            names.append(member.name)
+        if service_type in names:
+            return True
+        else:
+            return False
+
     ###############################################################################################
     #                           Eucalyptus 'Service' Methods                                      #
     ###############################################################################################

@@ -361,11 +361,11 @@ class EucaService(EucaBaseObj):
     """
     Base Class for Eucalyptus Service Objects
     """
-
     def __init__(self, connection=None):
         self._host = None
         self._hostname = None
         self._localstate = None
+        self._service_code = None
         self._state = None
         self.message = None
         self.name = None
@@ -373,6 +373,31 @@ class EucaService(EucaBaseObj):
         self.type = None
         self.uris = []
         super(EucaService, self).__init__(connection)
+
+    @property
+    def service_code(self):
+        '''
+        The classes extending this should replace this method with a known service
+        code abbreviation
+        '''
+        if self._service_code:
+            return self._service_code
+        else:
+            if self.connection.is_user_api_member(self.type):
+                scode = 'UFS'
+            elif self.type == 'cluster':
+                scode = 'CC'
+            elif self.type == 'eucalyptus' or self.partition in ['eucalyptus', 'bootstrap']:
+                scode = 'CLC'
+            elif self.type == 'storage':
+                scode = 'SC'
+            elif self.type == 'node':
+                scode = 'NC'
+            elif self.type == 'walrus':
+                scode = 'WS'
+            else:
+                scode = self.type
+            return scode
 
     @property
     def state(self):
