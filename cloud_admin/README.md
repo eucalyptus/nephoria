@@ -8,7 +8,7 @@
         - Hypervisor modules (ie: vmware api, etc)
         - Object Storage modules (ie: Riak, etc)
 
-##### eucaadmin:
+##### servicemgmt:
     Eucalyptus specific modules. This may include:
         - Eucalyptus Administrative Services
         - Eucalyptus Administrative Properties
@@ -19,3 +19,6 @@
        - Eucalyptus Host machine modules and service specific machine helper modules. These will
          be primarily for Linux machines which are hosting the Eucalyptus services.
        - Utlities to manage the host machines.
+
+##### usermgmt:
+    Modules help Administer Cloud User, Account, Credentials Administrative modules
