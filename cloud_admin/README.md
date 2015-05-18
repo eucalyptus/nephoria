@@ -5,7 +5,7 @@
     Cloud backend modules. This may include backend modules for:
         - Block storage modules for the backing HW or SW (ie SAN, DAS, Ceph, etc)
         - Network modules (ie: Network HW, SDN component interfaces, etc. )
-        - Hyperisor module (ie: vmware api, etc)
+        - Hypervisor modules (ie: vmware api, etc)
         - Object Storage modules (ie: Riak, etc)
 
 ##### eucaadmin:

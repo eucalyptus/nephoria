@@ -2,13 +2,13 @@
 import re
 import os
 from prettytable import PrettyTable
+from cloud_utils.log_utils.eulogger import Eulogger
 
 
 class Eucarc(dict):
     _KEY_DIR_STR = '\${EUCA_KEY_DIR}'
 
-    def __init__(self, filepath=None, string=None, sshconnection=None, keydir=None,
-                 debug_method=None):
+    def __init__(self, filepath=None, string=None, sshconnection=None, keydir=None, logger=None):
         """
         Will populate a eucarc obj with values from a local file, remote file, or string buffer.
         The parser expect values in the following format:
@@ -49,8 +49,13 @@ class Eucarc(dict):
         self.aws_credential_file = None
         self.ec2_cert = None
         self.aws_auto_scaling_url = None
+        self.eustore_url = 'http://emis.eucalyptus.com/'
+
         # End of init default eucarc attrs
-        self._debug_method = debug_method
+        if not logger:
+            logger = Eulogger(identifier=self.__class__.__name__)
+        self.log = logger
+        self._debug_method = self.log.debug
         if filepath is not None and not sshconnection:
             if not re.search('\S+', filepath):
                 filepath = os.path.curdir

@@ -963,8 +963,8 @@ class Machine(object):
 
     def get_users(self):
         '''
-        Attempts to return a list of normal linux users local to this instance.
-        Returns a list of all non-root users found within the uid_min/max range who are
+        Attempts to return a list of normal linux user_mgmt local to this instance.
+        Returns a list of all non-root user_mgmt found within the uid_min/max range who are
         not marked nologin
         '''
         users = []
@@ -976,11 +976,11 @@ class Machine(object):
                                      str(uid_min) + " && $3 <= " + str(uid_max) +
                                      " ) print $0}' ")[0]).split(":")[0]
             except IndexError, ie:
-                self.log.debug("No users found, passing exception:" + str(ie))
+                self.log.debug("No user_mgmt found, passing exception:" + str(ie))
                 pass
             return users
         except Exception, e:
-            self.log.debug("Failed to get local users. Err:" + str(e))
+            self.log.debug("Failed to get local user_mgmt. Err:" + str(e))
 
     def get_user_password(self, username):
         '''

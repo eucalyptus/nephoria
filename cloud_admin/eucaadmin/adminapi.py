@@ -122,7 +122,7 @@ from cloud_admin.eucaadmin.eucaproperty import (
     SHOW_PROPERTIES,
     SHOW_PROPERTIES_NARROW
 )
-from cloud_utils.log_utils import get_traceback
+from cloud_utils.log_utils import get_traceback, eulogger
 
 ###############################################################################################
 #                        Eucalyptus Admin ('Empyrean') Query Interface                        #
@@ -135,7 +135,7 @@ class AdminApi(AWSQueryConnection):
     def __init__(self,
                  host,
                  aws_access_key_id,
-                 aws_secret_access_key,
+                 aws_secret_key,
                  path='/services/Empyrean',
                  port=8773,
                  is_secure=False,
@@ -143,6 +143,7 @@ class AdminApi(AWSQueryConnection):
                  boto_debug_level=0,
                  debug_method=None,
                  err_method=None,
+                 logger = None,
                  **kwargs):
         """
         Primary Admin/Empyrean Query interface for a Eucalyptus Cloud
@@ -165,16 +166,19 @@ class AdminApi(AWSQueryConnection):
         self.host = host
         if not isinstance(self.host, basestring) or \
                 not isinstance(aws_access_key_id, basestring) or \
-                not isinstance(aws_secret_access_key, basestring):
+                not isinstance(aws_secret_key, basestring):
             raise ValueError('Missing or invalide type for required arg. host:"{0}", '
                              'aws_access_key_id:"{1}", aws_secret_access_key:"{2}"'
                              .format(self.host,
                                      aws_access_key_id,
-                                     aws_secret_access_key))
+                                     aws_secret_key))
         self.is_secure = is_secure
         self.port = port
         self.path = path
         self.debug = boto_debug_level
+        if not logger:
+            logger = eulogger.Eulogger(identifier=self.__class__.__name__)
+        self.log = logger
         if debug_method:
             self.debug_method = debug_method
         if err_method:
@@ -182,7 +186,7 @@ class AdminApi(AWSQueryConnection):
         self._ec2_connection = ec2_connection
         super(AdminApi, self).__init__(path=self.path,
                                         aws_access_key_id=aws_access_key_id,
-                                        aws_secret_access_key=aws_secret_access_key,
+                                        aws_secret_access_key=aws_secret_key,
                                         port=self.port,
                                         is_secure=self.is_secure,
                                         host=self.host,
@@ -194,14 +198,14 @@ class AdminApi(AWSQueryConnection):
         The default debug output method to be used if a 'debug_method' or 'tester' obj
         was not provided at init overwriting this method.
         '''
-        print msg
+        self.log.debug(msg)
 
     def err_method(self, msg):
         '''
         The default error logging method to be used if a 'debug_method' or 'tester' obj
         was not provided at init overwriting this method.
         '''
-        print sys.stderr, str(msg)
+        self.log.error(msg)
 
     @property
     def ec2_connection(self):

@@ -237,7 +237,7 @@ class BucketTestSuite(EutesterTestCase):
                     self.tester.debug("Bucket: " + b.name)
                 self.fail("Could not setup bucket, " + test_bucket_name + " for test: " + err.error_message )
 
-        prefix = "users"
+        prefix = "user_mgmt"
         delim = "/"
         
         for i in range(10):
