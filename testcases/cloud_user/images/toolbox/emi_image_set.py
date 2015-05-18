@@ -72,7 +72,7 @@ class file():
     version
     size
     
-class usermgmt():
+class access():
     @classmethod
     def from_json(self, json):
         parse json here?

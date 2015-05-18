@@ -26,7 +26,7 @@ class Machine(object):
                  username="root",
                  password=None,
                  keypath=None,
-                 proxy_host=None,
+                 proxy_hostname=None,
                  proxy_username='root',
                  proxy_password=None,
                  proxy_keypath=None,
@@ -52,7 +52,7 @@ class Machine(object):
         :param username: The ssh username used to for ssh login
         :param password: The password associate with 'username'
         :param keypath:  The path to an ssh key to be used, (defaults to the usual local key dirs)
-        :param proxy_host: (optional) A ssh proxy hostname or ip
+        :param proxy_hostname: (optional) A ssh proxy hostname or ip
         :param proxy_username: (optional) Proxy username for ssh login
         :param proxy_password: (optional) Proxy password associated with proxy username
         :param proxy_keypath: (optional) ssh key path, otherwise will try the default ssh dir(s)
@@ -86,7 +86,7 @@ class Machine(object):
                                    'username': self.username,
                                    'password': self.password,
                                    'keypath': keypath,
-                                   'proxy': proxy_host,
+                                   'proxy': proxy_hostname,
                                    'proxy_username': proxy_username,
                                    'proxy_password': proxy_password,
                                    'proxy_keypath': proxy_keypath,
@@ -435,16 +435,44 @@ class Machine(object):
                        .format(get_traceback(), str(ES)))
         return int(elapsed)
 
-    def is_file_present(self, filepath):
+    def get_abs_path(self, path):
+        out = self.sys('echo "$(cd "$(dirname "{0}")" && pwd)/$(basename "{0}")"'.format(path),
+                       code=0)
+        if out:
+            path = os.path.normpath(str(out[0]).strip())
+            path.rstrip('.')
+            path.rstrip('/') + "/"
+            return path
+        return None
+
+    def _file_test(self, testchar, path):
+        testchar = str(testchar).rstrip('-')
         try:
-            self.get_file_stat(filepath)
-        except IOError, io:
-            # IOError: [Errno 2] No such file
-            if io.errno == 2:
-                return False
-            else:
-                raise io
-        return True
+            self.sys('[ -{0} {1} ]'.format(testchar, path), code=0)
+            return True
+        except CommandExitCodeException:
+            return False
+
+    def is_file(self, path):
+        return self._file_test('f', path)
+
+    def is_dir(self, path):
+        return self._file_test('d', path)
+
+    def is_block_dev(self, path):
+        return self._file_test('b', path)
+
+    def is_readable(self, path):
+        return self._file_test('r', path)
+
+    def is_writeable(self, path):
+        return self._file_test('w', path)
+
+    def is_executable(self, path):
+        return self._file_test('x', path)
+
+    def is_present(self, filepath):
+        return self._file_test('e', filepath)
 
     def get_file_stat(self, path):
         return self.sftp.lstat(path)
@@ -963,8 +991,8 @@ class Machine(object):
 
     def get_users(self):
         '''
-        Attempts to return a list of normal linux usermgmt local to this instance.
-        Returns a list of all non-root usermgmt found within the uid_min/max range who are
+        Attempts to return a list of normal linux access local to this instance.
+        Returns a list of all non-root access found within the uid_min/max range who are
         not marked nologin
         '''
         users = []
@@ -976,11 +1004,11 @@ class Machine(object):
                                      str(uid_min) + " && $3 <= " + str(uid_max) +
                                      " ) print $0}' ")[0]).split(":")[0]
             except IndexError, ie:
-                self.log.debug("No usermgmt found, passing exception:" + str(ie))
+                self.log.debug("No access found, passing exception:" + str(ie))
                 pass
             return users
         except Exception, e:
-            self.log.debug("Failed to get local usermgmt. Err:" + str(e))
+            self.log.debug("Failed to get local access. Err:" + str(e))
 
     def get_user_password(self, username):
         '''

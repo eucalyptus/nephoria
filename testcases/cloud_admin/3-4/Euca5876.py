@@ -51,9 +51,9 @@ class Euca(unittest.TestCase):
         self.runSysCmd('euca-modify-property -f authentication.ldap_integration_configuration=euca5876.lic')
         # Wait for LDAP to sync
         self.tester.sleep(20)
-        # Count the numbers of usermgmt in the euca5876 group and make sure it is over 100
+        # Count the numbers of access in the euca5876 group and make sure it is over 100
         self.out = str(self.tester.sys('euare-grouplistusers -g euca5876 --as-account account-euca5876')).count('arn:aws:iam::')
-        print self.OK + 'Number of usermgmt created = ' + str(self.out) + self.ENDC
+        print self.OK + 'Number of access created = ' + str(self.out) + self.ENDC
         assert self.out > 100
 if __name__ == "__main__":
     unittest.main()

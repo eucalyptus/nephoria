@@ -745,7 +745,7 @@ class ImageUtils(EutesterTestCase):
 
     def create_working_dir_on_worker_machine(self, path, overwrite=False):
         path = str(path)
-        if self.worker_machine.is_file_present(path):
+        if self.worker_machine.is_present(path):
             if not overwrite:
                 raise Exception('Dir found on:' +
                                 str(self.worker_machine.hostname) +
