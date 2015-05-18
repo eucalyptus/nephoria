@@ -516,7 +516,7 @@ class BucketTest(unittest.TestCase):
                     print b.name                
                 self.fail("Could not setup bucket, " + test_bucket_name + " for test: " + err.error_message )
 
-        prefix = "user_mgmt"
+        prefix = "usermgmt"
         delim = "/"
         
         for i in range(10):

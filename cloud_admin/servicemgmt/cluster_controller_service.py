@@ -1,5 +1,5 @@
 
-from cloud_admin.eucaadmin.services import EucaComponentService
+from cloud_admin.servicemgmt.services import EucaComponentService
 from cloud_utils.log_utils import markup
 from prettytable import PrettyTable
 

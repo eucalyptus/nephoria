@@ -2,9 +2,9 @@ from prettytable import PrettyTable
 from boto.iam import IAMConnection
 from cloud_utils.file_utils.eucarc import Eucarc
 from cloud_utils.log_utils.eulogger import Eulogger
-from cloud_admin.user_mgmt.account import IamAccount
-from cloud_admin.user_mgmt.user import IamUser
-from cloud_admin.user_mgmt.group import IamGroup
+from cloud_admin.usermgmt.account import IamAccount
+from cloud_admin.usermgmt.user import IamUser
+from cloud_admin.usermgmt.group import IamGroup
 from urlparse import urlparse
 import re
 
@@ -89,7 +89,7 @@ class UserAdmin(IAMConnection):
     def get_users_from_account(self, path=None, user_name=None, user_id=None,
                                delegate_account=None, search=False):
         """
-        Returns user_mgmt that match given criteria. By default will return current account.
+        Returns usermgmt that match given criteria. By default will return current account.
 
         :param path: regex - to match for path
         :param user_name: str name of user
@@ -100,7 +100,7 @@ class UserAdmin(IAMConnection):
                        strings must occur)
         :return:
         """
-        self.debug('Attempting to fetch all user_mgmt matching- user_id:{0} user_name:{1} '
+        self.debug('Attempting to fetch all usermgmt matching- user_id:{0} user_name:{1} '
                    'acct_name:{2}'.format(str(user_id), str(user_name), str(delegate_account)))
         retlist = []
         params = {}
@@ -173,7 +173,7 @@ class UserAdmin(IAMConnection):
     def get_all_users(self, account_name=None,  account_id=None,  path=None,
                       user_name=None,  user_id=None,  search=False ):
         """
-        Queries all accounts matching given account criteria, returns all user_mgmt found within
+        Queries all accounts matching given account criteria, returns all usermgmt found within
         these accounts which then match the given user criteria.
         Account info is added to the user dicts
 
@@ -183,14 +183,14 @@ class UserAdmin(IAMConnection):
         :param user_name: regex - to match for user name
         :param user_id: regex - to match for user id
         :param search: boolean - specify whether to use match or search when filtering the returned list
-        :return: List of user_mgmt with account name tuples
+        :return: List of usermgmt with account name tuples
         """
         userlist=[]
         accounts = self.get_all_accounts(account_id=account_id, account_name=account_name,
                                          search=search)
         for account in accounts:
             #if account['account_id'] == self.account_id:
-            #    user_mgmt =self.get_users_from_account()
+            #    usermgmt =self.get_users_from_account()
             #else:
             users = self.get_users_from_account(path=path,
                                                 user_name=user_name,

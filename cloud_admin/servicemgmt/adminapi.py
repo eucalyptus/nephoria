@@ -5,7 +5,7 @@
 #                                   Basic example:                                            #
 ###############################################################################################
 
-from cloud_admin.eucaadmin import EucaAdmin
+from cloud_admin.servicemgmt import EucaAdmin
 
 # Create a EucaAdmin interface with the admin's access and secret key
 cad = EucaAdmin(host='1.2.3.4',
@@ -44,7 +44,7 @@ cad.show_nodes()
  - Where '10.111.5.156' is the CLC serving the empyrean requests/service.
 
 from cloud_utils.file_utils.eucarc import Eucarc
-from cloud_admin.eucaadmin import EucaAdmin
+from cloud_admin.servicemgmt import EucaAdmin
 from cloud_utils.net_utils.sshconnection import SshConnection
 
 # Create an sshconnection to the CLC...
@@ -94,20 +94,20 @@ from boto.connection import AWSQueryConnection
 from boto.ec2.regioninfo import RegionInfo
 from boto.exception import BotoServerError
 
-from cloud_admin.eucaadmin import EucaResponseException, EucaNotFoundException
-from cloud_admin.eucaadmin.cluster_controller_service import (
+from cloud_admin.servicemgmt import EucaResponseException, EucaNotFoundException
+from cloud_admin.servicemgmt.cluster_controller_service import (
     EucaClusterControllerService,
     SHOW_CLUSTER_CONTROLLER_SERVICES
 )
-from cloud_admin.eucaadmin.cloud_controller_service import EucaCloudControllerService
-from cloud_admin.eucaadmin.dns_service import EucaDnsService
-from cloud_admin.eucaadmin.storage_controller_service import EucaStorageControllerService
-from cloud_admin.eucaadmin.osg_service import EucaObjectStorageGatewayService
-from cloud_admin.eucaadmin.node_service import EucaNodeService, SHOW_NODES
-from cloud_admin.eucaadmin.walrus_service import EucaWalrusBackendService
-from cloud_admin.eucaadmin.arbitrator_service import EucaArbitratorService
-from cloud_admin.eucaadmin.vmware_broker_service import EucaVMwareBrokerService
-from cloud_admin.eucaadmin.services import (
+from cloud_admin.servicemgmt.cloud_controller_service import EucaCloudControllerService
+from cloud_admin.servicemgmt.dns_service import EucaDnsService
+from cloud_admin.servicemgmt.storage_controller_service import EucaStorageControllerService
+from cloud_admin.servicemgmt.osg_service import EucaObjectStorageGatewayService
+from cloud_admin.servicemgmt.node_service import EucaNodeService, SHOW_NODES
+from cloud_admin.servicemgmt.walrus_service import EucaWalrusBackendService
+from cloud_admin.servicemgmt.arbitrator_service import EucaArbitratorService
+from cloud_admin.servicemgmt.vmware_broker_service import EucaVMwareBrokerService
+from cloud_admin.servicemgmt.services import (
     EucaService,
     EucaServiceList,
     EucaServiceRegResponse,
@@ -117,7 +117,7 @@ from cloud_admin.eucaadmin.services import (
     SHOW_SERVICE_TYPES,
     SHOW_SERVICE_TYPES_VERBOSE
 )
-from cloud_admin.eucaadmin.eucaproperty import (
+from cloud_admin.servicemgmt.eucaproperty import (
     EucaProperty,
     SHOW_PROPERTIES,
     SHOW_PROPERTIES_NARROW

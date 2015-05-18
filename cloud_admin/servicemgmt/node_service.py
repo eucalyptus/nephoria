@@ -1,7 +1,7 @@
 
 from cloud_utils.log_utils import markup
 from prettytable import PrettyTable
-from cloud_admin.eucaadmin.services import EucaComponentService
+from cloud_admin.servicemgmt.services import EucaComponentService
 
 
 def SHOW_NODES(connection, nodes=None, print_table=True):

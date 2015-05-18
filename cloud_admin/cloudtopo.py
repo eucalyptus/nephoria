@@ -39,7 +39,7 @@ class CloudTopo(object):
         self.aws_access_key = aws_access_key
         self.aws_secret_key = aws_secret_key
         self.eucarc = None
-        if clc:
+        if clc_ip:
             try:
                 self.clc =
         if eucarc_path:

@@ -1,5 +1,5 @@
 
-from cloud_admin.eucaadmin import EucaBaseObj
+from cloud_admin.servicemgmt import EucaBaseObj
 from cloud_utils.log_utils import get_traceback
 from cloud_utils.log_utils import markup
 from prettytable import PrettyTable, ALL

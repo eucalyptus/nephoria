@@ -3,7 +3,7 @@ import os.path
 from cloud_utils.file_utils.eucarc import Eucarc
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.system_utils.machine import Machine
-from cloud_admin.eucaadmin.adminapi import AdminApi
+from cloud_admin.servicemgmt.adminapi import AdminApi
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 
 eucarc_to_service_map = {

@@ -2,7 +2,7 @@
 
 import dns.resolver
 import time
-from cloud_admin.eucaadmin.services import EucaComponentService
+from cloud_admin.servicemgmt.services import EucaComponentService
 
 
 class EucaDnsService(EucaComponentService):

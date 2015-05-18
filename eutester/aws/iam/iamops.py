@@ -151,7 +151,7 @@ class IAMops(Eutester):
 
     def get_users_from_account(self, path=None, user_name=None, user_id=None, delegate_account=None, search=False):
         """
-        Returns user_mgmt that match given criteria. By default will return current account.
+        Returns usermgmt that match given criteria. By default will return current account.
 
         :param path: regex - to match for path
         :param user_name: str name of user
@@ -160,7 +160,7 @@ class IAMops(Eutester):
         :param search: use regex search (any occurrence) rather than match (exact same strings must occur)
         :return:
         """
-        self.debug('Attempting to fetch all user_mgmt matching- user_id:'+str(user_id)+' user_name:'+str(user_name)+" acct_name:"+str(delegate_account))
+        self.debug('Attempting to fetch all usermgmt matching- user_id:'+str(user_id)+' user_name:'+str(user_name)+" acct_name:"+str(delegate_account))
         retlist = []
         params = {}
         if search:
@@ -170,7 +170,7 @@ class IAMops(Eutester):
         if delegate_account:
             params['DelegateAccount'] = delegate_account         
         response = self.connection.get_response('ListUsers', params, list_marker='Users')
-        for user in response['list_users_response']['list_users_result']['user_mgmt']:
+        for user in response['list_users_response']['list_users_result']['usermgmt']:
             if path is not None and not re_meth(path, user['path']):
                 continue
             if user_name is not None and not re_meth(user_name, user['user_name']):
@@ -255,7 +255,7 @@ class IAMops(Eutester):
 
     def get_euare_username(self):
         """
-        Get all user_mgmt in the current user_mgmt account
+        Get all usermgmt in the current usermgmt account
         """
         return self.get_all_users(account_id=str(self.get_account_id()))[0]['user_name']
     
@@ -268,7 +268,7 @@ class IAMops(Eutester):
     def get_all_users(self,  account_name=None,  account_id=None,  path=None,
                       user_name=None,  user_id=None,  search=False ):
         """
-        Queries all accounts matching given account criteria, returns all user_mgmt found within these accounts which then match the given user criteria.
+        Queries all accounts matching given account criteria, returns all usermgmt found within these accounts which then match the given user criteria.
         Account info is added to the user dicts
 
         :param account_name: regex - to use for account name
@@ -277,14 +277,14 @@ class IAMops(Eutester):
         :param user_name: regex - to match for user name
         :param user_id: regex - to match for user id
         :param search: boolean - specify whether to use match or search when filtering the returned list
-        :return: List of user_mgmt with account name tuples
+        :return: List of usermgmt with account name tuples
         """
         userlist=[]
         accounts = self.get_all_accounts(account_id=account_id, account_name=account_name,
                                          search=search)
         for account in accounts:
             #if account['account_id'] == self.account_id:
-            #    user_mgmt =self.get_users_from_account()
+            #    usermgmt =self.get_users_from_account()
             #else:
             users = self.get_users_from_account(path=path,
                                                 user_name=user_name,
@@ -575,10 +575,10 @@ class IAMops(Eutester):
 
     def get_users_from_group(self, group_name, delegate_account=None):
         """
-        :param group_name: name of the group whose user_mgmt should be returned.
+        :param group_name: name of the group whose usermgmt should be returned.
         :param delegate_account: specific account name when method is being called from
                                  eucalyptus admin user.
-        :return: list of user_mgmt of an IAM group.
+        :return: list of usermgmt of an IAM group.
         """
         ret_list = []
         params = {}
@@ -586,7 +586,7 @@ class IAMops(Eutester):
             params['DelegateAccount'] = delegate_account
         params['GroupName'] = group_name
         response = self.connection.get_response('GetGroup', params, list_marker='Users')
-        for user in response['get_group_response']['get_group_result']['user_mgmt']:
+        for user in response['get_group_response']['get_group_result']['usermgmt']:
             ret_list.append(user)
         return ret_list
 
