@@ -78,7 +78,7 @@ class UserAdmin(IAMConnection):
     def get_account(self, account):
         if not account:
             raise ValueError('get_account got unknown type for account:"{0}/{1}"'
-                             .format(account, type(account)) )
+                             .format(account, type(account)))
         if isinstance(account, IamAccount):
             return self.get_all_accounts(account_id=account.id)[0]
         if re.match('^\d{12}$', account):
@@ -161,17 +161,15 @@ class UserAdmin(IAMConnection):
                 continue
         # Filter based on criteria provided
         for account in response['list_accounts_response']['list_accounts_result']['accounts']:
-            if account_name is not None and not re_meth( account_name, account['account_name']):
+            if account_name is not None and not re_meth(account_name, account['account_name']):
                 continue
             if account_id is not None and not re_meth(account_id, account.id):
                 continue
             retlist.append(account)
         return retlist
 
-
-
     def get_all_users(self, account_name=None,  account_id=None,  path=None,
-                      user_name=None,  user_id=None,  search=False ):
+                      user_name=None,  user_id=None,  search=False):
         """
         Queries all accounts matching given account criteria, returns all access found within
         these accounts which then match the given user criteria.
@@ -182,27 +180,27 @@ class UserAdmin(IAMConnection):
         :param path: regex - to match for path
         :param user_name: regex - to match for user name
         :param user_id: regex - to match for user id
-        :param search: boolean - specify whether to use match or search when filtering the returned list
+        :param search: boolean - specify whether to use match or search when filtering the re
+                       turned list
         :return: List of access with account name tuples
         """
-        userlist=[]
+        userlist = []
         accounts = self.get_all_accounts(account_id=account_id, account_name=account_name,
                                          search=search)
         for account in accounts:
-            #if account['account_id'] == self.account_id:
+            # if account['account_id'] == self.account_id:
             #    access =self.get_users_from_account()
-            #else:
+            # else:
             users = self.get_users_from_account(path=path,
                                                 user_name=user_name,
                                                 user_id=user_id,
                                                 delegate_account=account['account_name'],
                                                 search=search)
             for user in users:
-                user['account_name']=account['account_name']
-                user['account_id']=account['account_id']
+                user['account_name'] = account['account_name']
+                user['account_id'] = account['account_id']
                 userlist.append(user)
         return userlist
-
 
     def show_all_accounts(self, account=None, account_name=None, account_id=None, search=False,
                           print_table=True):
@@ -219,14 +217,14 @@ class UserAdmin(IAMConnection):
         pt.align = 'l'
         if account:
             if isinstance(account, IamAccount):
-                list = [account]
+                alist = [account]
             else:
-                list = [self.get_account(account)]
+                alist = [self.get_account(account)]
         else:
-            list = self.get_all_accounts(account_name=account_name,
-                                         account_id=account_id,
-                                         search=search)
-        for account in list:
+            alist = self.get_all_accounts(account_name=account_name,
+                                          account_id=account_id,
+                                          search=search)
+        for account in alist:
             pt.add_row([account.name, account.id])
         if print_table:
             self.debug("\n" + str(pt) + "\n")
@@ -258,19 +256,18 @@ class UserAdmin(IAMConnection):
         pt = PrettyTable(['ACCOUNT:', 'GROUPNAME:', 'GROUP_ID:'])
         pt.hrules = 1
         pt.align = 'l'
-        list = self.get_all_groups(account_name=account_name, account_id=account_id,
-                                   path=path, group_name=group_name, group_id=group_id,
-                                   search=search)
-        for group in list:
+        glist = self.get_all_groups(account_name=account_name, account_id=account_id,
+                                    path=path, group_name=group_name, group_id=group_id,
+                                    search=search)
+        for group in glist:
             pt.add_row([group['account_name'], group['group_name'], group['group_id']])
         if print_table:
             self.debug("\n" + str(pt) + "\n")
         else:
             return pt
 
-
     def show_all_users(self, users=None, account_name=None, account_id=None,  path=None,
-                       user_name=None, user_id=None, search=False, print_table=True ):
+                       user_name=None, user_id=None, search=False, print_table=True):
         """
         Debug Method to print a user list based on given filter criteria
 
@@ -287,20 +284,19 @@ class UserAdmin(IAMConnection):
         pt.align = 'l'
         if users:
             if not isinstance(users, list):
-                list = [users]
+                ulist = [users]
             else:
-                list = users
-            for user in list:
+                ulist = users
+            for user in ulist:
                 if not isinstance(user, IamUser):
                     raise ValueError('show_all_users got non IAMUser type: "{0}/{1}"'
                                      .format(user, type(user)))
         else:
-            list = self.get_all_users(account_name=account_name, account_id=account_id, path=path,
-                                      user_name=user_name, user_id=user_id, search=search)
-        for user in list:
+            ulist = self.get_all_users(account_name=account_name, account_id=account_id, path=path,
+                                       user_name=user_name, user_id=user_id, search=search)
+        for user in ulist:
             pt.add_row([user.account_name, user.name, user.id, user.account_id])
         if print_table:
             self.debug("\n" + str(pt) + "\n")
         else:
             return pt
-

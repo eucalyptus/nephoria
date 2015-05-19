@@ -136,8 +136,8 @@ eucarc_to_service_map = {
     "aws_simpleworkflow_url": 'simpleworkflow',
     "aws_auto_scaling_url": 'autoscaling'}
 
-class AutoCreds(Eucarc):
 
+class AutoCreds(Eucarc):
     def __init__(self,
                  auto_create=True,
                  aws_access_key=None,
@@ -151,9 +151,8 @@ class AutoCreds(Eucarc):
                  proxy_username='root',
                  proxy_password=None,
                  proxy_keypath=None,
-                 logger = None,
-                 eucarc_obj = None,
-                 ):
+                 logger=None,
+                 eucarc_obj=None):
         super(AutoCreds, self).__init__(logger=logger)
         self._adminapi = None
         self._clc_ip = hostname
@@ -162,7 +161,7 @@ class AutoCreds(Eucarc):
         self.aws_secret_key = aws_secret_key
         self.aws_access_key = aws_access_key
         self.debug = self.log.debug
-        self._has_updated_connect_args = False # used to speed up auto find credentials
+        self._has_updated_connect_args = False  # used to speed up auto find credentials
         if (username != 'root' or proxy_username != 'root' or password or keypath or
                 proxy_hostname or proxy_keypath or proxy_password):
             self._has_updated_connect_args = True
@@ -199,10 +198,10 @@ class AutoCreds(Eucarc):
 
     def _connect_adminapi(self):
         if self.aws_secret_key and self.aws_access_key and self._clc_ip:
-                self._adminapi = AdminApi(host=self._clc_ip,
-                                          aws_access_key_id=self.aws_access_key,
-                                          aws_secret_key=self.aws_secret_key,
-                                          debug_method=self.debug)
+            self._adminapi = AdminApi(host=self._clc_ip,
+                                      aws_access_key_id=self.aws_access_key,
+                                      aws_secret_key=self.aws_secret_key,
+                                      debug_method=self.debug)
         return self._adminapi
 
     def _close_adminpi(self):
@@ -310,6 +309,7 @@ class AutoCreds(Eucarc):
         Upon the first successful discovery of credentials, the local obj is populated with
         eucarc attributes and returns.
         """
+
         def try_local(self):
             if self._credpath:
                 try:
@@ -319,6 +319,7 @@ class AutoCreds(Eucarc):
                         return res
                 except IOError:
                     pass
+
         def try_adminapi(self):
             if self.aws_secret_key and self.aws_access_key and self._clc_ip:
                 self._connect_adminapi()
@@ -331,6 +332,7 @@ class AutoCreds(Eucarc):
                     self.debug('{0}\nFailed to update creds using adminapi, err:"{1}"'
                                .format(get_traceback(), str(RE)))
                     self._close_adminpi()
+
         def try_remote(self):
             if self._clc_ip:
                 try:
@@ -382,12 +384,12 @@ class AutoCreds(Eucarc):
         local_destdir = os.path.abspath(local_destdir)
         for key, value in self.get_eucarc_attrs().iteritems():
             if re.search('^sftp://', value):
-                    has_sftp_items = True
+                has_sftp_items = True
         if has_sftp_items:
             if not machine:
                 if not self._has_updated_connect_args:
                     self.log.info('Remote machine info has not been provided, '
-                              'skipping remote creds download')
+                                  'skipping remote creds download')
                 else:
                     machine = self.connect_to_clc()
             self._download_remote_artifacts(local_destdir=local_destdir, machine=machine,
@@ -427,7 +429,7 @@ class AutoCreds(Eucarc):
         else:
             if not os.path.isdir(local_destdir):
                 raise ValueError('Provided local_destdir exists and is not a directory:"{0}"'
-                             .format(local_destdir))
+                                 .format(local_destdir))
             if not overwrite:
                 raise ValueError('local_destdir exists. set "overwrite=True" to write over '
                                  'existing contents: {0}'.format(local_destdir))
@@ -435,7 +437,7 @@ class AutoCreds(Eucarc):
         for key, path in self.get_eucarc_attrs().iteritems():
             if not key.startswith('_') and re.search(sftp_prefix, str(path)):
                 urlp = urlparse(path)
-                if not self.clc_machine.hostname ==  urlp.hostname:
+                if not self.clc_machine.hostname == urlp.hostname:
                     raise ValueError('sftp uri hostname:{0} does not match current Machines:{1}'
                                      .format(urlp.hostname, machine.hostname))
                 artifact_name = os.path.basename(urlp.path)
@@ -446,56 +448,6 @@ class AutoCreds(Eucarc):
         return local_destdir
 
     # Todo Clean up the legacy methods below...
-
-
-    '''
-
-    def get_credentials(self, account="eucalyptus", user="admin", force=False):
-        """
-        Login to the CLC and download credentials programatically for the user and account
-        passed in. Defaults to admin@eucalyptus
-        """
-        self.debug("Starting the process of getting credentials")
-
-        ### GET the CLCs from the config file
-        clcs = self.get_component_machines("clc")
-        if len(clcs) < 1:
-            raise Exception("Could not find a CLC in the config file when trying to"
-                            " get credentials")
-        admin_cred_dir = "eucarc-" + clcs[0].hostname + "-" + account + "-" + user
-        cred_file_name = "creds.zip"
-        full_cred_path = admin_cred_dir + "/" + cred_file_name
-
-        ### IF I dont already have credentials, download and sync them
-        if force or self.credpath is None or not self.is_ec2_cert_active():
-            ### SETUP directory remotely
-            self.setup_remote_creds_dir(admin_cred_dir)
-
-            ### Create credential from Active CLC
-            # Store the zipfile info to check for active certs when iam/euare connection is
-            # established later...
-            self.cred_zipfile = self.create_credentials(admin_cred_dir, account, user,
-                                                        zipfile=cred_file_name)
-            if hasattr(self, 'euare') and self.euare:
-                self.get_active_cert_for_creds(credzippath=self.cred_zipfile, account=account,
-                                               user=user)
-            self.debug('self.cred_zipfile: ' + str(self.cred_zipfile))
-            ### SETUP directory locally
-            self.setup_local_creds_dir(admin_cred_dir)
-
-            ### DOWNLOAD creds from clc
-            self.download_creds_from_clc(admin_cred_dir=os.path.dirname((self.cred_zipfile)),
-                                         zipfile=os.path.basename(self.cred_zipfile))
-
-            ### SET CREDPATH ONCE WE HAVE DOWNLOADED IT LOCALLY
-            self.credpath = admin_cred_dir
-            ### IF there are 2 clcs make sure to sync credentials across them
-        ### sync the credentials  to all CLCs
-        for clc in clcs:
-            self.send_creds_to_machine(admin_cred_dir, clc)
-
-        return admin_cred_dir
-'''
 
     def _legacy_create_credentials(self, clc, admin_cred_dir, account, user, zipfile='creds.zip'):
         zipfilepath = os.path.join(admin_cred_dir, zipfile)
@@ -509,70 +461,70 @@ class AutoCreds(Eucarc):
             if self.clc.found(cmd_download_creds, "The MySQL server is not responding"):
                 raise IOError("Error downloading credentials, looks like CLC was not running")
             if self.clc.found("unzip -o {0}/creds.zip -d {1}"
-                                      .format(admin_cred_dir, admin_cred_dir),
+                              .format(admin_cred_dir, admin_cred_dir),
                               "cannot find zipfile directory"):
                 raise IOError("Empty ZIP file returned by CLC")
         return zipfilepath
 
-    def get_active_cert_for_creds(self, credzippath=None, account=None, user=None, update=True, 
+    def get_active_cert_for_creds(self, credzippath=None, account=None, user=None, update=True,
                                   machine=None):
-            if credzippath is None:
-                if hasattr(self, 'cred_zipfile') and self.cred_zipfile:
-                    credzippath = self.cred_zipfile
-                elif self.credpath:
-                    credzippath = self.credpath
-                else:
-                    raise ValueError('cred zip file not provided or set for AutoCred obj')
-            machine = machine or self.clc_machine
-            account = account or self.account_name
-            user = user or self.aws_username
-            admin_cred_dir = os.path.dirname(credzippath)
-            clc_eucarc = os.path.join(admin_cred_dir, 'eucarc')
-            # backward compatibility
-            certpath_in_eucarc = machine.sys(". {0} &>/dev/null && "
-                                              "echo $EC2_CERT".format(clc_eucarc))
-            if certpath_in_eucarc:
-                certpath_in_eucarc = certpath_in_eucarc[0]
-            self.debug('Current EC2_CERT path for {0}: {1}'.format(clc_eucarc, certpath_in_eucarc))
-            if certpath_in_eucarc and self.get_active_id_for_cert(certpath_in_eucarc):
-                self.debug("Cert/pk already exist and is active in '" +
-                           admin_cred_dir + "/eucarc' file.")
+        if credzippath is None:
+            if hasattr(self, 'cred_zipfile') and self.cred_zipfile:
+                credzippath = self.cred_zipfile
+            elif self.credpath:
+                credzippath = self.credpath
             else:
-                # Try to find existing active cert/key on clc first. Check admin_cred_dir then
-                # do a recursive search from ssh user's home dir (likely root/)
-                self.debug('Attempting to find an active cert for this account on the CLC...')
-                certpaths = self.find_active_cert_and_key_in_dir(dir=admin_cred_dir) or \
-                            self.find_active_cert_and_key_in_dir()
-                self.debug('Found Active cert and key paths')
-                if not certpaths:
-                    # No existing and active certs found, create new ones...
-                    self.debug('Could not find any existing active certs on clc, '
-                               'trying to create new ones...')
-                    certpaths = self.create_new_user_certs(admin_cred_dir, account, user)
-                # Copy cert and key into admin_cred_dir
-                certpath = certpaths.get('certpath')
-                keypath = certpaths.get('keypath')
-                newcertpath = os.path.join(admin_cred_dir, os.path.basename(certpath))
-                newkeypath = os.path.join(admin_cred_dir, os.path.basename(keypath))
-                self.debug('Using certpath:{0} and keypath:{1} on clc'
-                           .format(newcertpath, newkeypath))
-                machine.sys('cp {0} {1}'.format(certpath, newcertpath))
-                machine.sys('cp {0} {1}'.format(keypath, newkeypath))
-                # Update the existing eucarc with new cert and key path info...
-                self.debug("Setting cert/pk in '" + admin_cred_dir + "/eucarc'")
-                machine.sys("echo 'export EC2_CERT=${EUCA_KEY_DIR}/" + "{0}' >> {1}"
-                         .format(os.path.basename(newcertpath), clc_eucarc))
-                machine.sys("echo 'export EC2_PRIVATE_KEY=${EUCA_KEY_DIR}/" + "{0}' >> {1}"
-                         .format(os.path.basename(newkeypath), clc_eucarc))
-                self.debug('updating zip file with new cert, key and eucarc: {0}'
-                           .format(credzippath))
-                for updatefile in [os.path.basename(newcertpath), os.path.basename(newkeypath),
-                             os.path.basename(clc_eucarc)]:
-                    machine.sys('cd {0} && zip -g {1} {2}'
-                                 .format(os.path.dirname(credzippath),
-                                         os.path.basename(credzippath),
-                                         updatefile), code=0)
-                return credzippath
+                raise ValueError('cred zip file not provided or set for AutoCred obj')
+        machine = machine or self.clc_machine
+        account = account or self.account_name
+        user = user or self.aws_username
+        admin_cred_dir = os.path.dirname(credzippath)
+        clc_eucarc = os.path.join(admin_cred_dir, 'eucarc')
+        # backward compatibility
+        certpath_in_eucarc = machine.sys(". {0} &>/dev/null && "
+                                         "echo $EC2_CERT".format(clc_eucarc))
+        if certpath_in_eucarc:
+            certpath_in_eucarc = certpath_in_eucarc[0]
+        self.debug('Current EC2_CERT path for {0}: {1}'.format(clc_eucarc, certpath_in_eucarc))
+        if certpath_in_eucarc and self.get_active_id_for_cert(certpath_in_eucarc):
+            self.debug("Cert/pk already exist and is active in '" +
+                       admin_cred_dir + "/eucarc' file.")
+        else:
+            # Try to find existing active cert/key on clc first. Check admin_cred_dir then
+            # do a recursive search from ssh user's home dir (likely root/)
+            self.debug('Attempting to find an active cert for this account on the CLC...')
+            certpaths = (self.find_active_cert_and_key_in_dir(dir=admin_cred_dir) or
+                         self.find_active_cert_and_key_in_dir())
+            self.debug('Found Active cert and key paths')
+            if not certpaths:
+                # No existing and active certs found, create new ones...
+                self.debug('Could not find any existing active certs on clc, '
+                           'trying to create new ones...')
+                certpaths = self.create_new_user_certs(admin_cred_dir, account, user)
+            # Copy cert and key into admin_cred_dir
+            certpath = certpaths.get('certpath')
+            keypath = certpaths.get('keypath')
+            newcertpath = os.path.join(admin_cred_dir, os.path.basename(certpath))
+            newkeypath = os.path.join(admin_cred_dir, os.path.basename(keypath))
+            self.debug('Using certpath:{0} and keypath:{1} on clc'
+                       .format(newcertpath, newkeypath))
+            machine.sys('cp {0} {1}'.format(certpath, newcertpath))
+            machine.sys('cp {0} {1}'.format(keypath, newkeypath))
+            # Update the existing eucarc with new cert and key path info...
+            self.debug("Setting cert/pk in '" + admin_cred_dir + "/eucarc'")
+            machine.sys("echo 'export EC2_CERT=${EUCA_KEY_DIR}/" + "{0}' >> {1}"
+                        .format(os.path.basename(newcertpath), clc_eucarc))
+            machine.sys("echo 'export EC2_PRIVATE_KEY=${EUCA_KEY_DIR}/" + "{0}' >> {1}"
+                        .format(os.path.basename(newkeypath), clc_eucarc))
+            self.debug('updating zip file with new cert, key and eucarc: {0}'
+                       .format(credzippath))
+            for updatefile in [os.path.basename(newcertpath), os.path.basename(newkeypath),
+                               os.path.basename(clc_eucarc)]:
+                machine.sys('cd {0} && zip -g {1} {2}'
+                            .format(os.path.dirname(credzippath),
+                                    os.path.basename(credzippath),
+                                    updatefile), code=0)
+            return credzippath
 
     def create_new_user_certs(self, admin_cred_dir, account, user,
                               newcertpath=None, newkeypath=None, machine=None):
@@ -580,7 +532,7 @@ class AutoCreds(Eucarc):
         eucarcpath = os.path.join(admin_cred_dir, 'eucarc')
         newcertpath = newcertpath or os.path.join(admin_cred_dir, "euca2-cert.pem")
         newkeypath = newkeypath or os.path.join(admin_cred_dir, "/euca2-pk.pem")
-        #admin_certs = machine.sys("source {0} && /usr/bin/euare-userlistcerts | grep -v Active"
+        # admin_certs = machine.sys("source {0} && /usr/bin/euare-userlistcerts | grep -v Active"
         #                           .format(eucarcpath))
         admin_certs = []
         for cert in self.get_active_certs():
@@ -589,11 +541,11 @@ class AutoCreds(Eucarc):
             if self.force_cert_create:
                 self.debug("Found more than one certs, deleting last cert")
                 machine.sys(". {0} &>/dev/null && "
-                             "/usr/bin/euare-userdelcert -c {1} --user-name {2}"
-                             .format(eucarcpath,
-                                     admin_certs[admin_certs.pop()],
-                                     user),
-                             code=0)
+                            "/usr/bin/euare-userdelcert -c {1} --user-name {2}"
+                            .format(eucarcpath,
+                                    admin_certs[admin_certs.pop()],
+                                    user),
+                            code=0)
             else:
                 raise RuntimeWarning('No active certs were found on the clc, and there are 2'
                                      'certs outstanding. Either delete an existing '
@@ -608,13 +560,13 @@ class AutoCreds(Eucarc):
                                                            os.path.basename(newkeypath)))
 
         machine.sys(". {0} &>/dev/null && "
-                     "/usr/bin/euare-usercreatecert --user-name {1} --out {2} --keyout {3}"
-                     .format(eucarcpath,
-                             user,
-                             newcertpath,
-                             newkeypath),
+                    "/usr/bin/euare-usercreatecert --user-name {1} --out {2} --keyout {3}"
+                    .format(eucarcpath,
+                            user,
+                            newcertpath,
+                            newkeypath),
                     code=0)
-        return {"certpath":newcertpath, "keypath":newkeypath}
+        return {"certpath": newcertpath, "keypath": newkeypath}
 
     def get_active_certs(self):
         """
@@ -628,7 +580,7 @@ class AutoCreds(Eucarc):
         certs = []
         resp = self.euare.get_all_signing_certs()
         if resp:
-            cresp= resp.get('list_signing_certificates_response')
+            cresp = resp.get('list_signing_certificates_response')
             if cresp:
                 lscr = cresp.get('list_signing_certificates_result')
                 if lscr:
@@ -648,7 +600,7 @@ class AutoCreds(Eucarc):
             raise ValueError('No ec2 certpath provided or set for eutester obj')
         machine = machine or self.clc
         self.debug('Verifying cert: "{0}"...'.format(certpath))
-        body = str("\n".join(machine.sys('cat {0}'.format(certpath), verbose=False)) ).strip()
+        body = str("\n".join(machine.sys('cat {0}'.format(certpath), verbose=False))).strip()
         certs = []
         if body:
             certs = self.get_active_certs()
@@ -678,7 +630,8 @@ class AutoCreds(Eucarc):
             rec = "r"
         else:
             rec = ""
-        certfiles = machine.sys('grep "{0}" -l{1} {2}*.pem'.format('^-*BEGIN CERTIFICATE', rec, dir))
+        certfiles = machine.sys(
+            'grep "{0}" -l{1} {2}*.pem'.format('^-*BEGIN CERTIFICATE', rec, dir))
         for f in certfiles:
             if self.get_active_id_for_cert(f, machine=machine):
                 dir = os.path.dirname(f)
@@ -686,7 +639,7 @@ class AutoCreds(Eucarc):
                 if keypath:
                     self.debug('Found existing active cert and key on clc: {0}, {1}'
                                .format(f, keypath))
-                    return {'certpath':f, 'keypath':keypath}
+                    return {'certpath': f, 'keypath': keypath}
         return ret_dict
 
     def get_key_for_cert(self, certpath, keydir, machine=None, recursive=True):
@@ -708,7 +661,7 @@ class AutoCreds(Eucarc):
         else:
             rec = ""
         certmodmd5 = machine.sys('openssl x509 -noout -modulus -in {0}  | md5sum'
-                                  .format(certpath))
+                                 .format(certpath))
         if certmodmd5:
             certmodmd5 = str(certmodmd5[0]).strip()
         else:
@@ -770,13 +723,13 @@ class AutoCreds(Eucarc):
         self.debug("Downloading certs from " + self.clc.hostname + ", path:" +
                    admin_cred_dir + "/")
         clc_eucarc = os.path.join(admin_cred_dir, 'eucarc')
-        local_eucarc = os.path.join(admin_cred_dir,  'eucarc')
+        local_eucarc = os.path.join(admin_cred_dir, 'eucarc')
         remotecertpath = machine.sys(". {0} &>/dev/null && "
-                                      "echo $EC2_CERT".format(clc_eucarc))
+                                     "echo $EC2_CERT".format(clc_eucarc))
         if remotecertpath:
             remotecertpath = remotecertpath[0]
         remotekeypath = machine.sys(". {0} &>/dev/null && "
-                                     "echo $EC2_PRIVATE_KEY".format(clc_eucarc))
+                                    "echo $EC2_PRIVATE_KEY".format(clc_eucarc))
         if remotekeypath:
             remotekeypath = remotekeypath[0]
         if not remotecertpath or not remotekeypath:
@@ -784,15 +737,15 @@ class AutoCreds(Eucarc):
             return {}
         localcertpath = os.path.join(admin_cred_dir, os.path.basename(remotecertpath))
         localkeypath = os.path.join(admin_cred_dir, os.path.basename(remotekeypath))
-        self.sftp.get(remotecertpath,localcertpath )
+        self.sftp.get(remotecertpath, localcertpath)
         self.sftp.get(remotekeypath, localkeypath)
         if update_eucarc:
             self.debug("Setting cert/pk in '{0}".format(local_eucarc))
             self.local("echo 'export EC2_CERT=${EUCA_KEY_DIR}/" +
                        str(os.path.basename(localcertpath)) + "' >> " + local_eucarc)
             self.local("echo 'export EC2_PRIVATE_KEY=${EUCA_KEY_DIR}/" +
-                       str(os.path.basename(localkeypath)) + "' >> " +local_eucarc)
-        return {'certpath':localcertpath, 'keypath':localkeypath}
+                       str(os.path.basename(localkeypath)) + "' >> " + local_eucarc)
+        return {'certpath': localcertpath, 'keypath': localkeypath}
 
     def send_creds_to_machine(self, admin_cred_dir, machine, filename='creds.zip'):
         filepath = os.path.join(admin_cred_dir, filename)
@@ -807,8 +760,8 @@ class AutoCreds(Eucarc):
             pass
         if not remotemd5 or (remotemd5 != localmd5):
             machine.sys("mkdir " + admin_cred_dir)
-            machine.sftp.put( admin_cred_dir + "/creds.zip" , admin_cred_dir + "/creds.zip")
-            machine.sys("unzip -o " + admin_cred_dir + "/creds.zip -d " + admin_cred_dir )
+            machine.sftp.put(admin_cred_dir + "/creds.zip", admin_cred_dir + "/creds.zip")
+            machine.sys("unzip -o " + admin_cred_dir + "/creds.zip -d " + admin_cred_dir)
         else:
             self.debug("Machine " + machine.hostname + " already has credentials in place not "
                                                        " sending")
@@ -819,4 +772,3 @@ class AutoCreds(Eucarc):
 
     def setup_remote_creds_dir(self, admin_cred_dir):
         self.sys("mkdir " + admin_cred_dir)
-

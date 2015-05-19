@@ -8,7 +8,6 @@ class IamGroup(object):
         self.arn = None
         self.createdate = None
 
-
     def __repr__(self):
         return str(self.__class__.__name__) + ":" + str(self.name)
 

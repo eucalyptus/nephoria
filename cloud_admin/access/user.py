@@ -1,6 +1,7 @@
 
+
 class IamUser(object):
-     # Base Class For IAM User Objs
+    # Base Class For IAM User Objs
     def __init__(self, connection=None):
         self.connection = connection
         self.name = None

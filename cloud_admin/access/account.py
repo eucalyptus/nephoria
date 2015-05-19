@@ -1,6 +1,7 @@
 
 from cloud_utils.log_utils import get_traceback
 
+
 class IamAccount(object):
     # Base Class For IAM Account Objs
     def __init__(self, connection=None):
@@ -37,12 +38,12 @@ class IamAccount(object):
                 if self.id:
                     new_account = self.connection.get_account_by_id(account_id=self.id)
                 else:
-                    new_account =self.connection.get_account_by_name(account_name=self.name)
+                    new_account = self.connection.get_account_by_name(account_name=self.name)
             except Exception as LE:
                 if silent:
                     errmsg = "{0}\n{1}\n".format(get_traceback(), str(LE))
                     self.connection.log.error('{0}Update failed. IamAccount: {1} not found'
-                                               .format(errmsg, self.name))
+                                              .format(errmsg, self.name))
                     return None
                 else:
                     raise
