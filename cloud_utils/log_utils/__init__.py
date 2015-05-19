@@ -1,4 +1,3 @@
-__author__ = 'clarkmatthew'
 
 import os
 import re
@@ -19,7 +18,8 @@ _EUTESTER_FORCE_ANSI_ESCAPE = False
 # This can also be set as an env var
 _EUTESTER_NON_STANDARD_ANSI_SUPPORT = False
 
-class TEXT_STYLE():
+
+class TextStyle():
     BOLD = 1
     FAINT = 2
     ITALIC = 3
@@ -41,7 +41,8 @@ class TEXT_STYLE():
         STRIKED: 'del',
     }
 
-class FOREGROUND_COLOR():
+
+class ForegroundColor():
     BLACK = 30
     RED = 31
     GREEN = 32
@@ -49,9 +50,10 @@ class FOREGROUND_COLOR():
     BLUE = 34
     MAGENTA = 35
     CYAN = 36
-    WHITE  = 37
+    WHITE = 37
 
-class BACKGROUND_COLOR():
+
+class BackGroundColor():
     BG_BLACK = 40
     BG_RED = 41
     BG_GREEN = 42
@@ -59,7 +61,7 @@ class BACKGROUND_COLOR():
     BG_BLUE = 44
     BG_MAGENTA = 45
     BG_CYAN = 46
-    BG_WHITE  = 47
+    BG_WHITE = 47
 
 
 def markup(text, markups=[1], resetvalue="\033[0m", force=None, allow_nonstandard=None,
@@ -111,9 +113,9 @@ def markup(text, markups=[1], resetvalue="\033[0m", force=None, allow_nonstandar
             if not (hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()):
                 return text
         if not allow_nonstandard:
-           markups = _standardize_markups(markups)
+            markups = _standardize_markups(markups)
 
-        markupvalues=";".join(str(x) for x in markups)
+        markupvalues = ";".join(str(x) for x in markups)
         startmarkup = '\033[{0}m'.format(markupvalues)
         endmarkup = '\033[0m'
     lines = []
@@ -123,6 +125,7 @@ def markup(text, markups=[1], resetvalue="\033[0m", force=None, allow_nonstandar
     if text.endswith('\n') and not buf.endswith('\n'):
         buf += '\n'
     return buf
+
 
 def _standardize_markups(markups):
     newmarkups = []
@@ -136,6 +139,7 @@ def _standardize_markups(markups):
                 newmarkups.append(markup)
     return newmarkups
 
+
 def _ascii_markups_to_html_tags(markups, open_bracket="<", close_bracket=">"):
     # '<font color="red">This is some text!</font>'
     color = None
@@ -145,11 +149,11 @@ def _ascii_markups_to_html_tags(markups, open_bracket="<", close_bracket=">"):
     markups = _standardize_markups(markups)
     for value in markups:
         if not color:
-            for fg_color in dir(FOREGROUND_COLOR):
-                if getattr(FOREGROUND_COLOR, fg_color) == value:
+            for fg_color in dir(ForegroundColor):
+                if getattr(ForegroundColor, fg_color) == value:
                     color = fg_color
-            if value in TEXT_STYLE.html_tag_map and TEXT_STYLE.html_tag_map[value]:
-                style_tags.append(TEXT_STYLE.html_tag_map[value])
+            if value in TextStyle.html_tag_map and TextStyle.html_tag_map[value]:
+                style_tags.append(TextStyle.html_tag_map[value])
     for tag in style_tags:
         start_tag = "{0}{1}{2}{3}".format(start_tag, open_bracket, tag, close_bracket)
         end_tag = "{0}/{1}{2}{3}".format(open_bracket, tag, close_bracket, end_tag)
@@ -159,18 +163,20 @@ def _ascii_markups_to_html_tags(markups, open_bracket="<", close_bracket=">"):
         end_tag = "{0}{1}".format(end_tag, "{0}/font{1}".format(open_bracket, close_bracket))
     return (start_tag, end_tag)
 
+
 def get_traceback():
         '''
         Returns a string buffer with traceback, to be used for debug/info purposes.
         '''
         try:
             out = StringIO.StringIO()
-            traceback.print_exception(*sys.exc_info(),file=out)
+            traceback.print_exception(*sys.exc_info(), file=out)
             out.seek(0)
             buf = out.read()
         except Exception, e:
                 buf = "Could not get traceback"+str(e)
         return str(buf)
+
 
 @staticmethod
 def get_terminal_size():
@@ -178,20 +184,21 @@ def get_terminal_size():
     Attempts to get terminal size. Currently only Linux.
     returns (height, width)
     '''
-    h=30
-    w=80
+    h = 30
+    w = 80
     try:
         # todo Add Windows support
-        t_h,t_w = struct.unpack('hh', fcntl.ioctl(sys.stdout,
-                                               termios.TIOCGWINSZ,
-                                               '1234'))
-        #Temp hack. Some env will return <= 1
+        t_h, t_w = struct.unpack('hh', fcntl.ioctl(sys.stdout,
+                                                   termios.TIOCGWINSZ,
+                                                   '1234'))
+        # Temp hack. Some env will return <= 1
         if t_h > 1 and t_w > 1:
             h = t_h
             w = t_w
     except:
         pass
-    return (h,w)
+    return (h, w)
+
 
 def printinfo(func):
     '''
@@ -212,7 +219,7 @@ def printinfo(func):
 
     @wraps(func)
     def methdecor(*func_args, **func_kwargs):
-        _args_dict = {} # If method has this kwarg populate with args here
+        _args_dict = {}  # If method has this kwarg populate with args here
         try:
             defaults = func.func_defaults
             kw_count = len(defaults or [])
@@ -220,11 +227,11 @@ def printinfo(func):
             arg_count = func.func_code.co_argcount - kw_count
             var_names = func.func_code.co_varnames[:func.func_code.co_argcount]
             arg_names = var_names[:arg_count]
-            kw_names =  var_names[arg_count:func.func_code.co_argcount]
+            kw_names = var_names[arg_count:func.func_code.co_argcount]
             kw_defaults = {}
             for kw_name in kw_names:
                 kw_defaults[kw_name] = defaults[kw_names.index(kw_name)]
-            arg_string=''
+            arg_string = ''
             # If the underlying method is using a special kwarg named
             # '_args_dict' then provide all the args & kwargs it was
             # called with in that dict for inspection with that method
@@ -232,25 +239,23 @@ def printinfo(func):
                 func_args_empty = True
             else:
                 func_args_empty = False
-            if (not func_args_empty or func_kwargs) and \
-                            '_args_dict' in kw_names:
-                if not '_args_dict' in func_kwargs or \
-                        not func_kwargs['_args_dict']:
-                    func_kwargs['_args_dict'] = {'args':func_args,
-                                                 'kwargs':func_kwargs}
+            if (not func_args_empty or func_kwargs) and '_args_dict' in kw_names:
+                if '_args_dict' not in func_kwargs or not func_kwargs['_args_dict']:
+                    func_kwargs['_args_dict'] = {'args': func_args,
+                                                 'kwargs': func_kwargs}
             # iterate on func_args instead of arg_names to make sure we pull out
             # self object if present
             for count, arg in enumerate(func_args):
-                if count == 0 and var_names[0] == 'self': #and if hasattr(arg, func.func_name):
-                    #self was passed don't print obj addr, and save obj for later
+                if count == 0 and var_names[0] == 'self':  # and if hasattr(arg, func.func_name):
+                    # self was passed don't print obj addr, and save obj for later
                     arg_string += 'self'
                     selfobj = arg
                 elif count >= arg_count:
-                    #Handle case where kw args are passed w/o key word as a positional arg add
-                    #Add it to the kw_defaults so it gets printed later
+                    # Handle case where kw args are passed w/o key word as a positional arg add
+                    # Add it to the kw_defaults so it gets printed later
                     kw_defaults[var_names[count]] = arg
                 else:
-                    #This is a positional arg so grab name from arg_names list
+                    # This is a positional arg so grab name from arg_names list
                     arg_string += ', '
                     arg_string += str(arg_names[count])+'='+str(arg)
             kw_string = ""
@@ -264,7 +269,7 @@ def printinfo(func):
                           ":" + str(func.func_code.co_firstlineno) + ")Starting method: " + \
                           str(func.func_name) + '(' + arg_string + kw_string + ')'
             debugmethod = None
-            if selfobj and hasattr(selfobj,'debug'):
+            if selfobj and hasattr(selfobj, 'debug'):
                 debug = getattr(selfobj, 'debug')
                 if isinstance(debug, types.MethodType):
                     debugmethod = debug
@@ -277,16 +282,3 @@ def printinfo(func):
             print 'printinfo method decorator error:'+str(e)
         return func(*func_args, **func_kwargs)
     return methdecor
-
-
-
-
-
-
-
-
-
-
-
-
-

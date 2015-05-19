@@ -209,5 +209,3 @@ class Eucarc(dict):
                 if not skip:
                     ret_dict[key] = value
         return ret_dict
-
-
