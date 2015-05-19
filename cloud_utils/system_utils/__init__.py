@@ -1,5 +1,6 @@
 import subprocess
 
+
 def local(cmd):
         """
         Run a command on the localhost
@@ -16,4 +17,3 @@ def local(cmd):
             error.output = output
             raise error
         return output.split("\n")
-

@@ -101,42 +101,107 @@ class Machine(object):
         self.wget_last_status = 0
         self.machine_setup()
 
-
     def machine_setup(self):
         # For custom implementations
         pass
+
+    def __repr__(self):
+        return "{0}:{1}".format(self.__class__.__name__, self.hostname)
 
     @property
     def _identifier(self):
         return str(self.hostname or self.__class__)
 
-    @property
-    def distro(self):
-        # Linux Distribution information
-        if not self._distroname:
-            distro, ver = self._get_distro_info_from_machine()
-            self._distroname = distro
-            self._distrover = ver
-        return self._distroname
+    #############################################################################################
+    #                       Debug Utilities                                                     #
+    #############################################################################################
 
-    @distro.setter
-    def distro(self, new_distro):
-        # Linux Distribution information
-        self._distroname = new_distro
+    def debug(self, msg):
+        """
+        Note: Should use self.log.debug instead.
+        Used to print debug, defaults to print() but over ridden by self.debugmethod if not None
+        msg - mandatory -string, message to be printed
+        """
+        if self.verbose is True:
+            self.log.debug(msg)
 
-    @property
-    def distro_ver(self):
-        # Linux Distribution information
-        if not self._distrover:
-            distro, ver = self._get_distro_info_from_machine()
-            self._distroname = distro
-            self._distrover = ver
-        return self._distrover
+    def poll_log(self, log_file="/var/log/messages"):
+        self.log.debug("Starting to poll " + log_file)
+        self.log_channel = self.ssh.connection.invoke_shell()
+        self.log_channel.send("tail -f " + log_file + " \n")
+        # Begin polling channel for any new data
+        while self.log_active[log_file]:
+            # CLOUD LOG
+            rl, wl, xl = select.select([self.log_channel], [], [], 0.0)
+            if len(rl) > 0:
+                self.log_buffers[log_file] += self.log_channel.recv(1024)
+            time.sleep(1)
 
-    @distro_ver.setter
-    def distro_ver(self, new_distro):
-        # Linux Distribution information
-        self._distrover = new_distro
+    def start_log(self, log_file="/var/log/messages"):
+        """Start thread to poll logs"""
+        thread = threading.Thread(target=self.poll_log, args=log_file)
+        thread.daemon = True
+        self.log_threads[log_file] = thread.start()
+        self.log_active[log_file] = True
+
+    def stop_log(self, log_file="/var/log/messages"):
+        """Terminate thread that is polling logs"""
+        self.log_active[log_file] = False
+
+    def save_log(self, log_file, path="logs"):
+        """Save log buffer for log_file to the path to a file"""
+        if not os.path.exists(path):
+            os.mkdir(path)
+        FILE = open(path + '/' + log_file, "w")
+        FILE.writelines(self.log_buffers[log_file])
+        FILE.close()
+
+    def save_all_logs(self, path="logs"):
+        """Save log buffers to a file"""
+        for log_file in self.log_buffers.keys():
+            self.save_log(log_file, path)
+
+    def dump_netfail_info(self, ip=None, mac=None, pass1=None, pass2=None, showpass=True,
+                          taillength=50):
+        """
+        Debug method to provide potentially helpful info from current machine when debugging
+         connectivity issues.
+        """
+        self.log.debug('Attempting to dump network information, args: ip:{0}, mac:{1}, '
+                       'pass1:{2}, pass2:{3}'.format(ip, mac,
+                                                     self.get_masked_pass(pass1, show=True),
+                                                     self.get_masked_pass(pass2, show=True)))
+        self.ping_cmd(ip, verbose=True)
+        self.sys('arp -a')
+        self.sys('dmesg | tail -' + str(taillength))
+        self.sys('cat /var/log/messages | tail -' + str(taillength))
+
+    def get_masked_pass(self, pwd, firstlast=True, charcount=True, show=False):
+        '''
+        format password for printing
+        options:
+        pwd - string- the text password to format
+        firstlast -boolean - show the first and last characters in pwd
+        charcount -boolean - print a "*" for each char in pwd, otherwise return fixed
+                   string '**hidden**'
+        show - boolean - convert pwd to str() and return it in plain text
+        '''
+        ret = ""
+        if pwd is None:
+            return ""
+        if show is True:
+            return str(pwd)
+        if charcount is False:
+            return "**hidden**"
+        for x in xrange(0, len(pwd)):
+            if (x == 0 or x == len(pwd)) and firstlast:
+                ret = ret + pwd[x]
+            else:
+                ret += "*"
+
+    #############################################################################################
+    #                         Package Management                                                #
+    #############################################################################################
 
     @property
     def package_manager(self):
@@ -147,50 +212,6 @@ class Machine(object):
     @package_manager.setter
     def package_manager(self, new_package_manager):
         self._package_manager = new_package_manager
-
-    @property
-    def arch(self):
-        if not self._arch:
-            self._get_arch_info_from_machine()
-        return self._arch
-
-    @arch.setter
-    def arch(self, value):
-        self._arch = value
-
-    @property
-    def ssh(self):
-        if not self._ssh:
-            if self._do_ssh_connect:
-                self._ssh = SshConnection(**self.ssh_connect_kwargs)
-        return self._ssh
-
-    @ssh.setter
-    def ssh(self, newssh):
-        self._ssh = newssh
-
-    @property
-    def sftp(self):
-        if not self._sftp:
-            self._sftp = self.ssh.connection.open_sftp()
-        return self._sftp
-
-    @sftp.setter
-    def sftp(self, newsftp):
-        self._sftp = newsftp
-
-    def _get_arch_info_from_machine(self, verbose=False):
-        '''
-        Attempt to detect and assign the arch info for this machine
-        '''
-        try:
-            arch = self.sys('uname -p', code=0, verbose=verbose)[0]
-            self._arch = arch
-            return arch
-        except Exception, UE:
-            self.log.debug('Failed to get arch info from:"{0}", err:"{1}"'
-                       .format(self.hostname, str(UE)))
-        return None
 
     def _get_distro_info_from_machine(self, verbose=False):
         """
@@ -203,7 +224,7 @@ class Machine(object):
             out = self.sys('cat /etc/issue', listformat=False, code=0, verbose=verbose)
         except CommandExitCodeException, CE:
             self.log.debug('Failed to fetch /etc/issue from machine:"{0}", err:"{1}"'
-                       .format(self.hostname, str(CE)))
+                           .format(self.hostname, str(CE)))
             out = None
         if out:
             try:
@@ -234,49 +255,63 @@ class Machine(object):
         raise RuntimeError('Unable to determine package manager for machine:{0}'
                            .format(self.hostname))
 
-    def put_templated_file(self, local_src, remote_dest, **kwargs):
-        '''
-        jinja file template aid
-        '''
-        tmp = tempfile.mktemp()
-        try:
-            render_file_template(local_src, tmp, **kwargs)
-            self.ssh.sftp_put(tmp, remote_dest)
-        finally:
-            os.remove(tmp)
+    def upgrade(self, package=None, nogpg=False):
+        self.package_manager.upgrade(package, nogpg=nogpg)
+
+    def add_repo(self, url, name="test-repo"):
+        self.package_manager.add_repo(url, name)
+
+    def install(self, package, nogpg=False, timeout=300):
+        self.package_manager.install(package, nogpg=nogpg)
+
+    def update_repos(self):
+        self.package_manager.update_repos()
+
+    def get_package_info(self):
+        self.package_manager.get_package_info()
+
+    def get_installed_packages(self):
+        self.package_manager.get_installed_packages()
+
+    #############################################################################################
+    #                       Network Utilties                                                    #
+    #############################################################################################
+
+    @property
+    def ssh(self):
+        if not self._ssh:
+            if self._do_ssh_connect:
+                self._ssh = SshConnection(**self.ssh_connect_kwargs)
+        return self._ssh
+
+    @ssh.setter
+    def ssh(self, newssh):
+        self._ssh = newssh
+
+    @property
+    def sftp(self):
+        if not self._sftp:
+            self._sftp = self.ssh.connection.open_sftp()
+        return self._sftp
+
+    @sftp.setter
+    def sftp(self, newsftp):
+        self._sftp = newsftp
 
     def refresh_ssh(self):
         self.ssh.refresh_connection()
 
-    def debug(self, msg):
+    def start_interactive_ssh(self, timeout=180):
         """
-        Note: Should use self.log.debug instead.
-        Used to print debug, defaults to print() but over ridden by self.debugmethod if not None
-        msg - mandatory -string, message to be printed
+        start a very basic interactive ssh session with this machine
         """
-        if self.verbose is True:
-            self.log.debug(msg)
+        return self.ssh.start_interactive(timeout=timeout)
 
     def refresh_connection(self):
         '''
         Attempt to restart/re-create a the machine's ssh connection
         '''
         self.ssh.refresh_connection()
-
-    def reboot(self, force=True):
-        '''
-        Reboot the machine using 'reboot' on the host
-        '''
-        if force:
-            try:
-                self.sys("reboot -f", timeout=3)
-            except Exception, e:
-                pass
-        else:
-            try:
-                self.sys("reboot", timeout=3)
-            except Exception, e:
-                pass
 
     def interrupt_network(self, time=120, interface=None):
         '''
@@ -351,18 +386,18 @@ class Machine(object):
         listformat -optional - specifies returned output in list of lines, or single string buffer
         """
         return self.cmd(cmd, verbose=verbose, timeout=timeout, listformat=listformat,
-                        cb=self.str_found_cb, cbargs=[regex, verbose])
+                        cb=self._str_found_cb, cbargs=[regex, verbose])
 
-    def str_found_cb(self, buf, regex, verbose, search=True):
+    def _str_found_cb(self, buf, regex, verbose, search=True):
         """
         Return sshcbreturn type setting stop to True if given regex matches against
         given string buf
         """
         if verbose:
             self.log.debug(str(buf))
-        return SshCbReturn(stop=self.str_found(buf, regex=regex, search=search))
+        return SshCbReturn(stop=self._str_found(buf, regex=regex, search=search))
 
-    def str_found(self, buf, regex, search=True):
+    def _str_found(self, buf, regex, search=True):
         """
         Return True if given regex matches against given string
         """
@@ -375,8 +410,136 @@ class Machine(object):
         else:
             return False
 
+    def wget_remote_image(self,
+                          url,
+                          path=None,
+                          dest_file_name=None,
+                          user=None,
+                          password=None,
+                          retryconn=True,
+                          timeout=300):
+        self.log.debug('wget_remote_image, url:' + str(url) + ", path:" + str(path))
+        cmd = 'wget '
+        if path:
+            cmd = cmd + " -P " + str(path)
+        if dest_file_name:
+            cmd = cmd + " -O " + str(dest_file_name)
+        if user:
+            cmd = cmd + " --user " + str(user)
+        if password:
+            cmd = cmd + " --password " + str(password)
+        if retryconn:
+            cmd += ' --retry-connrefused '
+        cmd = cmd + ' ' + str(url)
+        self.log.debug('wget_remote_image cmd: ' + str(cmd))
+        ret = self.cmd(cmd, timeout=timeout, cb=self.wget_status_cb)
+        if ret['status'] != 0:
+            raise Exception('wget_remote_image failed with status:' + str(ret['status']))
+        self.log.debug('wget_remote_image succeeded')
+
+    def wget_status_cb(self, buf):
+        ret = SshCbReturn(stop=False)
+        try:
+            buf = buf.strip()
+            val = buf.split()[0]
+            if val != self.wget_last_status:
+                if re.match('^\d+\%', buf):
+                    sys.stdout.write("\r\x1b[K" + str(buf))
+                    sys.stdout.flush()
+                    self.wget_last_status = val
+                else:
+                    print buf
+        except Exception, e:
+            pass
+        finally:
+            return ret
+
+    def ping_check(self, host):
+        out = self.ping_cmd(host)
+        self.log.debug('Ping attempt to host:' + str(host) + ", status code:" + str(out['status']))
+        if out['status'] != 0:
+            raise Exception('Ping returned error:' + str(out['status']) + ' to host:' + str(host))
+
+    def ping_cmd(self, host, count=2, pingtimeout=10, commandtimeout=120, listformat=False,
+                 verbose=True):
+        cmd = 'ping -c ' + str(count) + ' -t ' + str(pingtimeout)
+        if verbose:
+            cmd += ' -v '
+        cmd = cmd + ' ' + str(host)
+        out = self.cmd(cmd, verbose=verbose, timeout=commandtimeout, listformat=listformat)
+        if verbose:
+            # print all returned attributes from ping command dict
+            for item in sorted(out):
+                self.log.debug(str(item) + " = " + str(out[item]))
+        return out
+
+    ###############################################################################################
+    #                           OS/System Utilties                                                #
+    ###############################################################################################
+
+    @property
+    def arch(self):
+        if not self._arch:
+            self._get_arch_info_from_machine()
+        return self._arch
+
+    @arch.setter
+    def arch(self, value):
+        self._arch = value
+
+    @property
+    def distro(self):
+        # Linux Distribution information
+        if not self._distroname:
+            distro, ver = self._get_distro_info_from_machine()
+            self._distroname = distro
+            self._distrover = ver
+        return self._distroname
+
+    @distro.setter
+    def distro(self, new_distro):
+        # Linux Distribution information
+        self._distroname = new_distro
+
+    @property
+    def distro_ver(self):
+        # Linux Distribution information
+        if not self._distrover:
+            distro, ver = self._get_distro_info_from_machine()
+            self._distroname = distro
+            self._distrover = ver
+        return self._distrover
+
+    @distro_ver.setter
+    def distro_ver(self, new_distro):
+        # Linux Distribution information
+        self._distrover = new_distro
+
+    def _get_arch_info_from_machine(self, verbose=False):
+        '''
+        Attempt to detect and assign the arch info for this machine
+        '''
+        try:
+            arch = self.sys('uname -p', code=0, verbose=verbose)[0]
+            self._arch = arch
+            return arch
+        except Exception, UE:
+            self.log.debug('Failed to get arch info from:"{0}", err:"{1}"'
+                           .format(self.hostname, str(UE)))
+        return None
+
     def get_uptime(self):
         return int(self.sys('cat /proc/uptime', code=0)[0].split()[1].split('.')[0])
+
+    def mkfs(self, partition, type="ext3"):
+        self.sys("mkfs." + type + " -F " + partition)
+
+    def mount(self, device, path):
+        self.sys("mount " + device + " " + path)
+
+    ###############################################################################################
+    #                               Process Utils                                                 #
+    ###############################################################################################
 
     def get_service_is_running_status(self, service, code=0):
         """
@@ -391,7 +554,7 @@ class Machine(object):
             return False
         except Exception, e:
             self.log.debug('Could not get "{0}" service state from machine: {1}, err:{2}'
-                       .format(service, self.hostname, str(e)))
+                           .format(service, self.hostname, str(e)))
 
     def get_elapsed_seconds_since_pid_started(self, pid):
         """
@@ -432,8 +595,89 @@ class Machine(object):
                 days * seconds_day)
         except Exception, ES:
             self.log.debug('{0}\n"get_elapsed_seconds_since_pid_started" error: "{1}"'
-                       .format(get_traceback(), str(ES)))
+                           .format(get_traceback(), str(ES)))
         return int(elapsed)
+
+    def found(self, command, regex, verbose=True):
+        """ Returns a Boolean of whether the result of the command contains the regex"""
+        result = self.sys(command, verbose=verbose)
+        if result is None or result == []:
+            return False
+        for line in result:
+            found = re.search(regex, line)
+            if found:
+                return True
+        return False
+
+    #############################################################################################
+    #                       User Related Utils                                                  #
+    #############################################################################################
+
+    def get_users(self):
+        '''
+        Attempts to return a list of normal linux access local to this instance.
+        Returns a list of all non-root access found within the uid_min/max range who are
+        not marked nologin
+        '''
+        users = []
+        try:
+            uid_min = str(self.sys("grep ^UID_MIN /etc/login.defs | awk '{print $2}'")[0]).strip()
+            uid_max = str(self.sys("grep ^UID_MAX /etc/login.defs | awk '{print $2}'")[0]).strip()
+            try:
+                users = str(self.sys("cat /etc/passwd | grep -v nologin | awk -F: '{ if ( $3 >= " +
+                                     str(uid_min) + " && $3 <= " + str(uid_max) +
+                                     " ) print $0}' ")[0]).split(":")[0]
+            except IndexError, ie:
+                self.log.debug("No access found, passing exception:" + str(ie))
+                pass
+            return users
+        except Exception, e:
+            self.log.debug("Failed to get local access. Err:" + str(e))
+
+    def get_user_password(self, username):
+        '''
+        Attempts to verify whether or not a user 'username' has a password set or not on
+        this instance.
+        returns true if a password is detected, else false
+
+        '''
+        password = None
+        out = self.sys("cat /etc/passwd | grep '^" + str(username) + "'")
+        if out != []:
+            self.log.debug("pwd out:" + str(out[0]))
+            if (str(out[0]).split(":")[1] == "x"):
+                out = self.sys("cat /etc/shadow | grep '^" + str(username) + "'")
+                if out != []:
+                    password = str(out[0]).split(":")[1]
+                    if password == "" or re.match("^!+$", password):
+                        password = None
+        return password
+
+    def get_user_group_info(self, username, index=3):
+        '''
+        Attempts to return a list of groups for a specific user on this instance.
+        index is set at the grouplist by default [3], but can be adjust to include the username,
+        password, and group id as well in the list.
+        where the parsed string should be in format 'name:password:groupid1:groupid2:groupid3...'
+        '''
+        groups = []
+        out = []
+        try:
+            out = self.sys("cat /etc/group | grep '^" + str(username) + "'")
+            if out != []:
+                groups = str(out[0]).strip().split(":")
+                # return list starting at group index
+                groups = groups[index:len(groups)]
+            return groups
+        except Exception, e:
+            self.log.debug("No group found for user:" + str(username) + ", err:" + str(e))
+
+    ###############################################################################################
+    #                       File Related Utils                                                    #
+    ###############################################################################################
+
+    def chown(self, user, path):
+        self.sys("chwon " + user + ":" + user + " " + path)
 
     def get_abs_path(self, path):
         out = self.sys('echo "$(cd "$(dirname "{0}")" && pwd)/$(basename "{0}")"'.format(path),
@@ -488,237 +732,6 @@ class Machine(object):
 
     def get_file_userid(self, path):
         return self.sftp.lstat(path).st_uid
-
-    def get_masked_pass(self, pwd, firstlast=True, charcount=True, show=False):
-        '''
-        format password for printing
-        options:
-        pwd - string- the text password to format
-        firstlast -boolean - show the first and last characters in pwd
-        charcount -boolean - print a "*" for each char in pwd, otherwise return fixed
-                   string '**hidden**'
-        show - boolean - convert pwd to str() and return it in plain text
-        '''
-        ret = ""
-        if pwd is None:
-            return ""
-        if show is True:
-            return str(pwd)
-        if charcount is False:
-            return "**hidden**"
-        for x in xrange(0, len(pwd)):
-            if (x == 0 or x == len(pwd)) and firstlast:
-                ret = ret + pwd[x]
-            else:
-                ret += "*"
-
-    def mkfs(self, partition, type="ext3"):
-        self.sys("mkfs." + type + " -F " + partition)
-
-    def mount(self, device, path):
-        self.sys("mount " + device + " " + path)
-
-    def chown(self, user, path):
-        self.sys("chwon " + user + ":" + user + " " + path)
-
-    def ping_check(self, host):
-        out = self.ping_cmd(host)
-        self.log.debug('Ping attempt to host:' + str(host) + ", status code:" + str(out['status']))
-        if out['status'] != 0:
-            raise Exception('Ping returned error:' + str(out['status']) + ' to host:' + str(host))
-
-    def ping_cmd(self, host, count=2, pingtimeout=10, commandtimeout=120, listformat=False,
-                 verbose=True):
-        cmd = 'ping -c ' + str(count) + ' -t ' + str(pingtimeout)
-        if verbose:
-            cmd += ' -v '
-        cmd = cmd + ' ' + str(host)
-        out = self.cmd(cmd, verbose=verbose, timeout=commandtimeout, listformat=listformat)
-        if verbose:
-            # print all returned attributes from ping command dict
-            for item in sorted(out):
-                self.log.debug(str(item) + " = " + str(out[item]))
-        return out
-
-    def dump_netfail_info(self, ip=None, mac=None, pass1=None, pass2=None, showpass=True,
-                          taillength=50):
-        """
-        Debug method to provide potentially helpful info from current machine when debugging
-         connectivity issues.
-        """
-        self.log.debug('Attempting to dump network information, args: ip:{0}, mac:{1}, '
-                   'pass1:{2}, pass2:{3}'.format(ip,
-                                                 mac,
-                                                 self.get_masked_pass(pass1, show=True),
-                                                 self.get_masked_pass(pass2, show=True)))
-        self.ping_cmd(ip, verbose=True)
-        self.sys('arp -a')
-        self.sys('dmesg | tail -' + str(taillength))
-        self.sys('cat /var/log/messages | tail -' + str(taillength))
-
-    def found(self, command, regex, verbose=True):
-        """ Returns a Boolean of whether the result of the command contains the regex"""
-        result = self.sys(command, verbose=verbose)
-        if result is None or result == []:
-            return False
-        for line in result:
-            found = re.search(regex, line)
-            if found:
-                return True
-        return False
-
-    def wget_remote_image(self,
-                          url,
-                          path=None,
-                          dest_file_name=None,
-                          user=None,
-                          password=None,
-                          retryconn=True,
-                          timeout=300):
-        self.log.debug('wget_remote_image, url:' + str(url) + ", path:" + str(path))
-        cmd = 'wget '
-        if path:
-            cmd = cmd + " -P " + str(path)
-        if dest_file_name:
-            cmd = cmd + " -O " + str(dest_file_name)
-        if user:
-            cmd = cmd + " --user " + str(user)
-        if password:
-            cmd = cmd + " --password " + str(password)
-        if retryconn:
-            cmd += ' --retry-connrefused '
-        cmd = cmd + ' ' + str(url)
-        self.log.debug('wget_remote_image cmd: ' + str(cmd))
-        ret = self.cmd(cmd, timeout=timeout, cb=self.wget_status_cb)
-        if ret['status'] != 0:
-            raise Exception('wget_remote_image failed with status:' + str(ret['status']))
-        self.log.debug('wget_remote_image succeeded')
-
-    def wget_status_cb(self, buf):
-        ret = SshCbReturn(stop=False)
-        try:
-            buf = buf.strip()
-            val = buf.split()[0]
-            if val != self.wget_last_status:
-                if re.match('^\d+\%', buf):
-                    sys.stdout.write("\r\x1b[K" + str(buf))
-                    sys.stdout.flush()
-                    self.wget_last_status = val
-                else:
-                    print buf
-        except Exception, e:
-            pass
-        finally:
-            return ret
-
-    def get_df_info(self, path=None, verbose=False):
-        """
-        Return df's output in dict format for a given path.
-        If path is not given will give the df info for the current working dir used in the ssh
-        session this command is executed in (ie: /home/user or /root).
-        path - optional -string, used to specifiy path to use in df command. Default is PWD of
-                         ssh shelled command
-        verbose - optional -boolean, used to specify whether or debug is printed during
-                            this command.
-        Example:
-            dirpath = '/disk1/storage'
-            dfout = self.get_df_info(path=dirpath)
-            available_space = dfout['available']
-            mounted_on = dfout['mounted']
-            filesystem = dfout['filesystem']
-        """
-        ret = {}
-        if path is None:
-            path = '${PWD}'
-        cmd = 'df ' + str(path)
-        if verbose:
-            self.log.debug('get_df_info cmd:' + str(cmd))
-        output = self.sys(cmd, code=0, verbose=verbose)
-        # Get the presented fields from commands output,
-        # Convert to lowercase, use this as our dict keys
-        fields = []
-        line = 0
-        for field in str(output[line]).split():
-            fields.append(str(field).lower())
-        # Move line forward and gather columns into the dict to be returned
-        x = 0
-        line += 1
-        # gather columns equal to the number of column headers accounting for newlines...
-        while x < (len(fields) - 1):
-            for value in str(output[line]).split():
-                ret[fields[x]] = value
-                if verbose:
-                    self.log.debug(str('DF FIELD: ' + fields[x]) + ' = ' + str(value))
-                x += 1
-            line += 1
-        return ret
-
-    def upgrade(self, package=None, nogpg=False):
-        self.package_manager.upgrade(package, nogpg=nogpg)
-
-    def add_repo(self, url, name="test-repo"):
-        self.package_manager.add_repo(url, name)
-
-    def install(self, package, nogpg=False, timeout=300):
-        self.package_manager.install(package, nogpg=nogpg)
-
-    def update_repos(self):
-        self.package_manager.update_repos()
-
-    def get_package_info(self):
-        self.package_manager.get_package_info()
-
-    def get_installed_packages(self):
-        self.package_manager.get_installed_packages()
-
-    def get_available(self, path, unit=1):
-        """
-        Return df output's available field. By default this is KB.
-        path - optional -string.
-        unit - optional -integer used to divide return value.
-               Can be used to convert KB to MB, GB, TB, etc..
-        """
-        size = int(self.get_df_info(path=path)['available'])
-        return size / unit
-
-    def poll_log(self, log_file="/var/log/messages"):
-        self.log.debug("Starting to poll " + log_file)
-        self.log_channel = self.ssh.connection.invoke_shell()
-        self.log_channel.send("tail -f " + log_file + " \n")
-        # Begin polling channel for any new data
-        while self.log_active[log_file]:
-            # CLOUD LOG
-            rl, wl, xl = select.select([self.log_channel], [], [], 0.0)
-            if len(rl) > 0:
-                self.log_buffers[log_file] += self.log_channel.recv(1024)
-            time.sleep(1)
-
-    def start_log(self, log_file="/var/log/messages"):
-        """Start thread to poll logs"""
-        thread = threading.Thread(target=self.poll_log, args=log_file)
-        thread.daemon = True
-        self.log_threads[log_file] = thread.start()
-        self.log_active[log_file] = True
-
-    def stop_log(self, log_file="/var/log/messages"):
-        """Terminate thread that is polling logs"""
-        self.log_active[log_file] = False
-
-    def save_log(self, log_file, path="logs"):
-        """Save log buffer for log_file to the path to a file"""
-        if not os.path.exists(path):
-            os.mkdir(path)
-        FILE = open(path + '/' + log_file, "w")
-        FILE.writelines(self.log_buffers[log_file])
-        FILE.close()
-
-    def save_all_logs(self, path="logs"):
-        """Save log buffers to a file"""
-        for log_file in self.log_buffers.keys():
-            self.save_log(log_file, path)
-
-    def __repr__(self):
-        return "{0}:{1}".format(self.__class__.__name__, self.hostname)
 
     @printinfo
     def dd_monitor(self,
@@ -911,7 +924,7 @@ class Machine(object):
                             ret['dd_rate'] = float(summary[7])
                             ret['dd_units'] = str(summary[8])
                     except Exception, e:
-                        # catch any exception in the data parsing and show it as info/debug later...
+                        # catch any exception in the data parsing and show it as info/debug later
                         tb = get_traceback()
                         infobuf = '\n\nCaught exception while processing line:"' + str(line) + '"'
                         infobuf += '\n' + str(tb) + "\n" + str(e) + '\n'
@@ -939,8 +952,8 @@ class Machine(object):
             if not done:
                 # Attempt to kill dd process...
                 self.sys('kill ' + str(dd_pid))
-                raise RuntimeError('dd_monitor timed out before dd cmd completed, elapsed:' +
-                                    str(elapsed) + '/' + str(timeout))
+                raise RuntimeError('dd_monitor timed out before dd cmd completed, elapsed:{0}/{1}'
+                                   .format(str(elapsed), str(timeout)))
             else:
                 # sync to ensure writes to dev
                 if sync:
@@ -966,16 +979,68 @@ class Machine(object):
                 raise CommandExitCodeException('dd in records do not match out records in '
                                                'transfer')
             self.log.debug('Done with dd, copied:{0} bytes, {1} fullrecords, {2} partrecords - '
-                       'over elapsed:{3}'.format(ret['dd_bytes'],
-                                                 ret['dd_full_rec_out'],
-                                                 ret['dd_partial_rec_out'],
-                                                 elapsed))
+                           'over elapsed:{3}'.format(ret['dd_bytes'],
+                                                     ret['dd_full_rec_out'],
+                                                     ret['dd_partial_rec_out'],
+                                                     elapsed))
             self.sys('rm -f ' + str(tmpfile))
             self.sys('rm -f ' + str(tmppidfile))
         except:
             self.sys('rm -f ' + str(tmpfile))
             raise
         return ret
+
+    def get_df_info(self, path=None, verbose=False):
+        """
+        Return df's output in dict format for a given path.
+        If path is not given will give the df info for the current working dir used in the ssh
+        session this command is executed in (ie: /home/user or /root).
+        path - optional -string, used to specifiy path to use in df command. Default is PWD of
+                         ssh shelled command
+        verbose - optional -boolean, used to specify whether or debug is printed during
+                            this command.
+        Example:
+            dirpath = '/disk1/storage'
+            dfout = self.get_df_info(path=dirpath)
+            available_space = dfout['available']
+            mounted_on = dfout['mounted']
+            filesystem = dfout['filesystem']
+        """
+        ret = {}
+        if path is None:
+            path = '${PWD}'
+        cmd = 'df ' + str(path)
+        if verbose:
+            self.log.debug('get_df_info cmd:' + str(cmd))
+        output = self.sys(cmd, code=0, verbose=verbose)
+        # Get the presented fields from commands output,
+        # Convert to lowercase, use this as our dict keys
+        fields = []
+        line = 0
+        for field in str(output[line]).split():
+            fields.append(str(field).lower())
+        # Move line forward and gather columns into the dict to be returned
+        x = 0
+        line += 1
+        # gather columns equal to the number of column headers accounting for newlines...
+        while x < (len(fields) - 1):
+            for value in str(output[line]).split():
+                ret[fields[x]] = value
+                if verbose:
+                    self.log.debug(str('DF FIELD: ' + fields[x]) + ' = ' + str(value))
+                x += 1
+            line += 1
+        return ret
+
+    def get_available(self, path, unit=1):
+        """
+        Return df output's available field. By default this is KB.
+        path - optional -string.
+        unit - optional -integer used to divide return value.
+               Can be used to convert KB to MB, GB, TB, etc..
+        """
+        size = int(self.get_df_info(path=path)['available'])
+        return size / unit
 
     def assertFilePresent(self, filepath):
         '''
@@ -989,67 +1054,17 @@ class Machine(object):
             raise Exception("File:" + filepath + " not found on instance:" + self.id)
         self.log.debug('File ' + filepath + ' is present on ' + self.id)
 
-    def get_users(self):
+    #############################################################################################
+    #                   Misc Utilities
+    #############################################################################################
+
+    def put_templated_file(self, local_src, remote_dest, **kwargs):
         '''
-        Attempts to return a list of normal linux access local to this instance.
-        Returns a list of all non-root access found within the uid_min/max range who are
-        not marked nologin
+        jinja file template aid
         '''
-        users = []
+        tmp = tempfile.mktemp()
         try:
-            uid_min = str(self.sys("grep ^UID_MIN /etc/login.defs | awk '{print $2}'")[0]).strip()
-            uid_max = str(self.sys("grep ^UID_MAX /etc/login.defs | awk '{print $2}'")[0]).strip()
-            try:
-                users = str(self.sys("cat /etc/passwd | grep -v nologin | awk -F: '{ if ( $3 >= " +
-                                     str(uid_min) + " && $3 <= " + str(uid_max) +
-                                     " ) print $0}' ")[0]).split(":")[0]
-            except IndexError, ie:
-                self.log.debug("No access found, passing exception:" + str(ie))
-                pass
-            return users
-        except Exception, e:
-            self.log.debug("Failed to get local access. Err:" + str(e))
-
-    def get_user_password(self, username):
-        '''
-        Attempts to verify whether or not a user 'username' has a password set or not on
-        this instance.
-        returns true if a password is detected, else false
-
-        '''
-        password = None
-        out = self.sys("cat /etc/passwd | grep '^" + str(username) + "'")
-        if out != []:
-            self.log.debug("pwd out:" + str(out[0]))
-            if (str(out[0]).split(":")[1] == "x"):
-                out = self.sys("cat /etc/shadow | grep '^" + str(username) + "'")
-                if out != []:
-                    password = str(out[0]).split(":")[1]
-                    if password == "" or re.match("^!+$", password):
-                        password = None
-        return password
-
-    def get_user_group_info(self, username, index=3):
-        '''
-        Attempts to return a list of groups for a specific user on this instance.
-        index is set at the grouplist by default [3], but can be adjust to include the username,
-        password, and group id as well in the list.
-        where the parsed string should be in format 'name:password:groupid1:groupid2:groupid3...'
-        '''
-        groups = []
-        out = []
-        try:
-            out = self.sys("cat /etc/group | grep '^" + str(username) + "'")
-            if out != []:
-                groups = str(out[0]).strip().split(":")
-                # return list starting at group index
-                groups = groups[index:len(groups)]
-            return groups
-        except Exception, e:
-            self.log.debug("No group found for user:" + str(username) + ", err:" + str(e))
-
-    def start_interactive_ssh(self, timeout=180):
-        """
-        start a very basic interactive ssh session with this machine
-        """
-        return self.ssh.start_interactive(timeout=timeout)
+            render_file_template(local_src, tmp, **kwargs)
+            self.ssh.sftp_put(tmp, remote_dest)
+        finally:
+            os.remove(tmp)

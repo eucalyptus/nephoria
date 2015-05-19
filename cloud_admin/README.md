@@ -21,4 +21,4 @@
        - Utlities to manage the host machines.
 
 ##### access:
-    Utility modules help Administer Cloud Users, Accounts, Credentials Administrative modules
+    Utility odules help Administer Cloud Users, Accounts, Credentials Administrative modules
