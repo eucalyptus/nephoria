@@ -23,9 +23,12 @@ class Eucarc(dict):
         :param string: a string buffer containing the eucarc contents to be parsed
         :param sshconnection: an SshConnection() obj to a remote machine to read the eucarc
                               at 'filepath' from.
-        :param keysdir: A vaule to replace _KEY_DIR_STR (${EUCA_KEY_DIR}) with, by defual this is
-                       the filepath, but when parsing from a string buffer filepath is unknown
-        :param debug_method: a method to log debug inforation to.
+        :param keysdir: A value to replace _KEY_DIR_STR (${EUCA_KEY_DIR}) with, by defualt this is
+                       the filepath, but when parsing from a string buffer filepath is unknown.
+                       Remote files will be prefixed with an sftp://<user>@<hostname>/ before
+                       the keys dir for later download.
+        :param logger: logging.logger or equiv for logging output. By default a logger will
+                        be created with the class name as the identifier
         """
         # init most common eucarc values to None...
         self.ec2_account_number = None
