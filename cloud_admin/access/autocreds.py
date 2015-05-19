@@ -198,8 +198,8 @@ class AutoCreds(Eucarc):
 
     def _connect_adminapi(self):
         if self.aws_secret_key and self.aws_access_key and self._clc_ip:
-            self._adminapi = AdminApi(host=self._clc_ip,
-                                      aws_access_key_id=self.aws_access_key,
+            self._adminapi = AdminApi(hostname=self._clc_ip,
+                                      aws_access_key=self.aws_access_key,
                                       aws_secret_key=self.aws_secret_key,
                                       debug_method=self.debug)
         return self._adminapi

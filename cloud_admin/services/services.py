@@ -2,8 +2,10 @@
 from boto.resultset import ResultSet
 from cloud_admin.services import EucaBaseObj, EucaEmpyreanResponse
 from cloud_utils.log_utils import markup, get_traceback
+from cloud_utils.net_utils.sshconnection import get_ipv4_lookup
 from prettytable import PrettyTable, ALL
 from operator import itemgetter
+from urlparse import urlparse
 import copy
 import inspect
 import re
@@ -364,6 +366,7 @@ class EucaService(EucaBaseObj):
     def __init__(self, connection=None):
         self._host = None
         self._hostname = None
+        self._ip_addr = None
         self._localstate = None
         self._service_code = None
         self._state = None
@@ -371,6 +374,7 @@ class EucaService(EucaBaseObj):
         self.name = None
         self.partition = None
         self.type = None
+        self.uri = None
         self.uris = []
         super(EucaService, self).__init__(connection)
 
@@ -398,6 +402,32 @@ class EucaService(EucaBaseObj):
             else:
                 scode = self.type
             return scode
+
+    @property
+    def ip_addr(self):
+        """
+        Not all service types return a hostname in the response,
+        and mixed use of FQDN vs IP...
+        """
+        if not self._ip_addr:
+            if self.hostname:
+                ips = get_ipv4_lookup(hostname=self.hostname,
+                                      port=22,
+                                      debug_method=self.debug_method,
+                                      verbose=False)
+                if ips:
+                    self._ip_addr = ips[0]
+            if not self._ip_addr and self.uri:
+                urlp = urlparse(self.uri)
+                hostname = getattr(urlp, 'hostname', None)
+                if hostname:
+                    ips = get_ipv4_lookup(hostname=hostname,
+                                          port=22,
+                                          debug_method=self.debug_method,
+                                          verbose=False)
+                if ips:
+                    self._ip_addr = ips[0]
+        return self._ip_addr
 
     @property
     def state(self):

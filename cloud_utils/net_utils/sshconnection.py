@@ -105,6 +105,48 @@ import termios
 import tty
 
 
+def get_ipv4_lookup(hostname, port=22, debug_method=None, verbose=False):
+    """
+    Do an ipv4 lookup of 'hostname' and return list of any resolved ip addresses
+
+    :param hostname: hostname to resolve
+    :param port: port to include in lookup, default is ssh port 22
+    :param verbose: boolean to print addditional debug
+    :return: list of ip addresses (strings in a.b.c.d format)
+    """
+    if not verbose or not debug_method:
+        def debug_method(msg):
+            return
+
+    get_ipv4_ip = False
+    iplist = []
+    try:
+        if socket.inet_aton(hostname):
+            ipcheck = re.compile("^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
+            if not ipcheck.match(hostname):
+                get_ipv4_ip = True
+        debug_method(str(hostname) + ", is already an ip, dont do host lookup...")
+        # This is already an ip don't look it up (regex might be better here?)
+    except socket.error:
+        get_ipv4_ip = True
+    if get_ipv4_ip:
+        try:
+            # ipv4 lookup host for ssh connection...
+            addrs = socket.getaddrinfo(hostname, port, socket.AF_INET, socket.IPPROTO_IP,
+                                       socket.IPPROTO_TCP)
+            for addr in addrs:
+                iplist.append(str(addr[4][0]))
+            debug_method('Resolved hostname:' + str(hostname) + ' to IP(s):' +
+                         ",".join(iplist), verbose=verbose)
+        except Exception, de:
+            debug_method('Error looking up DNS ip for hostname:' + str(hostname) +
+                         ", err:" + str(de))
+    else:
+        # hostname is an ipv4 address...
+        iplist = [hostname]
+    return iplist
+
+
 class SFTPifc(SFTPClient):
 
     def debug(self, msg, verbose=True):
@@ -709,7 +751,8 @@ class SshConnection():
             for ip in iplist:
                 if self.proxy:
                     if not enable_ipv6_dns:
-                        proxy_ip = self.get_ipv4_lookup(self.proxy, verbose=verbose)[0]
+                        proxy_ip = get_ipv4_lookup(self.proxy, debug_method=self.debug,
+                                                   verbose=verbose)[0]
                         proxy_transport = self.get_proxy_transport(proxy_host=proxy,
                                                                    dest_host=ip,
                                                                    port=port,
@@ -769,44 +812,6 @@ class SshConnection():
                 ". IPs tried:" + ",".join(iplist))
             # self.debug("Returning ssh connection to: "+ hostname)
         return ssh
-
-    def get_ipv4_lookup(self, hostname, port=22, verbose=False):
-        """
-        Do an ipv4 lookup of 'hostname' and return list of any resolved ip addresses
-
-        :param hostname: hostname to resolve
-        :param port: port to include in lookup, default is ssh port 22
-        :param verbose: boolean to print addditional debug
-        :return: list of ip addresses (strings in a.b.c.d format)
-        """
-        get_ipv4_ip = False
-        iplist = []
-        try:
-            if socket.inet_aton(hostname):
-                ipcheck = re.compile("^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
-                if not ipcheck.match(hostname):
-                    get_ipv4_ip = True
-            self.debug(str(hostname) + ", is already an ip, dont do host lookup...",
-                       verbose=verbose)
-            # This is already an ip don't look it up (regex might be better here?)
-        except socket.error:
-            get_ipv4_ip = True
-        if get_ipv4_ip:
-            try:
-                # ipv4 lookup host for ssh connection...
-                addrs = socket.getaddrinfo(hostname, port, socket.AF_INET, socket.IPPROTO_IP,
-                                           socket.IPPROTO_TCP)
-                for addr in addrs:
-                    iplist.append(str(addr[4][0]))
-                self.debug('Resolved hostname:' + str(hostname) + ' to IP(s):' +
-                           ",".join(iplist), verbose=verbose)
-            except Exception, de:
-                self.debug('Error looking up DNS ip for hostname:' + str(hostname) +
-                           ", err:" + str(de))
-        else:
-            # hostname is an ipv4 address...
-            iplist = [hostname]
-        return iplist
 
     def mask_password(self, pass_string):
         """

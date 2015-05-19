@@ -106,6 +106,7 @@ from cloud_admin.services.osg_service import EucaObjectStorageGatewayService
 from cloud_admin.services.node_service import EucaNodeService, SHOW_NODES
 from cloud_admin.services.walrus_service import EucaWalrusBackendService
 from cloud_admin.services.arbitrator_service import EucaArbitratorService
+from cloud_admin.services.ufs import Ufs
 from cloud_admin.services.vmware_broker_service import EucaVMwareBrokerService
 from cloud_admin.services.services import (
     EucaService,
@@ -133,8 +134,8 @@ class AdminApi(AWSQueryConnection):
     APIVersion = 'eucalyptus'
 
     def __init__(self,
-                 host,
-                 aws_access_key_id,
+                 hostname,
+                 aws_access_key,
                  aws_secret_key,
                  path='/services/Empyrean',
                  port=8773,
@@ -148,7 +149,7 @@ class AdminApi(AWSQueryConnection):
         """
         Primary Admin/Empyrean Query interface for a Eucalyptus Cloud
 
-        :param host: service endpoint, hostname, ip, etc..
+        :param hostname: service endpoint, hostname, ip, etc..
         :param access_key: cloud user access key to auth this connection
         :param secret_key: cloud user secret key to auth this connection
         :param port: remote port to be used for this connection
@@ -163,14 +164,14 @@ class AdminApi(AWSQueryConnection):
         """
 
         # Note: aws_access and secret_key get assigned to self during super().__init__()
-        self.host = host
+        self.host = hostname
         if not isinstance(self.host, basestring) or \
-                not isinstance(aws_access_key_id, basestring) or \
+                not isinstance(aws_access_key, basestring) or \
                 not isinstance(aws_secret_key, basestring):
             raise ValueError('Missing or invalide type for required arg. host:"{0}", '
                              'aws_access_key_id:"{1}", aws_secret_access_key:"{2}"'
                              .format(self.host,
-                                     aws_access_key_id,
+                                     aws_access_key,
                                      aws_secret_key))
         self.is_secure = is_secure
         self.port = port
@@ -185,7 +186,7 @@ class AdminApi(AWSQueryConnection):
             self.err_method = err_method
         self._ec2_connection = ec2_connection
         super(AdminApi, self).__init__(path=self.path,
-                                       aws_access_key_id=aws_access_key_id,
+                                       aws_access_key_id=aws_access_key,
                                        aws_secret_access_key=aws_secret_key,
                                        port=self.port,
                                        is_secure=self.is_secure,
@@ -792,6 +793,31 @@ class AdminApi(AWSQueryConnection):
         raise EucaNotFoundException('get_arbitrator_service. ARB not found for args:',
                                     notfounddict={'name': name})
 
+    def get_all_unified_frontend_services(self, names=None):
+        """
+        Fetch specific unified front end User-API service (UFS)
+        from the cloud by it's unique name
+
+        :param name: unique name of service to fetch
+        :return: UfsService
+        :raise EucaNotFoundException:
+        """
+        if names and not isinstance(names, list):
+            names = [names]
+        ufss = self.get_services(service_type='user-api', service_names=names)
+        for ufs in ufss:
+            ufs = Ufs(serviceobj=ufs)
+        return ufs
+
+    def get_unified_frontend_service(self, name):
+        ufss = self.get_all_unified_frontend_services(names=name)
+        if ufss:
+            ufs = ufss[0]
+            if ufs.name == name:
+                return ufs
+        raise EucaNotFoundException('get_unified_frontend_service. UFS not found for args:',
+                                    notfounddict={'name': name})
+
     def get_all_dns_services(self):
         return self.get_services(service_type='dns', service_class=EucaDnsService)
 
@@ -958,12 +984,19 @@ class AdminApi(AWSQueryConnection):
         :return: list of EucaComponentService objs
         """
         components = {}
-        components['WS'] = self.get_all_walrus_backend_services()
-        components['SC'] = self.get_all_storage_controller_services()
-        components['OSG'] = self.get_all_object_storage_gateway_services()
-        components['CLC'] = self.get_all_cloud_controller_services()
-        components['CC'] = self.get_all_cluster_controller_services()
-        components['NC'] = self.get_all_node_controller_services()
+        components['walrus'] = self.get_all_walrus_backend_services()
+        components['storage'] = self.get_all_storage_controller_services()
+        components['objectstorage'] = self.get_all_object_storage_gateway_services()
+        components['eucalyptus'] = self.get_all_cloud_controller_services()
+        components['cluster'] = self.get_all_cluster_controller_services()
+        components['node'] = self.get_all_node_controller_services()
+        components['user-api'] = self.get_all_unified_frontend_services()
+        components['vmwarebroker'] = []
+        try:
+            components['vmwarebroker'] = self.get_all_vmware_broker_services()
+        except BotoServerError, VMWE:
+            self.debug_method('Failed to fetch vmware brokers, vmware may not be supported on '
+                              'this cloud. Err:{0}'.format(VMWE.message))
         return components
 
     ###############################################################################################
@@ -1101,11 +1134,6 @@ class AdminApi(AWSQueryConnection):
         """
         components = self.get_all_components()
         cluster_names = self.get_all_cluster_names()
-        try:
-            components['vmw_list'] = self.get_all_vmware_broker_services()
-        except BotoServerError, VMWE:
-            self.debug_method('Failed to fetch vmware brokers, vmware may not be supported on '
-                              'this cloud. Err:{0}'.format(VMWE.message))
         machine_list = {}
         for component_type, comp_list in components.iteritems():
             for component in comp_list:

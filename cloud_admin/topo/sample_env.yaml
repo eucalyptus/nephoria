@@ -1,0 +1,94 @@
+---
+name: VPC-SHARED
+description: VPC Testing
+default_attributes:
+  thrift:
+    version: 0.9.1
+  eucalyptus:
+    default-img-url: http://images.walrus.cloud.qa1.eucalyptus-systems.com:8773/precise-server-cloudimg-amd64-disk1.img
+    install-load-balancer: 'true'
+    install-imaging-worker: 'true'
+    network:
+      private-interface: br0
+      public-interface: br0
+      bridge-interface: br0
+      bridged-nic: em1
+      config-json:
+        InstanceDnsServers:
+        - 10.111.1.41
+        Mido:
+          EucanetdHost: c-06.qa1.eucalyptus-systems.com
+          GatewayHost: c-06.qa1.eucalyptus-systems.com
+          GatewayIP: 10.116.129.41
+          GatewayInterface: em1.116
+          PublicGatewayIP: 10.116.133.173
+          PublicNetworkCidr: 10.116.128.0/17
+        Mode: VPCMIDO
+        PublicIps:
+        - 10.116.45.1-10.116.45.254
+      mode: VPCMIDO
+    nc:
+      max-cores: 32
+      cache-size: 40000
+    init-script-url: http://git.qa1.eucalyptus-systems.com/qa-repos/eucalele/raw/master/scripts/network-interfaces.sh
+    post-script-url: http://git.qa1.eucalyptus-systems.com/qa-repos/eucalele/raw/master/scripts/midonet_post.sh
+    log-level: DEBUG
+    eucalyptus-repo: http://packages.release.eucalyptus-systems.com/yum/tags/eucalyptus-devel/centos/6/x86_64/
+    enterprise-repo: http://packages.release.eucalyptus-systems.com/yum/tags/enterprise-devel/centos/6/x86_64/
+    euca2ools-repo: http://packages.release.eucalyptus-systems.com/yum/tags/euca2ools-devel/centos/6/x86_64/
+    yum-options: "--nogpg"
+    topology:
+      clusters:
+        one:
+          cc-1: 10.111.1.61
+          nodes: 10.111.1.175 10.111.5.88
+          storage-backend: netapp
+          sc-1: 10.111.1.61
+        two:
+          cc-1: 10.111.1.135
+          nodes: 10.111.5.101 10.111.5.151
+          storage-backend: netapp
+          sc-1: 10.111.1.135
+      clc-1: 10.111.1.41
+      walrus: 10.111.1.41
+      user-facing:
+      - 10.111.1.41
+    system-properties:
+      one.storage.scpaths: 10.107.2.1
+      one.storage.chapuser: euca-one
+      one.storage.sanpassword: zoomzoom
+      one.storage.sanuser: root
+      one.storage.ncpaths: 10.107.2.1
+      one.storage.sanhost: 10.109.2.1
+      two.storage.scpaths: 10.107.2.1
+      two.storage.chapuser: euca-one
+      two.storage.sanpassword: zoomzoom
+      two.storage.sanuser: root
+      two.storage.ncpaths: 10.107.2.1
+      two.storage.sanhost: 10.109.2.1
+      www.http_port: '9999'
+  midokura:
+    bgp-peers:
+    - local-as: 65169
+      peer-address: 10.116.133.173
+      port-ip: 10.116.129.41
+      remote-as: 65000
+      route: 10.116.45.0/24
+      router-name: eucart
+    cassandras:
+    - 10.111.1.41:9160
+    initial-tenant: euca_tenant_1
+    midolman-host-mapping:
+      c-06.qa1.eucalyptus-systems.com: 10.111.1.41
+      g-05-03.qa1.eucalyptus-systems.com: 10.111.1.175
+      b-40.qa1.eucalyptus-systems.com: 10.111.5.88
+      d-39.qa1.eucalyptus-systems.com: 10.111.5.101
+      g-08-09.qa1.eucalyptus-systems.com: 10.111.5.151
+    midonet-api-url: http://10.111.1.41:8080/midonet-api
+    repo-password: 8yU8Pj6h
+    repo-username: eucalyptus
+    yum-options: --nogpg
+    zookeepers:
+    - 10.111.1.41:2181
+override_attributes: {}
+cookbook_versions: {}

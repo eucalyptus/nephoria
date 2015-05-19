@@ -32,6 +32,3 @@
         - Utilities to help deploy, configure, etc..
         - Utilities to help discovery, and create representations of a given topology
          in code and in different text or graphical formats.
-
-
-
