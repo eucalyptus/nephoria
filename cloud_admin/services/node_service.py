@@ -68,6 +68,7 @@ def SHOW_NODES(connection, nodes=None, print_table=True):
 #                       Eucalyptus internal service class 'node'                                 #
 ##################################################################################################
 
+
 class EucaNodeService(EucaComponentService):
     """
     Represents the Eucalyptus service type 'node' as is represented by the cloud.

@@ -136,7 +136,6 @@ class EucaHost(Machine):
             # self._euca_ufs_helpers = <ADD UFS HELPERS>(self)
         return self._euca_osg_helpers
 
-
     def get_installed_eucalyptus_packages(self, searchstring='euca'):
         return self.package_manager.get_installed_packages(searchstring=searchstring)
 
@@ -257,7 +256,8 @@ class EucaHost(Machine):
                 out = self.sys('cat {0}'.format(eucalyptus_conf_path), code=0,
                                verbose=verbose)
                 if verbose:
-                    self.log.debug('Found eucalyptus.conf at path: "{0}"'.format(eucalyptus_conf_path))
+                    self.log.debug('Found eucalyptus.conf at path: "{0}"'
+                                   .format(eucalyptus_conf_path))
                 self.eucalyptus_conf_path = eucalyptus_conf_path
                 break
             except CommandExitCodeException as CE:
@@ -300,4 +300,3 @@ class EucaHost(Machine):
 
     def __str__(self):
         return "{0}:{1}".format(self.__class__.__name__, self.hostname)
-

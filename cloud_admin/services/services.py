@@ -525,7 +525,7 @@ class EucaService(EucaBaseObj):
         """
         Modifies service state and updates self with response data
         """
-        new_service=self.connection.modify_service(service=self, state=state)
+        new_service = self.connection.modify_service(service=self, state=state)
         if new_service:
             self.update(new_service)
         return self

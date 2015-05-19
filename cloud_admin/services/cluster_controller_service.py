@@ -40,5 +40,3 @@ class EucaClusterControllerService(EucaComponentService):
 
     def show(self):
         return SHOW_CLUSTER_CONTROLLER_SERVICES(self.connection, self)
-
-

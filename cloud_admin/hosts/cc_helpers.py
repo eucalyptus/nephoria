@@ -1,6 +1,7 @@
 
 from cloud_admin.hosts import EucaMachineHelpers
 
+
 class ClusterControllerHelpers(EucaMachineHelpers):
     """
     Represents a machine hosting the cluster controller service.

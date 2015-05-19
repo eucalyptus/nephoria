@@ -16,13 +16,14 @@ from eutester.aws.ec2.euinstance import EuInstance
 from cloud_utils.log_utils.eulogger import Eulogger
 from boto.ec2.group import Group as BotoGroup
 from boto.ec2.instance import Instance
-from boto.ec2.securitygroup import SecurityGroup,IPPermissions
+from boto.ec2.securitygroup import SecurityGroup, IPPermissions
 from prettytable import PrettyTable
 import requests
 import socket
 import time
 import re
 import copy
+
 
 class ArpTable(resource_base.ResourceBase):
     def __init__(self, uri, dto, auth):
@@ -36,6 +37,7 @@ class ArpTable(resource_base.ResourceBase):
 
     def get_macaddr(self):
         return self.dto.get('macAddr')
+
 
 class MacTable(resource_base.ResourceBase):
     def __init__(self, uri, dto, auth):
@@ -54,7 +56,6 @@ class MacTable(resource_base.ResourceBase):
         return self.dto.get('macAddr')
 
 
-
 class Midget(object):
     '''
     Midonet get agent used for getting status and describing the system for the purposes
@@ -70,8 +71,8 @@ class Midget(object):
         self.midonet_username = midonet_username
         self.midonet_password = midonet_password
         self.mapi = MidonetApi(base_uri='http://{0}:{1}/midonet-api'
-                          .format(self.midonet_api_host, self.midonet_api_port),
-                          username=self.midonet_username, password=self.midonet_password)
+                               .format(self.midonet_api_host, self.midonet_api_port),
+                               username=self.midonet_username, password=self.midonet_password)
 
         self.tester = tester
         if not self.tester and eutester_config:
@@ -90,7 +91,7 @@ class Midget(object):
         buf = str(table)
         ret_buf = ""
         for line in buf.splitlines():
-                ret_buf += '{0}{1}\n'.format(indent,line)
+            ret_buf += '{0}{1}\n'.format(indent, line)
         return ret_buf
 
     def _link_table_buf(self, table, indent=4):
@@ -101,24 +102,22 @@ class Midget(object):
         preline = ""
         linkpoint = ""
         linkline = "{0}\n".format(self._bold("|", 103))
-        for x in xrange(0,indent-1):
+        for x in xrange(0, indent - 1):
             linkpoint += "-"
-        for x in xrange(0, indent+1):
+        for x in xrange(0, indent + 1):
             preline += " "
         linkline += self._bold("+{0}>".format(linkpoint), 103)
         lines = str(table).splitlines()
         ret_buf = "{0}{1}\n".format(linkline, lines[0])
         for line in lines[1:]:
-            ret_buf += '{0}{1}\n'.format(preline,line)
+            ret_buf += '{0}{1}\n'.format(preline, line)
         return ret_buf
 
     def _errmsg(self, text):
         self.debug(self._bold(text), 101)
 
-
     def _header(self, text):
-        return markup(text=text, markups=[1,94])
-
+        return markup(text=text, markups=[1, 94])
 
     def _bold(self, text, value=1):
         return markup(text=text, markups=[value])
@@ -126,15 +125,16 @@ class Midget(object):
     def _highlight_buf_for_instance(self, buf, instance):
         ret_buf = ""
         for line in str(buf).splitlines():
-            searchstring= "{0}|{1}|{2}".format(instance.id,
-                                               instance.private_ip_address,
-                                               instance.ip_address)
+            searchstring = "{0}|{1}|{2}".format(instance.id,
+                                                instance.private_ip_address,
+                                                instance.ip_address)
             try:
                 searchstring = "{0}|{1}".format(
                     searchstring,
                     self.tester.ec2.get_all_subnets(instance.subnet_id)[0].cidr_block)
-            except:pass
-            for match in re.findall(searchstring,line):
+            except:
+                pass
+            for match in re.findall(searchstring, line):
                 line = line.replace(match, self._bold(match, 102))
             ret_buf += line + "\n"
         return ret_buf
@@ -145,14 +145,13 @@ class Midget(object):
             proto_dict = {}
             for attr in dir(socket):
                 if attr.startswith('IPPROTO_'):
-                    proto_dict[str(getattr(socket, attr))] = attr.replace('IPPROTO_','').upper()
+                    proto_dict[str(getattr(socket, attr))] = attr.replace('IPPROTO_', '').upper()
             self._protocols = proto_dict
         return self._protocols
 
     def _get_protocol_name_by_number(self, number):
-        #look up protocol by number, return protocol name or just give the number back
+        # look up protocol by number, return protocol name or just give the number back
         return self.protocols.get(str(number), str(number))
-
 
     def _get_instance(self, instance):
         fetched_ins = None
@@ -179,9 +178,9 @@ class Midget(object):
         except Exception, PE:
             self.debug('Ping Exception:{0}'.format(PE))
             self.debug('Failed to ping instance: {0},  private ip:{1} from internal host: {2}'
-                          .format(instance.id,
-                                  instance.private_ip_address,
-                                  proxy_machine.hostname))
+                       .format(instance.id,
+                               instance.private_ip_address,
+                               proxy_machine.hostname))
         return False
 
     def ping_instance_private_ip_from_euca_internal(self,
@@ -208,7 +207,7 @@ class Midget(object):
                                   proxy_machine.hostname))
             self.errormsg('Ping failure. Fetching network debug info from internal host...')
             proxy_machine.machine.dump_netfail_info(ip=instance.private_ip_address,
-                                            net_namespace=net_namespace)
+                                                    net_namespace=net_namespace)
             self.errormsg('Done fetching/logging network debug info from internal euca proxy host'
                           'used in ping attempt to instance {0}, private ip: {1}, from '
                           'internal host: {2}'.format(instance.id,
@@ -220,7 +219,6 @@ class Midget(object):
                            instance.private_ip_address,
                            proxy_machine.hostname))
 
-
     def get_all_routers(self, search_dict={}, eval_op=re.search, query=None):
         """
         Returns all routers that have attributes and attribute values as defined in 'search_dict'
@@ -231,14 +229,14 @@ class Midget(object):
             for router in routers:
                 if hasattr(router, key):
                     try:
-                        if eval_op(str(search_dict[key]), router.dto.get(key)) :
+                        if eval_op(str(search_dict[key]), router.dto.get(key)):
                             continue
                     except:
                         self.debug('Error while evaluating -> {0}("{1}","{2}")'
-                               .format("{0}.{1}".format(getattr(eval_op, "__module__",""),
-                                                        getattr(eval_op, "__name__","")),
-                                       str(search_dict[key]),
-                                       str(getattr(router,key))))
+                                   .format("{0}.{1}".format(getattr(eval_op, "__module__", ""),
+                                                            getattr(eval_op, "__name__", "")),
+                                           str(search_dict[key]),
+                                           str(getattr(router, key))))
                         raise
                 remove_list.append(router)
             for router in remove_list:
@@ -246,10 +244,10 @@ class Midget(object):
                     routers.remove(router)
         return routers
 
-    def get_router_for_instance(self,instance):
+    def get_router_for_instance(self, instance):
         instance = self._get_instance(instance)
-        self.debug('Getting router for instance:{0}, vpc:{1}'.format(instance.id,  instance.vpc_id))
-        routers = self.get_all_routers(search_dict={'name':instance.vpc_id})
+        self.debug('Getting router for instance:{0}, vpc:{1}'.format(instance.id, instance.vpc_id))
+        routers = self.get_all_routers(search_dict={'name': instance.vpc_id})
         if len(routers) != 1:
             raise ValueError('Expected to find 1 matching router for instance:{0}, found:{1}'
                              .format(instance.id, routers))
@@ -261,11 +259,10 @@ class Midget(object):
         assert name
         search_string = "^{0}$".format(name)
         self.debug('search string:{0}'.format(search_string))
-        routers =  self.get_all_routers(search_dict={'name':search_string}, eval_op=re.match)
+        routers = self.get_all_routers(search_dict={'name': search_string}, eval_op=re.match)
         if routers:
             return routers[0]
         return None
-
 
     def show_routers_brief(self, routers=None, showchains=False, printme=True):
         """
@@ -274,14 +271,14 @@ class Midget(object):
         """
         if routers is None:
             routers = self.get_all_routers()
-        if not isinstance(routers,list):
+        if not isinstance(routers, list):
             routers = [routers]
-        headers = ['Name', 'AdminState', 'ID','T-ID' ]
+        headers = ['Name', 'AdminState', 'ID', 'T-ID']
         if showchains:
             headers.extend(['InboundChain', 'OutboundChain'])
         pt = PrettyTable(headers)
         for router in routers:
-            row = [router.get_name(),router.get_admin_state_up(), router.get_id(),
+            row = [router.get_name(), router.get_admin_state_up(), router.get_id(),
                    router.get_tenant_id()]
             if showchains:
                 row.extend([router.get_inbound_filter_id(), router.get_outbound_filter_id()])
@@ -295,9 +292,9 @@ class Midget(object):
         '''
         show a list of provided route objects
         '''
-        if not isinstance(routes,list):
+        if not isinstance(routes, list):
             routes = [routes]
-        pt = PrettyTable(['Destination','Source', 'nexthopGW', 'nexthop', 'weight', 'ID'])
+        pt = PrettyTable(['Destination', 'Source', 'nexthopGW', 'nexthop', 'weight', 'ID'])
         for route in routes:
             pt.add_row(['{0}/{1}'.format(route.get_dst_network_addr(),
                                          route.get_dst_network_length()),
@@ -306,8 +303,7 @@ class Midget(object):
                         route.get_next_hop_gateway(),
                         route.get_next_hop_port(),
                         route.get_weight(),
-                        route.get_id()
-                        ])
+                        route.get_id()])
         if printme:
             self.debug('\n{0}\n'.format(pt))
         else:
@@ -320,13 +316,12 @@ class Midget(object):
         buf = ""
         if routers is None:
             routers = self.get_all_routers()
-        if not isinstance(routers,list):
+        if not isinstance(routers, list):
             routers = [routers]
         for router in routers:
             buf += "\n" + str(self.show_router_summary(router, showchains=False, printme=False)) \
                    + "\n"
         self.debug(buf)
-
 
     def show_router_summary(self, router, showchains=True, indent=None, printme=True):
         """
@@ -373,9 +368,8 @@ class Midget(object):
             device = self.mapi.get_router(port.get_device_id())
         if not device:
             raise ValueError('Unknown device type for peerid:{0}, port:{1}, type:{2}'
-                             .format(peerid, port.get_id(), port.get_type()) )
+                             .format(peerid, port.get_id(), port.get_type()))
         return device
-
 
     def get_router_port_for_subnet(self, router, cidr):
         assert cidr
@@ -384,7 +378,6 @@ class Midget(object):
             if str(network) == str(cidr):
                 return port
         return None
-
 
     def get_bridge_for_instance(self, instance):
         instance = self._get_instance(instance)
@@ -398,7 +391,7 @@ class Midget(object):
         port = self.get_router_port_for_subnet(router, subnet.cidr_block)
         if not port:
             raise ValueError('Did not find router port for instance:{0}, subnet:{1}'
-                                .format(instance.id, subnet.cidr_block))
+                             .format(instance.id, subnet.cidr_block))
         bridge = self.get_device_by_peer_id(port.get_peer_id())
         if not isinstance(bridge, Bridge):
             raise ValueError('peer device for instance router is not a bridge, '
@@ -413,13 +406,13 @@ class Midget(object):
         titlept.align[title] = 'l'
         buf = self._bold("{0}PORT INFO:\n".format(indent), 4)
         pt = PrettyTable(['PORT ID', 'BGPS', 'IPADDR', 'NETWORK', 'MAC',
-                              'TYPE', 'UP', 'PEER ID'])
+                          'TYPE', 'UP', 'PEER ID'])
         pt.align['PEER ID'] = 'l'
         pt.max_width['PEER ID'] = 20
         bgps = 0
         try:
             if port.dto.get('bgps'):
-                bgps =  port.get_bgps()
+                bgps = port.get_bgps()
                 if bgps:
                     bgps = len(bgps)
                 else:
@@ -439,7 +432,7 @@ class Midget(object):
         buf += self._indent_table_buf(str(pt))
         if showbgp and bgps:
             buf += self._bold("{0}PORT BGP INFO:\n".format(indent), 4)
-            buf += self._indent_table_buf(str(self.show_bgps(port.get_bgps() or [] )))
+            buf += self._indent_table_buf(str(self.show_bgps(port.get_bgps() or [])))
         if showchains:
             if port.get_inbound_filter_id():
                 in_filter = self.mapi.get_chain(str(port.get_inbound_filter_id()))
@@ -463,18 +456,18 @@ class Midget(object):
         For more verbose info about a specific port use show_port_summary()
         """
         buf = ""
-        if not isinstance(ports,list):
+        if not isinstance(ports, list):
             ports = [ports]
         pt = None
         for port in ports:
 
             pt = PrettyTable(['PORT ID', 'BGPS', 'IPADDR', 'NETWORK', 'MAC',
                               'TYPE', 'UP', 'PEER ID'])
-            pt.padding_width=0
+            pt.padding_width = 0
             bgps = 0
             try:
                 if port.dto.get('bgps'):
-                    bgps =  port.get_bgps()
+                    bgps = port.get_bgps()
                     if bgps:
                         bgps = len(bgps)
                     else:
@@ -482,7 +475,6 @@ class Midget(object):
             except Exception, E:
                 bgps = 'ERROR'
                 self.debug('Error fetching bgps from port:{0}, err"{1}'.format(port.get_id(), E))
-
 
             pt.add_row([port.get_id(),
                         bgps,
@@ -503,7 +495,7 @@ class Midget(object):
                 buf += "\n".join(lines) + '\n'
                 pt = None
                 buf += self._link_table_buf(self.show_bgps(port.get_bgps(), printme=False))
-                buf += footer +'\n'
+                buf += footer + '\n'
 
         if pt:
             buf += str(pt)
@@ -512,13 +504,12 @@ class Midget(object):
         else:
             return buf
 
-
     def show_bgps(self, bgps, printme=True):
         buf = ""
-        if not isinstance(bgps,list):
+        if not isinstance(bgps, list):
             bgps = [bgps]
-        port=None
-        pt=None
+        port = None
+        pt = None
         for bgp in bgps:
             if bgp.dto.get('portId') != port:
                 port = bgp.dto.get('portId')
@@ -541,10 +532,9 @@ class Midget(object):
         else:
             return buf
 
-
     def _format_ad_routes(self, ad_routes):
-        adrs =[]
-        if not isinstance(ad_routes,list):
+        adrs = []
+        if not isinstance(ad_routes, list):
             ad_routes = [ad_routes]
         for adr in ad_routes:
             adrs.append('{0}/{1}'.format(adr.get_nw_prefix(), adr.get_prefix_length()))
@@ -553,7 +543,7 @@ class Midget(object):
     def _update_euca_instances(self):
         instances = self.tester.get_instances(idstring=['verbose'])
         now = time.time()
-        self._euca_instances = {'lastupdated':now, 'instances':instances}
+        self._euca_instances = {'lastupdated': now, 'instances': instances}
 
     @property
     def euca_instances(self):
@@ -568,7 +558,7 @@ class Midget(object):
         return self._euca_instances['instances']
 
     def _get_instance_by_id(self, id):
-        for x in xrange(0,2):
+        for x in xrange(0, 2):
             for instance in self.euca_instances:
                 if instance.id == id:
                     return instance
@@ -591,7 +581,7 @@ class Midget(object):
         if indent is None:
             indent = self.default_indent
         if bridges:
-            if not isinstance(bridges,list):
+            if not isinstance(bridges, list):
                 bridges = [bridges]
         else:
             bridges = self.mapi.get_bridges(query=None)
@@ -600,7 +590,7 @@ class Midget(object):
             buf = ""
             pt = PrettyTable(['BRIDGE NAME', 'ID', 'TENANT', 'Vx LAN PORT'])
             pt.add_row([bridge.get_name(), bridge.get_id(), bridge.get_tenant_id(),
-                       bridge.get_vxlan_port()])
+                        bridge.get_vxlan_port()])
             title = self._header('BRIDGE:"{0}"'.format(bridge.get_name()))
             box = PrettyTable([title])
             box.align[title] = 'l'
@@ -625,35 +615,34 @@ class Midget(object):
         pt = PrettyTable(['SUBNET', 'SERVER ADDR', 'DefaultGW', 'DNS SERVERS', 'STATE'])
         for subnet in bridge.get_dhcp_subnets():
             pt.add_row(["{0}/{1}".format(subnet.get_subnet_prefix(), subnet.get_subnet_length()),
-                       subnet.get_server_addr(),
-                       subnet.get_default_gateway(),
-                       ",".join(str(dns) for dns in subnet.get_dns_server_addrs()),
-                       subnet.dto.get('enabled')])
+                        subnet.get_server_addr(),
+                        subnet.get_default_gateway(),
+                        ",".join(str(dns) for dns in subnet.get_dns_server_addrs()),
+                        subnet.dto.get('enabled')])
         if printme:
             self.debug('\n{0}\n'.format(pt))
         else:
             return pt
 
-
     def get_bridge_arp_table(self, bridge):
         table = bridge.get_children(bridge.dto['arpTable'],
                                     query=None,
-                                    headers={"Accept":""},
+                                    headers={"Accept": ""},
                                     clazz=ArpTable)
         return table
 
     def get_bridge_mac_table(self, bridge):
         table = bridge.get_children(bridge.dto['macTable'],
                                     query=None,
-                                    headers={"Accept":""},
+                                    headers={"Accept": ""},
                                     clazz=MacTable)
         return table
 
     def show_bridge_mac_table(self, bridge, printme=True):
-        pt=PrettyTable(['BRIDGE ID', 'MAC ADDR', 'PORT ID', 'VLAN ID'])
+        pt = PrettyTable(['BRIDGE ID', 'MAC ADDR', 'PORT ID', 'VLAN ID'])
         mac_table = self.get_bridge_mac_table(bridge)
         for entry in mac_table:
-            assert  isinstance(entry, MacTable)
+            assert isinstance(entry, MacTable)
             pt.add_row([entry.get_bridge_id(), entry.get_macaddr(), entry.get_port_id(),
                         entry.get_vlan_id()])
         if printme:
@@ -678,10 +667,11 @@ class Midget(object):
                     euca_instance = self._get_instance_by_private_ip(private_ip=entry_ip)
                     if euca_instance:
                         instance_id = self._bold(euca_instance.id)
-                        vm_host = euca_instance.tags.get('euca:node',None)
+                        vm_host = euca_instance.tags.get('euca:node', None)
                 except:
                     raise
-            pt.add_row([entry_ip, entry.get_mac(), entry.get_macaddr(), instance_id, vm_host, port])
+            pt.add_row([entry_ip, entry.get_mac(), entry.get_macaddr(), instance_id,
+                        vm_host, port])
         if printme:
             self.debug('\n{0}\n'.format(pt))
         else:
@@ -724,14 +714,11 @@ class Midget(object):
         if not port:
             learned = "(NOT LEARNED)"
             port = self.get_bridge_port_for_instance_by_port_name(instance)
-        title = self._bold('BRIDGE PORT FOR INSTANCE:{0}, (BRIDGE:{1}), {2}'.format(instance.id,
-                                                                               bridge.get_name() or
-                                                                               bridge.get_id(),
-                                                                               learned), 94)
+        title = self._bold('BRIDGE PORT FOR INSTANCE:{0}, (BRIDGE:{1}), {2}'
+                           .format(instance.id, bridge.get_name() or bridge.get_id(), learned), 94)
         pt = PrettyTable([title])
-        pt.align[title] ='l'
+        pt.align[title] = 'l'
         buf = ""
-
         if port:
             buf += str(self.show_port_summary(port, showchains=showchains, printme=False))
         pt.add_row([buf])
@@ -788,9 +775,10 @@ class Midget(object):
                              .format(instance.id))
         for group in instance.groups:
             buf = ""
-            title = 'MIDO CHAIN RULES FOR EUCA SECURITY GROUP:{0} ({1})'.format(group.id, group.name)
+            title = 'MIDO CHAIN RULES FOR EUCA SECURITY GROUP:{0} ({1})'.format(group.id,
+                                                                                group.name)
             pt = PrettyTable([title])
-            pt.align[title] ='l'
+            pt.align[title] = 'l'
             buf += "\n" + str(self.tester.show_security_group(group, printme=False))
             buf += "\n" + str(self.show_chain_for_security_group(group, printme=False))
             pt.add_row([buf])
@@ -801,7 +789,7 @@ class Midget(object):
             return mainbuf
 
     def get_chain_for_security_group(self, group):
-        #sg_ingress_sg-012aee24
+        # sg_ingress_sg-012aee24
         group_id = None
         if isinstance(group, SecurityGroup) or isinstance(group, BotoGroup):
             group_id = str(group.id)
@@ -810,7 +798,7 @@ class Midget(object):
                 if re.match('^sg-\w{8}$', group):
                     group = self.tester.get_security_group(id=group)
                     self._errmsg('Could not find security group:"{0}" on cloud? Trying to lookup'
-                             'midonet chain anyways...'.format(group))
+                                 'midonet chain anyways...'.format(group))
                     group_id = str(group)
                 else:
                     group = self.tester.get_security_group(name=group)
@@ -845,7 +833,7 @@ class Midget(object):
         for rule in chain.get_rules():
             src_ip = str(rule.get_nw_src_address() or '0.0.0.0')
             src_mask = str(rule.get_nw_src_length() or 0)
-            rule_cidr =  src_ip + "/" + src_mask
+            rule_cidr = src_ip + "/" + src_mask
             rule_protocol = self._get_protocol_name_by_number(rule.get_nw_proto())
             port_dict = rule.get_tp_dst()
             start_port = port_dict.get('start')
@@ -872,13 +860,13 @@ class Midget(object):
                    .format(len(unsynced_rules), len(group.rules), group.name))
         if unsynced_rules and show_rules:
             title = markup('The following rules for group:"{0}" were not found) on '
-                           'backend'.format(group.name), [1,91,7])
+                           'backend'.format(group.name), [1, 91, 7])
             main_pt = PrettyTable([title])
-            pt = PrettyTable(['cidr_ip', 'src_grp_name','src_grp_id', 'protocol', 'port_range'])
+            pt = PrettyTable(['cidr_ip', 'src_grp_name', 'src_grp_id', 'protocol', 'port_range'])
             for rule in unsynced_rules:
                 for grant in rule.grants:
                     pt.add_row([grant.cidr_ip, grant.name, grant.group_id, rule.ip_protocol,
-                               "{0}:{1}".format(rule.from_port, rule.to_port)])
+                                "{0}:{1}".format(rule.from_port, rule.to_port)])
             main_pt.add_row([str(pt)])
             self.debug("\n" + str(main_pt) + "\n")
         return unsynced_rules
@@ -886,9 +874,9 @@ class Midget(object):
     def get_unsynced_rules_for_instance(self, instance, show_rules=True):
         unsynced_rules = []
         for group in instance.groups:
-            group = self.tester.get_security_group(id = group.id)
-            unsynced_rules.extend(self.get_unsynced_rules_for_security_group(group,
-                                  show_rules=show_rules))
+            group = self.tester.get_security_group(id=group.id)
+            unsynced_rules.extend(self.get_unsynced_rules_for_security_group(
+                group, show_rules=show_rules))
         self.debug('Number of unsynced rules found for instance ({0}):{1}'
                    .format(instance.id, len(unsynced_rules)))
         return unsynced_rules
@@ -899,12 +887,12 @@ class Midget(object):
         """
         ret_rules = []
         assert isinstance(security_group_rule, IPPermissions), \
-            'security_group_rule arg must be of type boto.IPPermissions, got:"{0}:{1}'\
-                .format(security_group_rule, type(security_group_rule))
+            'security_group_rule arg must be of type boto.IPPermissions, got:"{0}:{1}' \
+            .format(security_group_rule, type(security_group_rule))
         chain = self.get_chain_for_security_group(group)
         ip_grants = copy.copy(security_group_rule.grants)
-        protocol = security_group_rule.ip_protocol and \
-                   str(security_group_rule.ip_protocol).upper() or None
+        protocol = (security_group_rule.ip_protocol and
+                    str(security_group_rule.ip_protocol).upper() or None)
         from_port = security_group_rule.from_port
         to_port = security_group_rule.to_port
         if from_port is not None:
@@ -927,7 +915,7 @@ class Midget(object):
                 protocol_number = rule.get_nw_proto()
                 r_protocol = None
                 if protocol_number is not None:
-                     r_protocol = str(self._get_protocol_name_by_number(protocol_number)).upper()
+                    r_protocol = str(self._get_protocol_name_by_number(protocol_number)).upper()
                 self.debug('checking protocol:"{0}" vs rule_proto:"{1}"'.format(protocol,
                                                                                 r_protocol))
                 if not (protocol == r_protocol):
@@ -936,13 +924,13 @@ class Midget(object):
                 start_port = port_dict.get('start')
                 end_port = port_dict.get('end')
                 self.debug('Protocol matched, checking fport:{0} vs sport:{1}, and tport:{2}'
-                               ' vs eport:{3}'.format(from_port, start_port, to_port, end_port))
+                           ' vs eport:{3}'.format(from_port, start_port, to_port, end_port))
                 if not (from_port == start_port and to_port == end_port):
                     continue
                 self.debug('Rules port and protocols match up, now ip/src grp comparison...')
                 src_ip = str(rule.get_nw_src_address() or '0.0.0.0')
                 src_mask = str(rule.get_nw_src_length() or 0)
-                rule_cidr =  src_ip + "/" + src_mask
+                rule_cidr = src_ip + "/" + src_mask
                 ip_addr_grp_id = rule.get_ip_addr_group_src()
                 ip_addr_grp_name = ""
                 self.debug('This rule has ipaddr group:"{0}"'.format(ip_addr_grp_id))
@@ -960,23 +948,23 @@ class Midget(object):
                     match = True
                 if match:
                     self.debug('Found rule for cidr_ip:"{0}", srg_grp:"{1}", proto:"{2}", '
-                                   'start_port:"{3}", end_port:"{4}"'
-                                   .format(grant.cidr_ip, grant.group_id, protocol,
-                                           from_port, to_port))
-                    if not rule in ret_rules:
+                               'start_port:"{3}", end_port:"{4}"'
+                               .format(grant.cidr_ip, grant.group_id, protocol,
+                                       from_port, to_port))
+                    if rule not in ret_rules:
                         ret_rules.append(rule)
                     if grant in ip_grants:
                         ip_grants.remove(grant)
                         break
         self.debug('Found "{0}" rules for; Group:"{1}", ip_grants:"{2}", proto:"{3}", '
                    'start_port:"{4}", end_port:"{5}"'
-                   .format(len(ret_rules), group,security_group_rule.grants, protocol,
+                   .format(len(ret_rules), group, security_group_rule.grants, protocol,
                            from_port, to_port))
         if ret_rules:
             self.show_rules(rules=ret_rules)
         return ret_rules
 
-    def do_instance_rules_allow(self, instance, src_addr, protocol, port ):
+    def do_instance_rules_allow(self, instance, src_addr, protocol, port):
         for group in instance.groups:
             chain = self.get_chain_for_security_group(group)
             self.debug('Checking midonet chain:"{0}" for instance:"{1}", security group "{2}"'
@@ -1002,13 +990,13 @@ class Midget(object):
         for rule in rules:
             if pt is None:
                 chain_id = rule.get_chain_id()
-                #title = "RULE(S) FOR CHAIN: {1}".format(rules.index(rule),chain_id)
+                # title = "RULE(S) FOR CHAIN: {1}".format(rules.index(rule),chain_id)
 
                 title = "RULES FOR CHAIN:{0}".format("..{0}{1}".format(chain_id[-5:-1],
-                                                                          chain_id[-1]))
+                                                                       chain_id[-1]))
                 title_width = len(title)
                 pt = PrettyTable([title, 'SRC', 'DST', 'PROTO', 'DPORTS', 'TOS',
-                                  'GRP ADDRS','FRAG POL',
+                                  'GRP ADDRS', 'FRAG POL',
                                   'POS', 'TYPE', 'ACTION', 'TARGET'])
                 pt.padding_width = 0
                 pt.max_width[title] = title_width
@@ -1025,7 +1013,7 @@ class Midget(object):
             ports = None
             tpdst = rule.dto.get('tpDst', None)
             if tpdst:
-                ports = "{0}:{1}".format(tpdst.get('start',""), tpdst.get('end', ""))
+                ports = "{0}:{1}".format(tpdst.get('start', ""), tpdst.get('end', ""))
             rule_type = self._bold(rule.get_type())
             for nattarget in nattargets:
                 targets.append(nattarget.get('addressFrom'))
@@ -1040,7 +1028,7 @@ class Midget(object):
             if ip_addr_group:
                 ip_addr_group = self.show_ip_addr_group_addrs(ipgroup=ip_addr_group, printme=False)
             pt.add_row(['{0} {1}'.format(self._bold("RULE#:" +
-                                                    str(rules.index(rule)+1)).ljust(title_width),
+                                                    str(rules.index(rule) + 1)).ljust(title_width),
                                          rule.get_id()),
                         "{0}/{1}".format(rule.get_nw_src_address(), rule.get_nw_src_length()),
                         "{0}/{1}".format(rule.get_nw_dst_address(), rule.get_nw_dst_length()),
@@ -1056,8 +1044,8 @@ class Midget(object):
             if jump_chain and jump:
                 buf += str(pt) + "\n"
                 pt = None
-                #buf += "|\n" + "+->\n"
-                #buf += str(self.show_chain(jump_chain, printme=False)) + "\n"
+                # buf += "|\n" + "+->\n"
+                # buf += str(self.show_chain(jump_chain, printme=False)) + "\n"
                 buf += self._link_table_buf(self.show_chain(jump_chain, printme=False))
         buf += str(pt)
         if printme:
@@ -1065,7 +1053,7 @@ class Midget(object):
         else:
             return buf
 
-    def show_router_for_instance(self,instance, printme=True):
+    def show_router_for_instance(self, instance, printme=True):
         ret_buf = self._highlight_buf_for_instance(
             buf=self.show_router_summary(router=self.get_router_for_instance(instance=instance),
                                          printme=False),
@@ -1075,8 +1063,6 @@ class Midget(object):
             return None
         else:
             return ret_buf
-
-
 
     def show_bridge_for_instance(self, instance, printme=True):
         ret_buf = self._highlight_buf_for_instance(
@@ -1113,14 +1099,12 @@ class Midget(object):
         else:
             return pt
 
-
     def show_security_groups_for_instance(self, instance, printme=True):
         buf = ""
         instance = self._get_instance(instance)
         return self.tester.show_security_groups_for_instance(instance=instance,
                                                              printmethod=self.debug,
                                                              printme=printme)
-
 
     def show_ip_addr_group_addrs(self, ipgroup, printme=True):
         if not isinstance(ipgroup, IpAddrGroup):
@@ -1151,7 +1135,8 @@ class Midget(object):
             try:
                 name, aliaslist, addresslist = socket.gethostbyaddr(host.get_name())
                 ip_addrs = ", ".join(addresslist)
-            except:pass
+            except:
+                pass
             pt.add_row([host.get_id(), host.get_name(), host.dto.get('alive'), ip_addrs])
         if printme:
             self.debug('\n{0}\n'.format(pt))
@@ -1171,7 +1156,7 @@ class Midget(object):
             pt.align[title] = "l"
             hostbuf = self._bold("HOST SUMMARY:\n", 4)
             hostbuf += self._indent_table_buf(str(self.show_hosts_summary(hosts=host,
-                                                                         printme=False)))
+                                                                          printme=False)))
             hostbuf += self._bold("HOST PORTS:\n", 4)
             hostbuf += self._indent_table_buf(str(self.show_host_ports(host, printme=False)))
             hostbuf += self._bold("HOST INTERFACES:\n", 4)
@@ -1196,7 +1181,7 @@ class Midget(object):
         """
         return self.reset_midolman_service_on_hosts(hosts=hosts)
 
-    def reset_midolman_service_on_hosts(self,hosts=None):
+    def reset_midolman_service_on_hosts(self, hosts=None):
         if hosts and not isinstance(hosts, list):
             assert isinstance(hosts, Host)
             hosts = [hosts]
@@ -1238,10 +1223,10 @@ class Midget(object):
         Fetches the 'HostInterface's from a specific host and presents them in a formatted
         table
         '''
-        assert isinstance(host, Host), 'host type ({0}) is not of midonet Host type'\
+        assert isinstance(host, Host), 'host type ({0}) is not of midonet Host type' \
             .format(type(host))
         interfaces = host.get_interfaces()
-        pt = PrettyTable(['NAME', 'TYPE', 'MAC','STATUS', 'MTU', 'ENDPOINT', 'ADDRESSES'])
+        pt = PrettyTable(['NAME', 'TYPE', 'MAC', 'STATUS', 'MTU', 'ENDPOINT', 'ADDRESSES'])
         for hi in interfaces:
             assert isinstance(hi, HostInterface), "host interface type({0}) is not of midonet " \
                                                   "Host Interface type ".format(type(hi))
@@ -1290,6 +1275,7 @@ class Midget(object):
                 self.debug(self._bold("Trying to ping the instance private addr('{0}') now...?)"
                                       .format(instance.private_ip_address), 91))
                 self.ping_instance_private_ip_from_euca_internal(instance)
-            except WaitForResultException:pass
+            except WaitForResultException:
+                pass
         port = self.get_bridge_port_for_instance_learned(instance)
         return port

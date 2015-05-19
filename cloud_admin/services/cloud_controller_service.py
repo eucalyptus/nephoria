@@ -10,5 +10,3 @@ class EucaCloudControllerService(EucaComponentService):
 
     def show(self):
         return SHOW_COMPONENTS(self.connection, self)
-
-

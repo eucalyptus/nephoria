@@ -3,6 +3,7 @@ import yaml
 from cloud_admin.access.creds import Creds
 from cloud_utils.system_utils.machine import Machine
 
+
 class CloudTopo(object):
 
     def __init__(self,
@@ -52,6 +53,7 @@ class CloudTopo(object):
             if self.clc_connect_kwargs['hostname']:
                 self._clc_machine = Machine(**self.clc_connect_kwargs)
         return self._clc_machine
+
     @classmethod
     def build_machine_dict_from_config(cls):
         raise NotImplementedError()
@@ -59,6 +61,3 @@ class CloudTopo(object):
     @classmethod
     def build_machine_dict_from_cloud_services(self):
         raise NotImplementedError()
-
-
-

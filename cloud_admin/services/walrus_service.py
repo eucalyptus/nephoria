@@ -3,9 +3,7 @@
 from cloud_admin.services.services import EucaComponentService, SHOW_COMPONENTS
 
 
-
 class EucaWalrusBackendService(EucaComponentService):
-
 
     def update(self, new_service=None, get_instances=True, silent=True):
         return self._update(get_method_name='get_walrus_backend_service',

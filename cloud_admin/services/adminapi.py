@@ -143,7 +143,7 @@ class AdminApi(AWSQueryConnection):
                  boto_debug_level=0,
                  debug_method=None,
                  err_method=None,
-                 logger = None,
+                 logger=None,
                  **kwargs):
         """
         Primary Admin/Empyrean Query interface for a Eucalyptus Cloud
@@ -336,7 +336,7 @@ class AdminApi(AWSQueryConnection):
         :param service_type: string, service type
         :returns bool: True if is a 'user-api' service type member, else False
         '''
-        names =['user-api']
+        names = ['user-api']
         user_api_service = self.get_service_types('user-api')[0]
         for member in user_api_service.groupmembers:
             names.append(member.name)
@@ -641,7 +641,6 @@ class AdminApi(AWSQueryConnection):
                     retlist.append(cc)
             return retlist
 
-
     def get_cluster_controller_service(self, name):
         """
         Fetch specific cluster controller service from the cloud by it's unique name
@@ -801,7 +800,7 @@ class AdminApi(AWSQueryConnection):
             if serv.name == name:
                 return serv
         raise EucaNotFoundException('get_dns_service. DNS not found for args:',
-                                     notfounddict={'name': name})
+                                    notfounddict={'name': name})
 
     def get_all_node_controller_services(self, get_instances=True,
                                          fail_on_instance_fetch=False, filter_name=None,
