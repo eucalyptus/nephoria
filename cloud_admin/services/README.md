@@ -156,6 +156,82 @@ In [19]: cad.show_components_summary()
 |10.111.5.148|10.111.5.148                  |two             |ENABLED|node         |
 |10.111.5.100|walrus-1                      |walrus          |ENABLED|walrusbackend|
 +------------+------------------------------+----------------+-------+-------------+
+
+In [4]: cloud_admin.show_clusters(name='two')
+[2015-05-20 00:09:01,495] [AdminApi] [DEBUG]:
++-------------------------------------------------------------------------------+
+| SHOW CLUSTERS                                                                 |
++-------------------------------------------------------------------------------+
+| CLUSTER NAME:"two"                                                            |
+| +--------------------+------------------------------------------------------+ |
+| | MACHINE            | SERVICES                                             | |
+| +--------------------+------------------------------------------------------+ |
+| |                    |   TYPE       NAME           STATE      CLUSTER       | |
+| | 10.111.5.85        |   node       10.111.5.85    ENABLED      two         | |
+| |                    |                                                      | |
+| |                    | INSTANCES                                            | |
+| |                    | i-44274273(running),     m1.small,    instance-store | |
+| |                    | i-51475876(running),     m1.small,    instance-store | |
+| |                    | i-3fea5ffe(running),     m1.small,    instance-store | |
+| |                    |                                                      | |
+| +--------------------+------------------------------------------------------+ |
+| |                    |   TYPE       NAME           STATE      CLUSTER       | |
+| | 10.111.1.116       |   storage    two-sc-1       ENABLED      two         | |
+| |                    |   cluster    two-cc-1       ENABLED      two         | |
+| |                    |                                                      | |
+| +--------------------+------------------------------------------------------+ |
++-------------------------------------------------------------------------------+
+
+
+In [5]: cloud_admin.show_machines()
+[2015-05-20 00:09:47,285] [AdminApi] [DEBUG]:
++--------------------+-----------------------------------------------------------------------------+
+| MACHINE            | SERVICES                                                                    |
++--------------------+-----------------------------------------------------------------------------+
+|                    |   TYPE              NAME                               STATE      CLUSTER   |
+| 10.111.5.156       |   eucalyptus        10.111.5.156                       ENABLED              |
+|                    |   user-api          API_10.111.5.156                   ENABLED              |
+|                    |   autoscaling       API_10.111.5.156.autoscaling       ENABLED              |
+|                    |   cloudformation    API_10.111.5.156.cloudformation    ENABLED              |
+|                    |   cloudwatch        API_10.111.5.156.cloudwatch        ENABLED              |
+|                    |   compute           API_10.111.5.156.compute           ENABLED              |
+|                    |   euare             API_10.111.5.156.euare             ENABLED              |
+|                    |   identity          API_10.111.5.156.identity          ENABLED              |
+|                    |   imaging           API_10.111.5.156.imaging           ENABLED              |
+|                    |   loadbalancing     API_10.111.5.156.loadbalancing     ENABLED              |
+|                    |   objectstorage     API_10.111.5.156.objectstorage     ENABLED              |
+|                    |   objectstorage     API_10.111.5.156.objectstorage     ENABLED              |
+|                    |   simpleworkflow    API_10.111.5.156.simpleworkflow    ENABLED              |
+|                    |   tokens            API_10.111.5.156.tokens            ENABLED              |
+|                    |   objectstorage     API_10.111.5.156.objectstorage     ENABLED              |
+|                    |   objectstorage     API_10.111.5.156.objectstorage     ENABLED              |
+|                    |   walrusbackend     walrus-1                           ENABLED              |
+|                    |                                                                             |
++--------------------+-----------------------------------------------------------------------------+
+|                    |   TYPE              NAME                               STATE      CLUSTER   |
+| 10.111.5.151       |   node              10.111.5.151                       ENABLED      one     |
+|                    |                                                                             |
++--------------------+-----------------------------------------------------------------------------+
+|                    |   TYPE              NAME                               STATE      CLUSTER   |
+| 10.111.5.85        |   node              10.111.5.85                        ENABLED      two     |
+|                    |                                                                             |
+|                    | INSTANCES                                                                   |
+|                    | i-44274273(running),     m1.small,    instance-store                        |
+|                    | i-51475876(running),     m1.small,    instance-store                        |
+|                    | i-3fea5ffe(running),     m1.small,    instance-store                        |
+|                    |                                                                             |
++--------------------+-----------------------------------------------------------------------------+
+|                    |   TYPE              NAME                               STATE      CLUSTER   |
+| 10.111.5.180       |   storage           one-sc-1                           ENABLED      one     |
+|                    |   cluster           one-cc-1                           ENABLED      one     |
+|                    |                                                                             |
++--------------------+-----------------------------------------------------------------------------+
+|                    |   TYPE              NAME                               STATE      CLUSTER   |
+| 10.111.1.116       |   storage           two-sc-1                           ENABLED      two     |
+|                    |   cluster           two-cc-1                           ENABLED      two     |
+|                    |                                                                             |
++--------------------+-----------------------------------------------------------------------------+
+
 ```
 
 ### Query and display properties...
