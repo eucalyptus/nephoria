@@ -35,7 +35,7 @@ def SHOW_CLUSTER_CONTROLLER_SERVICES(connection, ccs=None, print_table=True):
 class EucaClusterControllerService(EucaComponentService):
 
     def update(self, new_service=None, get_instances=True, silent=True):
-        return self._update(get_method_name='get_cluster_controller_service',
+        return self._update(get_method=self.connection.get_cluster_controller_service,
                             get_method_kwargs=None, new_service=new_service, silent=silent)
 
     def show(self):

@@ -124,7 +124,7 @@ class EucaNodeService(EucaComponentService):
                 raise ValueError('Must set "name" or "fullname" before using update(). Name:{0}'
                                  .format(self.name))
         return self._update(new_service=new_service,
-                            get_method_name='get_node_controller_service',
+                            get_method=self.connection.get_node_controller_service,
                             get_method_kwargs={'name': self.name,
                                                'fullname': self.fullname,
                                                'partition': self.partition,

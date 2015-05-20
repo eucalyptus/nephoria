@@ -25,7 +25,7 @@ class EucaDnsService(EucaComponentService):
         self._resolver = value
 
     def update(self, new_service=None, get_instances=True, silent=True):
-        return self._update(get_method_name='get_services',
+        return self._update(get_method=self.connection.get_services,
                             get_method_kwargs={'service_type': 'dns'},
                             new_service=new_service,
                             silent=silent)

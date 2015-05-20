@@ -3,9 +3,8 @@ from cloud_admin.services.services import EucaComponentService, SHOW_COMPONENTS
 
 
 class Ufs(EucaComponentService):
-
+    # Unified Front End Services (UFS), parent service type is 'user-api'
     def __init__(self, connection=None, serviceobj=None):
-        self.child_services = []
         if not connection:
             connection = getattr(serviceobj, 'connection', None)
         super(Ufs, self).__init__(connection)
@@ -15,7 +14,7 @@ class Ufs(EucaComponentService):
             self._get_child_services()
 
     def update(self, new_service=None, get_instances=True, silent=True):
-        self._update(get_method_name='get_unified_frontend_service',
+        self._update(get_method=self.connection.get_unified_frontend_service,
                      get_method_kwargs=None, new_service=new_service, silent=silent)
         self._get_child_services()
         return self

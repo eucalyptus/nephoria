@@ -83,9 +83,8 @@ cad.show_storage_controllers()
 
 import copy
 import re
-import sys
 import time
-from urlparse import urlparse
+from prettytable import PrettyTable
 
 import boto
 from boto.vpc import VPCConnection
@@ -100,6 +99,7 @@ from cloud_admin.services.cluster_controller_service import (
     SHOW_CLUSTER_CONTROLLER_SERVICES
 )
 from cloud_admin.services.cloud_controller_service import EucaCloudControllerService
+from cloud_admin.services.cluster import Cluster, show_cluster
 from cloud_admin.services.dns_service import EucaDnsService
 from cloud_admin.services.storage_controller_service import EucaStorageControllerService
 from cloud_admin.services.osg_service import EucaObjectStorageGatewayService
@@ -123,7 +123,7 @@ from cloud_admin.services.eucaproperty import (
     SHOW_PROPERTIES,
     SHOW_PROPERTIES_NARROW
 )
-from cloud_utils.log_utils import get_traceback, eulogger
+from cloud_utils.log_utils import get_traceback, eulogger, markup
 
 ###############################################################################################
 #                        Eucalyptus Admin ('Empyrean') Query Interface                        #
@@ -802,12 +802,13 @@ class AdminApi(AWSQueryConnection):
         :return: UfsService
         :raise EucaNotFoundException:
         """
+        ret_list = []
         if names and not isinstance(names, list):
             names = [names]
         ufss = self.get_services(service_type='user-api', service_names=names)
         for ufs in ufss:
-            ufs = Ufs(serviceobj=ufs)
-        return ufs
+            ret_list.append(Ufs(serviceobj=ufs))
+        return ret_list
 
     def get_unified_frontend_service(self, name):
         ufss = self.get_all_unified_frontend_services(names=name)
@@ -977,27 +978,45 @@ class AdminApi(AWSQueryConnection):
             components.extend(comp_list or [])
         return SHOW_COMPONENTS(self, components=components, print_table=print_table)
 
-    def get_all_components(self):
+    def get_all_components(self, partition=None, service_type=None):
         """
         Attemtps to fetch all the 'components' from a cloud and return in a single list.
         See get_services() for fetching all 'services' from cloud.
         :return: list of EucaComponentService objs
         """
         components = {}
-        components['walrus'] = self.get_all_walrus_backend_services()
-        components['storage'] = self.get_all_storage_controller_services()
-        components['objectstorage'] = self.get_all_object_storage_gateway_services()
-        components['eucalyptus'] = self.get_all_cloud_controller_services()
-        components['cluster'] = self.get_all_cluster_controller_services()
-        components['node'] = self.get_all_node_controller_services()
-        components['user-api'] = self.get_all_unified_frontend_services()
+        ret_dict = {}
+        if service_type in [None, 'walrus']:
+            components['walrus'] = self.get_all_walrus_backend_services()
+        if service_type in [None, 'storage']:
+            components['storage'] = self.get_all_storage_controller_services()
+        if service_type in [None, 'objectstorage']:
+            components['objectstorage'] = self.get_all_object_storage_gateway_services()
+        if service_type in [None, 'eucalyptus']:
+            components['eucalyptus'] = self.get_all_cloud_controller_services()
+        if service_type in [None, 'cluster']:
+            components['cluster'] = self.get_all_cluster_controller_services()
+        if service_type in [None, 'node']:
+            components['node'] = self.get_all_node_controller_services()
+        if service_type in [None, 'user-api']:
+            components['user-api'] = self.get_all_unified_frontend_services()
         components['vmwarebroker'] = []
-        try:
-            components['vmwarebroker'] = self.get_all_vmware_broker_services()
-        except BotoServerError, VMWE:
-            self.debug_method('Failed to fetch vmware brokers, vmware may not be supported on '
-                              'this cloud. Err:{0}'.format(VMWE.message))
-        return components
+        if service_type in [None, 'vmwarebroker']:
+            try:
+                components['vmwarebroker'] = self.get_all_vmware_broker_services()
+            except BotoServerError, VMWE:
+                self.debug_method('Failed to fetch vmware brokers, vmware may not be supported on '
+                                  'this cloud. Err:{0}'.format(VMWE.message))
+        if not partition:
+            return components
+        else:
+            # Filter on service type
+            for ctype, services in components.iteritems():
+                ret_dict[ctype] = []
+                for service in services:
+                    if service.partition == partition:
+                        ret_dict[ctype].append(service)
+            return ret_dict
 
     ###############################################################################################
     #                            Eucalyptus 'Property' Methods                                    #
@@ -1123,41 +1142,130 @@ class AdminApi(AWSQueryConnection):
         return SHOW_PROPERTIES_NARROW(self, *args, **kwargs)
 
     ###############################################################################################
-    #                           Misc Service/Host Methods                                         #
+    #                           Machine/Host Methods                                              #
     ###############################################################################################
 
-    def get_machine_inventory(self, username='root', password=None, keypath=None,
-                              proxy=None):
+    def get_all_machines(self, partition=None, service_type=None):
         """
         Attempts to derive and return a list of the individual machines in use by a
         Eucalyptus service
         """
-        components = self.get_all_components()
-        cluster_names = self.get_all_cluster_names()
-        machine_list = {}
+        components = self.get_all_components(partition=partition, service_type=service_type)
+        machine_dict = {}
         for component_type, comp_list in components.iteritems():
             for component in comp_list:
-                type_string = component_type
-                self.debug_method('Inspecting component type:"{0}"'.format(component_type))
-                hostname = getattr(component, 'hostname', component.name)
-                if component.partition in cluster_names:
-                    type_string = "{0}({1})".format(component_type, component.partition)
-                if hostname not in machine_list:
-                    machine_list[hostname] = [type_string]
+                ip_addr = component.ip_addr or component.hostname
+                if ip_addr not in machine_dict:
+                    machine_dict[ip_addr] = [component]
                 else:
-                    machine_list[hostname].append(type_string)
-        # Add UFS services by parsing the uri of the service,
-        # since these services dont present a host attr in the response. This may be incorrect
-        # if/when a FQDN is used, or an LB, etc.?
-        for ufs in self.get_services(service_type='user-api'):
-            if getattr(ufs, 'uri', None):
-                url = urlparse(ufs.uri)
-                if url.hostname:
-                    if url.hostname not in machine_list:
-                        machine_list[url.hostname] = ['UFS']
-                    else:
-                        machine_list[url.hostname].append('UFS')
-        return machine_list
+                    machine_dict[ip_addr].append(component)
+        return machine_dict
+
+    def show_machines(self, machine_dict=None, partition=None, service_type=None, columns=4,
+                      print_table=True):
+        ins_id_len = 10
+        ins_type_len = 13
+        ins_dev_len = 16
+        ins_st_len = 15
+        ins_total = (ins_id_len + ins_dev_len + ins_type_len + ins_st_len) + 5
+        machine_hdr = (markup('MACHINE'), 18)
+        service_hdr = (markup('SERVICES'), 100)
+        pt = PrettyTable([machine_hdr[0], service_hdr[0]])
+        pt.align = 'l'
+        pt.hrules = 1
+        pt.max_width[machine_hdr[0]] = machine_hdr[1]
+        total = []
+        machines = machine_dict or self.get_all_machines(partition=partition,
+                                                         service_type=service_type)
+        if not isinstance(machines, dict):
+            raise ValueError('show_machines requires dict example: {"host ip":[services]}, '
+                             'got:"{0}/{1}"'.format(machines, type(machines)))
+        # To format the tables services, print them all at once and then sort the table
+        # rows string into the machines columns
+        for machine, services in machines.iteritems():
+            for serv in services:
+                total.append(serv)
+                if serv.child_services:
+                    total.extend(serv.child_services)
+        # Create a large table showing the service states, grab the first 3 columns
+        # for type, name, state, and zone
+        servpt = self.show_services(total, print_table=False)
+        serv_lines= servpt.get_string(border=0, padding_width=2,
+                                      fields=servpt._field_names[0:columns]).splitlines()
+        header = serv_lines[0]
+        ansi_escape = re.compile(r'\x1b[^m]*m')
+        # Now build the machine table...
+        for machine, services in machines.iteritems():
+            servbuf = header + "\n"
+            mservices = []
+            # Get the child services (ie for UFS)
+            for serv in services:
+                mservices.append(serv)
+                mservices.extend(serv.child_services)
+            for serv in mservices:
+                for line in serv_lines:
+                    # Remove the ansi markup for parsing purposes, but leave it in the
+                    # displayed line
+                    clean_line = ansi_escape.sub('', line)
+                    splitline = clean_line.split()
+                    if len(splitline) < 2:
+                        continue
+                    line_type = splitline[0]
+                    line_name = splitline[1]
+                    # Pull matching lines out of the pre-formatted service table...
+                    if (splitline and re.match("^{0}$".format(serv.type), line_type) and
+                        re.match("^{0}$".format(serv.name), line_name)):
+                        # Add this line to the services to be displayed for this machine
+                        servbuf += line + "\n"
+                if serv.type == 'node' and getattr(serv, 'instances', None):
+                    servbuf += "\n" + markup('INSTANCES', [1, 4]) + " \n"
+                    for x in serv.instances:
+                        servbuf += ("{0}{1}{2}{3}"
+                                    .format(str(x.id).ljust(ins_id_len),
+                                            str('('+ x.state + '),').ljust(ins_st_len),
+                                            str(x.instance_type + ",").ljust(ins_type_len),
+                                            str(x.root_device_type).ljust(ins_dev_len))
+                                    .ljust(ins_total)).strip() + "\n"
+            pt.add_row(["{0}\n{1}".format(str("").rjust(machine_hdr[1]),
+                                          markup(machine, [1, 4, 94])),
+                        servbuf])
+        if print_table:
+            self.debug_method("\n{0}\n".format(pt.get_string(sortby=pt.field_names[1])))
+        else:
+            return pt
+
+    def get_all_clusters(self, cluster_name=None):
+        ret_list = []
+        cluster_names = self.get_all_cluster_names()
+        if cluster_name:
+            if cluster_name not in cluster_names:
+                raise ValueError('Cluster name:{0} not in cluster names:{1}'
+                                 .format(cluster_name, ", ".join(str(x) for x in cluster_names)))
+            cluster_names = [cluster_name]
+        for cname in cluster_names:
+            ret_list.append(Cluster(self, cname))
+        return ret_list
+
+    def show_clusters(self, clusters=None, name=None, print_table=True):
+        maintpt = PrettyTable([markup('SHOW CLUSTERS')])
+        maintpt.align = 'l'
+        if clusters:
+            if not isinstance(clusters, list):
+                clusters = [clusters]
+        else:
+            clusters = self.get_all_clusters(cluster_name=name)
+        for cluster in clusters:
+            maintpt.add_row([markup('CLUSTER NAME:"{0}"'.format(cluster.name), [1, 4, 94])])
+            maintpt.add_row([cluster.show_machines(print_table=False).get_string()])
+        if print_table:
+            self.debug_method("\n{0}\n".format(maintpt))
+        else:
+            return maintpt
+
+
+    ###############################################################################################
+    #                           Misc Service Methods                                              #
+    ###############################################################################################
 
     def wait_for_service(self, service, states=None, partition=None,
                          attempt_both=True, interval=20, timeout=600):

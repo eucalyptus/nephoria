@@ -134,8 +134,10 @@ def SHOW_SERVICES(connection, services=None, service_type=None, show_part=False,
             html_string = html_string.replace(html_close, ">")
             connection.debug_method(html_string)
         else:
-            connection.debug_method(pt.get_string(sortby=part_hdr, fields=fields,
-                                                  sort_key=itemgetter(3, 2), reversesort=True))
+            connection.debug_method("\n" + pt.get_string(sortby=part_hdr,
+                                                         fields=fields,
+                                                         sort_key=itemgetter(3, 2),
+                                                         reversesort=True))
     else:
         return pt
 
@@ -376,6 +378,7 @@ class EucaService(EucaBaseObj):
         self.type = None
         self.uri = None
         self.uris = []
+        self.child_services = []
         super(EucaService, self).__init__(connection)
 
     @property
@@ -410,23 +413,7 @@ class EucaService(EucaBaseObj):
         and mixed use of FQDN vs IP...
         """
         if not self._ip_addr:
-            if self.hostname:
-                ips = get_ipv4_lookup(hostname=self.hostname,
-                                      port=22,
-                                      debug_method=self.debug_method,
-                                      verbose=False)
-                if ips:
-                    self._ip_addr = ips[0]
-            if not self._ip_addr and self.uri:
-                urlp = urlparse(self.uri)
-                hostname = getattr(urlp, 'hostname', None)
-                if hostname:
-                    ips = get_ipv4_lookup(hostname=hostname,
-                                          port=22,
-                                          debug_method=self.debug_method,
-                                          verbose=False)
-                if ips:
-                    self._ip_addr = ips[0]
+            return self._update_ip_addr()
         return self._ip_addr
 
     @property
@@ -443,11 +430,17 @@ class EucaService(EucaBaseObj):
             return self._hostname
         if self._host:
             return self._host
+        if self.uri:
+            urlp = urlparse(self.uri)
+            hostname = getattr(urlp, 'hostname', None)
+            if hostname:
+                return hostname
         return None
 
     @hostname.setter
     def hostname(self, value):
         self._hostname = value
+        self._update_ip_addr()
 
     @property
     def host(self):
@@ -547,6 +540,17 @@ class EucaService(EucaBaseObj):
         if new_service:
             self.__dict__.update(new_service.__dict__)
             return self
+
+    def _update_ip_addr(self):
+        if self.hostname:
+            ips = get_ipv4_lookup(hostname=self.hostname,
+                                  port=22,
+                                  debug_method=self.debug_method,
+                                  verbose=False)
+            if ips:
+                self._ip_addr = ips[0]
+        return self._ip_addr
+
 
     def show(self):
         return SHOW_SERVICES(self.connection, services=self)
@@ -706,14 +710,17 @@ class EucaServiceList(ResultSet):
     Result set used to parse a service response into EucaServices
     '''
 
+
     def __init__(self, connection=None):
         super(EucaServiceList, self).__init__(connection)
-        last_updated = time.time()
+        self.last_updated = time.time()
+        self.elems = []
 
     def __repr__(self):
         return str(self.__class__.__name__) + ":(Count:" + str(len(self)) + ")"
 
     def startElement(self, name, value, connection):
+        self.elems.append(value.copy())
         ename = name.replace('euca:', '')
         if ename == 'item':
             new_service = EucaService(connection=connection)
@@ -764,7 +771,7 @@ class EucaComponentService(EucaService):
     (services vs components, confusing? ... yes)
     """
 
-    def _update(self, get_method_name, get_method_kwargs=None, new_service=None, silent=True):
+    def _update(self, get_method, get_method_kwargs=None, new_service=None, silent=True):
         """
         Base update method for updating component service objs
         :param get_method_name: method name used to fetch the service for update. This method
@@ -778,8 +785,6 @@ class EucaComponentService(EucaService):
         """
         errmsg = ""
         if not new_service:
-            # Fetch new object to update self from using the get method provided.
-            get_method = getattr(self.connection, get_method_name)
             # If kwargs was left as None, update it with at least self.name...
             if get_method_kwargs is None:
                 name = self.name
