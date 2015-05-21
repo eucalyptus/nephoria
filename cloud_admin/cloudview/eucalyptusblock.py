@@ -143,7 +143,7 @@ class ClustersBlock(ConfigBlock):
                 setattr(new_cluster, sc.name, sc.ip_addr)
             try:
                 prop = cluster.get_cluster_property('storage.blockstoragemanager')
-                new_cluster.storage_backend = prop.value
+                setattr(self, 'storage-backend', prop.value)
             except EucaNotFoundException as NFE:
                 new_cluster.storage_backend = str(NFE)
                 pass
