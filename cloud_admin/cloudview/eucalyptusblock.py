@@ -73,19 +73,23 @@ from cloud_admin.cloudview import Namespace
 from cloud_admin.services import EucaNotFoundException
 
 class EucalyptusBlock(ConfigBlock):
-    def build_active_config(self):
-        #Add the topology configuration
-        self.topology = TopologyBlock(self._connection)
-        self.topology.build_active_config()
 
-        #Add the node controller configuration
-        self.nc = NodeControllerBlock(self._connection)
-        self.nc.build_active_config()
+    def build_active_config(self, do_topology=True, do_node_config=True, do_props=True):
+        if do_topology:
+            #Add the topology configuration
+            self.topology = TopologyBlock(self._connection)
+            self.topology.build_active_config()
 
-        # Add Eucalyptus system properties
-        system_properties = SystemPropertiesBlock(self._connection)
-        system_properties.build_active_config()
-        setattr(self, 'system-properties', system_properties)
+        if do_node_config:
+            #Add the node controller configuration
+            self.nc = NodeControllerBlock(self._connection)
+            self.nc.build_active_config()
+
+        if do_props:
+            # Add Eucalyptus system properties
+            system_properties = SystemPropertiesBlock(self._connection)
+            system_properties.build_active_config()
+            setattr(self, 'system-properties', system_properties)
 
 
 class TopologyBlock(ConfigBlock):
@@ -158,22 +162,36 @@ class NodeControllerBlock(ConfigBlock):
     def build_active_config(self):
         maxcores = {}
         cachesize = {}
+        # where dict[value] = [node1, node2, etc..]
+        #       dict[value1] = [node3, ..]
+        # if the number of keys (values) in dict is greater than 1 then nodes have different
+        # configurations (which may not be supported by the deployment mechanisms?
         for node in self._connection.get_node_hosts():
+            # Get values from the node's /etc/eucalyptus.conf...
+            # Get configured max cores...
             if maxcores.get(node.eucalyptus_conf.MAX_CORES) is not None:
                 maxcores[node.eucalyptus_conf.MAX_CORES].append(node.hostname)
             else:
                 maxcores[node.eucalyptus_conf.MAX_CORES] = [node.hostname]
+            # get configured cache size...
             if cachesize.get(node.eucalyptus_conf.NC_CACHE_SIZE) is not None:
                 cachesize[node.eucalyptus_conf.NC_CACHE_SIZE].append(node.hostname)
             else:
                 cachesize[node.eucalyptus_conf.NC_CACHE_SIZE] = [node.hostname]
+        # If we have more than one key entry in maxcores and cachsize, then one of the nodes
+        # had a different value.
+        # In this case produce a dict. This will at least show the node(s) which
+        # have different values, and can be considered for a format change in the config
+        # If these values end up being empty strings then dont create (empty attributes)
         if len(maxcores.keys()) == 1:
             maxcores = maxcores.keys()[0]
-        setattr(self, 'max-cores', maxcores)
+        if maxcores:
+            setattr(self, 'max-cores', maxcores)
 
         if len(cachesize.keys()) == 1:
             cachesize = cachesize.keys()[0]
-        setattr(self, 'cache-size', cachesize)
+        if cachesize:
+            setattr(self, 'cache-size', cachesize)
 
 
 
