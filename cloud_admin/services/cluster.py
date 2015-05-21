@@ -4,7 +4,7 @@ from cloud_utils.log_utils import markup
 
 def show_cluster(connection, cluster, print_table=True):
     maintpt = PrettyTable([markup('CLUSTER: {0}'.format(cluster.name))])
-    machpt = connection.show_machines(machine_dict=cluster.machines, print_table=False)
+    machpt = connection.show_machine_mappings(machine_dict=cluster.machines, print_table=False)
     maintpt.add_row([machpt.get_string(sortby=machpt.field_names[1], reversesort=True)])
     proppt = connection.show_properties(cluster.properties, print_table=False)
     maintpt.add_row([proppt.get_string()])
@@ -27,8 +27,11 @@ class Cluster(object):
         self.name = name
         self._machines_dict = {}
         self._cluster_controllers = []
+        self._cluster_services = []
         self._storage_controllers = []
+        self._storage_services = []
         self._nodes = []
+        self._node_services = []
         self._properties = []
         self.update()
 
@@ -48,15 +51,37 @@ class Cluster(object):
             return pt
 
     def show_machines(self, print_table=True):
-        pt = self.connection.show_machines(machine_dict=self.machines, print_table=False)
+        pt = self.connection.show_machine_mappings(machine_dict=self.machines, print_table=False)
         if print_table:
             self.connection.debug_method("\n{0}\n".format(pt.get_string(sortby=pt.field_names[1],
                                                                         reversesort=True)))
         else:
             return pt
 
-    def show_properties(self, print_table=True):
-        return self.connection.show_properties(self.properties, print_table=print_table)
+    def show_properties(self, prefix=None, show_description=True, grid=True, print_table=True):
+        show_list = []
+        if prefix:
+            if not str(prefix).startswith(self.name):
+                prefix = "{0}.{1}".format(self.name, prefix)
+            for prop in self.properties:
+                if str(prop.name).startswith(prefix):
+                    show_list.append(prop)
+        else:
+            show_list = self.properties
+        print ''
+        self.connection.show_properties(show_list, description=show_description, grid=grid,
+                                        print_table=print_table)
+
+    def get_cluster_property(self, name):
+        if name:
+            names = [name]
+            if not str(name).startswith(self.name):
+                names.append("{0}.{1}".format(self.name, name))
+            for prop in self.properties:
+                if prop.name in names:
+                    prop.update()
+                    return prop
+            return self.connection.get_property(name)
 
     @property
     def machines(self):
@@ -65,7 +90,17 @@ class Cluster(object):
         return self._machines_dict
 
     @property
-    def cluster_controllers(self):
+    def cluster_controller_services(self):
+        if not self._cluster_services:
+            for cc in self.cluster_controller_machines:
+                for ip, services in cc.iteritems():
+                    for serv in services:
+                        if serv.type == 'cluster':
+                            self._cluster_services.append(serv)
+        return self._cluster_services
+
+    @property
+    def cluster_controller_machines(self):
         if not self._cluster_controllers:
             self._cluster_controllers = []
             for machine, services in self._machines_dict.iteritems():
@@ -74,15 +109,25 @@ class Cluster(object):
                         self._cluster_controllers.append({machine: services})
         return self._cluster_controllers
 
-    @cluster_controllers.setter
-    def cluster_controllers(self, value):
+    @cluster_controller_machines.setter
+    def cluster_controller_machines(self, value):
         value = value or []
         if not isinstance(value, list):
             value = [value]
         self._cluster_controllers = value
 
     @property
-    def storage_controllers(self):
+    def storage_controller_services(self):
+        if not self._storage_services:
+            for sc in self.storage_controller_machines:
+                for ip, services in sc.iteritems():
+                    for serv in services:
+                        if serv.type == 'storage':
+                            self._storage_services.append(serv)
+        return self._storage_services
+
+    @property
+    def storage_controller_machines(self):
         if not self._storage_controllers:
             self._storage_controllers = []
             for machine, services in self._machines_dict.iteritems():
@@ -91,15 +136,25 @@ class Cluster(object):
                         self._storage_controllers.append({machine: services})
         return self._storage_controllers
 
-    @storage_controllers.setter
-    def storage_controllers(self, value):
+    @storage_controller_machines.setter
+    def storage_controller_machines(self, value):
         value = value or []
         if not isinstance(value, list):
             value = [value]
         self._storage_controllers = value
 
     @property
-    def node_controllers(self):
+    def node_controller_services(self):
+        if not self._node_services:
+            for nc in self.node_controller_machines:
+                for ip, services in nc.iteritems():
+                    for serv in services:
+                        if serv.type == 'node':
+                            self._node_services.append(serv)
+        return self._node_services
+
+    @property
+    def node_controller_machines(self):
         if not self._node_controllers:
             self._node_controllers = []
             for machine, services in self._machines_dict.iteritems():
@@ -108,8 +163,8 @@ class Cluster(object):
                         self._node_controllers.append({machine: services})
         return self._node_controllers
 
-    @node_controllers.setter
-    def node_controllers(self, value):
+    @node_controller_machines.setter
+    def node_controller_machines(self, value):
         value = value or []
         if not isinstance(value, list):
             value = [value]
@@ -135,7 +190,7 @@ class Cluster(object):
         return properties
 
     def _update_machines(self):
-        machines = self.connection.get_all_machines(partition=self.name)
+        machines = self.connection.get_all_machine_mappings(partition=self.name)
         if machines:
             self._machines_dict = machines
         return machines

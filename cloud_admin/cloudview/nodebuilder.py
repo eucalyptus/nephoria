@@ -5,10 +5,10 @@ nc:
       cache-size: 40000
 """
 
-from cloud_admin.topo import BaseBuilder
+from cloud_admin.cloudview import ConfigBlock
 
 
-class NodeBuilder(BaseBuilder):
+class NodeBuilder(ConfigBlock):
 
     def __init__(self, builder):
         pass

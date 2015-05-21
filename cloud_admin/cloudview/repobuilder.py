@@ -6,10 +6,10 @@
     yum-options: "--nogpg"
 """
 
-from cloud_admin.topo import BaseBuilder
+from cloud_admin.cloudview import ConfigBlock
 
 
-class RepoBuilder(BaseBuilder):
+class RepoBuilder(ConfigBlock):
 
     def __init__(self, builder):
         pass

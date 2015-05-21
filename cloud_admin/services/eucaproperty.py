@@ -30,7 +30,8 @@ def SHOW_PROPERTIES(connection, properties=None, description=True, grid=ALL,
     pt.padding_width = 0
     pt.align = 'l'
     pt.hrules = grid or 0
-    properties = properties or connection.get_properties(prop_names)
+    if not isinstance(properties, list):
+        properties = properties or connection.get_properties(prop_names)
     if not isinstance(properties, list):
         properties = [properties]
     for prop in properties:

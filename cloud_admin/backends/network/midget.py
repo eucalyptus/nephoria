@@ -395,7 +395,7 @@ class Midget(object):
         bridge = self.get_device_by_peer_id(port.get_peer_id())
         if not isinstance(bridge, Bridge):
             raise ValueError('peer device for instance router is not a bridge, '
-                             'fix the topo assumptions made in this method!')
+                             'fix the cloudview assumptions made in this method!')
         return bridge
 
     def show_port_summary(self, port, showchains=True, showbgp=True, indent=None, printme=True):

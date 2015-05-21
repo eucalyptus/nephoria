@@ -739,7 +739,7 @@ class SshConnection():
             # to fail in their response(s). Hack to avoid ipv6 lookups...
             # Try ipv4 dns resolution of 'hostname', and pass the ip instead of a hostname to
             # Paramiko's connect to avoid the potential ipv6 'AAAA' lookup...
-            iplist = self.get_ipv4_lookup(hostname, verbose=verbose)
+            iplist = get_ipv4_lookup(hostname, verbose=verbose)
         if not iplist:
             iplist = [hostname]
         attempt = 0

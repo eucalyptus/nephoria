@@ -17,11 +17,11 @@ system-properties:
       www.http_port: '9999'
 """
 
-from cloud_admin.topo import BaseBuilder
+from cloud_admin.cloudview import ConfigBlock
 
 
-class SysPropBuilder(BaseBuilder):
+class SysPropBuilder(ConfigBlock):
 
-    def __init__(self, builder):
-        pass
-
+    def build_active_config(self):
+        for prop in self._connection.get_properties():
+            setattr(self, prop.name, prop.value)

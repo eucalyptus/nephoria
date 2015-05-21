@@ -21,8 +21,8 @@ network:
       mode: VPCMIDO
 """
 
-from cloud_admin.topo import BaseBuilder
+from cloud_admin.cloudview import ConfigBlock
 
-class NetworkBuilder(BaseBuilder):
+class NetworkBuilder(ConfigBlock):
     def __init__(self, builder):
         pass

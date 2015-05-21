@@ -352,14 +352,16 @@ class AutoCreds(Eucarc):
                     self.debug("{0}\nFailed to fetch creds remotely, err:'{1}'"
                                .format(get_traceback(), str(e)))
 
+        default_order = [try_local, try_adminapi, try_remote]
         if self._clc_ip and self._has_updated_connect_args:
             # if any ssh related arguements were provided, assume the user would like
-            # to try remote
+            # to try remote first
             if try_remote(self):
                 return
+            default_order.remove(try_remote)
             raise ValueError('Could not find "remote" creds with provided information.')
         else:
-            for meth in [try_local, try_adminapi, try_remote]:
+            for meth in default_order:
                 if meth(self):
                     return
             raise ValueError("Could not find path with provided information.")

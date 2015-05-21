@@ -25,19 +25,19 @@ midokura:
     - 10.111.1.41:2181
 """
 
-from cloud_admin.topo import BaseBuilder
+from cloud_admin.cloudview import ConfigBlock
 
 
-class MidokuraBuilder(BaseBuilder):
+class MidokuraBuilder(ConfigBlock):
     pass
 
-class BgpBuilder(BaseBuilder):
+class BgpBuilder(ConfigBlock):
     pass
 
-class Cassandras(BaseBuilder):
+class Cassandras(ConfigBlock):
     pass
 
-class ZooKeepers(BaseBuilder):
+class ZooKeepers(ConfigBlock):
     pass
 
 

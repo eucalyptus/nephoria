@@ -31,7 +31,6 @@
 
 import os
 import re
-from argparse import Namespace
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 from cloud_utils.system_utils.machine import Machine
 from cloud_admin.hosts.nc_helpers import NodeControllerHelpers
@@ -39,6 +38,7 @@ from cloud_admin.hosts.cc_helpers import ClusterControllerHelpers
 from cloud_admin.hosts.sc_helpers import StorageControllerHelpers
 from cloud_admin.hosts.clc_helpers import CloudControllerHelpers
 from cloud_admin.hosts.walrus_helpers import WalrusHelpers
+from cloud_admin.hosts.eucalyptusconf import EucalyptusConf
 
 
 class EucaHost(Machine):
@@ -274,20 +274,7 @@ class EucaHost(Machine):
                 self.log.debug(err)
         else:
             try:
-                eucalyptus_conf = Namespace()
-                message = ""
-                for line in out:
-                    line.strip()
-                    if not re.match('^#', line):
-                        match = re.search('^(\w+)=\s*(\S+)$', line)
-                    if not match:
-                        # This line does not match our expected format, add it to the messages
-                        message += line + "\n"
-                    else:
-                        key = match.group(1)
-                        value = match.group(2)
-                        value = str(value).strip('"').strip("'")
-                        eucalyptus_conf.__setattr__(key, value)
+                eucalyptus_conf = EucalyptusConf(lines=out)
                 self.eucalyptus_conf = eucalyptus_conf
             except Exception, e:
                 out = 'Error while trying to create euconfig from eucalyptus_conf:' + str(e)

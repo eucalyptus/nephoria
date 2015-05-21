@@ -7,7 +7,7 @@ override_attributes: {}
 cookbook_versions: {}
 """
 
-from cloud_admin.topo import BaseBuilder
+from cloud_admin.cloudview import ConfigBlock
 
-class ChefBuilder(BaseBuilder):
+class ChefBuilder(ConfigBlock):
     pass

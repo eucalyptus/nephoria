@@ -1145,10 +1145,10 @@ class AdminApi(AWSQueryConnection):
     #                           Machine/Host Methods                                              #
     ###############################################################################################
 
-    def get_all_machines(self, partition=None, service_type=None):
+    def get_all_machine_mappings(self, partition=None, service_type=None):
         """
-        Attempts to derive and return a list of the individual machines in use by a
-        Eucalyptus service
+        Attempts to derive and return a list of the individual machine/host to service mappings
+        in use by a Eucalyptus service
         """
         components = self.get_all_components(partition=partition, service_type=service_type)
         machine_dict = {}
@@ -1161,7 +1161,7 @@ class AdminApi(AWSQueryConnection):
                     machine_dict[ip_addr].append(component)
         return machine_dict
 
-    def show_machines(self, machine_dict=None, partition=None, service_type=None, columns=4,
+    def show_machine_mappings(self, machine_dict=None, partition=None, service_type=None, columns=4,
                       print_table=True):
         ins_id_len = 10
         ins_type_len = 13
@@ -1175,10 +1175,10 @@ class AdminApi(AWSQueryConnection):
         pt.hrules = 1
         pt.max_width[machine_hdr[0]] = machine_hdr[1]
         total = []
-        machines = machine_dict or self.get_all_machines(partition=partition,
+        machines = machine_dict or self.get_all_machine_mappings(partition=partition,
                                                          service_type=service_type)
         if not isinstance(machines, dict):
-            raise ValueError('show_machines requires dict example: {"host ip":[services]}, '
+            raise ValueError('show_machine_mappings requires dict example: {"host ip":[services]}, '
                              'got:"{0}/{1}"'.format(machines, type(machines)))
         # To format the tables services, print them all at once and then sort the table
         # rows string into the machines columns
@@ -1256,7 +1256,7 @@ class AdminApi(AWSQueryConnection):
             clusters = self.get_all_clusters(cluster_name=name)
         for cluster in clusters:
             maintpt.add_row([markup('CLUSTER NAME:"{0}"'.format(cluster.name), [1, 4, 94])])
-            maintpt.add_row([cluster.show_machines(print_table=False).get_string()])
+            maintpt.add_row([cluster.show_machine_mappings(print_table=False).get_string()])
         if print_table:
             self.debug_method("\n{0}\n".format(maintpt))
         else:
