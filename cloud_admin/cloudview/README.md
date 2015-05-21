@@ -46,10 +46,10 @@ topology:
         nodes: 10.111.5.151
         one-cc-1: 10.111.5.180
         one-sc-1: 10.111.5.180
-        storage_backend: netapp
+        storage-backend: netapp
       two:
         nodes: 10.111.5.85
-        storage_backend: netapp
+        storage-backend: netapp
         two-cc-1: 10.111.1.116
         two-sc-1: 10.111.1.116
   user-facing:
@@ -73,11 +73,11 @@ In [13]: print eb.to_json()
                     "nodes": "10.111.5.151",
                     "one-cc-1": "10.111.5.180",
                     "one-sc-1": "10.111.5.180",
-                    "storage_backend": "netapp"
+                    "storage-backend": "netapp"
                 },
                 "two": {
                     "nodes": "10.111.5.85",
-                    "storage_backend": "netapp",
+                    "storage-backend": "netapp",
                     "two-cc-1": "10.111.1.116",
                     "two-sc-1": "10.111.1.116"
                 }
