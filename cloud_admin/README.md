@@ -25,7 +25,7 @@
         - Eucalyptus Administrative Properties
         - Eucalyptus Administrative API
 
-##### topo
+##### cloudview
     Eucalyptus Cloud topology utilities.
     This may include:
         - Utilities to help manage, monitor, debug a given topology.
