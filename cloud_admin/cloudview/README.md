@@ -29,6 +29,8 @@ Now build/discover the configuration from an active/live cloud...
 
 ```
 In [7]: eb.build_active_config(do_props=False)
+```
+
 
 In Yaml...
 
