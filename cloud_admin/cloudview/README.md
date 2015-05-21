@@ -18,9 +18,8 @@ obj will depend on what you are trying to build...
 ```
 
 In [1]: from cloud_admin.cloudview.eucalyptusblock import EucalyptusBlock
-
 In [2]: from cloud_admin.cloudview.systemconnection import SystemConnection
-s
+
 In [3]: sc = SystemConnection('10.111.5.156', password='foobar', credpath='eucarc-10.111.5.156-eucalyptus-admin/eucarc')
 In [4]: eb = EucalyptusBlock(sc)
 ```
