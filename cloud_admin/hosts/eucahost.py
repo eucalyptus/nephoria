@@ -54,6 +54,9 @@ class EucaHost(Machine):
         self._euca_ws_helpers = None
         self.__helpers = None
         self._nc_helpers = None
+        self._eucalyptus_repo_file = None
+        self._eucalyptus_enterprise_repo_file = None
+        self._euca2ools_repo_file = None
         self.euca_source = None
         self.components = {}
         services = services or []
@@ -64,17 +67,16 @@ class EucaHost(Machine):
         super(EucaHost, self).__init__(**kwargs)
 
     def machine_setup(self):
+        """
+        Used as a callback for extending this class without super().__init__()
+        """
         pass
 
     @property
     def euca_service_codes(self):
-        ret = []
-        for serv in self.services:
-            ret.append(serv.service_code)
-        return ret
-
-    @property
-    def euca_service_codes(self):
+        """
+        A list of the abbreviations/codes any service has defined. ie: SC, CC, CLC, NC, etc..
+        """
         ret = []
         for serv in self.services:
             if not serv.service_code in ret:
@@ -98,6 +100,10 @@ class EucaHost(Machine):
 
     @property
     def summary_string(self):
+        """
+        A string representing the legacy format for representing a cloud host/machine:
+        ie: "1.1.1.1 centos 6.6 x86_64 PARTI01 [CC SC]"
+        """
         try:
             return "{0} {1} {2} {3} {4} {5}".format(self.hostname,
                                                     self.distro,
@@ -111,6 +117,10 @@ class EucaHost(Machine):
 
     @property
     def eucalyptus_conf(self):
+        """
+        A Namespace representing the keys/values found in the eucalyptus.conf file found on
+        this machine.
+        """
         if not self._config:
             self._config = self.get_eucalyptus_conf()
         return self._config
@@ -121,36 +131,54 @@ class EucaHost(Machine):
 
     @property
     def euca_nc_helpers(self):
+        """
+        Machine helper methods specific to the Eucalyptus services running on this machine
+        """
         if not self._euca_nc_helpers:
             self._euca_nc_helpers = NodeControllerHelpers(self)
         return self._euca_nc_helpers
 
     @property
     def euca_cc_helpers(self):
+        """
+        Machine helper methods specific to the Eucalyptus services running on this machine
+        """
         if not self._euca_cc_helpers:
             self._euca_cc_helpers = ClusterControllerHelpers(self)
         return self._euca_cc_helpers
 
     @property
     def euca_sc_helpers(self):
+        """
+        Machine helper methods specific to the Eucalyptus services running on this machine
+        """
         if not self._euca_sc_helpers:
             self._euca_sc_helpers = StorageControllerHelpers(self)
         return self._euca_sc_helpers
 
     @property
     def euca_clc_helpers(self):
+        """
+        Machine helper methods specific to the Eucalyptus services running on this machine
+        """
         if not self._euca_clc_helpers:
             self._euca_clc_helpers = CloudControllerHelpers(self)
         return self._euca_clc_helpers
 
     @property
     def euca_ws_helpers(self):
+        """
+        Machine helper methods specific to the Eucalyptus services running on this machine
+        """
         if not self._euca_ws_helpers:
             self._euca_ws_helpers = WalrusHelpers(self)
         return self._euca_ws_helpers
 
     @property
     def euca_osg_helpers(self):
+        """
+        Machine helper methods specific to the Eucalyptus services running on this machine
+        """
         if not self._euca_osg_helpers:
             self._euca_osg_helpers = NodeControllerHelpers(self)
         return self._euca_osg_helpers
@@ -161,6 +189,39 @@ class EucaHost(Machine):
             # self._euca_ufs_helpers = <ADD UFS HELPERS>(self)
         return self._euca_osg_helpers
 
+    @property
+    def eucalyptus_repo_file(self):
+        """
+        RepoFile Namespace representing the key values repo info contained in a file where the
+        baseurl matches the current url in use for the package name.
+        """
+        if not self._eucalyptus_repo_file:
+            self._eucalyptus_repo_file = self.package_manager.get_repo_file_by_baseurl(
+                url=self.get_eucalyptus_repo_url())
+        return self._eucalyptus_repo_file
+
+    @property
+    def eucalyptus_enterprise_repo_file(self):
+        """
+        RepoFile Namespace representing the key values repo info contained in a file where the
+        baseurl matches the current url in use for the package name.
+        """
+        if not self._eucalyptus_enterprise_repo_file:
+            self._eucalyptus_enterprise_repo_file = self.package_manager.get_repo_file_by_baseurl(
+                url=self.get_eucalyptus_enterprise_repo_url())
+        return self._eucalyptus_enterprise_repo_file
+
+    @property
+    def euca2ools_repo_file(self):
+        """
+        RepoFile Namespace representing the key values repo info contained in a file where the
+        baseurl matches the current url in use for the package name.
+        """
+        if not self._euca2ools_repo_file:
+            self._euca2ools_repo_file = self.package_manager.get_repo_file_by_baseurl(
+                url=self.get_euca2ools_repo_url())
+        return self._euca2ools_repo_file
+
     def get_installed_eucalyptus_packages(self, searchstring='euca'):
         return self.package_manager.get_installed_packages(searchstring=searchstring)
 
@@ -170,12 +231,21 @@ class EucaHost(Machine):
         return self.sys(cmd, code=0)
 
     def get_eucalyptus_repo_url(self):
+        """
+        Attempts to return the url in use for this package
+        """
         return self.package_manager.get_url_for_package('eucalyptus')
 
     def get_eucalyptus_enterprise_repo_url(self):
+        """
+        Attempts to return the url in use for this package
+        """
         return self.package_manager.get_url_for_package('eucalyptus-enterprise')
 
     def get_euca2ools_repo_url(self):
+        """
+        Attempts to return the url in use for this package
+        """
         return self.package_manager.get_url_for_package('euca2ools')
 
     def get_eucalyptus_service_pid(self, eucalyptus_service):
@@ -283,6 +353,9 @@ class EucaHost(Machine):
 
     @staticmethod
     def _get_eucalyptus_home(machine):
+        """
+        A poor attempt to find the Eucalyptus installation path, ie: '/', or '/opt/eucalyptus'
+        """
         out = machine.sys('env | grep EUCALYPTUS') or []
         for line in out:
             match =  re.match("^EUCALYPTUS=(\S*)", line)
@@ -295,9 +368,20 @@ class EucaHost(Machine):
             return '/'
 
     def get_eucalyptus_home(self):
+        """
+        A poor attempt to find the Eucalyptus installation path, ie: '/', or '/opt/eucalyptus'
+        """
         return self._get_eucalyptus_home(self)
 
     def get_eucalyptus_conf(self, eof=False, basepaths=None, verbose=False):
+        """
+        Attempts to read and return the eucalyptus.conf file on this machine into a
+        Eucalyptusconf namespace obj.
+        :param eof: bool, raise an exception on failure otherwise ignore and return None
+        :param basepaths: list of strings representing the paths to look for 'eucalyptus.conf'
+        :param verbose: log additional information
+        :returns Eucalyptusconf obj or None
+        """
         if basepaths is None:
             basepaths = ["/", "/opt/eucalyptus"]
         elif not isinstance(basepaths, list):

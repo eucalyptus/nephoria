@@ -68,6 +68,7 @@ eucalyptus:
       www.http_port: '9999'
 """
 import json
+import re
 import sys
 from cloud_admin.cloudview import ConfigBlock
 from cloud_admin.cloudview import Namespace
@@ -139,7 +140,8 @@ def get_values_from_hosts(hostdict, host_method_name=None, host_attr_chain=[],
 class EucalyptusBlock(ConfigBlock):
 
     def build_active_config(self, do_topology=True, do_node_config=True, do_props=True,
-                            do_repo_urls=True, do_network=True, do_service_images=True):
+                            do_repo_urls=True, do_network=True, do_service_images=True,
+                            do_euca_conf_gen=True, do_cc_config=True, do_yum_options=True):
         if do_topology:
             # Discover and add the topology configuration
             self.topology = TopologyBlock(self._connection)
@@ -149,6 +151,10 @@ class EucalyptusBlock(ConfigBlock):
             # Discover and add the node controller configuration
             self.nc = NodeControllerBlock(self._connection)
             self.nc.build_active_config()
+
+        if do_cc_config:
+            self.cc = ClusterControllerBlock(self._connection)
+            self.cc.build_active_config()
 
         if do_props:
             # Discover and add the current Eucalyptus system properties
@@ -160,6 +166,10 @@ class EucalyptusBlock(ConfigBlock):
             # Discover and add the current eucalyptus repo URLs
             self.discover_repo_urls()
 
+        if do_yum_options:
+            # Discover and add the global yum options supported in deployment
+            self.discover_yum_options()
+
         if do_network:
             # Discover and add the current network config
             self.network = NetworkConfigBlock(self._connection)
@@ -169,10 +179,11 @@ class EucalyptusBlock(ConfigBlock):
             # Discover and add the service image config
             self.discover_service_image_config()
 
+        if do_euca_conf_gen:
+            self.discover_euca_conf_general()
+
     def discover_service_image_config(self):
         pass
-
-
 
     def discover_repo_urls(self):
         """
@@ -185,34 +196,64 @@ class EucalyptusBlock(ConfigBlock):
         mapping will used to provide more info as to the location of the machines with each url.
 
         """
-        eucalyptus_repo = {}
-        eucalyptus_enterprise_repo = {}
-        euca2ools_repo = {}
-        repo_map = {'eucalyptus-repo': 'get_eucalyptus_repo_url',
-                    'eucalyptus-enterprise-repo': 'get_eucalyptus_enterprise_repo_url',
-                    'euca2ools-repo': 'get_euca2ools_repo_url'}
+        repo_map = {'eucalyptus-repo': ['eucalyptus_repo_file', 'baseurl'],
+                    'eucalyptus-enterprise-repo': ['eucalyptus_enterprise_repo_file', 'baseurl'],
+                    'euca2ools-repo': ['euca2ools_repo_file', 'baseurl']}
 
-        for localname, methodname in repo_map.iteritems():
-            value = get_values_from_hosts(self._connection.eucahosts, host_method_name=methodname)
+        for localname, attrchain in repo_map.iteritems():
+            value = get_values_from_hosts(self._connection.eucahosts, host_attr_chain=attrchain)
             if value:
+                try:
+                    baseurl = re.match('^(http://\S+/x86_64)', value)
+                    if baseurl:
+                        value = baseurl.group(1)
+                except:
+                    pass
                 setattr(self, localname, value)
 
-
-    def discover_log_level(self):
+    def discover_yum_options(self):
         """
-        Attempt to query each machine and build the Eucalyptus log-level attributes...
-            eucalyptus-repo: http://...
-            enterprise-repo: http://...
-            euca2ools-repo: http://...
+        Iterate over all hosts and all managed eucalyptus repos, to pick out supported
+        yum options (currently only 'gpgcheck'). If any of the euca managed repos on any hosts
+        differs from the others, report the dict to help sort out who/what is different.
+        Else return the single value they all share.
+        """
+        opt_map = {'yum-options': ['eucalyptus_repo_file', 'gpgcheck'],
+                    'yum-options': ['eucalyptus_enterprise_repo_file', 'gpgcheck'],
+                    'yum-options': ['euca2ools_repo_file', 'gpgcheck']}
+        opt_dict = {}
+        for localname, attrchain in opt_map.iteritems():
+            value = get_values_from_hosts(self._connection.eucahosts, host_attr_chain=attrchain)
+            opt_dict[attrchain[0]] = value
+        # if all the values are the same return the single value...
+        if len(set(opt_dict.values()))==1:
+            value = opt_dict.values().pop()
+        else:
+            # some repo, or host has a different value so return the dict...
+            value = {'gpgcheck': opt_dict}
+        if value and value != '0':
+            value = "--nogpg"
+        setattr(self, localname, value)
+
+
+    def discover_euca_conf_general(self):
+        """
+        Attempt to query each machine and build the eucalyptus.conf general attributes...
         If every machine returns the same values, then the single string value will be
         used. If more than one value is in use by the machines then a dict showing 'host:'value'
         mapping will used to provide more info as to the location of the machines with each value.
         """
-        log_level = {}
-        log_level = get_values_from_hosts(hostdict=self._connection.eucahosts,
-                                          host_attr_chain=['eucalyptus_conf', 'LOG_LEVEL'])
-        if log_level:
-            setattr(self, 'log-level', log_level)
+        config_map = {'cloud-opts': 'CLOUD_OPTS',
+                      'eucalyptus_conf': 'LOG_LEVEL',
+                      'home-directory': 'EUCALYPTUS',
+                      'user': 'EUCA_USER'}
+
+        for localname, confname in config_map.iteritems():
+            value = get_values_from_hosts(
+                hostdict=self._connection.eucahosts,
+                host_attr_chain=['eucalyptus_conf', '{0}'.format(confname)])
+            if value:
+                setattr(self, localname, value)
 
 
 class TopologyBlock(ConfigBlock):
@@ -239,7 +280,7 @@ class TopologyBlock(ConfigBlock):
         ufs_ips = []
         for service in ufs:
             ufs_ips.append(service.ip_addr)
-        setattr(self,'user-facing', ufs_ips)
+        setattr(self, 'user-facing', ufs_ips)
 
 
 class ClustersBlock(ConfigBlock):
@@ -284,7 +325,23 @@ class NodeControllerBlock(ConfigBlock):
 
     def build_active_config(self):
         confmap = {'max-cores': ['eucalyptus_conf', 'MAX_CORES'],
-                   'cachesize': ['eucalyptus_conf', 'NC_CACHE_SIZE']}
+                   'cachesize': ['eucalyptus_conf', 'NC_CACHE_SIZE'],
+                   'service-path': ['eucalyptus_conf', 'NC_SERVICE'],
+                   'port': ['eucalyptus_conf', 'NC_PORT'],
+                   'work-size': ['eucalyptus_conf', 'NC_WORK_SIZE'],
+                   'hypervisor': ['eucalyptus_conf', 'HYPERVISOR'],
+                   'work-size': ['eucalyptus_conf', 'NC_WORK_SIZE'],
+                   'instance-path': ['eucalyptus_conf', 'INSTANCE_PATH']}
+        for localname, confname in confmap.iteritems():
+            value = get_values_from_hosts(hostdict=self._connection.eucahosts,
+                                          host_attr_chain=confname)
+            if value:
+                setattr(self, localname, value)
+
+class ClusterControllerBlock(ConfigBlock):
+    def build_active_config(self):
+        confmap = {'port': ['eucalyptus_conf', 'CC_PORT'],
+                   'scheduling-policy': ['eucalyptus_conf', 'SCHEDPOLICY']}
         for localname, confname in confmap.iteritems():
             value = get_values_from_hosts(hostdict=self._connection.eucahosts,
                                           host_attr_chain=confname)
@@ -310,7 +367,13 @@ class NetworkConfigBlock(ConfigBlock):
                          'netmask': 'VNET_NETMASK',
                          'addresses-per-net': 'VNET_ADDRSPERNET',
                          'dns-server': 'VNET_DNS',
-                         'broadcast': 'VNET_BROADCAST'}
+                         'broadcast': 'VNET_BROADCAST',
+                         'router': 'VNET_ROUTER',
+                         'domain-name': 'VNET_DOMAINNAME',
+                         'metadata-use-private-ip': 'METADATA_USE_VM_PRIVATE',
+                         'metadata-ip': 'METADATA_IP',
+                         'nc-router': 'NC_ROUTER',
+                         'disable-tunneling': 'DISABLE_TUNNELING'}
         for localname, confname in interface_map.iteritems():
             value = get_values_from_hosts(
                 hostdict=self._connection.eucahosts,

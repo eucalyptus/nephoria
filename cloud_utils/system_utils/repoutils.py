@@ -32,6 +32,9 @@
 
 import re
 import time
+from argparse import Namespace
+from cloud_utils.net_utils.sshconnection import CommandExitCodeException
+from cloud_utils.log_utils import markup
 
 
 class RepoUtils:
@@ -51,6 +54,7 @@ class Package:
 class PackageManager:
     name = None
     machine = None
+    repo_url_cache = {}
 
     def install(self, package):
         raise NotImplementedError("Method not implemented for package manager " + str(self.name))
@@ -71,6 +75,15 @@ class PackageManager:
         raise NotImplementedError("Method not implemented for package manager " + str(self.name))
 
     def get_url_for_package(self, package_name):
+        raise NotImplementedError("Method not implemented for package manager " + str(self.name))
+
+    def get_repo_file(self, filepath, filters=None):
+        raise NotImplementedError("Method not implemented for package manager " + str(self.name))
+
+    def get_repo_file_by_baseurl(self, url, repopath=None, cleanurl=True, filters=None):
+        raise NotImplementedError("Method not implemented for package manager " + str(self.name))
+
+    def get_repo_file_for_package(self, packagename, repopath=None, filters=None):
         raise NotImplementedError("Method not implemented for package manager " + str(self.name))
 
 class Yum(PackageManager):
@@ -97,10 +110,110 @@ class Yum(PackageManager):
         return self.machine.sys('yum info {0}'.format(package_name), code=0)
 
     def get_url_for_package(self, package_name):
+        if package_name in self.repo_url_cache:
+            if (time.time() - self.repo_url_cache[package_name]['updated']) <= 10:
+                return self.repo_url_cache[package_name]['url']
         out = self.machine.sys('yumdownloader --urls eucalyptus -q', code=0)
         for line in out:
-            if re.match("^http*.*.rpm$", line):
+            match = re.match("^(http*.*.rpm)$", line)
+            if match:
+                line = match.group(1)
+                self.repo_url_cache[package_name] = {'updated': time.time(),
+                                                      'url': line}
                 return line
+        self.machine.log.error(markup('URL not found for local package:"{0}"'
+                                      .format(package_name), markups=[1, 31]))
+
+    def get_repo_file_for_package(self, packagename, repopath=None, filters=None):
+        """
+        Attempts to find a file containing repo info at 'repopath', by matching the in use
+        package url to the baseurl entries of files at 'repopath' and return a dict
+        of the key=value info found.
+        :param packagename: string, name of package to use in search
+        :param repopath: dir to search for files
+        :param filters: list of strings.  Will match a subset of the keys found and only return
+                        those keys matching a filter.
+        :returns namespace obj with repo info or None upon error, file not found, etc..
+        """
+        url = self.get_url_for_package(packagename)
+        return self. get_repo_file_by_baseurl(url=url, repopath=repopath, filters=filters)
+
+    def get_repo_file_by_baseurl(self, url, repopath=None, cleanurl=True, filters=None):
+        """
+        Attempts to find a file containing repo info at 'repopath' by matching the provided 'url'
+        to the 'baseurl' entries, and return a namespace obj with info
+        of the key=value info found.
+        :param url: string, baseurl to search repo files for
+        :param repopath: dir to search for files
+        :param cleanurl: bool, attempts to format an url to a typical baseurl
+        :param filters: list of strings.  Will match a subset of the keys found and only return
+                        those keys matching a filter.
+        :returns namespace with repo info or None upon error, file not found, etc..
+        """
+        if repopath is None:
+            repopath = '/etc/yum.repos.d/*'
+        if cleanurl:
+            try:
+                match = re.match('^(http://\S+/x86_64)', url)
+                if match:
+                    url = match.group(1)
+            except:
+                pass
+        try:
+            out = self.machine.sys('grep "{0}" {1} -l'.format(url, repopath), code=0)
+        except CommandExitCodeException as CE:
+            self.machine.log.error(markup('Could not find repo for url:"{0}", err:"{1}"'
+                                   .format(url, str(CE)), markups=[1, 31]))
+            return None
+        if out:
+            filepath = out[0]
+            if re.search('^{0}'.format(repopath), filepath):
+                return self.get_repo_file(filepath, filters=filters)
+        return None
+
+    def get_repo_file(self, filepath, filters=None):
+        """
+        Read in repo key=value info from a file at 'filepath'.
+        :param filepath: string, filepath containing repo info on remote machine
+        :param filters: list of strings.  Will match a subset of the keys found and only return
+                        those keys matching a filter.
+        :returns namespace obj with repo info or None.
+        """
+        filter_values = filters or []
+        values = {'filepath': filepath}
+        try:
+            out = self.machine.sys('cat {0}'.format(filepath), code=0)
+        except CommandExitCodeException as CE:
+            self.machine.log.error(markup('Failed to read repo_file at:"{0}", err:"{1}"'
+                                   .format(filepath, str(CE)), markups=[1, 31]))
+            return None
+        for line in out:
+            valname = None
+            value = None
+            if not line:
+                continue
+            valmatch = re.search('\s*(\w.*)\s*=\s*(\w.*)\s*$', line)
+            if valmatch:
+                valname = valmatch.group(1)
+                value = valmatch.group(2)
+            else:
+                namematch = re.search('^\s*\[\s*(\S*)\s*\]\s*$', line)
+                if namematch:
+                    valname = 'repo_name'
+                    value =  namematch.group(1)
+            if valname and value is not None:
+                values[valname] =value
+        if not values:
+            self.machine.log.error(markup('No values parsed from:"{0}"'
+                                          .format(filepath), markups=[1, 31]))
+            return None
+        if not filters:
+            return RepoFile(**values)
+        ret = RepoFile()
+        for name in filters:
+            if name in values:
+                setattr(ret, name, values[name])
+        return ret
 
     def add_repo(self, url, name=None):
         if name is None:
@@ -152,3 +265,18 @@ class Apt(PackageManager):
 
     def update_repos(self):
         return self.machine.sys("apt-get update")
+
+
+class RepoFile(Namespace):
+    def __init__(self, **kwargs):
+        self.baseurl = None
+        self.enabled = None
+        self.filepath = None
+        self.gpgcheck = None
+        self.gpgkey = None
+        self.metadata_expire = None
+        self.name = None
+        self.repo_name = None
+        self.sslverify = None
+        super(RepoFile, self).__init__(**kwargs)
+

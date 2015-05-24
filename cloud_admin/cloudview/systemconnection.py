@@ -119,14 +119,14 @@ class SystemConnection(AdminApi):
                     ret_list.append(host)
         return ret_list
 
-    def get_clc_host(self):
+    def get_hosts_for_cloud_controllers(self):
         clc = None
         clcs = self.get_hosts_by_service_type(servicetype='eucalyptus')
         if clcs:
             clc = clcs[0]
         return clc
 
-    def get_node_hosts(self, partition=None, instanceid=None):
+    def get_hosts_for_node_controllers(self, partition=None, instanceid=None):
         ncs = self.get_hosts_by_service_type(servicetype='node')
         if not partition and not instanceid:
             return ncs
@@ -140,7 +140,7 @@ class SystemConnection(AdminApi):
                 retlist.append(nc)
         return retlist
 
-    def get_cluster_controller_hosts(self, partition=None):
+    def get_hosts_cluster_controllers(self, partition=None):
         ccs = self.get_hosts_by_service_type(servicetype='cluster')
         if not partition:
             return ccs
@@ -150,7 +150,7 @@ class SystemConnection(AdminApi):
                 retlist.append(cc)
         return retlist
 
-    def get_storage_controller_hosts(self, partition=None):
+    def get_hosts_for_storage_controllers(self, partition=None):
         scs = self.get_hosts_by_service_type(servicetype='storage')
         if not partition:
             return scs
@@ -159,6 +159,20 @@ class SystemConnection(AdminApi):
             if sc.partition == partition:
                 retlist.append(sc)
         return retlist
+
+    def get_hosts_for_ufs(self):
+        ufs = None
+        out = self.get_hosts_by_service_type(servicetype='user-api')
+        if out:
+            ufs = out[0]
+        return ufs
+
+    def get_hosts_for_walrus(self):
+        walrus = None
+        out = self.get_hosts_by_service_type(servicetype='walrusbackend')
+        if out:
+            walrus = out[0]
+        return walrus
 
     def get_cloud_summary_string(self):
         ret = ""
