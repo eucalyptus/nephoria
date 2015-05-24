@@ -1058,25 +1058,32 @@ class AdminApi(AWSQueryConnection):
                              'matches:\n{2}'.format(property_name, prop_count, prop_string))
         return keep[0]
 
-    def get_properties(self, *prop_names):
+    def get_properties(self,search=None, *nameprefix):
         '''
         Gets eucalyptus cloud configuration properties
         examples:
             get_properties()
             get_properties('www', 'objectstorage')
             get_properties('cloud.euca_log_level')
-        :param prop_names: list or property names or the prefix to match against properties.
+        :param nameprefix: list or property names or the prefix to match against properties.
         :returns a list of EucaProperty objs
         '''
+        ret_list = []
         params = {}
         x = 0
-        prop_names = prop_names or []
-        for prop in prop_names:
+        nameprefix = nameprefix or []
+        for prop in nameprefix:
             if not prop:
                 continue
             x += 1
             params['Property.{0}'.format(x)] = prop
-        return self._get_list_request('DescribeProperties', EucaProperty, params=params)
+        props = self._get_list_request('DescribeProperties', EucaProperty, params=params)
+        if not search:
+            return props
+        for prop in props:
+            if re.search(search, prop.name):
+                ret_list.append(prop)
+        return ret_list
 
     def modify_property(self, prop, value, verbose=True):
         """

@@ -400,7 +400,7 @@ class EucaService(EucaBaseObj):
                 scode = 'SC'
             elif self.type == 'node':
                 scode = 'NC'
-            elif self.type == 'walrus':
+            elif self.type == 'walrusbackend':
                 scode = 'WS'
             else:
                 scode = self.type

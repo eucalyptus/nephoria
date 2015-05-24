@@ -123,6 +123,9 @@ from cloud_utils.log_utils import get_traceback
 from cloud_utils.system_utils.machine import Machine
 from cloud_admin.services.adminapi import AdminApi
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException
+from cloud_admin.hosts.eucahost import EucaHost
+
+
 
 eucarc_to_service_map = {
     "euare_url": 'euare',
@@ -142,6 +145,8 @@ class AutoCreds(Eucarc):
                  auto_create=True,
                  aws_access_key=None,
                  aws_secret_key=None,
+                 aws_account_name=None,
+                 aws_user_name=None,
                  hostname=None,
                  username='root',
                  password=None,
@@ -158,6 +163,8 @@ class AutoCreds(Eucarc):
         self._clc_ip = hostname
         self._clc_machine = None
         self._credpath = credpath
+        self._aws_account_name = aws_account_name
+        self._aws_user_name = aws_user_name
         self.aws_secret_key = aws_secret_key
         self.aws_access_key = aws_access_key
         self.debug = self.log.debug
@@ -334,7 +341,7 @@ class AutoCreds(Eucarc):
                     self._close_adminpi()
 
         def try_remote(self):
-            if self._clc_ip:
+            if self._clc_ip and self._credpath:
                 try:
                     machine = self.clc_machine or self.connect_to_clc()
                     if machine:
@@ -351,9 +358,22 @@ class AutoCreds(Eucarc):
                 except Exception as e:
                     self.debug("{0}\nFailed to fetch creds remotely, err:'{1}'"
                                .format(get_traceback(), str(e)))
+        def try_clc_db(self):
+            self.debug('trying clc db...')
+            if self._clc_ip and self._aws_account_name and self._aws_user_name:
+                machine = self.clc_machine or self.connect_to_clc()
+                if machine:
+                    try:
+                        res = self.get_existing_keys_from_clc(account=self._aws_account_name,
+                                                              user=self._aws_user_name,
+                                                              machine=machine)
+                        return res
+                    except RuntimeError as RE:
+                        self.debug('{0}\nFailed to fetch creds from clc db, err:{1}'
+                                   .format(get_traceback(), str(RE)))
 
-        default_order = [try_local, try_adminapi, try_remote]
-        if self._clc_ip and self._has_updated_connect_args:
+        default_order = [try_local, try_adminapi, try_remote, try_clc_db]
+        if self._clc_ip and self._credpath and self._has_updated_connect_args:
             # if any ssh related arguements were provided, assume the user would like
             # to try remote first
             if try_remote(self):
@@ -365,6 +385,56 @@ class AutoCreds(Eucarc):
                 if meth(self):
                     return
             raise ValueError("Could not find path with provided information.")
+
+    def get_existing_keys_from_clc(self, account, user, machine=None, eucahome=None, port=8777,
+                                   dbuser='eucalyptus', p12file=None, pkfile=None,
+                                   passphrase=None, db=None, pargs=None, verbose=False):
+        ret = {}
+        db = db or 'eucalyptus_shared'
+        pargs = pargs or ""
+        machine = machine or self.clc_machine
+        passphrase = None or 'eucalyptus'
+        eucahome = eucahome or EucaHost._get_eucalyptus_home(machine) or '/'
+        EucaP12File = p12file or os.path.join(eucahome, '/var/lib/eucalyptus/keys/euca.p12')
+        CloudPKFile = pkfile or os.path.join(eucahome, '/var/lib/eucalyptus/keys/cloud-pk.pem')
+        cmd = ("echo -n '{0}' | openssl SHA256  -sign {1} | sha256sum"
+               .format(passphrase, CloudPKFile))
+        out = machine.sys(cmd, code=0, verbose=verbose)
+        if out:
+            dbpass = str(out[0]).split()[0]
+
+        dbsel = ("\"select k.auth_access_key_query_id, k.auth_access_key_key, "
+                 "a.auth_account_number, c.auth_certificate_pem "
+                 "from eucalyptus_auth.auth_access_key k "
+                 "join eucalyptus_auth.auth_user u on k.auth_access_key_owning_user=u.id "
+                 "join eucalyptus_auth.auth_cert c on c.auth_certificate_owning_user=u.id "
+                 "join eucalyptus_auth.auth_group_has_users gu on gu.auth_user_id = u.id "
+                 "join eucalyptus_auth.auth_group g on gu.auth_group_id=g.id "
+                 "join eucalyptus_auth.auth_account a on g.auth_group_owning_account=a.id "
+                 "where a.auth_account_name = '{0}' and g.auth_group_name = '{1}'\";"
+                 .format(account, "_" + user))
+        #dbsel = "select * from eucalyptus_auth.auth_user where auth_user_name = 'matt'"
+        dbcmd = ('export PGPASSWORD={0}; psql {1} -A -F "," -h 127.0.0.1 -p {2} -U {3} -d {4} '
+                 '-c {5}'.format(dbpass, pargs, port, dbuser, db, dbsel))
+        qout = machine.sys(dbcmd, code=0, verbose=verbose)
+        if qout:
+            try:
+                names = qout[0].split(',')
+                values = qout[1].split(',')
+                ret['AWS_ACCESS_KEY'] = values[names.index('auth_access_key_query_id')]
+                ret['AWS_SECRET_KEY'] = values[names.index('auth_access_key_key')]
+                ret['EC2_ACCOUNT_NUMBER'] = values[names.index('auth_account_number')]
+                ret['CERT'] = values[names.index('auth_certificate_pem')]
+                self.aws_access_key = ret['AWS_ACCESS_KEY']
+                self.aws_secret_key = ret['AWS_SECRET_KEY']
+                self.ec2_user_id = ret['EC2_ACCOUNT_NUMBER']
+                self.ec2_account_number = ret['EC2_ACCOUNT_NUMBER']
+            except Exception as PE:
+                self.log.error('Output:\n{0}\nFailed parsing creds lookup output, err:{1}'
+                                .format("\n".join(qout), str(PE)))
+                raise PE
+        return ret
+
 
     def create_local_creds(self, local_destdir, machine=None, overwrite=False):
         """

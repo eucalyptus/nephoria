@@ -77,12 +77,37 @@ class EucaHost(Machine):
     def euca_service_codes(self):
         ret = []
         for serv in self.services:
-            ret.append(serv.service_code)
+            if not serv.service_code in ret:
+                ret.append(serv.service_code)
         return ret
 
     @property
     def _identifier(self):
         return str("{0}:({1})".format(self.hostname, self.euca_service_codes))
+
+    @property
+    def partitions(self):
+        partitions = []
+        for serv in self.services:
+            if serv.type in ['node', 'cluster', 'storage']:
+                if not serv.partition in partitions:
+                    partitions.append(serv.partition)
+        if not partitions:
+            return 'euca'
+        return ",".join(partitions)
+
+    @property
+    def summary_string(self):
+        try:
+            return "{0} {1} {2} {3} {4} {5}".format(self.hostname,
+                                                    self.distro,
+                                                    self.distro_ver,
+                                                    self.arch,
+                                                    self.partitions,
+                                                    self.euca_service_codes)
+        except Exception as E:
+            return str(E)
+
 
     @property
     def eucalyptus_conf(self):
@@ -138,6 +163,20 @@ class EucaHost(Machine):
 
     def get_installed_eucalyptus_packages(self, searchstring='euca'):
         return self.package_manager.get_installed_packages(searchstring=searchstring)
+
+    def get_available_eucalyptus_packages(self, searchstring='eucalyptus'):
+        cmd = ('yum search eucalyptus -q  2> /dev/null | grep -e "{0}" | grep -iv error | '
+               "awk '{print $1}'".format(searchstring))
+        return self.sys(cmd, code=0)
+
+    def get_eucalyptus_repo_url(self):
+        return self.package_manager.get_url_for_package('eucalyptus')
+
+    def get_eucalyptus_enterprise_repo_url(self):
+        return self.package_manager.get_url_for_package('eucalyptus-enterprise')
+
+    def get_euca2ools_repo_url(self):
+        return self.package_manager.get_url_for_package('euca2ools')
 
     def get_eucalyptus_service_pid(self, eucalyptus_service):
         """
@@ -241,6 +280,22 @@ class EucaHost(Machine):
             return self.sys('cat ' + versionpath, code=0)[0]
         except CommandExitCodeException:
             return self.sys('cat /opt/eucalyptus' + versionpath, code=0)[0]
+
+    @staticmethod
+    def _get_eucalyptus_home(machine):
+        out = machine.sys('env | grep EUCALYPTUS') or []
+        for line in out:
+            match =  re.match("^EUCALYPTUS=(\S*)", line)
+            if match:
+                return match.group(1)
+        if machine.is_dir('/opt/eucalyptus'):
+            return '/opt/eucalyptus'
+        out = machine.sys('ls /usr/sbin/ | grep eucalyptus')
+        if out:
+            return '/'
+
+    def get_eucalyptus_home(self):
+        return self._get_eucalyptus_home(self)
 
     def get_eucalyptus_conf(self, eof=False, basepaths=None, verbose=False):
         if basepaths is None:

@@ -67,29 +67,152 @@ eucalyptus:
       two.storage.sanhost: 10.109.2.1
       www.http_port: '9999'
 """
-
+import json
+import sys
 from cloud_admin.cloudview import ConfigBlock
 from cloud_admin.cloudview import Namespace
 from cloud_admin.services import EucaNotFoundException
+from cloud_utils.log_utils import  markup
+
+def get_values_from_hosts(hostdict, host_method_name=None, host_attr_chain=[],
+                          **host_method_kwargs):
+    """
+    Convenience method to traverse multiple hosts and collect values by calling the same
+    method on each host, or by gathering and comparing the same attribute name per each host.
+    :param hostdict: dict in form {'hostname1': eucahostobj1, 'hostname2': eucahostobj2}
+    :param host_method_name: a Method local to the eucahost obj, ie: eucahostobj.get_stuff()
+    :param host_attr_chain: a list of attrs names(strings) local to the host obj, ie for:
+                            host.__class__.__name__  is host_attr_chain=['__class___', '__name__']
+    :param host_method_kwargs: dict of key=value args to be used with host_method_name()
+    :returns: a string if all hosts contain the same value, otherwise will return a dict in the
+              format {'host': value} to show which hosts have which value(s).
+    """
+    value_dict = {}
+    if (not host_method_name and not host_attr_chain) or (host_method_name and host_attr_chain):
+        raise ValueError('Must provide either host_method_name "or" host_attr, got:{0},{1}'
+                         .format(host_method_name, host_attr_chain))
+
+    def debug(msg, host=None, err=False):
+        if host and hasattr(host, 'debug'):
+            host.debug(msg)
+        elif err:
+            print sys.stderr, msg
+        else:
+            print msg
+    lookup = host_method_name or ".".join(host_attr_chain)
+
+    for ip, host in hostdict.iteritems():
+        # Traverse attrs to retrieve the end value...
+        if host_attr_chain:
+            obj = host
+            for attr in host_attr_chain:
+                try:
+                    obj = getattr(obj, attr)
+                except AttributeError as AE:
+                    obj = None
+                    errmsg = markup('{0}:{1}'.format(host, str(AE)), [1, 31])
+                    debug(errmsg, host, err=True)
+            value = obj
+        # Use the host method...
+        elif host_method_name:
+            method = getattr(host, host_method_name, None)
+            if method:
+                value = method(**host_method_kwargs)
+        debug(markup('Got value for host: "{0}.{1}" = "{2}"'
+                     .format(ip, lookup, value), [1, 94]), host)
+        if value_dict.get(value) is not None:
+            value_dict[value].append(ip)
+        else:
+            value_dict[value] = [ip]
+    # If we have more than one key entry in a dict, then one of the hosts
+    # had a different value.
+    # In this case produce a dict for the final value. This will at least show which hosts
+    # have different values, and can be considered for a format change in the config
+    # If these values end up being empty strings then don't create (empty attributes)
+
+    if len(value_dict.keys()) == 1:
+            value_dict = value_dict.keys()[0]
+    if value_dict:
+        return value_dict
+
 
 class EucalyptusBlock(ConfigBlock):
 
-    def build_active_config(self, do_topology=True, do_node_config=True, do_props=True):
+    def build_active_config(self, do_topology=True, do_node_config=True, do_props=True,
+                            do_repo_urls=True, do_network=True, do_service_images=True):
         if do_topology:
-            #Add the topology configuration
+            # Discover and add the topology configuration
             self.topology = TopologyBlock(self._connection)
             self.topology.build_active_config()
 
         if do_node_config:
-            #Add the node controller configuration
+            # Discover and add the node controller configuration
             self.nc = NodeControllerBlock(self._connection)
             self.nc.build_active_config()
 
         if do_props:
-            # Add Eucalyptus system properties
+            # Discover and add the current Eucalyptus system properties
             system_properties = SystemPropertiesBlock(self._connection)
             system_properties.build_active_config()
             setattr(self, 'system-properties', system_properties)
+
+        if do_repo_urls:
+            # Discover and add the current eucalyptus repo URLs
+            self.discover_repo_urls()
+
+        if do_network:
+            # Discover and add the current network config
+            self.network = NetworkConfigBlock(self._connection)
+            self.network.build_active_config()
+
+        if do_service_images:
+            # Discover and add the service image config
+            self.discover_service_image_config()
+
+    def discover_service_image_config(self):
+        pass
+
+
+
+    def discover_repo_urls(self):
+        """
+        Attempt to query each machine and build the Eucalyptus repo attributes...
+            eucalyptus-repo: http://...
+            enterprise-repo: http://...
+            euca2ools-repo: http://...
+        If every machine returns the same values repo urls, then the single url string will be
+        used. If more than one url is in use by the machines then a dict showing 'host:'url'
+        mapping will used to provide more info as to the location of the machines with each url.
+
+        """
+        eucalyptus_repo = {}
+        eucalyptus_enterprise_repo = {}
+        euca2ools_repo = {}
+        repo_map = {'eucalyptus-repo': 'get_eucalyptus_repo_url',
+                    'eucalyptus-enterprise-repo': 'get_eucalyptus_enterprise_repo_url',
+                    'euca2ools-repo': 'get_euca2ools_repo_url'}
+
+        for localname, methodname in repo_map.iteritems():
+            value = get_values_from_hosts(self._connection.eucahosts, host_method_name=methodname)
+            if value:
+                setattr(self, localname, value)
+
+
+    def discover_log_level(self):
+        """
+        Attempt to query each machine and build the Eucalyptus log-level attributes...
+            eucalyptus-repo: http://...
+            enterprise-repo: http://...
+            euca2ools-repo: http://...
+        If every machine returns the same values, then the single string value will be
+        used. If more than one value is in use by the machines then a dict showing 'host:'value'
+        mapping will used to provide more info as to the location of the machines with each value.
+        """
+        log_level = {}
+        log_level = get_values_from_hosts(hostdict=self._connection.eucahosts,
+                                          host_attr_chain=['eucalyptus_conf', 'LOG_LEVEL'])
+        if log_level:
+            setattr(self, 'log-level', log_level)
 
 
 class TopologyBlock(ConfigBlock):
@@ -160,39 +283,45 @@ class SystemPropertiesBlock(ConfigBlock):
 class NodeControllerBlock(ConfigBlock):
 
     def build_active_config(self):
-        maxcores = {}
-        cachesize = {}
-        # where dict[value] = [node1, node2, etc..]
-        #       dict[value1] = [node3, ..]
-        # if the number of keys (values) in dict is greater than 1 then nodes have different
-        # configurations (which may not be supported by the deployment mechanisms?
-        for node in self._connection.get_node_hosts():
-            # Get values from the node's /etc/eucalyptus.conf...
-            # Get configured max cores...
-            if maxcores.get(node.eucalyptus_conf.MAX_CORES) is not None:
-                maxcores[node.eucalyptus_conf.MAX_CORES].append(node.hostname)
-            else:
-                maxcores[node.eucalyptus_conf.MAX_CORES] = [node.hostname]
-            # get configured cache size...
-            if cachesize.get(node.eucalyptus_conf.NC_CACHE_SIZE) is not None:
-                cachesize[node.eucalyptus_conf.NC_CACHE_SIZE].append(node.hostname)
-            else:
-                cachesize[node.eucalyptus_conf.NC_CACHE_SIZE] = [node.hostname]
-        # If we have more than one key entry in maxcores and cachsize, then one of the nodes
-        # had a different value.
-        # In this case produce a dict. This will at least show the node(s) which
-        # have different values, and can be considered for a format change in the config
-        # If these values end up being empty strings then dont create (empty attributes)
-        if len(maxcores.keys()) == 1:
-            maxcores = maxcores.keys()[0]
-        if maxcores:
-            setattr(self, 'max-cores', maxcores)
-
-        if len(cachesize.keys()) == 1:
-            cachesize = cachesize.keys()[0]
-        if cachesize:
-            setattr(self, 'cache-size', cachesize)
+        confmap = {'max-cores': ['eucalyptus_conf', 'MAX_CORES'],
+                   'cachesize': ['eucalyptus_conf', 'NC_CACHE_SIZE']}
+        for localname, confname in confmap.iteritems():
+            value = get_values_from_hosts(hostdict=self._connection.eucahosts,
+                                          host_attr_chain=confname)
+            if value:
+                setattr(self, localname, value)
 
 
+class NetworkConfigBlock(ConfigBlock):
+    """
+    private-interface: br0
+    public-interface: br0
+    bridge-interface: br0
+    bridged-nic: em1
+    """
+    def build_active_config(self):
+        interface_map = {'private-interface': 'VNET_PRIVINTERFACE',
+                         'public-interface': 'VNET_PUBINTERFACE',
+                         'bridge-interface': 'VNET_BRIDGE',
+                         'dhcp-daemon': 'VNET_DHCPDAEMON',
+                         'mode': 'VNET_MODE',
+                         'public-ips': 'VNET_PUBLICIPS',
+                         'subnet': 'VNET_SUBNET',
+                         'netmask': 'VNET_NETMASK',
+                         'addresses-per-net': 'VNET_ADDRSPERNET',
+                         'dns-server': 'VNET_DNS',
+                         'broadcast': 'VNET_BROADCAST'}
+        for localname, confname in interface_map.iteritems():
+            value = get_values_from_hosts(
+                hostdict=self._connection.eucahosts,
+                host_attr_chain=['eucalyptus_conf', '{0}'.format(confname)])
+            if value:
+                setattr(self, localname, value)
+        net_json_prop = self._connection.get_property('cloud.network.network_configuration')
+        network_config = None
+        if net_json_prop.value:
+            network_config = json.loads(net_json_prop.value)
+        network_config = Namespace(**network_config)
+        setattr(self, 'config-json', network_config)
 
 

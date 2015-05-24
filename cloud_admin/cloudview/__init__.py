@@ -14,7 +14,7 @@ class Namespace(object):
                 value = kwargs[key]
                 try:
                     if isinstance(value, dict):
-                        setattr(self, Namespace(value), key)
+                        setattr(self, key, Namespace(**value))
                     else:
                         setattr(self, key, value)
                 except:

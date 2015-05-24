@@ -108,7 +108,6 @@ class Eucarc(dict):
         string = string or self._string
         if keysdir is None:
             keysdir = self._keysdir
-        print 'using keydir from string:{0}'.format(keysdir)
         new_dict = {}
         message = ""
         if string:
@@ -169,7 +168,6 @@ class Eucarc(dict):
             sftppath = "sftp://{0}@{1}/".format(sshconnection.username, sshconnection.host)
             keysdir = urljoin(sftppath, keysdir)
             self._keysdir = keysdir
-            print 'set keydir:{0}'.format(keysdir)
             string = sshconnection.sys('cat {0}'.format(filepath), listformat=False, code=0)
         else:
             if not re.search('\S+', filepath):

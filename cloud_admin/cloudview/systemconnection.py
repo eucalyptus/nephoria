@@ -1,11 +1,13 @@
 
 import copy
+import logging
 import os.path
 import yaml
 from cloud_admin.access.autocreds import AutoCreds
 from cloud_admin.services.adminapi import AdminApi
 from cloud_admin.hosts.eucahost import EucaHost
 from cloud_utils.system_utils.machine import Machine
+from cloud_utils.log_utils.eulogger import Eulogger
 
 
 class SystemConnection(AdminApi):
@@ -24,6 +26,10 @@ class SystemConnection(AdminApi):
                  credpath=None,
                  aws_access_key=None,
                  aws_secret_key=None,
+                 log_level='DEBUG',
+                 boto_debug_level=0,
+                 euca_user='admin',
+                 euca_account='eucalyptus',
                  ):
         self.clc_connect_kwargs = {
             'hostname': hostname,
@@ -43,13 +49,41 @@ class SystemConnection(AdminApi):
         # self._aws_secret_key = aws_secret_key
         self._eucahosts = {}
         self._credpath = credpath
+        self.log = Eulogger(identifier=self.__class__.__name__, stdout_level=log_level)
         self.creds = AutoCreds(credpath=self._credpath,
                                 aws_access_key=aws_access_key,
                                 aws_secret_key=aws_secret_key,
+                                aws_account_name=euca_account,
+                                aws_user_name=euca_user,
+                                logger=self.log,
                                 **self.clc_connect_kwargs)
         super(SystemConnection, self).__init__(hostname=hostname,
                                                 aws_secret_key=self.creds.aws_secret_key,
-                                                aws_access_key=self.creds.aws_access_key)
+                                                aws_access_key=self.creds.aws_access_key,
+                                                logger=self.log,
+                                                boto_debug_level=boto_debug_level)
+
+    def set_loglevel(self, level, parent=False):
+        """
+        wrapper for log.setLevel, accept int or string.
+        Levels can be found in logging class. At the time this was written they are:
+        CRITICAL:50
+        DEBUG:10
+        ERROR:40
+        FATAL:50
+        INFO:20
+        NOTSET:0
+        WARN:30
+        WARNING:30
+        """
+        level = level or logging.NOTSET
+        if not isinstance(level, int) and not isinstance(level, basestring):
+            raise ValueError('set_loglevel. Level must be of type int or string, got: "{0}/{1}"'
+                             .format(level, type(level)))
+        if isinstance(level, basestring):
+            level = getattr(logging, str(level).upper())
+        return self.log.set_parentloglevel(level)
+
 
     @property
     def clc_machine(self):
@@ -126,6 +160,11 @@ class SystemConnection(AdminApi):
                 retlist.append(sc)
         return retlist
 
+    def get_cloud_summary_string(self):
+        ret = ""
+        for ip, host in self.eucahosts.iteritems():
+            ret += "{0}\n".format(host.summary_string)
+        return ret
 
     def build_machine_dict_from_config(cls):
         raise NotImplementedError()

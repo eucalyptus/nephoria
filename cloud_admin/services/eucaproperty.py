@@ -6,7 +6,7 @@ from prettytable import PrettyTable, ALL
 
 
 def SHOW_PROPERTIES(connection, properties=None, description=True, grid=ALL,
-                    print_table=True, *prop_names):
+                    print_table=True, search=None, *nameprefix):
     """
     Summarize Eucalyptus properties in table format
 
@@ -16,7 +16,7 @@ def SHOW_PROPERTIES(connection, properties=None, description=True, grid=ALL,
     :param grid: bool, show table in grid format
     :param print_table: bool, if True will print table using connection.debug_method()
                         if False will return the table object
-    :param prop_names: property names used to filter query response
+    :param nameprefix: property names used to filter query response
     """
     name_hdr = markup('PROPERTY NAME', [1, 94])
     value_hdr = markup('PROPERTY VALUE', [1, 94])
@@ -31,7 +31,7 @@ def SHOW_PROPERTIES(connection, properties=None, description=True, grid=ALL,
     pt.align = 'l'
     pt.hrules = grid or 0
     if not isinstance(properties, list):
-        properties = properties or connection.get_properties(prop_names)
+        properties = properties or connection.get_properties(search=search, *nameprefix)
     if not isinstance(properties, list):
         properties = [properties]
     for prop in properties:
