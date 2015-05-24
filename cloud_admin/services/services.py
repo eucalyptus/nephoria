@@ -14,7 +14,7 @@ import time
 
 
 def SHOW_SERVICES(connection, services=None, service_type=None, show_part=False, grid=False,
-                  partition=None, print_table=True, do_html=False):
+                  partition=None, print_table=True, print_method=None, do_html=False):
     """
      Displays a table summarizing Eucalyptus services
     :param connection: EucaAdmin() query connection
@@ -31,6 +31,7 @@ def SHOW_SERVICES(connection, services=None, service_type=None, show_part=False,
     """
     html_open = "###html_open###"
     html_close = "###html_close###"
+    print_method = print_method or connection._show_method
 
     def n_markup(*args, **kwargs):
         kwargs['do_html'] = do_html
@@ -132,9 +133,9 @@ def SHOW_SERVICES(connection, services=None, service_type=None, show_part=False,
                                              format=True, hrules=1)
             html_string = html_string.replace(html_open, "<")
             html_string = html_string.replace(html_close, ">")
-            connection.debug_method(html_string)
+            print_method(html_string)
         else:
-            connection.debug_method("\n" + pt.get_string(sortby=part_hdr,
+            print_method("\n" + pt.get_string(sortby=part_hdr,
                                                          fields=fields,
                                                          sort_key=itemgetter(3, 2),
                                                          reversesort=True))
@@ -318,7 +319,8 @@ def SHOW_SERVICE_TYPES_VERBOSE(connection, service_types=None, printmethod=None,
         return main_pt
 
 
-def SHOW_COMPONENTS(connection, components=None, get_method=None, print_table=True):
+def SHOW_COMPONENTS(connection, components=None, get_method=None, print_method=None,
+                    print_table=True):
     """
     Base method for summarizing Eucalyptus components in a table format
 
@@ -329,6 +331,7 @@ def SHOW_COMPONENTS(connection, components=None, get_method=None, print_table=Tr
     :param print_table: bool, if True will attempt to print the table to connection.debug_method,
                         if False will return the table obj
     """
+    print_method = print_method or connection._show_method
     if not components:
         if not get_method:
             raise ValueError('_show_component(). Components or get_method must be populated')
@@ -356,7 +359,7 @@ def SHOW_COMPONENTS(connection, components=None, get_method=None, print_table=Tr
         pt.add_row([markup(component.hostname, [1, 94]), component.name,
                     component.partition, state, component.type])
     if print_table:
-        connection.debug_method('\n' + pt.get_string(sortby=cluster_hdr[0]) + '\n')
+        print_method('\n' + pt.get_string(sortby=cluster_hdr[0]) + '\n')
     else:
         return pt
 

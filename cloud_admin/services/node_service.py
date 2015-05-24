@@ -4,7 +4,7 @@ from prettytable import PrettyTable
 from cloud_admin.services.services import EucaComponentService
 
 
-def SHOW_NODES(connection, nodes=None, print_table=True):
+def SHOW_NODES(connection, nodes=None, print_method=None, print_table=True):
     '''
     Prints table summary of nodes.
 
@@ -13,6 +13,7 @@ def SHOW_NODES(connection, nodes=None, print_table=True):
     :param print_table: bool, if true will write table to self.debug_method,
                         if false, will return the table object w/o printing it.
     '''
+    print_method = print_method or connection._show_method
     if not nodes:
         nodes_list = connection.get_all_node_controller_services()
     else:
@@ -60,7 +61,7 @@ def SHOW_NODES(connection, nodes=None, print_table=True):
         pt.add_row([node.partition, markup(node.name),
                     markup(node.state, markups), instances])
     if print_table:
-        connection.debug_method('\n' + pt.get_string(sortby=zone_hdr[0]) + '\n')
+        print_method('\n' + pt.get_string(sortby=zone_hdr[0]) + '\n')
     else:
         return pt
 

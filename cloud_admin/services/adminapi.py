@@ -142,9 +142,9 @@ class AdminApi(AWSQueryConnection):
                  is_secure=False,
                  ec2_connection=None,
                  boto_debug_level=0,
-                 debug_method=None,
                  err_method=None,
                  logger=None,
+                 show_method=None,
                  **kwargs):
         """
         Primary Admin/Empyrean Query interface for a Eucalyptus Cloud
@@ -176,12 +176,14 @@ class AdminApi(AWSQueryConnection):
         self.is_secure = is_secure
         self.port = port
         self.path = path
+        # debug is an int representation of the debug level. Use log.debug() for
+        # logging debug information
         self.debug = boto_debug_level
         if not logger:
-            logger = eulogger.Eulogger(identifier=self.__class__.__name__)
+            logger = eulogger.Eulogger(identifier=self.__repr__())
         self.log = logger
-        if debug_method:
-            self.debug_method = debug_method
+        self._show_method = self.log.info
+        self.debug_method = self.log.debug
         if err_method:
             self.err_method = err_method
         self._ec2_connection = ec2_connection
@@ -194,12 +196,8 @@ class AdminApi(AWSQueryConnection):
                                        debug=self.debug,
                                        **kwargs)
 
-    def debug_method(self, msg):
-        '''
-        The default debug output method to be used if a 'debug_method' or 'tester' obj
-        was not provided at init overwriting this method.
-        '''
-        self.log.debug(msg)
+    def __repr__(self):
+        return  "{0}:{1}".format(self.host, self.__class__.__name__)
 
     def err_method(self, msg):
         '''
@@ -542,8 +540,8 @@ class AdminApi(AWSQueryConnection):
                     .format(cmd_string, response.statusmessages),
                     respobj=response)
         if not registered_service:
-            self.debug_method('RegisterService: Failed to parse response for:"{0}"'
-                              .format(cmd_string))
+            self.log.error('RegisterService: Failed to parse response for:"{0}"'
+                           .format(cmd_string))
         return registered_service
 
     def deregister_service(self, unique_name, service_type=None, verbose=True):
@@ -578,8 +576,8 @@ class AdminApi(AWSQueryConnection):
                     .format(cmd_string, response.statusmessages),
                     respobj=response)
         if not deregistered_service:
-            self.debug_method('DeregisterService: Failed to parse response for:"{0}"'
-                              .format(cmd_string))
+            self.log.error('DeregisterService: Failed to parse response for:"{0}"'
+                           .format(cmd_string))
         return deregistered_service
 
     def show_services(self, *args, **kwargs):
@@ -866,8 +864,8 @@ class AdminApi(AWSQueryConnection):
                                 if node.name == tag_node_name:
                                     node.instances.append(vm)
             except Exception, NE:
-                self.debug_method('Failed to fetch instances for node:{0}, err:{1}'
-                                  .format(node.name, str(NE)))
+                self.log.warn('Failed to fetch instances for node:{0}, err:{1}'
+                              .format(node.name, str(NE)))
                 if fail_on_instance_fetch:
                     raise NE
         return nodes
@@ -919,25 +917,27 @@ class AdminApi(AWSQueryConnection):
         '''
         return SHOW_NODES(self, *args, **kwargs)
 
-    def show_cluster_controllers(self, ccs=None, print_table=True):
+    def show_cluster_controllers(self, ccs=None, print_method=None, print_table=True):
         """
         Fetch and summarize all cluster controller components in table format
 
         :param print_table: bool, if True will print table to connection.debug_method()
                            if False will return table object
         """
-        return SHOW_CLUSTER_CONTROLLER_SERVICES(self, ccs=None, print_table=True)
+        return SHOW_CLUSTER_CONTROLLER_SERVICES(self, ccs=None, print_method=print_method,
+                                                print_table=True)
 
-    def show_storage_controllers(self, scs=None, print_table=True):
+    def show_storage_controllers(self, scs=None, print_method=None, print_table=True):
         """
         Fetch and summarize all storage controller components in table format
 
         :param print_table: bool, if True will print table to connection.debug_method()
                            if False will return table object
         """
-        return SHOW_COMPONENTS(self, scs, self.get_all_storage_controller_services, print_table)
+        return SHOW_COMPONENTS(self, scs, self.get_all_storage_controller_services,
+                               print_method=print_method, print_table=print_table)
 
-    def show_objectstorage_gateways(self, osgs=None, print_table=True):
+    def show_objectstorage_gateways(self, osgs=None, print_method=None, print_table=True):
         """
         Fetch and summarize all object storage gateway components in table format
 
@@ -945,27 +945,29 @@ class AdminApi(AWSQueryConnection):
                            if False will return table object
         """
         return SHOW_COMPONENTS(self, osgs, self.get_all_object_storage_gateway_services,
-                               print_table)
+                               print_method=print_method, print_table=print_table)
 
-    def show_cloud_controllers(self, clcs=None, print_table=True):
+    def show_cloud_controllers(self, clcs=None, print_method=None, print_table=True):
         """
         Fetch and summarize all cloud controller components in table format
 
         :param print_table: bool, if True will print table to connection.debug_method()
                            if False will return table object
         """
-        return SHOW_COMPONENTS(self, clcs, self.get_all_cloud_controller_services, print_table)
+        return SHOW_COMPONENTS(self, clcs, self.get_all_cloud_controller_services,
+                               print_method=print_method, print_table=print_table)
 
-    def show_walrus_backends(self, walruses=None, print_table=True):
+    def show_walrus_backends(self, walruses=None, print_method=None, print_table=True):
         """
         Fetch and summarize all  walrus backend components in table format
 
         :param print_table: bool, if True will print table to connection.debug_method()
                            if False will return table object
         """
-        return SHOW_COMPONENTS(self, walruses, self.get_all_walrus_backend_services, print_table)
+        return SHOW_COMPONENTS(self, walruses, self.get_all_walrus_backend_services,
+                               print_method=print_method, print_table=print_table)
 
-    def show_components_summary(self, print_table=True):
+    def show_components_summary(self, print_method=None, print_table=True):
         """
         Fetch and summarize all components in table format
 
@@ -976,7 +978,8 @@ class AdminApi(AWSQueryConnection):
         components_dict = self.get_all_components()
         for comp_type, comp_list in components_dict.iteritems():
             components.extend(comp_list or [])
-        return SHOW_COMPONENTS(self, components=components, print_table=print_table)
+        return SHOW_COMPONENTS(self, components=components, print_method=print_method,
+                               print_table=print_table)
 
     def get_all_components(self, partition=None, service_type=None):
         """
@@ -1005,8 +1008,8 @@ class AdminApi(AWSQueryConnection):
             try:
                 components['vmwarebroker'] = self.get_all_vmware_broker_services()
             except BotoServerError, VMWE:
-                self.debug_method('Failed to fetch vmware brokers, vmware may not be supported on '
-                                  'this cloud. Err:{0}'.format(VMWE.message))
+                self.log.warn('Failed to fetch vmware brokers, vmware may not be supported on '
+                              'this cloud. Err:{0}'.format(VMWE.message))
         if not partition:
             return components
         else:
@@ -1169,7 +1172,8 @@ class AdminApi(AWSQueryConnection):
         return machine_dict
 
     def show_machine_mappings(self, machine_dict=None, partition=None, service_type=None, columns=4,
-                      print_table=True):
+                      print_method=None, print_table=True):
+        print_method = print_method or self._show_method
         ins_id_len = 10
         ins_type_len = 13
         ins_dev_len = 16
@@ -1237,7 +1241,7 @@ class AdminApi(AWSQueryConnection):
                                           markup(machine, [1, 4, 94])),
                         servbuf])
         if print_table:
-            self.debug_method("\n{0}\n".format(pt.get_string(sortby=pt.field_names[1])))
+            print_method("\n{0}\n".format(pt.get_string(sortby=pt.field_names[1])))
         else:
             return pt
 
@@ -1265,7 +1269,7 @@ class AdminApi(AWSQueryConnection):
             maintpt.add_row([markup('CLUSTER NAME:"{0}"'.format(cluster.name), [1, 4, 94])])
             maintpt.add_row([cluster.show_machine_mappings(print_table=False).get_string()])
         if print_table:
-            self.debug_method("\n{0}\n".format(maintpt))
+            self._show_method("\n{0}\n".format(maintpt))
         else:
             return maintpt
 
@@ -1323,7 +1327,7 @@ class AdminApi(AWSQueryConnection):
                 else:
                     err_msg = 'No service registered of type:"{0}", partition:"{1}", ' \
                               'elapsed:{2}/{3}'.format(service_type, partition, elapsed, timeout)
-                    self.debug_method(err_msg)
+                    self.log.warn(err_msg)
                 for service in matching_services:
                     if states:
                         for state in states:
@@ -1337,7 +1341,7 @@ class AdminApi(AWSQueryConnection):
                            '\nRetrying in "{4}" seconds'.format(type(E), str(E),
                                                                 elapsed, timeout, interval))
                 err_msg = "{0}\n{1}".format(get_traceback(), err_msg)
-                self.debug_method(err_msg)
+                self.log.error(err_msg)
             time.sleep(interval)
         # No services were found matching the information provided...
         if matching_services:

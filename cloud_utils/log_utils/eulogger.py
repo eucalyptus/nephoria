@@ -57,7 +57,7 @@ class Eulogger(logging.Logger):
                  stdout_level="debug",
                  stdout_format=None,
                  logfile="",
-                 logfile_level="debug",
+                 logfile_level="INFO",
                  file_format=None,
                  show_init=False):
         """
@@ -117,7 +117,7 @@ class Eulogger(logging.Logger):
             id_string = " [{0}] ".format(identifier)
 
         self._default_format = stdout_format or logging.Formatter(
-            '[%(asctime)s]{0}[%(levelname)s]: %(message)s'.format(id_string))
+            '[%(asctime)s][%(levelname)s]%(message)s')
         self.file_format = file_format or self._default_format
 
         # Add handler for stdout...
@@ -143,7 +143,11 @@ class Eulogger(logging.Logger):
                 file_hdlr.setFormatter(self._default_format)
                 file_hdlr.setLevel(logfile_level)
                 self.parent.addHandler(file_hdlr)
-        self.handlers = self.parent.handlers
+        self.manager.loggerDict[self.name] = self
+
+    def _log(self, level, msg, args, exc_info=None, extra=None):
+        msg = "[{0}]: {1}".format(self.identifier, msg)
+        return super(Eulogger, self)._log(level, msg, args, exc_info=exc_info, extra=extra)
 
     def getparent_files(self):
         files = []

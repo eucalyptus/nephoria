@@ -5,7 +5,7 @@ from cloud_utils.log_utils import markup
 from prettytable import PrettyTable, ALL
 
 
-def SHOW_PROPERTIES(connection, properties=None, description=True, grid=ALL,
+def SHOW_PROPERTIES(connection, properties=None, description=True, grid=ALL, print_method=None,
                     print_table=True, search=None, *nameprefix):
     """
     Summarize Eucalyptus properties in table format
@@ -18,6 +18,7 @@ def SHOW_PROPERTIES(connection, properties=None, description=True, grid=ALL,
                         if False will return the table object
     :param nameprefix: property names used to filter query response
     """
+    print_method = print_method or connection._show_method
     name_hdr = markup('PROPERTY NAME', [1, 94])
     value_hdr = markup('PROPERTY VALUE', [1, 94])
     desc_hdr = markup('DESCRIPTION', [1, 94])
@@ -52,12 +53,12 @@ def SHOW_PROPERTIES(connection, properties=None, description=True, grid=ALL,
             err_row.append("")
         pt.add_row(err_row)
     if print_table:
-        connection.debug_method('\n' + str(pt) + '\n')
+        print_method('\n' + str(pt) + '\n')
     else:
         return pt
 
 
-def SHOW_PROPERTIES_NARROW(connection, properties=None, verbose=True,
+def SHOW_PROPERTIES_NARROW(connection, properties=None, verbose=True, print_method=None,
                            print_table=True, *prop_names):
     """
     Narrow formatted table used to summarize Eucalyptus properties
@@ -71,7 +72,8 @@ def SHOW_PROPERTIES_NARROW(connection, properties=None, verbose=True,
     """
     if not verbose:
         return connection.show_properties(properties=properties, description=False,
-                                          print_table=print_table)
+                                          print_method=print_method, print_table=print_table)
+    print_method = print_method or connection._show_method
     info_len = 60
     desc_len = 40
     markup_size = len(markup('\n'))
