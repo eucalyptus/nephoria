@@ -413,7 +413,6 @@ class AutoCreds(Eucarc):
                  "join eucalyptus_auth.auth_account a on g.auth_group_owning_account=a.id "
                  "where a.auth_account_name = '{0}' and g.auth_group_name = '{1}'\";"
                  .format(account, "_" + user))
-        #dbsel = "select * from eucalyptus_auth.auth_user where auth_user_name = 'matt'"
         dbcmd = ('export PGPASSWORD={0}; psql {1} -A -F "," -h 127.0.0.1 -p {2} -U {3} -d {4} '
                  '-c {5}'.format(dbpass, pargs, port, dbuser, db, dbsel))
         qout = machine.sys(dbcmd, code=0, verbose=verbose)
