@@ -286,10 +286,6 @@ class TopologyBlock(ConfigBlock):
 class ClustersBlock(ConfigBlock):
 
     def build_active_config(self):
-        # Add top level 'clusters' block
-        # clusters:
-        self.clusters = Namespace()
-
         for cluster in self._connection.get_all_clusters():
             # Create a Namespace object to hold the cluster config block
             # clusters:
