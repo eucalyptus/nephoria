@@ -2,7 +2,8 @@
 ### Cloud admin modules:
 
 ##### access:
-    Utility odules help Administer Cloud Users, Accounts, Credentials Administrative modules
+    Utility modules related to Cloud Account's and cloud user's access to a cloud.
+    Fetching/creating cloud credentials, Account, users, policies, etc..
 
 ##### backends:
     Cloud backend modules. This may include backend modules for:
