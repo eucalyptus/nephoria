@@ -277,3 +277,123 @@ Out[23]: 'http://packages.release.eucalyptus-systems.com/yum/tags/eucalyptus-4.1
 
 
 ```
+
+#### Host Helpers. Host object have helper interfaces providing utility methods related to the
+eucalytpus services they are hosting.
+Node controller host example (continued from above):
+
+```
+In [9]: sc.show_nodes()
+[2015-05-26 13:52:02,198][INFO][SystemConnection]:
++----+------------+-------+-----------------------------------------------------------+
+|ZONE| NODE NAME  | STATE |                         INSTANCES                         |
++----+------------+-------+-----------------------------------------------------------+
+|one |10.111.5.151|ENABLED|                                                           |
++----+------------+-------+-----------------------------------------------------------+
+|two |10.111.5.85 |ENABLED|  i-44274273(running,       m1.small,    instance-store  ) |
+|    |            |       |  i-51475876(running,       m1.small,    instance-store  ) |
+|    |            |       |  i-3fea5ffe(running,       m1.small,    instance-store  ) |
++----+------------+-------+-----------------------------------------------------------+
+
+
+In [10]: nc = sc.get_hosts_for_node_controllers()[1]
+
+In [11]: nc.euc
+nc.euca2ools_repo_file              nc.euca_nc_helpers                  nc.euca_service_codes               nc.euca_ws_helpers                  nc.eucalyptus_enterprise_repo_file
+nc.euca_cc_helpers                  nc.euca_osg_helpers                 nc.euca_source                      nc.eucalyptus_conf                  nc.eucalyptus_repo_file
+nc.euca_clc_helpers                 nc.euca_sc_helpers                  nc.euca_ufs_helpers                 nc.eucalyptus_conf_path
+
+In [11]: nc.euca_nc_helpers.
+nc.euca_nc_helpers.debug                                                    nc.euca_nc_helpers.get_instance_xml_dom
+nc.euca_nc_helpers.eucalyptus_conf                                          nc.euca_nc_helpers.get_instance_xml_text
+nc.euca_nc_helpers.get_hypervisor_from_euca_conf                            nc.euca_nc_helpers.get_local_nc_service_state
+nc.euca_nc_helpers.get_instance_block_disk_dev_on_node                      nc.euca_nc_helpers.get_virsh_list
+nc.euca_nc_helpers.get_instance_block_disk_source_paths                     nc.euca_nc_helpers.log
+nc.euca_nc_helpers.get_instance_block_disk_xml_dom_list                     nc.euca_nc_helpers.machine
+nc.euca_nc_helpers.get_instance_console_path                                nc.euca_nc_helpers.node_controller_service
+nc.euca_nc_helpers.get_instance_device_xml_dom                              nc.euca_nc_helpers.remote_tail_monitor_cb
+nc.euca_nc_helpers.get_instance_multipath_dev_for_instance_block_dev        nc.euca_nc_helpers.services
+nc.euca_nc_helpers.get_instance_multipath_dev_for_instance_ebs_volume       nc.euca_nc_helpers.sys
+nc.euca_nc_helpers.get_instance_multipath_dev_info_for_instance_block_dev   nc.euca_nc_helpers.tail_instance_console
+nc.euca_nc_helpers.get_instance_multipath_dev_info_for_instance_ebs_volume
+
+In [11]: nc.euca_nc_helpers.get_virsh_list()
+Out[11]:
+[{'id': '14', 'name': 'i-51475876', 'state': 'running'},
+ {'id': '15', 'name': 'i-44274273', 'state': 'running'},
+ {'id': '23', 'name': 'i-3fea5ffe', 'state': 'running'}]
+
+
+
+In [13]: print nc.euca_nc_helpers.get_instance_xml_text('i-44274273')
+<domain type='kvm' id='15'>
+  <name>i-44274273</name>
+  <uuid>ce200234-e30d-3d4b-355d-395dd19d6b04</uuid>
+  <description>Eucalyptus instance i-44274273</description>
+  <memory unit='KiB'>262144</memory>
+  <currentMemory unit='KiB'>262144</currentMemory>
+  <vcpu placement='static'>1</vcpu>
+  <os>
+    <type arch='x86_64' machine='rhel6.6.0'>hvm</type>
+    <boot dev='hd'/>
+  </os>
+  <features>
+    <acpi/>
+  </features>
+  <cpu>
+    <topology sockets='1' cores='1' threads='1'/>
+  </cpu>
+  <clock offset='localtime'/>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>destroy</on_crash>
+  <devices>
+    <emulator>/usr/libexec/qemu-kvm</emulator>
+    <disk type='block' device='disk'>
+      <driver name='qemu' type='raw' cache='none'/>
+      <source dev='/var/lib/eucalyptus/instances/work/AIDAA6P7VTXQ74ATLJGNG/i-44274273/link-to-vda'/>
+      <target dev='vda' bus='virtio'/>
+      <serial>euca-bdm-machine-dev-vda</serial>
+      <alias name='virtio-disk0'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x04' function='0x0'/>
+    </disk>
+    <disk type='block' device='disk'>
+      <driver name='qemu' type='raw' cache='none'/>
+      <source dev='/var/lib/eucalyptus/instances/work/AIDAA6P7VTXQ74ATLJGNG/i-44274273/link-to-vdb'/>
+      <target dev='vdb' bus='virtio'/>
+      <serial>euca-bdm-ephemeral0-dev-vdb</serial>
+      <alias name='virtio-disk1'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x05' function='0x0'/>
+    </disk>
+    <controller type='usb' index='0'>
+      <alias name='usb0'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x2'/>
+    </controller>
+    <interface type='bridge'>
+      <mac address='d0:0d:dc:dc:10:6c'/>
+      <source bridge='br0'/>
+      <target dev='vn_i-44274273'/>
+      <model type='virtio'/>
+      <alias name='net0'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x03' function='0x0'/>
+    </interface>
+    <serial type='file'>
+      <source path='/var/lib/eucalyptus/instances/work/AIDAA6P7VTXQ74ATLJGNG/i-44274273/console.log'/>
+      <target port='1'/>
+      <alias name='serial0'/>
+    </serial>
+    <console type='file'>
+      <source path='/var/lib/eucalyptus/instances/work/AIDAA6P7VTXQ74ATLJGNG/i-44274273/console.log'/>
+      <target type='serial' port='1'/>
+      <alias name='serial0'/>
+    </console>
+    <memballoon model='virtio'>
+      <alias name='balloon0'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x06' function='0x0'/>
+    </memballoon>
+  </devices>
+</domain>
+
+
+
+```
