@@ -278,7 +278,9 @@ Out[23]: 'http://packages.release.eucalyptus-systems.com/yum/tags/eucalyptus-4.1
 
 ```
 
-#### Host Helpers. Host object have helper interfaces providing utility methods related to the
+#### Host Helpers.
+
+Host object have helper interfaces providing utility methods related to the
 eucalytpus services they are hosting.
 Node controller host example (continued from above):
 
