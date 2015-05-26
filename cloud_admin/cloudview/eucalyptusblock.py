@@ -1,79 +1,23 @@
 
 
 """
-Sample configuration (in yaml)...
-
-eucalyptus:
-    default-img-url: http://images.walrus.qa:8773/precise-server-cloudimg-amd64-disk1.img
-    install-load-balancer: 'true'
-    install-imaging-worker: 'true'
-    network:
-      private-interface: br0
-      public-interface: br0
-      bridge-interface: br0
-      bridged-nic: em1
-      config-json:
-        InstanceDnsServers:
-        - 10.111.1.41
-        Mido:
-          EucanetdHost: c-06.qa1.eucalyptus-systems.com
-          GatewayHost: c-06.qa1.eucalyptus-systems.com
-          GatewayIP: 10.116.129.41
-          GatewayInterface: em1.116
-          PublicGatewayIP: 10.116.133.173
-          PublicNetworkCidr: 10.116.128.0/17
-        Mode: VPCMIDO
-        PublicIps:
-        - 10.116.45.1-10.116.45.254
-      mode: VPCMIDO
-    nc:
-      max-cores: 32
-      cache-size: 40000
-    init-script-url: http://git.qa1/qa-repos/eucalele/raw/master/scripts/network-interfaces.sh
-    post-script-url: http://git.qa1/qa-repos/eucalele/raw/master/scripts/midonet_post.sh
-    log-level: DEBUG
-    eucalyptus-repo: http://packages.release.eucalyptus-systems.com/yum/tags/eucalyptus-devel/centos/6/x86_64/
-    enterprise-repo: http://packages.release.eucalyptus-systems.com/yum/tags/enterprise-devel/centos/6/x86_64/
-    euca2ools-repo: http://packages.release.eucalyptus-systems.com/yum/tags/euca2ools-devel/centos/6/x86_64/
-    yum-options: "--nogpg"
-    topology:
-      clusters:
-        one:
-          cc-1: 10.111.1.61
-          nodes: 10.111.1.175 10.111.5.88
-          storage-backend: netapp
-          sc-1: 10.111.1.61
-        two:
-          cc-1: 10.111.1.135
-          nodes: 10.111.5.101 10.111.5.151
-          storage-backend: netapp
-          sc-1: 10.111.1.135
-      clc-1: 10.111.1.41
-      walrus: 10.111.1.41
-      user-facing:
-      - 10.111.1.41
-    system-properties:
-      one.storage.scpaths: 10.107.2.1
-      one.storage.chapuser: euca-one
-      one.storage.sanpassword: zoomzoom
-      one.storage.sanuser: root
-      one.storage.ncpaths: 10.107.2.1
-      one.storage.sanhost: 10.109.2.1
-      two.storage.scpaths: 10.107.2.1
-      two.storage.chapuser: euca-one
-      two.storage.sanpassword: zoomzoom
-      two.storage.sanuser: root
-      two.storage.ncpaths: 10.107.2.1
-      two.storage.sanhost: 10.109.2.1
-      www.http_port: '9999'
+###############################################################################################
+#  This module intends to provide tools to discover and build configuration blocks representing
+#  the current state of a cloud deployment.
+#  These Config blocks or manifests should help provide utility with systems like
+#  Calyptos, and other Eucalyptus Deployment and diagnostic tools.
+##############################################################################################
 """
+
+
 import json
 import re
 import sys
 from cloud_admin.cloudview import ConfigBlock
 from cloud_admin.cloudview import Namespace
 from cloud_admin.services import EucaNotFoundException
-from cloud_utils.log_utils import  markup
+from cloud_utils.log_utils import markup
+
 
 def get_values_from_hosts(hostdict, host_method_name=None, host_attr_chain=[],
                           **host_method_kwargs):
@@ -138,6 +82,78 @@ def get_values_from_hosts(hostdict, host_method_name=None, host_attr_chain=[],
 
 
 class EucalyptusBlock(ConfigBlock):
+    """
+    ##############################################################################################
+    #                            Eucalyptus Cloud Config Block
+    # This is the main block for building the Eucalyptus portion of a config block.
+    # Sample output of this config block:
+    #
+    #     eucalyptus:
+    #     default-img-url: http://images.walrus.qa:8773/precise-server-cloudimg-amd64-disk1.img
+    #     install-load-balancer: 'true'
+    #     install-imaging-worker: 'true'
+    #     network:
+    #       private-interface: br0
+    #       public-interface: br0
+    #       bridge-interface: br0
+    #       bridged-nic: em1
+    #       config-json:
+    #         InstanceDnsServers:
+    #         - 10.111.1.41
+    #         Mido:
+    #           EucanetdHost: c-06.qa1.eucalyptus-systems.com
+    #           GatewayHost: c-06.qa1.eucalyptus-systems.com
+    #           GatewayIP: 10.116.129.41
+    #           GatewayInterface: em1.116
+    #           PublicGatewayIP: 10.116.133.173
+    #           PublicNetworkCidr: 10.116.128.0/17
+    #         Mode: VPCMIDO
+    #         PublicIps:
+    #         - 10.116.45.1-10.116.45.254
+    #       mode: VPCMIDO
+    #     nc:
+    #       max-cores: 32
+    #       cache-size: 40000
+    #     init-script-url: http://git.qa1/qa-repos/eucalele/raw/master/scripts/network-int.sh
+    #     post-script-url: http://git.qa1/qa-repos/eucalele/raw/master/scripts/midonet_post.sh
+    #     log-level: DEBUG
+    #     eucalyptus-repo: http://packages.release.eucalyptus-systems.com/yum/tags/6/x86_64/
+    #     enterprise-repo: http://packages.release.eucalyptus-systems.com/yum/tags/6/x86_64/
+    #     euca2ools-repo: http://packages.release.eucalyptus-systems.com/yum/tags//6/x86_64/
+    #     yum-options: "--nogpg"
+    #     topology:
+    #       clusters:
+    #         one:
+    #           cc-1: 10.111.1.61
+    #           nodes: 10.111.1.175 10.111.5.88
+    #           storage-backend: netapp
+    #           sc-1: 10.111.1.61
+    #         two:
+    #           cc-1: 10.111.1.135
+    #           nodes: 10.111.5.101 10.111.5.151
+    #           storage-backend: netapp
+    #           sc-1: 10.111.1.135
+    #       clc-1: 10.111.1.41
+    #       walrus: 10.111.1.41
+    #       user-facing:
+    #       - 10.111.1.41
+    #     system-properties:
+    #       one.storage.scpaths: 10.107.2.1
+    #       one.storage.chapuser: euca-one
+    #       one.storage.sanpassword: zoomzoom
+    #       one.storage.sanuser: root
+    #       one.storage.ncpaths: 10.107.2.1
+    #       one.storage.sanhost: 10.109.2.1
+    #       two.storage.scpaths: 10.107.2.1
+    #       two.storage.chapuser: euca-one
+    #       two.storage.sanpassword: zoomzoom
+    #       two.storage.sanuser: root
+    #       two.storage.ncpaths: 10.107.2.1
+    #       two.storage.sanhost: 10.109.2.1
+    #       www.http_port: '9999'
+    #
+    ##############################################################################################
+    """
 
     def build_active_config(self, do_topology=True, do_node_config=True, do_props=True,
                             do_repo_urls=True, do_network=True, do_service_images=True,
@@ -219,14 +235,14 @@ class EucalyptusBlock(ConfigBlock):
         Else return the single value they all share.
         """
         opt_map = {'yum-options': ['eucalyptus_repo_file', 'gpgcheck'],
-                    'yum-options': ['eucalyptus_enterprise_repo_file', 'gpgcheck'],
-                    'yum-options': ['euca2ools_repo_file', 'gpgcheck']}
+                   'yum-options': ['eucalyptus_enterprise_repo_file', 'gpgcheck'],
+                   'yum-options': ['euca2ools_repo_file', 'gpgcheck']}
         opt_dict = {}
         for localname, attrchain in opt_map.iteritems():
             value = get_values_from_hosts(self._connection.eucahosts, host_attr_chain=attrchain)
             opt_dict[attrchain[0]] = value
         # if all the values are the same return the single value...
-        if len(set(opt_dict.values()))==1:
+        if len(set(opt_dict.values())) == 1:
             value = opt_dict.values().pop()
         else:
             # some repo, or host has a different value so return the dict...
@@ -234,7 +250,6 @@ class EucalyptusBlock(ConfigBlock):
         if value and value != '0':
             value = "--nogpg"
         setattr(self, localname, value)
-
 
     def discover_euca_conf_general(self):
         """
@@ -257,7 +272,29 @@ class EucalyptusBlock(ConfigBlock):
 
 
 class TopologyBlock(ConfigBlock):
-
+    ###############################################################################################
+    #                            Cloud Topology Config Block
+    #
+    #  Sample output from this config block:
+    #
+    #     topology:
+    #       clc-1: 10.111.5.156
+    #       clusters:
+    #         clusters:
+    #           one:
+    #             nodes: 10.111.5.151
+    #             one-cc-1: 10.111.5.180
+    #             one-sc-1: 10.111.5.180
+    #           two:
+    #             nodes: 10.111.5.85
+    #             two-cc-1: 10.111.1.116
+    #             two-sc-1: 10.111.1.116
+    #         storage-backend: netapp
+    #       user-facing:
+    #       - 10.111.5.156
+    #       walrus: 10.111.5.156
+    #
+    ###############################################################################################
     def build_active_config(self):
 
         # Add the Cluster configuration block
@@ -284,7 +321,24 @@ class TopologyBlock(ConfigBlock):
 
 
 class ClustersBlock(ConfigBlock):
-
+    """
+    ##############################################################################################
+    #                               Cluster Config Block
+    #
+    #  Sample output from this config block:
+    #     clusters:
+    #       one:
+    #         nodes: 10.111.5.151
+    #         one-cc-1: 10.111.5.180
+    #         one-sc-1: 10.111.5.180
+    #       two:
+    #         nodes: 10.111.5.85
+    #         two-cc-1: 10.111.1.116
+    #         two-sc-1: 10.111.1.116
+    #       storage-backend: threepar
+    #
+    ##############################################################################################
+    """
     def build_active_config(self):
         for cluster in self._connection.get_all_clusters():
             # Create a Namespace object to hold the cluster config block
@@ -311,14 +365,46 @@ class ClustersBlock(ConfigBlock):
 
 
 class SystemPropertiesBlock(ConfigBlock):
-
+    """
+    ##############################################################################################
+    #                          System Properties Config Block
+    #
+    # Sample output from this config block:
+    #
+    #    system-properties:
+    #      ...
+    #       ...
+    #       two.storage.chapuser: euca-one
+    #       two.storage.sanpassword: secretpassword
+    #       two.storage.sanuser: root
+    #       two.storage.ncpaths: 10.107.2.1
+    #       two.storage.sanhost: 10.109.2.1
+    #       www.http_port: '9999'
+    #       ...
+    #       ...
+    #
+    ##############################################################################################
+    """
     def build_active_config(self):
         for prop in self._connection.get_properties():
             setattr(self, prop.name, prop.value)
 
 
 class NodeControllerBlock(ConfigBlock):
-
+    """
+    ##############################################################################################
+    #                        Node 'Controllers' Config Block
+    #  Sample output from this config block:
+    #
+    #    nc:
+    #      hypervisor: kvm
+    #      instance-path: /var/lib/eucalyptus/instances
+    #      max-cores: '32'
+    #      port: '8775'
+    #      service-path: axis2/services/EucalyptusNC
+    #
+    ##############################################################################################
+    """
     def build_active_config(self):
         confmap = {'max-cores': ['eucalyptus_conf', 'MAX_CORES'],
                    'cachesize': ['eucalyptus_conf', 'NC_CACHE_SIZE'],
@@ -334,7 +420,19 @@ class NodeControllerBlock(ConfigBlock):
             if value:
                 setattr(self, localname, value)
 
+
 class ClusterControllerBlock(ConfigBlock):
+    """
+    ##############################################################################################
+    #                               Cluster 'Controllers' Config Block
+    #  Sample output from this config block:
+    #
+    #  cc:
+    #    port: '8774'
+    #    scheduling-policy: ROUNDROBIN
+    #
+    ##############################################################################################
+    """
     def build_active_config(self):
         confmap = {'port': ['eucalyptus_conf', 'CC_PORT'],
                    'scheduling-policy': ['eucalyptus_conf', 'SCHEDPOLICY']}
@@ -347,11 +445,29 @@ class ClusterControllerBlock(ConfigBlock):
 
 class NetworkConfigBlock(ConfigBlock):
     """
-    private-interface: br0
-    public-interface: br0
-    bridge-interface: br0
-    bridged-nic: em1
+    ##############################################################################################
+    #                      Cloud Network Config Block
+    #
+    #  Sample output from this config block:
+    #    network:
+    #      bridge-interface: br0
+    #      config-json:
+    #        InstanceDnsServers:
+    #        - 10.111.5.156
+    #        Mido:
+    #          EucanetdHost: g-12-04.qa1.eucalyptus-systems.com
+    #          GatewayHost: g-12-04.qa1.eucalyptus-systems.com
+    #          GatewayIP: 10.116.133.156
+    #          GatewayInterface: em1.116
+    #          PublicGatewayIP: 10.116.133.173
+    #          PublicNetworkCidr: 10.116.128.0/17
+    #        Mode: VPCMIDO
+    #        PublicIps:
+    #        - 10.116.156.0-10.116.156.254
+    #
+    ##############################################################################################
     """
+
     def build_active_config(self):
         interface_map = {'private-interface': 'VNET_PRIVINTERFACE',
                          'public-interface': 'VNET_PUBINTERFACE',
@@ -382,5 +498,3 @@ class NetworkConfigBlock(ConfigBlock):
             network_config = json.loads(net_json_prop.value)
         network_config = Namespace(**network_config)
         setattr(self, 'config-json', network_config)
-
-

@@ -2,6 +2,7 @@
 from argparse import Namespace
 import re
 
+
 class EucalyptusConf(Namespace):
 
     def __init__(self, lines=None, **kwargs):
@@ -72,5 +73,3 @@ class EucalyptusConf(Namespace):
                 self.__setattr__(key, value)
         self.unparsedlines = unparsedlines or None
         return self
-
-

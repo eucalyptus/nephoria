@@ -136,9 +136,9 @@ def SHOW_SERVICES(connection, services=None, service_type=None, show_part=False,
             print_method(html_string)
         else:
             print_method("\n" + pt.get_string(sortby=part_hdr,
-                                                         fields=fields,
-                                                         sort_key=itemgetter(3, 2),
-                                                         reversesort=True))
+                                              fields=fields,
+                                              sort_key=itemgetter(3, 2),
+                                              reversesort=True))
     else:
         return pt
 
@@ -554,7 +554,6 @@ class EucaService(EucaBaseObj):
                 self._ip_addr = ips[0]
         return self._ip_addr
 
-
     def show(self):
         return SHOW_SERVICES(self.connection, services=self)
 
@@ -712,8 +711,6 @@ class EucaServiceList(ResultSet):
     '''
     Result set used to parse a service response into EucaServices
     '''
-
-
     def __init__(self, connection=None):
         super(EucaServiceList, self).__init__(connection)
         self.last_updated = time.time()

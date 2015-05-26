@@ -9,5 +9,6 @@ cookbook_versions: {}
 
 from cloud_admin.cloudview import ConfigBlock
 
+
 class ChefBuilder(ConfigBlock):
     pass

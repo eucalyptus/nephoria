@@ -104,7 +104,7 @@ class Eulogger(logging.Logger):
                 name = 'eulogger'
 
             name = str(name).replace(".", ":")
-            name= "{0}.{1}".format(self.parent_logger_name, name)
+            name = "{0}.{1}".format(self.parent_logger_name, name)
         self.identifier = identifier or name
 
         parent_logger = logging.getLogger(self.parent_logger_name)
@@ -161,6 +161,7 @@ class Eulogger(logging.Logger):
             if not isinstance(level, int) and isinstance(level, basestring):
                 level = getattr(logging, level.upper())
             self.parent.setLevel(level)
+
 
 class AllowLoggerByName(logging.Filter):
     """

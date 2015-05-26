@@ -126,7 +126,6 @@ from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 from cloud_admin.hosts.eucahost import EucaHost
 
 
-
 eucarc_to_service_map = {
     "euare_url": 'euare',
     "ec2_url": 'compute',
@@ -358,6 +357,7 @@ class AutoCreds(Eucarc):
                 except Exception as e:
                     self.debug("{0}\nFailed to fetch creds remotely, err:'{1}'"
                                .format(get_traceback(), str(e)))
+
         def try_clc_db(self):
             self.debug('trying clc db...')
             if self._clc_ip and self._aws_account_name and self._aws_user_name:
@@ -430,10 +430,9 @@ class AutoCreds(Eucarc):
                 self.ec2_account_number = ret['EC2_ACCOUNT_NUMBER']
             except Exception as PE:
                 self.log.error('Output:\n{0}\nFailed parsing creds lookup output, err:{1}'
-                                .format("\n".join(qout), str(PE)))
+                               .format("\n".join(qout), str(PE)))
                 raise PE
         return ret
-
 
     def create_local_creds(self, local_destdir, machine=None, overwrite=False):
         """

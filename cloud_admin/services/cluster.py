@@ -2,6 +2,7 @@
 from prettytable import PrettyTable
 from cloud_utils.log_utils import markup
 
+
 def show_cluster(connection, cluster, print_table=True):
     maintpt = PrettyTable([markup('CLUSTER: {0}'.format(cluster.name))])
     machpt = connection.show_machine_mappings(machine_dict=cluster.machines, print_table=False)
@@ -45,8 +46,8 @@ class Cluster(object):
         pt = self.show_machines(print_table=False)
         if print_table:
             self.connection.debug_method('\n\t{0}"{1}"\n{2}'.format(markup('\nCLUSTER:'),
-                                                                       self.name,
-                                                                       str(pt)))
+                                                                    self.name,
+                                                                    str(pt)))
         else:
             return pt
 
@@ -206,4 +207,3 @@ class Cluster(object):
         if properties:
             self._properties = properties
         return self
-

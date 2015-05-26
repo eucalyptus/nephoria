@@ -197,7 +197,7 @@ class AdminApi(AWSQueryConnection):
                                        **kwargs)
 
     def __repr__(self):
-        return  "{0}:{1}".format(self.host, self.__class__.__name__)
+        return "{0}:{1}".format(self.host, self.__class__.__name__)
 
     def err_method(self, msg):
         '''
@@ -1061,7 +1061,7 @@ class AdminApi(AWSQueryConnection):
                              'matches:\n{2}'.format(property_name, prop_count, prop_string))
         return keep[0]
 
-    def get_properties(self,search=None, *nameprefix):
+    def get_properties(self, search=None, *nameprefix):
         '''
         Gets eucalyptus cloud configuration properties
         examples:
@@ -1171,8 +1171,8 @@ class AdminApi(AWSQueryConnection):
                     machine_dict[ip_addr].append(component)
         return machine_dict
 
-    def show_machine_mappings(self, machine_dict=None, partition=None, service_type=None, columns=4,
-                      print_method=None, print_table=True):
+    def show_machine_mappings(self, machine_dict=None, partition=None, service_type=None,
+                              columns=4, print_method=None, print_table=True):
         print_method = print_method or self._show_method
         ins_id_len = 10
         ins_type_len = 13
@@ -1187,7 +1187,7 @@ class AdminApi(AWSQueryConnection):
         pt.max_width[machine_hdr[0]] = machine_hdr[1]
         total = []
         machines = machine_dict or self.get_all_machine_mappings(partition=partition,
-                                                         service_type=service_type)
+                                                                 service_type=service_type)
         if not isinstance(machines, dict):
             raise ValueError('show_machine_mappings requires dict example: {"host ip":[services]}, '
                              'got:"{0}/{1}"'.format(machines, type(machines)))
@@ -1201,8 +1201,8 @@ class AdminApi(AWSQueryConnection):
         # Create a large table showing the service states, grab the first 3 columns
         # for type, name, state, and zone
         servpt = self.show_services(total, print_table=False)
-        serv_lines= servpt.get_string(border=0, padding_width=2,
-                                      fields=servpt._field_names[0:columns]).splitlines()
+        serv_lines = servpt.get_string(border=0, padding_width=2,
+                                       fields=servpt._field_names[0: columns]).splitlines()
         header = serv_lines[0]
         ansi_escape = re.compile(r'\x1b[^m]*m')
         # Now build the machine table...
@@ -1225,7 +1225,7 @@ class AdminApi(AWSQueryConnection):
                     line_name = splitline[1]
                     # Pull matching lines out of the pre-formatted service table...
                     if (splitline and re.match("^{0}$".format(serv.type), line_type) and
-                        re.match("^{0}$".format(serv.name), line_name)):
+                            re.match("^{0}$".format(serv.name), line_name)):
                         # Add this line to the services to be displayed for this machine
                         servbuf += line + "\n"
                 if serv.type == 'node' and getattr(serv, 'instances', None):
@@ -1233,7 +1233,7 @@ class AdminApi(AWSQueryConnection):
                     for x in serv.instances:
                         servbuf += ("{0}{1}{2}{3}"
                                     .format(str(x.id).ljust(ins_id_len),
-                                            str('('+ x.state + '),').ljust(ins_st_len),
+                                            str('(' + x.state + '),').ljust(ins_st_len),
                                             str(x.instance_type + ",").ljust(ins_type_len),
                                             str(x.root_device_type).ljust(ins_dev_len))
                                     .ljust(ins_total)).strip() + "\n"
@@ -1272,7 +1272,6 @@ class AdminApi(AWSQueryConnection):
             self._show_method("\n{0}\n".format(maintpt))
         else:
             return maintpt
-
 
     ###############################################################################################
     #                           Misc Service Methods                                              #

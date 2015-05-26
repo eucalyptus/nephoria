@@ -79,7 +79,7 @@ class EucaHost(Machine):
         """
         ret = []
         for serv in self.services:
-            if not serv.service_code in ret:
+            if serv.service_code not in ret:
                 ret.append(serv.service_code)
         return ret
 
@@ -92,7 +92,7 @@ class EucaHost(Machine):
         partitions = []
         for serv in self.services:
             if serv.type in ['node', 'cluster', 'storage']:
-                if not serv.partition in partitions:
+                if serv.partition not in partitions:
                     partitions.append(serv.partition)
         if not partitions:
             return 'euca'
@@ -113,7 +113,6 @@ class EucaHost(Machine):
                                                     self.euca_service_codes)
         except Exception as E:
             return str(E)
-
 
     @property
     def eucalyptus_conf(self):
@@ -358,7 +357,7 @@ class EucaHost(Machine):
         """
         out = machine.sys('env | grep EUCALYPTUS') or []
         for line in out:
-            match =  re.match("^EUCALYPTUS=(\S*)", line)
+            match = re.match("^EUCALYPTUS=(\S*)", line)
             if match:
                 return match.group(1)
         if machine.is_dir('/opt/eucalyptus'):

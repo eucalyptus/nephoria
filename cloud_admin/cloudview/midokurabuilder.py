@@ -31,19 +31,14 @@ from cloud_admin.cloudview import ConfigBlock
 class MidokuraBuilder(ConfigBlock):
     pass
 
+
 class BgpBuilder(ConfigBlock):
     pass
+
 
 class Cassandras(ConfigBlock):
     pass
 
+
 class ZooKeepers(ConfigBlock):
     pass
-
-
-
-
-
-
-
-

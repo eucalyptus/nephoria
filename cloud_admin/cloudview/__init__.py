@@ -30,7 +30,7 @@ class Namespace(object):
         return vars(self).keys()
 
     def _filtered_dict(self):
-        return {k:v for (k,v) in self.__dict__.iteritems() if not k.startswith('_')}
+        return {k: v for (k, v) in self.__dict__.iteritems() if not k.startswith('_')}
 
     def do_default(self):
         # Removes all values not starting with "_" from dict
@@ -58,6 +58,7 @@ class Namespace(object):
         jdump = self.to_json(**json_kwargs)
         yload = yaml.load(jdump)
         return yaml.dump(yload, **yaml_kwargs)
+
 
 class ConfigBlock(Namespace):
 

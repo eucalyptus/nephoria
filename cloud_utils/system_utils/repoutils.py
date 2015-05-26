@@ -86,6 +86,7 @@ class PackageManager:
     def get_repo_file_for_package(self, packagename, repopath=None, filters=None):
         raise NotImplementedError("Method not implemented for package manager " + str(self.name))
 
+
 class Yum(PackageManager):
     def __init__(self, machine):
         self.machine = machine
@@ -119,7 +120,7 @@ class Yum(PackageManager):
             if match:
                 line = match.group(1)
                 self.repo_url_cache[package_name] = {'updated': time.time(),
-                                                      'url': line}
+                                                     'url': line}
                 return line
         self.machine.log.error(markup('URL not found for local package:"{0}"'
                                       .format(package_name), markups=[1, 31]))
@@ -200,9 +201,9 @@ class Yum(PackageManager):
                 namematch = re.search('^\s*\[\s*(\S*)\s*\]\s*$', line)
                 if namematch:
                     valname = 'repo_name'
-                    value =  namematch.group(1)
+                    value = namematch.group(1)
             if valname and value is not None:
-                values[valname] =value
+                values[valname] = value
         if not values:
             self.machine.log.error(markup('No values parsed from:"{0}"'
                                           .format(filepath), markups=[1, 31]))
@@ -245,7 +246,7 @@ class Apt(PackageManager):
 
     def install(self, package, timeout=300):
         return self.machine.sys("export DEBIAN_FRONTEND=noninteractive; apt-get install %s %s" % (
-            self.apt_options, str(package)),timeout=timeout, code=0)
+            self.apt_options, str(package)), timeout=timeout, code=0)
 
     def upgrade(self, package=None):
         if package is None:
@@ -279,4 +280,3 @@ class RepoFile(Namespace):
         self.repo_name = None
         self.sslverify = None
         super(RepoFile, self).__init__(**kwargs)
-
