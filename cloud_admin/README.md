@@ -395,7 +395,7 @@ In [13]: print nc.euca_nc_helpers.get_instance_xml_text('i-44274273')
     </memballoon>
   </devices>
 </domain>
-
+```
 
 ### Create Topology manifests...
 
