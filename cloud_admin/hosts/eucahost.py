@@ -105,12 +105,13 @@ class EucaHost(Machine):
         ie: "1.1.1.1 centos 6.6 x86_64 PARTI01 [CC SC]"
         """
         try:
-            return "{0} {1} {2} {3} {4} {5}".format(self.hostname,
-                                                    self.distro,
-                                                    self.distro_ver,
-                                                    self.arch,
-                                                    self.partitions,
-                                                    self.euca_service_codes)
+            return "{0} {1} {2} {3} {4} {5}".format(
+                self.hostname,
+                self.distro,
+                self.distro_ver,
+                self.arch,
+                self.partitions,
+                '[{0}]'.format(" ".join(str(x) for x in self.euca_service_codes)))
         except Exception as E:
             return str(E)
 

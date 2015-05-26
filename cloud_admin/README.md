@@ -499,10 +499,12 @@ In [1]: from cloud_admin.systemconnection import SystemConnection
 
 In [2]: sc = SystemConnection('10.111.5.156', password='foobar')
 
-In [3]: print sc.get_cloud_summary_string()
-10.111.5.151 centos 6.6 x86_64 one ['NC']
-10.111.5.180 centos 6.6 x86_64 one ['SC', 'CC']
-10.111.5.85 centos 6.6 x86_64 two ['NC']
-10.111.5.156 centos 6.6 x86_64 euca ['CLC', 'UFS', 'WS']
-10.111.1.116 centos 6.6 x86_64 two ['SC', 'CC']
+In [3]: sc.show_cloud_legacy_summary()
+[2015-05-26 14:51:11,978][INFO][SystemConnection]:
+ # HOST        DISTRO  DISTRO VER  ARCH    ZONE  SERVICE CODES
+ 10.111.5.151  centos  6.6         x86_64  one   [NC]
+ 10.111.5.180  centos  6.6         x86_64  one   [SC CC]
+ 10.111.5.85   centos  6.6         x86_64  two   [NC]
+ 10.111.5.156  centos  6.6         x86_64  euca  [CLC UFS WS]
+ 10.111.1.116  centos  6.6         x86_64  two   [SC CC]
 ```
