@@ -347,7 +347,7 @@ class ClustersBlock(ConfigBlock):
             # clusters:
             #   one:
             new_cluster = Namespace()
-            setattr(self.clusters, cluster.name, new_cluster)
+            setattr(self, cluster.name, new_cluster)
             # Assign attrs to this cluster...
             # clusters:
             #   <cluster.name>:
