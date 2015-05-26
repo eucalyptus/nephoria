@@ -17,7 +17,7 @@ based upon the information provided to this AutoCreds obj.
         eucarc attributes and returns.
 
 Some examples:
-In [7]: from cloud_admin.usermgmt.autocreds import AutoCreds
+In [7]: from cloud_admin.access.autocreds import AutoCreds
 
 # From a remote machine..
 In [8]: creds = AutoCreds(credpath='', hostname='10.111.5.156', password='foobar')
