@@ -206,8 +206,7 @@ class AutoCreds(Eucarc):
         if self.aws_secret_key and self.aws_access_key and self._clc_ip:
             self._adminapi = AdminApi(hostname=self._clc_ip,
                                       aws_access_key=self.aws_access_key,
-                                      aws_secret_key=self.aws_secret_key,
-                                      debug_method=self.debug)
+                                      aws_secret_key=self.aws_secret_key)
         return self._adminapi
 
     def _close_adminpi(self):
@@ -227,7 +226,7 @@ class AutoCreds(Eucarc):
         gathered via the Eucalyptus admin api interface
         :returns dict mapping eucarc common key-values to the discovered service URIs.
         """
-        if not self._adminapi:
+        if not self.adminapi:
             raise RuntimeError('Can not fetch service paths from cloud without an AdminApi '
                                'connection\n This requires: clc_ip, aws_access_key, '
                                'aws_secret_key')
@@ -367,10 +366,17 @@ class AutoCreds(Eucarc):
                         res = self.get_existing_keys_from_clc(account=self._aws_account_name,
                                                               user=self._aws_user_name,
                                                               machine=machine)
+                        try:
+                            # With keys, try filling in remainder with service urls/attributes
+                            # using the admin api interface...
+                            res = self.update_attrs_from_cloud_services()
+                        except:
+                            pass
                         return res
                     except RuntimeError as RE:
                         self.debug('{0}\nFailed to fetch creds from clc db, err:{1}'
                                    .format(get_traceback(), str(RE)))
+
 
         default_order = [try_local, try_adminapi, try_remote, try_clc_db]
         if self._clc_ip and self._credpath and self._has_updated_connect_args:

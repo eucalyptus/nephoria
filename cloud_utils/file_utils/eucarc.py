@@ -58,8 +58,8 @@ class Eucarc(dict):
         # End of init default eucarc attrs
         if not logger:
             logger = Eulogger(identifier=self.__class__.__name__)
-        self.log = logger
-        self._debug_method = self.log.debug
+        self._log = logger
+        self._debug = self.log.debug
         self._filepath = filepath
         if keysdir is None:
             keysdir = filepath
@@ -72,14 +72,9 @@ class Eucarc(dict):
         elif filepath:
             self._from_filepath(filepath=filepath, sshconnection=sshconnection, keysdir=filepath)
 
-    def _debug(self, msg):
-        """
-        Used to print debug information
-        """
-        if self._debug_method:
-            self._debug_method(msg)
-        else:
-            print(msg)
+    @property
+    def log(self):
+        return self._log
 
     @property
     def keys_dir(self):
@@ -91,7 +86,7 @@ class Eucarc(dict):
         if self._unparsed_lines:
             # see if there were any lines that were not previously parsed due to lack of keysdir
             try:
-                self.debug('Attempting to resolve any unparsed lines with new keydir...')
+                self.log.debug('Attempting to resolve any unparsed lines with new keydir...')
                 self._from_string(string=self._unparsed_lines, keysdir=self._keysdir)
             except:
                 pass
@@ -178,12 +173,13 @@ class Eucarc(dict):
                 string = f.read()
         return self._from_string(string, keysdir=keysdir)
 
-    def show(self, print_table=True):
+    def show(self, print_method=None, print_table=True):
         """
         Show the eucarc key, values in a table format
         :param print_table: bool, if true will print the table to self._debug, else returns the
                             table obj
         """
+        print_method = print_method or self.log.info
         pt = PrettyTable(['KEY', 'VALUE'])
         pt.hrules = 1
         pt.align = 'l'
@@ -194,7 +190,7 @@ class Eucarc(dict):
             pt.add_row([key, self.__dict__[key]])
         pt.add_row(['UNPARSED LINES', self._unparsed_lines])
         if print_table:
-            self._debug("\n" + str(pt) + "\n")
+            print_method("\n" + str(pt) + "\n")
         else:
             return pt
 
