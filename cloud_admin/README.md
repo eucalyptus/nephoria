@@ -34,7 +34,7 @@
          in code and in different text or graphical formats.
 
 
-##### Example using the systemconnection interface:
+#### Example using the systemconnection interface:
 
 
 First create the systemconnection interface. By default Ssh credentials, and/or Eucalyptus
@@ -53,7 +53,7 @@ In [1]: from cloud_admin.systemconnection import SystemConnection
 In [2]: sc = SystemConnection('10.111.5.156', password='foobar')
 ```
 
-##### Accessing the Eucalyptus services...
+#### Accessing the Eucalyptus services...
 
 Some examples of how the Eucalyptus services, and properties can be queried, modified, etc..
 Use show commands during development to help debug and create sytemconnection scripts...
@@ -107,7 +107,7 @@ In [5]: sc.show_properties('www')
 
 ```
 
-##### Accessing the Host machines
+#### Accessing the Host machines
 
 Combine Eucalyptus services with their underlying machines hosting the services.
 These are accessed as 'hosts' through the systemconnection interface...
@@ -165,7 +165,7 @@ In [6]: sc.show_machine_mappings()
 
 ```
 
-Some sample utilities with an indidual host, hosting the Eucalyptus Node controller service...
+##### Some sample utilities with an indidual host, hosting the Eucalyptus Node controller service...
 
 ````
 
@@ -221,7 +221,7 @@ In [14]: print repo_info.gpgcheck
 
 ```
 
-Hosts can be interacted with via ssh via the sys interface...
+##### Hosts can be interacted with via ssh via the sys interface...
 
 ```
 
@@ -248,7 +248,7 @@ logout
 In [17]:
 ```
 
-Get General information about the hosts, their services, processes, etc..
+##### Get General information about the hosts, their services, processes, etc..
 
 ```
 
