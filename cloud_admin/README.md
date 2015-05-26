@@ -487,7 +487,8 @@ yum-options: --nogpg
 ```
 
 
-### Get Legacy Cloud summary representation (aka QA/Eutester config file text)...
+### Get Legacy Cloud summary representation
+#### (aka older QA/Eutester config file text)...
 
 Older versions of Eutester may have required a cloud summary 'config.file' be provided
 in order to run a set of tests. The string can now be produced from a running cloud via the
