@@ -6,20 +6,23 @@
 
 AutoCreds is a convenience class which attempt to provide utilities for reading in
 credentials data from multiple sources.
+
 The auto_create flag (set to True by default) attempts  to automatically produce credentials
 based upon the information provided to this AutoCreds obj.
-        - If any ssh connect arguments (outside of hostname) are provided then only the remote
-        machine tried for existing creds at 'self._credpath'.
-        - If credpath was provided the local file system will first be tried for existing
-        credentials
-        - If aws access and secret keys were provided allong with hostname, will attempt to
-        derivce service credpaths from the Eucalyptus Admin api.
-        -Finally if a hostname was provided an ssh attempt will be made (with any other
-         connection kwargs provided)to fetch from the remote system as well.
-         If password or keypath was not provided, this assumes keys have been sync'd between the
-         localhost and the remote machine.
-        Upon the first successful discovery of credentials, the local obj is populated with
-        eucarc attributes and returns.
+
+- If any ssh connect arguments (outside of hostname) are provided then only the remote
+  machine tried for existing creds at 'self._credpath'.
+- If credpath was provided the local file system will first be tried for existing
+  credentials
+- If aws access and secret keys were provided allong with hostname, will attempt to
+  derivce service credpaths from the Eucalyptus Admin api.
+- Finally if a hostname was provided an ssh attempt will be made (with any other
+  connection kwargs provided)to fetch from the remote system as well.
+  If password or keypath was not provided, this assumes keys have been sync'd between the
+  localhost and the remote machine.
+
+Upon the first successful discovery of credentials, the local obj is populated with
+eucarc attributes and returns.
 
 Some example usage through ipython session:
 
