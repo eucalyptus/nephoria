@@ -53,7 +53,7 @@ In [1]: from cloud_admin.systemconnection import SystemConnection
 In [2]: sc = SystemConnection('10.111.5.156', password='foobar')
 ```
 
-### Accessing the Eucalyptus services...
+##### Accessing the Eucalyptus services...
 
 Some examples of how the Eucalyptus services, and properties can be queried, modified, etc..
 Use show commands during development to help debug and create sytemconnection scripts...
@@ -106,6 +106,8 @@ In [5]: sc.show_properties('www')
 +-------------------+----------------------------------------+---------------------------------+
 
 ```
+
+##### Accessing the Host machines
 
 Combine Eucalyptus services with their underlying machines hosting the services.
 These are accessed as 'hosts' through the systemconnection interface...
