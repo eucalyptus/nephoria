@@ -272,6 +272,7 @@ class EucalyptusBlock(ConfigBlock):
 
 
 class TopologyBlock(ConfigBlock):
+    """
     ###############################################################################################
     #                            Cloud Topology Config Block
     #
@@ -295,6 +296,7 @@ class TopologyBlock(ConfigBlock):
     #       walrus: 10.111.5.156
     #
     ###############################################################################################
+    """
     def build_active_config(self):
 
         # Add the Cluster configuration block
@@ -467,7 +469,6 @@ class NetworkConfigBlock(ConfigBlock):
     #
     ##############################################################################################
     """
-
     def build_active_config(self):
         interface_map = {'private-interface': 'VNET_PRIVINTERFACE',
                          'public-interface': 'VNET_PUBINTERFACE',
