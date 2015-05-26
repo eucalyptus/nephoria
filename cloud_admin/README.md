@@ -221,7 +221,7 @@ In [14]: print repo_info.gpgcheck
 
 ```
 
-Hosts can be interacted with via ssh...
+Hosts can be interacted with via ssh via the sys interface...
 
 ```
 
@@ -232,8 +232,11 @@ Out[15]:
  '-/+ buffers/cache:    2044396    5210508',
  'Swap:      7372796       1868    7370928']
 
-# or for real time debugging, start an interactive shell...
+```
 
+#####  ...or for real time debugging, start an interactive shell
+
+```
 In [16]: nc.start_interactive_ssh()
 Opened channel, starting interactive mode...
 Last login: Tue May 26 12:59:47 2015 from euca-vpn-10-5-1-70.eucalyptus-systems.com
