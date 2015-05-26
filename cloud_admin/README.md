@@ -485,3 +485,23 @@ yum-options: --nogpg
 
 
 ```
+
+
+### Get Legacy Cloud summary representation (aka QA/Eutester config file text)...
+
+Older versions of Eutester may have required a cloud summary 'config.file' be provided
+in order to run a set of tests. The string can now be produced from a running cloud via the
+systemconnection interface. Example:
+
+```
+In [1]: from cloud_admin.systemconnection import SystemConnection
+
+In [2]: sc = SystemConnection('10.111.5.156', password='foobar')
+
+In [3]: print sc.get_cloud_summary_string()
+10.111.5.151 centos 6.6 x86_64 one ['NC']
+10.111.5.180 centos 6.6 x86_64 one ['SC', 'CC']
+10.111.5.85 centos 6.6 x86_64 two ['NC']
+10.111.5.156 centos 6.6 x86_64 euca ['CLC', 'UFS', 'WS']
+10.111.1.116 centos 6.6 x86_64 two ['SC', 'CC']
+```
