@@ -85,6 +85,7 @@ import copy
 import re
 import time
 from prettytable import PrettyTable
+from urlparse import urlparse
 
 import boto
 from boto.vpc import VPCConnection
@@ -217,8 +218,8 @@ class AdminApi(AWSQueryConnection):
         return self._ec2_connection
 
     def _get_ec2_connection(self, endpoint=None, access_key=None, secret_key=None,
-                            port=8773, APIVersion='2012-07-20', path='services/compute',
-                            is_secure=False, debug_level=None, **kwargs):
+                            port=None, APIVersion='2013-10-15', path=None,
+                            is_secure=None, debug_level=None, **kwargs):
         """
 
         :param endpoint: service endpoint, hostname, etc..
@@ -234,12 +235,34 @@ class AdminApi(AWSQueryConnection):
         """
         if debug_level is None:
             debug_level = self.debug
+        access_key = access_key or self.aws_access_key_id
+        secret_key = secret_key or self.aws_secret_access_key
         ec2_region = RegionInfo()
         ec2_region.name = 'eucalyptus'
-        host = endpoint or self.host
+        host = endpoint
+        if not endpoint:
+            try:
+                services = self.get_services(service_type='compute')
+                for service in services:
+                    if service.state == 'ENABLED':
+                        urlp = urlparse(service.uri)
+                        if host is None:
+                            host = urlp.hostname
+                        if path is None:
+                            path = urlp.path
+                        if port is None:
+                            port = urlp.port
+                        if is_secure is None and urlp.scheme == 'https':
+                            is_secure = True
+                        break
+            except:
+                self.log.warn('Failed to discover compute service, trying host @ "{0}"'
+                              .format(self.host))
+                host = self.host
+        port = port or 8773
+        path = path or 'services/compute'
+        is_secure = is_secure or False
         ec2_region.endpoint = host
-        access_key = access_key or self.aws_access_key_id
-        secret_key = secret_key or self. aws_secret_access_key
         connection_args = {'aws_access_key_id': access_key,
                            'aws_secret_access_key': secret_key,
                            'is_secure': is_secure,
@@ -257,11 +280,11 @@ class AdminApi(AWSQueryConnection):
             ec2_connection_args[key] = kwargs[key]
         try:
             connection = VPCConnection(**ec2_connection_args)
-        except Exception, e:
+        except Exception as e:
             buf = ""
             for key, value in connection_args.iteritems():
                 buf += "\t{0} = {1}\n".format(key, value)
-            print ('Error in ec2 connection attempt while using args:\n{0}'.format(buf))
+            self.log.warn('Error in ec2 connection attempt while using args:\n{0}'.format(buf))
             raise e
         return connection
 
@@ -855,27 +878,30 @@ class AdminApi(AWSQueryConnection):
         if get_instances:
             try:
                 reservations = self.ec2_connection.get_all_instances(
+                    instance_ids=['verbose'],
                     filters={'tag-key': 'euca:node'})
             except Exception as RE:
+                self.log.debug(get_traceback())
                 self.log.warn('Failed to fetch instances for nodes, err:{0}'.format(str(RE)))
                 reservations = []
                 if fail_on_instance_fetch:
                     raise RE
-                for reservation in reservations:
-                    for vm in reservation.instances:
-                        try:
-                            # Should this filter exclude terminated, shutdown, and
-                            # stopped instances?
-                            tag_node_name = vm.tags.get('euca:node', None)
-                            if tag_node_name:
-                                for node in nodes:
-                                    if node.name == tag_node_name:
-                                        node.instances.append(vm)
-                        except Exception as NE:
-                            self.log.warn('Failed to fetch instances for node:{0}, err:{1}'
-                                          .format(node.name, str(NE)))
-                            if fail_on_instance_fetch:
-                                raise NE
+            for reservation in reservations:
+                for vm in reservation.instances:
+                    try:
+                        # Should this filter exclude terminated, shutdown, and
+                        # stopped instances?
+                        tag_node_name = vm.tags.get('euca:node', None)
+                        if tag_node_name:
+                            for node in nodes:
+                                if node.name == tag_node_name:
+                                    node.instances.append(vm)
+                    except Exception as NE:
+                        self.log.debug(get_traceback())
+                        self.log.warn('Failed to fetch instances for node:{0}, err:{1}'
+                                      .format(node.name, str(NE)))
+                        if fail_on_instance_fetch:
+                            raise NE
         return nodes
 
     def get_node_controller_service(self, name=None, fullname=None, partition=None,
