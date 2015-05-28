@@ -18,6 +18,15 @@ def test_port_status(ip,
                      verbose=True):
         '''
         Attempts to connect to tcp port at ip:port within timeout seconds
+
+        :param ip: remote ip/hostname to attempt to connect to
+        :param port: remote port to connect to
+        :param tcp: Use tcp in this test
+        :param recv_size: size of buffer to read from socket
+        :param send_buf: buffer to send
+        :param debug: bool, print debug info w/ 'print'
+        :param verbose: bool, print verbose info
+        :returns buffer read in
         '''
         ret_buf = ""
         if verbose:
@@ -70,6 +79,13 @@ def test_port_status(ip,
 def scan_port_range(ip, start, stop, timeout=1, tcp=True):
     '''
     Attempts to connect to ports, returns list of ports which accepted a connection
+
+    :param ip: remote ip to scan
+    :param start: lower end of port range to scan
+    :param stop: upper end of port range to scan
+    :param timeout: int timeout in seconds per port being scanned
+    :param tcp: bool, if true TCP is used, else UDP
+    :return list of ports which did not fault (connected) during scan
     '''
     ret = []
     for x in xrange(start, stop+1):

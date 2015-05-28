@@ -854,20 +854,28 @@ class AdminApi(AWSQueryConnection):
             nodes.append(EucaNodeService._from_service(service))
         if get_instances:
             try:
-                for reservation in self.ec2_connection.get_all_instances(
-                        filters={'tag-key': 'euca:node'}):
-                    for vm in reservation.instances:
-                        # Should this filter exclude terminated, shutdown, and stopped instances?
-                        tag_node_name = vm.tags.get('euca:node')
-                        if tag_node_name:
-                            for node in nodes:
-                                if node.name == tag_node_name:
-                                    node.instances.append(vm)
-            except Exception, NE:
-                self.log.warn('Failed to fetch instances for node:{0}, err:{1}'
-                              .format(node.name, str(NE)))
+                reservations = self.ec2_connection.get_all_instances(
+                    filters={'tag-key': 'euca:node'})
+            except Exception as RE:
+                self.log.warn('Failed to fetch instances for nodes, err:{0}'.format(str(RE)))
+                reservations = []
                 if fail_on_instance_fetch:
-                    raise NE
+                    raise RE
+                for reservation in reservations:
+                    for vm in reservation.instances:
+                        try:
+                            # Should this filter exclude terminated, shutdown, and
+                            # stopped instances?
+                            tag_node_name = vm.tags.get('euca:node', None)
+                            if tag_node_name:
+                                for node in nodes:
+                                    if node.name == tag_node_name:
+                                        node.instances.append(vm)
+                        except Exception as NE:
+                            self.log.warn('Failed to fetch instances for node:{0}, err:{1}'
+                                          .format(node.name, str(NE)))
+                            if fail_on_instance_fetch:
+                                raise NE
         return nodes
 
     def get_node_controller_service(self, name=None, fullname=None, partition=None,

@@ -602,7 +602,7 @@ class AutoCreds(Eucarc):
                                     updatefile), code=0)
             return credzippath
 
-    def create_new_user_certs(self, admin_cred_dir, account, user,
+    def create_new_user_certs(self, admin_cred_dir, account, user, force_cert_create=False,
                               newcertpath=None, newkeypath=None, machine=None):
         machine = machine or self.clc_machine
         eucarcpath = os.path.join(admin_cred_dir, 'eucarc')
@@ -614,7 +614,7 @@ class AutoCreds(Eucarc):
         for cert in self.get_active_certs():
             admin_certs.append(cert.get('certificate_id'))
         if len(admin_certs) > 1:
-            if self.force_cert_create:
+            if force_cert_create:
                 self.debug("Found more than one certs, deleting last cert")
                 machine.sys(". {0} &>/dev/null && "
                             "/usr/bin/euare-userdelcert -c {1} --user-name {2}"
