@@ -161,20 +161,24 @@ class Machine(object):
         for log_file in self.log_buffers.keys():
             self.save_log(log_file, path)
 
-    def dump_netfail_info(self, ip=None, mac=None, pass1=None, pass2=None, showpass=True,
-                          taillength=50):
+    def dump_netfail_info(self,ip=None, mac=None, pass1=None, pass2=None, showpass=True,
+                          taillength=50, net_namespace=None):
         """
-        Debug method to provide potentially helpful info from current machine when debugging
-         connectivity issues.
+        Debug method to provide potentially helpful info from current machine when debugging connectivity issues.
         """
-        self.log.debug('Attempting to dump network information, args: ip:{0}, mac:{1}, '
-                       'pass1:{2}, pass2:{3}'.format(ip, mac,
-                                                     self.get_masked_pass(pass1, show=True),
-                                                     self.get_masked_pass(pass2, show=True)))
-        self.ping_cmd(ip, verbose=True)
+        self.debug('Attempting to dump network information, args: ip:' + str(ip)
+                   + ' mac:' + str(mac)
+                   + ' pass1:' + self.get_masked_pass(pass1,show=True)
+                   + ' pass2:' + self.get_masked_pass(pass2,show=True))
+        self.ping_cmd(ip,verbose=True, net_namespace=net_namespace,count=1)
+        ns_list = self.sys('ip netns list')
+        if net_namespace in ns_list:
+            self.sys('arp -a', net_namespace=net_namespace)
+            self.sys('ifconfig', net_namespace=net_namespace)
+            self.sys('netstat -rn', net_namespace=net_namespace)
         self.sys('arp -a')
-        self.sys('dmesg | tail -' + str(taillength))
-        self.sys('cat /var/log/messages | tail -' + str(taillength))
+        self.sys('dmesg | tail -'+str(taillength))
+        self.sys('cat /var/log/messages | tail -'+str(taillength))
 
     def get_masked_pass(self, pwd, firstlast=True, charcount=True, show=False):
         '''
@@ -336,40 +340,46 @@ class Machine(object):
         except:
             pass
 
-    def sys(self, cmd, verbose=True, timeout=120, listformat=True, code=None):
-        """
+    def sys(self, cmd, verbose=True, timeout=120, listformat=True, code=None, net_namespace=None):
+        '''
         Issues a command against the ssh connection to this instance
         Returns a list of the lines from stdout+stderr as a result of the command
-        """
-        return self.ssh.sys(cmd, verbose=verbose, timeout=timeout, listformat=listformat,
-                            code=code)
+        '''
+        if net_namespace is not None:
+            cmd = 'ip netns exec {0} {1}'.format(net_namespace, cmd)
+        return self.ssh.sys(cmd, verbose=verbose, timeout=timeout,listformat=listformat, code=code)
 
-    def cmd(self, cmd, verbose=True, timeout=120, listformat=False, cb=None, cbargs=[]):
-        """
+    def cmd(self, cmd, verbose=True, timeout=120, listformat=False, net_namespace=None,
+            cb=None, cbargs=[]):
+        '''
         Issues a command against the ssh connection to this instance
         returns dict containing:
             ['cmd'] - The command which was executed
             ['output'] - The std out/err from the executed command
             ['status'] - The exit (exitcode) of the command, in the case a call back fires,
                          this status code is unreliable.
-            ['cbfired']  - Boolean to indicate whether or not the provided callback
-                           fired (ie returned False)
+            ['cbfired']  - Boolean to indicate whether or not the provided callback fired
+                          (ie returned False)
             ['elapsed'] - Time elapsed waiting for command loop to end.
         cmd - mandatory - string, the command to be executed
         verbose - optional - boolean flag to enable debug
         timeout - optional - command timeout in seconds
         listformat -optional - specifies returned output in list of lines, or single string buffer
-        cb - optional - call back function, accepting string buffer, returning true false
-                        see sshconnection for more info
-        """
+        net_namespace - optional - issue command in the network namespace provided.
+        cb - optional - call back function, accepting string buffer, returning true false see s
+                        shconnection for more info
+        '''
+        if net_namespace is not None:
+            cmd = 'ip netns exec {0} {1}'.format(net_namespace, cmd)
         if (self.ssh is not None):
             return self.ssh.cmd(cmd, verbose=verbose, timeout=timeout, listformat=listformat,
                                 cb=cb, cbargs=cbargs)
         else:
-            raise RuntimeError('Can not issue command:"{0}". Ssh connection is None'.format(cmd))
+            raise Exception("Euinstance ssh connection is None")
 
-    def sys_until_found(self, cmd, regex, verbose=True, timeout=120, listformat=True):
-        """
+    def sys_until_found(self, cmd, regex, verbose=True, timeout=120, listformat=True,
+                        net_namespace=None):
+        '''
         Run a command until output of command satisfies/finds regex or EOF is found.
         returns dict containing:
             ['cmd'] - The command which was executed
@@ -384,9 +394,9 @@ class Machine(object):
         verbose - optional - boolean flag to enable debug
         timeout - optional - command timeout in seconds
         listformat -optional - specifies returned output in list of lines, or single string buffer
-        """
+        '''
         return self.cmd(cmd, verbose=verbose, timeout=timeout, listformat=listformat,
-                        cb=self._str_found_cb, cbargs=[regex, verbose])
+                        net_namespace=net_namespace, cb=self.str_found_cb, cbargs=[regex, verbose])
 
     def _str_found_cb(self, buf, regex, verbose, search=True):
         """
@@ -418,6 +428,18 @@ class Machine(object):
                           password=None,
                           retryconn=True,
                           timeout=300):
+        """
+        Wrapper, monitor and display for a remote wget session issued on this machine obj.
+
+        :param url: url to wget
+        :param path: wget's -P param
+        :param dest_file_name: wget's -O param for destination
+        :param user: user for wget auth if needed
+        :param password: password for wget auth if needed
+        :param retryconn: wget's bool used include --retry-connrefused param
+        :param timeout: the overall timeout for the wget command being executed on this machine
+        :raise RuntimeError upon wget failure/error.
+        """
         self.log.debug('wget_remote_image, url:' + str(url) + ", path:" + str(path))
         cmd = 'wget '
         if path:
@@ -434,10 +456,13 @@ class Machine(object):
         self.log.debug('wget_remote_image cmd: ' + str(cmd))
         ret = self.cmd(cmd, timeout=timeout, cb=self.wget_status_cb)
         if ret['status'] != 0:
-            raise Exception('wget_remote_image failed with status:' + str(ret['status']))
+            raise RuntimeError('wget_remote_image failed with status:' + str(ret['status']))
         self.log.debug('wget_remote_image succeeded')
 
     def wget_status_cb(self, buf):
+        """
+        Callback to be used to provide real time status during a remote wget session
+        """
         ret = SshCbReturn(stop=False)
         try:
             buf = buf.strip()
@@ -454,23 +479,46 @@ class Machine(object):
         finally:
             return ret
 
-    def ping_check(self, host):
-        out = self.ping_cmd(host)
-        self.log.debug('Ping attempt to host:' + str(host) + ", status code:" + str(out['status']))
+    def ping_check(self,host, verbose=True, net_namespace=None):
+        """
+        Wrapper for ICMP ping requests/checks.
+        :param host: remote host to ping from this machine obj
+        :param verbose: log additional output from this ping command(s)
+        :param net_namespace: the Linux network namespace on this machine obj to run ping from.
+        :raises RuntimeError if ping fails.
+        """
+        out = self.ping_cmd(host, verbose=verbose, net_namespace=net_namespace)
+        self.debug('Ping attempt to host:'+str(host)+", status code:"+str(out['status']))
         if out['status'] != 0:
-            raise Exception('Ping returned error:' + str(out['status']) + ' to host:' + str(host))
+            raise RuntimeError('Ping returned error:'+str(out['status'])+' to host:'+str(host))
 
     def ping_cmd(self, host, count=2, pingtimeout=10, commandtimeout=120, listformat=False,
-                 verbose=True):
-        cmd = 'ping -c ' + str(count) + ' -t ' + str(pingtimeout)
+                 verbose=True, net_namespace=None):
+
+        """
+        Wrapper for the ping command to be executed on this machine obj
+
+        :param host: remote host to ping from this machine obj
+        :param count: number of ping attempts to be provided to ping command.
+        :param pingtimeout: timeout param to be provided to 'ping' command for it's timeout
+        :param commandtimeout: Time to wait for the ssh command issuing ping to complete
+        :param listformat: bool, if true provides a list of lines, else a single string buffer
+        :param verbose: log additional output from this ping command(s)
+        :param net_namespace: the Linux network namespace on this machine obj to run ping from.
+        :return: the response from the ping command(s)
+        """
+        cmd = 'ping -c ' +str(count)+' -t '+str(pingtimeout)
         if verbose:
             cmd += ' -v '
-        cmd = cmd + ' ' + str(host)
-        out = self.cmd(cmd, verbose=verbose, timeout=commandtimeout, listformat=listformat)
+        cmd = cmd + ' '+ str(host)
+        self.debug('cmd: {0}'.format(cmd))
+        out = self.cmd(cmd, verbose=verbose, timeout=commandtimeout, listformat=listformat,
+                       net_namespace=net_namespace)
+        self.debug('out: {0}'.format(out))
         if verbose:
-            # print all returned attributes from ping command dict
+            #print all returned attributes from ping command dict
             for item in sorted(out):
-                self.log.debug(str(item) + " = " + str(out[item]))
+                self.debug(str(item)+" = "+str(out[item]) )
         return out
 
     ###############################################################################################
@@ -479,12 +527,14 @@ class Machine(object):
 
     @property
     def arch(self):
+        # Marchine arch (ie x86_64)
         if not self._arch:
             self._get_arch_info_from_machine()
         return self._arch
 
     @arch.setter
     def arch(self, value):
+        # Marchine arch (ie x86_64)
         self._arch = value
 
     @property
@@ -529,6 +579,7 @@ class Machine(object):
         return None
 
     def get_uptime(self):
+        # fetch uptime of remote machine from proc uptime
         return int(self.sys('cat /proc/uptime', code=0)[0].split()[1].split('.')[0])
 
     def mkfs(self, partition, type="ext3"):

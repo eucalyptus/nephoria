@@ -8,12 +8,12 @@ from midonetclient.host import Host
 from midonetclient.host_interface_port import HostInterfacePort
 from midonetclient.host_interface import HostInterface
 from midonetclient.ip_addr_group import IpAddrGroup
-from eutester.euca.euca_ops import Eucaops
 from eutester.testcase_utils import WaitForResultException
 from cloud_utils.net_utils.sshconnection import SshConnection
+from cloud_utils.net_utils import is_address_in_network
 from cloud_utils.log_utils import markup
-from eutester.aws.ec2.euinstance import EuInstance
 from cloud_utils.log_utils.eulogger import Eulogger
+from cloud_admin.systemconnection import SystemConnection
 from boto.ec2.group import Group as BotoGroup
 from boto.ec2.instance import Instance
 from boto.ec2.securitygroup import SecurityGroup, IPPermissions
@@ -58,14 +58,14 @@ class MacTable(resource_base.ResourceBase):
 
 class Midget(object):
     '''
-    Midonet get agent used for getting status and describing the system for the purposes
-    of debugging a Eucalyptus cloud's usage of it.
+    Midonet get or primarily read-only agent used for getting status and describing the system for
+    the purposes of debugging and mapping output to a Eucalyptus cloud's usage of it.
     '''
     _CHAIN_JUMP = 107
-    _ADDR_SPACING = 16
+    _ADDR_SPACING = 17
 
     def __init__(self, midonet_api_host, midonet_api_port='8080', midonet_username=None,
-                 midonet_password=None, eutester_config=None, eutester_password=None, tester=None):
+                 midonet_password=None, clc_ip=None, clc_password=None, systemconnection=None):
         self.midonet_api_host = midonet_api_host
         self.midonet_api_port = midonet_api_port
         self.midonet_username = midonet_username
@@ -74,9 +74,9 @@ class Midget(object):
                                .format(self.midonet_api_host, self.midonet_api_port),
                                username=self.midonet_username, password=self.midonet_password)
 
-        self.tester = tester
-        if not self.tester and eutester_config:
-            self.tester = Eucaops(config_file=eutester_config, password=eutester_password)
+        self.eucaconnection = systemconnection
+        if not self.eucaconnection and clc_ip:
+            self.eucaconnection = SystemConnection(hostname=clc_ip, password=clc_password)
         self.logger = Eulogger(identifier='MidoDebug:{0}'.format(self.midonet_api_host))
         self.default_indent = ""
         self._euca_instances = {}
@@ -131,7 +131,8 @@ class Midget(object):
             try:
                 searchstring = "{0}|{1}".format(
                     searchstring,
-                    self.tester.ec2.get_all_subnets(instance.subnet_id)[0].cidr_block)
+                    self.eucaconnection.ec2_connection.get_all_subnets(
+                        instance.subnet_id)[0].cidr_block)
             except:
                 pass
             for match in re.findall(searchstring, line):
@@ -190,16 +191,13 @@ class Midget(object):
                                                     ping_timeout=5):
         instance = self._get_instance(instance)
         if not proxy_machine:
-            clc_service = self.tester.service_manager.get_all_cloud_controllers()[0]
+            clc_service = self.eucaconnection.clc_machine
             proxy_machine = copy.copy(clc_service)
         net_namespace = net_namespace or instance.vpc_id
         try:
-            self.tester.wait_for_result(self._ping_instance_private_ip_from_euca_internal,
-                                        result=True,
-                                        timeout=ping_timeout,
-                                        instance=instance,
-                                        proxy_machine=proxy_machine,
-                                        net_namespace=net_namespace)
+            self._self._ping_instance_private_ip_from_euca_internal(instance=instance,
+                                                                    proxy_machine=proxy_machine,
+                                                                    net_namespace=net_namespace)
         except WaitForResultException:
             self.errormsg('Failed to ping instance: {0},  private ip:{1} from internal host: {2}'
                           .format(instance.id,
@@ -384,7 +382,8 @@ class Midget(object):
         router = self.get_router_for_instance(instance)
         if not router:
             raise ValueError('Did not find router for instance:{0}'.format(instance.id))
-        subnet = self.tester.ec2.get_all_subnets(subnet_ids=['verbose', instance.subnet_id])[0]
+        subnet = self.eucaconnection.ec2_connection.get_all_subnets(subnet_ids=['verbose',
+                                                                                instance.subnet_id])[0]
         if not subnet:
             raise ValueError('Did not find subnet for instance:{0}, subnet id:{1}'
                              .format(instance.id, instance.subnet_id))
@@ -541,7 +540,12 @@ class Midget(object):
         return adrs
 
     def _update_euca_instances(self):
-        instances = self.tester.get_instances(idstring=['verbose'])
+        instances = []
+        reservations = self.eucaconnection.ec2_connection.get_all_instances(
+            instance_ids=['verbose'])
+        for res in reservations:
+            if res.instances:
+                instances.extend(res.instances)
         now = time.time()
         self._euca_instances = {'lastupdated': now, 'instances': instances}
 
@@ -662,7 +666,7 @@ class Midget(object):
             for mac in mac_table:
                 if mac.get_macaddr() == entry.get_mac():
                     port = mac.get_port_id()
-            if self.tester:
+            if self.eucaconnection:
                 try:
                     euca_instance = self._get_instance_by_private_ip(private_ip=entry_ip)
                     if euca_instance:
@@ -678,6 +682,7 @@ class Midget(object):
             return pt
 
     def get_bridge_port_for_instance_learned(self, instance):
+        instance = self._get_instance(instance)
         bridge = self.get_bridge_for_instance(instance)
         arp_table = self.get_bridge_arp_table(bridge)
         mac_table = self.get_bridge_mac_table(bridge)
@@ -696,6 +701,7 @@ class Midget(object):
         return None
 
     def get_bridge_port_for_instance_by_port_name(self, instance):
+        instance = self._get_instance(instance)
         host = self.get_host_for_instance(instance)
         assert isinstance(host, Host)
         for port in host.get_ports():
@@ -706,6 +712,7 @@ class Midget(object):
         return None
 
     def show_bridge_port_for_instance(self, instance, showchains=True, indent=None, printme=True):
+        instance = self._get_instance(instance)
         if indent is None:
             indent = self.default_indent
         bridge = self.get_bridge_for_instance(instance)
@@ -769,6 +776,7 @@ class Midget(object):
             return pt
 
     def show_chains_for_instance_security_groups(self, instance, printme=True):
+        instance = self._get_instance(instance)
         if not instance.groups:
             self.debug('Instance.groups is empty')
         mainbuf = self._bold("\nSECURITY GROUP/MIDO CHAIN RULE MAPPING for INSTANCE: '{0}'"
@@ -779,7 +787,7 @@ class Midget(object):
                                                                                 group.name)
             pt = PrettyTable([title])
             pt.align[title] = 'l'
-            buf += "\n" + str(self.tester.show_security_group(group, printme=False))
+            buf += "\n" + str(self.show_security_group(group, printme=False))
             buf += "\n" + str(self.show_chain_for_security_group(group, printme=False))
             pt.add_row([buf])
             mainbuf += "\n" + str(pt)
@@ -796,12 +804,12 @@ class Midget(object):
         elif group:
             if isinstance(group, str) or isinstance(group, unicode):
                 if re.match('^sg-\w{8}$', group):
-                    group = self.tester.get_security_group(id=group)
+                    group = self.get_security_group(id=group)
                     self._errmsg('Could not find security group:"{0}" on cloud? Trying to lookup'
                                  'midonet chain anyways...'.format(group))
                     group_id = str(group)
                 else:
-                    group = self.tester.get_security_group(name=group)
+                    group = self.get_security_group(name=group)
                     if not group:
                         raise ValueError('Group not found on system and not could not perform'
                                          'a chain lookup because group was not provided in '
@@ -840,8 +848,7 @@ class Midget(object):
             end_port = port_dict.get('end')
             if protocol == str(rule_protocol).upper().strip():
                 if port >= start_port and port <= end_port:
-                    if rule_cidr == "0.0.0.0/0" or self.tester.is_address_in_network(src_addr,
-                                                                                     rule_cidr):
+                    if rule_cidr == "0.0.0.0/0" or is_address_in_network(src_addr, rule_cidr):
                         self.debug('Found rule which allows src_addr:"{0}", protocol:"{1}", '
                                    'port:"{2}"'.format(src_addr, protocol, port))
                         self.show_rules(rules=[rule])
@@ -874,7 +881,7 @@ class Midget(object):
     def get_unsynced_rules_for_instance(self, instance, show_rules=True):
         unsynced_rules = []
         for group in instance.groups:
-            group = self.tester.get_security_group(id=group.id)
+            group = self.get_security_group(id=group.id)
             unsynced_rules.extend(self.get_unsynced_rules_for_security_group(
                 group, show_rules=show_rules))
         self.debug('Number of unsynced rules found for instance ({0}):{1}'
@@ -1065,6 +1072,7 @@ class Midget(object):
             return ret_buf
 
     def show_bridge_for_instance(self, instance, printme=True):
+        instance = self._get_instance(instance)
         ret_buf = self._highlight_buf_for_instance(
             buf=self.show_bridges(bridges=self.get_bridge_for_instance(instance=instance),
                                   printme=False),
@@ -1090,7 +1098,8 @@ class Midget(object):
         eucatitle = self._bold('"EUCALYPTUS CLOUD" INSTANCE INFO ({0}):'.format(instance.id), 94)
         ept = PrettyTable([eucatitle])
         ept.align[eucatitle] = 'l'
-        ebuf = "\n" + str(self.tester.show_instance(instance, printme=False)) + "\n"
+        ebuf = "\n{0}\n".format(self.show_security_groups_for_instance(instance, printme=False))
+        # ebuf = "\n" + str(self.eucaconnection.show_instance(instance, printme=False)) + "\n"
         ept.add_row([ebuf])
         buf += str(ept)
         pt.add_row([buf])
@@ -1102,21 +1111,21 @@ class Midget(object):
     def show_security_groups_for_instance(self, instance, printme=True):
         buf = ""
         instance = self._get_instance(instance)
-        return self.tester.show_security_groups_for_instance(instance=instance,
-                                                             printmethod=self.debug,
-                                                             printme=printme)
+        return self.show_security_groups_for_instance(instance=instance,
+                                                      printmethod=self.debug,
+                                                      printme=printme)
 
     def show_ip_addr_group_addrs(self, ipgroup, printme=True):
         if not isinstance(ipgroup, IpAddrGroup):
             ipgroup = self.mapi.get_ip_addr_group(ipgroup)
         if not ipgroup:
             raise ValueError('ipgroup not found or populated for show_ip_addr_group_addrs')
-        addrs = []
+        addrs = ["({0})".format(ipgroup.get_name())]
         grpaddrs = ipgroup.get_addrs()
         for ga in grpaddrs:
             addr = ga.get_addr()
             if addr:
-                addrs.append(str(addr).ljust(self._ADDR_SPACING))
+                addrs.append(str("-{0}".format(addr)).ljust(self._ADDR_SPACING))
         ret_buf = " ".join(addrs)
         if printme:
             self.debug('\n{0}\n'.format(ret_buf))
@@ -1192,9 +1201,9 @@ class Midget(object):
         for status in ['stop', 'start']:
             for host in hosts:
                 ip = self.get_ip_for_host(host)
-                username = self.tester.username or 'root'
-                password = self.tester.password
-                keypath = self.tester.keypath
+                username = self.clc_connect_kwargs.get('username', 'root')
+                password = self.clc_connect_kwargs.get('password')
+                keypath = self.clc_connect_kwargs.get('keypath')
                 ssh = SshConnection(host=ip, username=username,
                                     password=password, keypath=keypath)
                 self.debug("Attempting to {0} host:{1} ({2})".format(status, host.get_name(), ip))
@@ -1279,3 +1288,80 @@ class Midget(object):
                 pass
         port = self.get_bridge_port_for_instance_learned(instance)
         return port
+
+    def get_security_group(self, id=None, name=None):
+        """
+         Adding this as both a convienence to the user to separate euare groups
+         from security groups
+        """
+        # To allow easy updating of a group (since group.update() is not implemented at this time),
+        # handle SecurityGroup arg type for either kwargs...
+        names = ['verbose']
+        ids = None
+        if isinstance(id, SecurityGroup) or isinstance(id, BotoGroup):
+            id = id.id
+        if isinstance(name, SecurityGroup) or isinstance(name, BotoGroup):
+            name = name.name
+        if not id and not name:
+            raise Exception('get_security_group needs either a name or an id')
+        if id:
+            ids = [id]
+        if name:
+            names.append(name)
+        groups = self.eucaconnection.ec2_connection.get_all_security_groups(groupnames=names,
+                                                                            group_ids=ids)
+        for group in groups:
+            if not id or (id and group.id == id):
+                if not name or (name and group.name == name):
+                    self.debug('Found matching security group for name:'+str(name)+' and id:'+str(id))
+                    return group
+        self.debug('No matching security group found for name:'+str(name)+' and id:'+str(id))
+        return None
+
+    def show_security_group(self, group, printme=True):
+        try:
+            from prettytable import PrettyTable, ALL
+        except ImportError as IE:
+            self.debug('No pretty table import failed:' + str(IE))
+            return
+        group = self.get_security_group(id=group.id)
+        if not group:
+            raise ValueError('Show sec group failed. Could not fetch group:'
+                             + str(group))
+        title = markup("Security Group: {0}/{1}, VPC: {2}"
+                       .format(group.name, group.id, group.vpc_id))
+        maintable = PrettyTable([title])
+        table = PrettyTable(["CIDR_IP", "SRC_GRP_NAME",
+                             "SRC_GRP_ID", "OWNER_ID", "PORT",
+                             "END_PORT", "PROTO"])
+        maintable.align["title"] = 'l'
+        #table.padding_width = 1
+        for rule in group.rules:
+            port = rule.from_port
+            end_port = rule.to_port
+            proto = rule.ip_protocol
+            for grant in rule.grants:
+                table.add_row([grant.cidr_ip, grant.name,
+                               grant.group_id, grant.owner_id, port,
+                               end_port, proto])
+        table.hrules = ALL
+        maintable.add_row([str(table)])
+        if printme:
+            self.debug("\n{0}".format(str(maintable)))
+        else:
+            return maintable
+
+    def show_security_groups_for_instance(self, instance, printmethod=None, printme=True):
+        buf = ""
+        title = markup("EUCA SECURITY GROUPS FOR INSTANCE:{0}".format(instance.id))
+        pt = PrettyTable([title])
+        pt.align['title'] = 'l'
+        for group in instance.groups:
+            buf += str(self.show_security_group(group=group, printme=False))
+        pt.add_row([buf])
+        if printme:
+            printmethod = printmethod or self.debug
+            printmethod('\n{0}\n'.format(pt))
+        else:
+            return pt
+

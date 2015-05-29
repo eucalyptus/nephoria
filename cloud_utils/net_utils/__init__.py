@@ -136,3 +136,23 @@ def ping(address, poll_count=10, interval=2, logger=None):
                       .format(x, poll_count, str(CPE)))
         critical("Was unable to ping address")
         return False
+
+
+def is_address_in_network(ip_addr, network):
+        """
+
+        :param ip_addr: Ip address ie: 192.168.1.5
+        :param network: Ip network in cidr notation ie: 192.168.1.0/24
+        :return: boolean true if ip is found to be in network/mask, else false
+        """
+        ip_addr = str(ip_addr)
+        network = str(network)
+        # Check for 0.0.0.0/0 network first...
+        rem_zero = network.replace('0','')
+        if not re.search('\d', rem_zero):
+            return True
+        ipaddr = int(''.join([ '%02x' % int(x) for x in ip_addr.split('.') ]), 16)
+        netstr, bits = network.split('/')
+        netaddr = int(''.join([ '%02x' % int(x) for x in netstr.split('.') ]), 16)
+        mask = (0xffffffff << (32 - int(bits))) & 0xffffffff
+        return (ipaddr & mask) == (netaddr & mask)
