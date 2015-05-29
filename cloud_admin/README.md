@@ -41,7 +41,7 @@
 First create the systemconnection interface. By default Ssh credentials, and/or Eucalyptus
 credentials are combined to provide both machine and service level utilities from a single
 connection interface.
-- See 'services' and the 'adminapi' module for the Eucalyptus services, and
+- See 'services' and the 'serviceconnection' module for the Eucalyptus services, and
   properties interface.
 - See 'hosts' for the utilities that involve interacting with the underlying machines hosting
   the Eucalyptus services.

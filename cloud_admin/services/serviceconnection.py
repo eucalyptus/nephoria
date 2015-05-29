@@ -131,7 +131,7 @@ from cloud_utils.log_utils import get_traceback, eulogger, markup
 ###############################################################################################
 
 
-class AdminApi(AWSQueryConnection):
+class ServiceConnection(AWSQueryConnection):
     APIVersion = 'eucalyptus'
 
     def __init__(self,
@@ -188,14 +188,14 @@ class AdminApi(AWSQueryConnection):
         if err_method:
             self.err_method = err_method
         self._ec2_connection = ec2_connection
-        super(AdminApi, self).__init__(path=self.path,
-                                       aws_access_key_id=aws_access_key,
-                                       aws_secret_access_key=aws_secret_key,
-                                       port=self.port,
-                                       is_secure=self.is_secure,
-                                       host=self.host,
-                                       debug=self.debug,
-                                       **kwargs)
+        super(ServiceConnection, self).__init__(path=self.path,
+                                                aws_access_key_id=aws_access_key,
+                                                aws_secret_access_key=aws_secret_key,
+                                                port=self.port,
+                                                is_secure=self.is_secure,
+                                                host=self.host,
+                                                debug=self.debug,
+                                                **kwargs)
 
     def __repr__(self):
         return "{0}:{1}".format(self.host, self.__class__.__name__)

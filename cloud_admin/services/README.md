@@ -1,5 +1,5 @@
 
-###### AdminApi() is the primary interface for fetching, modifying, and displaying Eucalyptus
+###### ServiceConnection() is the primary interface for fetching, modifying, and displaying Eucalyptus
 ###### admin attributes. This includes system; components/hosts, services, and properties.
 ###### Some examples shown below...
 
@@ -16,9 +16,9 @@
 from cloud_utils.file_utils.eucarc import Eucarc
 ec = Eucarc(filepath='eucarc-10.111.5.100-eucalyptus-admin/eucarc')
 
-# Now create the AdminApi obj...
-from cloud_admin.eucaadmin.adminapi import AdminApi
-cloud_admin = AdminApi(host='10.111.5.100', aws_access_key_id=ec.aws_access_key,
+# Now create the ServiceConnection obj...
+from cloud_admin.eucaadmin.serviceconnection import ServiceConnection
+cloud_admin = ServiceConnection(host='10.111.5.100', aws_access_key_id=ec.aws_access_key,
                         aws_secret_access_key=ec.aws_secret_key)
 
 ```
@@ -42,7 +42,7 @@ cloud_admin.get_all_walrus_backend_services          cloud_admin.get_properties
 
 
 
-### AdminApi can provide summarized detail via Tabled output...
+### ServiceConnection can provide summarized detail via Tabled output...
 
 ```
 In [16]: cloud_admin.sho
@@ -158,7 +158,7 @@ In [19]: cad.show_components_summary()
 +------------+------------------------------+----------------+-------+-------------+
 
 In [4]: cloud_admin.show_clusters(name='two')
-[2015-05-20 00:09:01,495] [AdminApi] [DEBUG]:
+[2015-05-20 00:09:01,495] [ServiceConnection] [DEBUG]:
 +-------------------------------------------------------------------------------+
 | SHOW CLUSTERS                                                                 |
 +-------------------------------------------------------------------------------+
@@ -184,7 +184,7 @@ In [4]: cloud_admin.show_clusters(name='two')
 
 
 In [5]: cloud_admin.show_machines()
-[2015-05-20 00:09:47,285] [AdminApi] [DEBUG]:
+[2015-05-20 00:09:47,285] [ServiceConnection] [DEBUG]:
 +--------------------+-----------------------------------------------------------------------------+
 | MACHINE            | SERVICES                                                                    |
 +--------------------+-----------------------------------------------------------------------------+
@@ -740,7 +740,7 @@ Out[19]: EucaService:one-sc-1
 
 ```
 from cloud_utils.file_utils.eucarc import Eucarc
-from cloud_admin.eucaadmin.adminapi import AdminApi
+from cloud_admin.eucaadmin.serviceconnection import ServiceConnection
 from cloud_utils.net_utils.sshconnection import SshConnection
 
 # Create an sshconnection to the CLC...
@@ -752,9 +752,9 @@ ec = Eucarc(filepath='eucarc-10.111.5.156-eucalyptus-admin/eucarc')
 # or read in a eucarc on a remote system...
 ec = Eucarc(filepath='/root/eucarc', sshconnection=ssh_to_clc)
 
-# Create a AdminApi interface with the admin's access and secret key, since this is being
+# Create a ServiceConnection interface with the admin's access and secret key, since this is being
 # forward from a local port, set the host to localhost...
-cad = AdminApi(host='127.0.0.1', aws_access_key_id=ec.aws_access_key,
+cad = ServiceConnection(host='127.0.0.1', aws_access_key_id=ec.aws_access_key,
                 aws_secret_access_key=ec.aws_secret_key)
 
 # Replace the underlying method of creating an http connection w/ something like this

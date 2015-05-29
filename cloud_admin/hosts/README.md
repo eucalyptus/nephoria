@@ -11,14 +11,14 @@
 #### Example (Build a Euclyptus Node Controller Host):
 ```
     from cloud_admin.hosts.eucahost import EucaHost
-    from cloud_admin.eucaadmin.adminapi import AdminApi
+    from cloud_admin.eucaadmin.serviceConnection import ServiceConnection
     from cloud_utils.file_utils.eucarc import Eucarc
 
     # Build a Eucarc obj to easilly grab our access and secret key strings...
     ec = Eucarc(filepath='eucarc-10.111.5.156-eucalyptus-admin/eucarc')
 
-    # Build the Eucalyptus AdminApi obj to request the Node Controller Service...
-    cloud_admin = AdminApi(host='10.111.5.156', aws_access_key_id=ec.aws_access_key,
+    # Build the Eucalyptus ServiceConnection obj to request the Node Controller Service...
+    cloud_admin = ServiceConnection(host='10.111.5.156', aws_access_key_id=ec.aws_access_key,
                            aws_secret_access_key=ec.aws_secret_key)
 
     # In this case I know the hostname/ip of the node service I want...

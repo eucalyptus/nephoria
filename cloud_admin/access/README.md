@@ -52,7 +52,7 @@ AutoCreds obj such as:
 
 ```
 
-In [21]: admin_connection = AdminApi(host='10.111.5.156',
+In [21]: admin_connection = ServiceConnection(host='10.111.5.156',
                                      aws_access_key_id=creds.aws_access_key,
                                      aws_secret_key=creds.aws_secret_key)
 

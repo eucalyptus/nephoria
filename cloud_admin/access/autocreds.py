@@ -34,9 +34,9 @@ creds = AutoCreds(aws_access_key=aws_access_key, aws_secret_key=aws_secret_key,
                   hostname='10.111.5.156')
 
 # Access the credential values as attributes of the AutoCreds obj such as:
-In [21]: admin_connection = AdminApi(host='10.111.5.156',
-                                     aws_access_key_id=creds.aws_access_key,
-                                     aws_secret_key=creds.aws_secret_key)
+In [21]: admin_connection = ServiceConnection(host='10.111.5.156',
+                                              aws_access_key_id=creds.aws_access_key,
+                                              aws_secret_key=creds.aws_secret_key)
 
 # All creds can be fetched in a dict using:
 In [22]: creds.get_eucarc_attrs()
@@ -121,7 +121,7 @@ from urlparse import urlparse
 from cloud_utils.file_utils.eucarc import Eucarc
 from cloud_utils.log_utils import get_traceback
 from cloud_utils.system_utils.machine import Machine
-from cloud_admin.services.adminapi import AdminApi
+from cloud_admin.services.serviceconnection import ServiceConnection
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 from cloud_admin.hosts.eucahost import EucaHost
 
@@ -158,7 +158,7 @@ class AutoCreds(Eucarc):
                  logger=None,
                  eucarc_obj=None):
         super(AutoCreds, self).__init__(logger=logger)
-        self._adminapi = None
+        self._serviceconnection = None
         self._clc_ip = hostname
         self._clc_machine = None
         self._credpath = credpath
@@ -197,26 +197,26 @@ class AutoCreds(Eucarc):
         self._clc_machine = newclc
 
     @property
-    def adminapi(self):
-        if not self._adminapi:
-            self._adminapi = self._connect_adminapi()
-        return self._adminapi
+    def serviceconnection(self):
+        if not self._serviceconnection:
+            self._serviceconnection = self._connect_services()
+        return self._serviceconnection
 
-    def _connect_adminapi(self):
+    def _connect_services(self):
         if self.aws_secret_key and self.aws_access_key and self._clc_ip:
-            self._adminapi = AdminApi(hostname=self._clc_ip,
+            self._serviceconnection = ServiceConnection(hostname=self._clc_ip,
                                       aws_access_key=self.aws_access_key,
                                       aws_secret_key=self.aws_secret_key)
-        return self._adminapi
+        return self._serviceconnection
 
     def _close_adminpi(self):
         """
-        If open, Attempts to close/cleanup the AutoCred's adminapi obj
+        If open, Attempts to close/cleanup the AutoCred's serviceconnection obj
         """
-        if self._adminapi:
+        if self._serviceconnection:
             try:
-                self._adminapi.close()
-                self._adminapi = None
+                self._serviceconnection.close()
+                self._serviceconnection = None
             except:
                 pass
 
@@ -226,11 +226,11 @@ class AutoCreds(Eucarc):
         gathered via the Eucalyptus admin api interface
         :returns dict mapping eucarc common key-values to the discovered service URIs.
         """
-        if not self.adminapi:
-            raise RuntimeError('Can not fetch service paths from cloud without an AdminApi '
+        if not self.serviceconnection:
+            raise RuntimeError('Can not fetch service paths from cloud without an ServiceConnection '
                                'connection\n This requires: clc_ip, aws_access_key, '
                                'aws_secret_key')
-        path_dict = self._get_service_paths_from_adminapi(self.adminapi)
+        path_dict = self._get_service_paths_from_serviceconnection(self.serviceconnection)
         if not path_dict.get('ec2_access_key'):
             path_dict['ec2_access_key'] = self.aws_access_key
         if not path_dict.get('ec2_secret_key'):
@@ -240,15 +240,15 @@ class AutoCreds(Eucarc):
         return path_dict
 
     @classmethod
-    def _get_service_paths_from_adminapi(cls, adminapi):
+    def _get_service_paths_from_serviceconnection(cls, serviceconnection):
         """
         Reads the Eucalyptus services, maps them to common eucarc key values, and returns
         the dict of the mapping.
-        :params adminapi: an AdminApi obj w/ active connection.
+        :params serviceconnection: an ServiceConnection obj w/ active connection.
         :returns dict mapping eucarc common key-values to the discovered service URIs.
         """
-        assert isinstance(adminapi, AdminApi)
-        services = adminapi.get_services()
+        assert isinstance(serviceconnection, ServiceConnection)
+        services = serviceconnection.get_services()
         ret_dict = {}
         for service in services:
             for key, serv_value in eucarc_to_service_map.iteritems():
@@ -325,16 +325,16 @@ class AutoCreds(Eucarc):
                 except IOError:
                     pass
 
-        def try_adminapi(self):
+        def try_serviceconnection(self):
             if self.aws_secret_key and self.aws_access_key and self._clc_ip:
-                self._connect_adminapi()
+                self._connect_services()
                 try:
                     res = self.update_attrs_from_cloud_services()
                     if res:
-                        self.debug('Derived creds from adminapi')
+                        self.debug('Derived creds from serviceconnection')
                         return res
                 except RuntimeError as RE:
-                    self.debug('{0}\nFailed to update creds using adminapi, err:"{1}"'
+                    self.debug('{0}\nFailed to update creds using serviceconnection, err:"{1}"'
                                .format(get_traceback(), str(RE)))
                     self._close_adminpi()
 
@@ -378,7 +378,7 @@ class AutoCreds(Eucarc):
                                    .format(get_traceback(), str(RE)))
 
 
-        default_order = [try_local, try_adminapi, try_remote, try_clc_db]
+        default_order = [try_local, try_serviceconnection, try_remote, try_clc_db]
         if self._clc_ip and self._credpath and self._has_updated_connect_args:
             # if any ssh related arguements were provided, assume the user would like
             # to try remote first

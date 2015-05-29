@@ -9,10 +9,10 @@ from urlparse import urlparse
 import re
 
 
-class UserAdmin(IAMConnection):
+class AccessConnection(IAMConnection):
 
     def __init__(self, eucarc=None, host=None, aws_access_key=None, aws_secret_key=None,
-                 is_secure=False, port=None, path=None, logger=None, verbose=False, **kwargs):
+                 is_secure=None, port=None, path=None, logger=None, verbose=False, **kwargs):
         self._eucarc = eucarc
         self._verbose = verbose
         self.account_id = None
@@ -29,11 +29,14 @@ class UserAdmin(IAMConnection):
             host = host or getattr(urlp, 'hostname', None)
             port = port or getattr(urlp, 'port', 8773)
             path = path or getattr(urlp, 'path', '/services/Euare')
+            if is_secure is None and urlp.scheme == 'https':
+                is_secure = True
             aws_secret_key = aws_secret_key or eucarc.aws_secret_key
             aws_access_key = aws_access_key or eucarc.aws_access_key
-        super(UserAdmin, self).__init__(host=host, aws_access_key=aws_access_key,
-                                        aws_secret_access_key=aws_secret_key,
-                                        is_secure=is_secure, port=port, path=path, **kwargs)
+        is_secure = is_secure or False
+        super(AccessConnection, self).__init__(host=host, aws_access_key=aws_access_key,
+                                              aws_secret_access_key=aws_secret_key,
+                                              is_secure=is_secure, port=port, path=path, **kwargs)
 
     def debug(self, msg):
         if not self._verbose:
@@ -125,7 +128,7 @@ class UserAdmin(IAMConnection):
         return retlist
 
     def get_user(self, user_name=None):
-        user = super(UserAdmin, self).get_user(user_name=user_name)
+        user = super(AccessConnection, self).get_user(user_name=user_name)
         if not user:
             return None
         newuser = IamUser(connection=self)

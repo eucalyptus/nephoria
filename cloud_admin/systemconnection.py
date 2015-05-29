@@ -3,13 +3,13 @@ import copy
 import logging
 from prettytable import PrettyTable
 from cloud_admin.access.autocreds import AutoCreds
-from cloud_admin.services.adminapi import AdminApi
+from cloud_admin.services.serviceconnection import ServiceConnection
 from cloud_admin.hosts.eucahost import EucaHost
 from cloud_utils.system_utils.machine import Machine
 from cloud_utils.log_utils.eulogger import Eulogger
 
 
-class SystemConnection(AdminApi):
+class SystemConnection(ServiceConnection):
 
     def __init__(self,
                  hostname,
@@ -57,10 +57,10 @@ class SystemConnection(AdminApi):
                                logger=self.log,
                                **self.clc_connect_kwargs)
         super(SystemConnection, self).__init__(hostname=hostname,
-                                               aws_secret_key=self.creds.aws_secret_key,
-                                               aws_access_key=self.creds.aws_access_key,
-                                               logger=self.log,
-                                               boto_debug_level=boto_debug_level)
+                                                aws_secret_key=self.creds.aws_secret_key,
+                                                aws_access_key=self.creds.aws_access_key,
+                                                logger=self.log,
+                                                boto_debug_level=boto_debug_level)
 
     def set_loglevel(self, level, parent=False):
         """
