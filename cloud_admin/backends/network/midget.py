@@ -62,7 +62,7 @@ class Midget(object):
     the purposes of debugging and mapping output to a Eucalyptus cloud's usage of it.
     '''
     _CHAIN_JUMP = 107
-    _ADDR_SPACING = 17
+    _ADDR_SPACING = 22
 
     def __init__(self, midonet_api_host, midonet_api_port='8080', midonet_username=None,
                  midonet_password=None, clc_ip=None, clc_password=None, systemconnection=None):
@@ -75,7 +75,8 @@ class Midget(object):
                                username=self.midonet_username, password=self.midonet_password)
 
         self.eucaconnection = systemconnection
-        if not self.eucaconnection and clc_ip:
+        if not self.eucaconnection:
+            clc_ip = clc_ip or midonet_api_host
             self.eucaconnection = SystemConnection(hostname=clc_ip, password=clc_password)
         self.logger = Eulogger(identifier='MidoDebug:{0}'.format(self.midonet_api_host))
         self.default_indent = ""
@@ -1120,12 +1121,12 @@ class Midget(object):
             ipgroup = self.mapi.get_ip_addr_group(ipgroup)
         if not ipgroup:
             raise ValueError('ipgroup not found or populated for show_ip_addr_group_addrs')
-        addrs = ["({0})".format(ipgroup.get_name())]
+        addrs = [("({0})".format(ipgroup.get_name())).ljust(self._ADDR_SPACING)]
         grpaddrs = ipgroup.get_addrs()
         for ga in grpaddrs:
             addr = ga.get_addr()
             if addr:
-                addrs.append(str("-{0}".format(addr)).ljust(self._ADDR_SPACING))
+                addrs.append(str(" - {0}".format(addr)).ljust(self._ADDR_SPACING))
         ret_buf = " ".join(addrs)
         if printme:
             self.debug('\n{0}\n'.format(ret_buf))
