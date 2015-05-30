@@ -2,11 +2,13 @@
 import copy
 import logging
 from prettytable import PrettyTable
+import re
 from cloud_admin.access.autocreds import AutoCreds
 from cloud_admin.services.serviceconnection import ServiceConnection
 from cloud_admin.hosts.eucahost import EucaHost
 from cloud_utils.system_utils.machine import Machine
 from cloud_utils.log_utils.eulogger import Eulogger
+from cloud_utils.log_utils import markup
 
 
 class SystemConnection(ServiceConnection):
@@ -184,6 +186,110 @@ class SystemConnection(ServiceConnection):
             print_method("\n{0}\n".format(str(pt)))
         else:
             return pt
+
+
+    def show_hosts(self, host_dict=None, partition=None, service_type=None,
+                              columns=4, print_method=None, print_table=True):
+        print_method = print_method or self._show_method
+        ins_id_len = 10
+        ins_type_len = 13
+        ins_dev_len = 16
+        ins_st_len = 15
+        ins_total = (ins_id_len + ins_dev_len + ins_type_len + ins_st_len) + 5
+        machine_hdr = (markup('MACHINE'), 20)
+        service_hdr = (markup('SERVICES'), 100)
+        pt = PrettyTable([machine_hdr[0], service_hdr[0]])
+        pt.align = 'l'
+        pt.hrules = 1
+        pt.max_width[machine_hdr[0]] = machine_hdr[1]
+        total = []
+        eucahosts = host_dict or self.eucahosts
+        if not isinstance(eucahosts, dict):
+            raise ValueError('show_machine_mappings requires dict example: '
+                             '{"host ip":[host objs]}, got:"{0}/{1}"'
+                             .format(eucahosts, type(eucahosts)))
+        # To format the tables services, print them all at once and then sort the table
+        # rows string into the machines columns
+        for hostip, host in eucahosts.iteritems():
+            for serv in host.services:
+                total.append(serv)
+                if serv.child_services:
+                    total.extend(serv.child_services)
+        # Create a large table showing the service states, grab the first 3 columns
+        # for type, name, state, and zone
+        servpt = self.show_services(total, print_table=False)
+        serv_lines = servpt.get_string(border=0, padding_width=2,
+                                       fields=servpt._field_names[0: columns]).splitlines()
+        header = serv_lines[0]
+        ansi_escape = re.compile(r'\x1b[^m]*m')
+        # Now build the machine table...
+        for hostip, host in eucahosts.iteritems():
+            assert isinstance(host, EucaHost)
+            servbuf = header + "\n"
+            mservices = []
+            # Get the child services (ie for UFS)
+            for serv in host.services:
+                mservices.append(serv)
+                mservices.extend(serv.child_services)
+            for serv in mservices:
+                for line in serv_lines:
+                    # Remove the ansi markup for parsing purposes, but leave it in the
+                    # displayed line
+                    clean_line = ansi_escape.sub('', line)
+                    splitline = clean_line.split()
+                    if len(splitline) < 2:
+                        continue
+                    line_type = splitline[0]
+                    line_name = splitline[1]
+                    # Pull matching lines out of the pre-formatted service table...
+                    if (splitline and re.match("^{0}$".format(serv.type), line_type) and
+                            re.match("^{0}$".format(serv.name), line_name)):
+                        # Add this line to the services to be displayed for this machine
+                        if line_name not in servbuf:
+                            servbuf += line + "\n"
+                if serv.type == 'node' and getattr(serv, 'instances', None):
+                    servbuf += "\n" + markup('INSTANCES', [1, 4]) + " \n"
+                    for x in serv.instances:
+                        servbuf += ("{0}{1}{2}{3}"
+                                    .format(str(x.id).ljust(ins_id_len),
+                                            str('(' + x.state + '),').ljust(ins_st_len),
+                                            str(x.instance_type + ",").ljust(ins_type_len),
+                                            str(x.root_device_type).ljust(ins_dev_len))
+                                    .ljust(ins_total)).strip() + "\n"
+            host_info = "{0}\n".format(markup(hostip, [1, 4, 94])).ljust(machine_hdr[1])
+            sys_pt = PrettyTable(['name', 'value', 'percent'])
+            sys_pt.header = False
+            sys_pt.border = 0
+            sys_pt.align = 'l'
+            sys_pt.padding_width = 0
+            sys_pt.add_row([markup("Mem:"), "", ""])
+            free = host.get_free_mem() or 0
+            used = host.get_used_mem() or 0
+            total = host.get_total_mem() or 0
+            swap = host.get_swap_used() or 0
+            per_used = "{0:.2f}".format(used / float(total))
+            per_free = "{0:.2f}".format(free / float(total))
+            per_swap = "{0:.2f}".format(swap / float(total))
+            sys_pt.add_row([" Used:", "{0}".format(used), "{0}%".format(per_used)])
+            sys_pt.add_row([" Free:", "{0}".format(free), "{0}%".format(per_free)])
+            sys_pt.add_row([" Swap:", "{0}".format(swap), "{0}%".format(per_swap)])
+            sys_pt.add_row([markup("CPU:"), "", ""])
+            cpu_info = host.cpu_info
+            all = cpu_info.pop('all', None)
+            for cpu in sorted(cpu_info):
+                values = cpu_info[cpu]
+                sys_pt.add_row([" #{0}:".format(cpu), "{0}%".format(values.get('used',None)), ""])
+            # if all:
+            #     sys_pt.add_row([' ALL:', "{0}%".format(values.get('used',None)), ""])
+
+
+            host_info += "\n{0}\n".format(sys_pt)
+            pt.add_row(["{0}\n{1}".format(str("").rjust(machine_hdr[1]), host_info), servbuf])
+        if print_table:
+            print_method("\n{0}\n".format(pt.get_string(sortby=pt.field_names[1])))
+        else:
+            return pt
+
 
     def build_machine_dict_from_config(cls):
         raise NotImplementedError()

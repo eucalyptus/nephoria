@@ -73,6 +73,9 @@ class Machine(object):
         self._repo_utils = None
         self._package_manager = None
         self._config = None
+        self._free_stats = {}
+        self._cpu_stats = {}
+        self._sys_stats_interval = 5
         self.hostname = hostname
         self.arch = arch
         self._do_ssh_connect = do_ssh_connect
@@ -526,6 +529,44 @@ class Machine(object):
     ###############################################################################################
 
     @property
+    def _mem_info(self):
+        # Returns a dict of free mem stats from this machine obj.
+        # results are cached for '_sys_stats_interval' seconds.
+        # to force an update set '_free_stats' to None before fetching.
+        if not self._free_stats.get('stats', None) or \
+        (time.time() - self._free_stats.get('last_updated', 0) > self._sys_stats_interval):
+            header = []
+
+            def newstats(total, used, free):
+                return  {'total': total,
+                          'used': used,
+                          'free': free}
+
+            free_stats = {}
+            try:
+                out = self.sys('free -m', code=0, verbose=False)
+                for line in out:
+                    line = str(line).lower().split()
+                    if not header:
+                        if 'total' in line:
+                            header = ['title'] + line
+                    else:
+                        for memtype in ['mem', 'swap']:
+                            if "{0}:".format(memtype) in line:
+                                free_stats[memtype] = newstats(
+                                    total=line[header.index('total')],
+                                    used=line[header.index('used')],
+                                    free=line[header.index('free')])
+                                break
+                free_stats['last_updated'] = time.time()
+            except Exception as CE:
+                self.log.warn('{0}\n{1}\nFailed to update mem stats:"{2}"'
+                              .format("\n".join(out or []), get_traceback(), CE))
+            self._free_stats['stats'] = free_stats
+
+        return self._free_stats.get('stats', {})
+
+    @property
     def arch(self):
         # Marchine arch (ie x86_64)
         if not self._arch:
@@ -578,6 +619,30 @@ class Machine(object):
                            .format(self.hostname, str(UE)))
         return None
 
+    def get_free_mem(self):
+        val = self._mem_info.get('mem', {}).get('free', None)
+        if val is not None:
+            val = int(val)
+        return val
+
+    def get_total_mem(self):
+        val = self._mem_info.get('mem', {}).get('total', None)
+        if val is not None:
+            val = int(val)
+        return val
+
+    def get_used_mem(self):
+        val = self._mem_info.get('mem', {}).get('used', None)
+        if val is not None:
+            val = int(val)
+        return val
+
+    def get_swap_used(self):
+        val = self._mem_info.get('swap', {}).get('used', None)
+        if val is not None:
+            val = int(val)
+        return val
+
     def get_uptime(self):
         # fetch uptime of remote machine from proc uptime
         return int(self.sys('cat /proc/uptime', code=0)[0].split()[1].split('.')[0])
@@ -591,6 +656,49 @@ class Machine(object):
     ###############################################################################################
     #                               Process Utils                                                 #
     ###############################################################################################
+
+    @property
+    def cpu_info(self):
+        # Returns a dict of cpu stats from this machine obj.
+        # results are cached for '_sys_stats_interval' seconds.
+        # to force an update set '_cpu_stats' to None before fetching.
+        if not self._cpu_stats.get('stats', None) or \
+        (time.time() - self._cpu_stats.get('last_updated', 0) > self._sys_stats_interval):
+            header = []
+
+            def newstats(usr, nice, sys, iowait, idle):
+                return  {'usr': usr,
+                         'nice': nice,
+                         'sys': sys,
+                         'iowait': iowait,
+                         'idle': idle,
+                         'used': 100 - float(idle)}
+
+            cpu_stats = {}
+            try:
+                out = self.sys('mpstat -P ALL', code=0, verbose=False)
+                for line in out:
+                    line = str(line).lower().split()
+                    if not header:
+                        if '%idle' in line:
+                            header = line
+                    elif line:
+                        cpu = line[header.index('cpu')]
+                        if cpu != 'all':
+                            cpu = int(cpu)
+                        cpu_stats[cpu] = newstats(
+                            usr=line[header.index('%usr')],
+                            nice=line[header.index('%nice')],
+                            sys=line[header.index('%sys')],
+                            iowait=line[header.index('%iowait')],
+                            idle=line[header.index('%idle')])
+
+                self._cpu_stats['last_updated'] = time.time()
+            except Exception as CE:
+                self.log.warn('{0}\n{1}\nFailed to update cpu stats:"{2}"'
+                              .format("\n".join(out or []), get_traceback(), CE))
+            self._cpu_stats['stats'] = cpu_stats
+        return self._cpu_stats.get('stats', {})
 
     def get_service_is_running_status(self, service, code=0):
         """
