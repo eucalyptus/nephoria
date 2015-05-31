@@ -132,9 +132,10 @@ class EucaNodeService(EucaComponentService):
                                                'get_instances': get_instances},
                             silent=silent)
 
-    def modify_service_state(self, state):
-        raise NotImplemented('"modify_service_state" not yet implemented for '
-                             'node controller services')
+    def modify_service_state(self, state, verbose=True):
+        self.connection.modify_service(service=self, state=state, verbose=verbose)
+        self.update()
+        return self
 
     def endElement(self, name, value, connection):
         ename = name.replace('euca:', '').lower()

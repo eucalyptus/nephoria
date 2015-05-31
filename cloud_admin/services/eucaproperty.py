@@ -115,7 +115,7 @@ def SHOW_PROPERTIES_NARROW(connection, properties=None, verbose=True, print_meth
     if not pt._rows:
         pt.add_row([markup('NO PROPERTIES RETURNED', [1, 91]), ""])
     if print_table:
-        connection.debug_method("\n" + str(pt) + "\n")
+        print_method("\n" + str(pt) + "\n")
     else:
         return pt
 

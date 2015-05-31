@@ -124,7 +124,7 @@ class Eulogger(logging.Logger):
         stdout_handler = None
         for handler in self.parent.handlers:
             if isinstance(handler, logging.StreamHandler):
-                if handler.stream.fileno() == sys.stdout.fileno():
+                if 'stdout' in handler.stream.name:
                     stdout_handler = handler
         if not stdout_handler:
             stdout_handler = logging.StreamHandler(sys.stdout)

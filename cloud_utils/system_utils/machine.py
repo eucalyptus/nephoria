@@ -789,6 +789,29 @@ class Machine(object):
                            .format(get_traceback(), str(ES)))
         return int(elapsed)
 
+    def get_pid_info(self, pid, ps_cols=None):
+        ret = {}
+        ps_cols = ps_cols or ['etime', 'pcpu', 'pmem']
+        if not 'comm' in ps_cols:
+            ps_cols.append('comm')
+        try:
+            out = self.sys('ps -p {0} --ppid {0} -o {1}'.format(pid, ",".join(ps_cols)), code=0)
+        except CommandExitCodeException as CE:
+            self.log.debug('Error fetching info for pid:{0}, err:"{1}"'.format(pid, str(CE)))
+        else:
+            if len(out) >= 2:
+                header = out[0].split()
+                command_index = header.index('COMMAND')
+                header.remove('COMMAND')
+                for line in out[1:]:
+                    values = line.split()
+                    command = values.pop(command_index)
+                    new_dict = {}
+                    for h_name in header:
+                        new_dict[h_name] = values[header.index(h_name)]
+                    ret[command] = new_dict
+        return ret
+
     def found(self, command, regex, verbose=True):
         """ Returns a Boolean of whether the result of the command contains the regex"""
         result = self.sys(command, verbose=verbose)

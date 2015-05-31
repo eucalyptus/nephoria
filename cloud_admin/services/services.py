@@ -157,6 +157,7 @@ def SHOW_SERVICE_TYPES(connection, service_types=None, verbose=False,
     """
     html_open = "###html_open###"
     html_close = "###html_close###"
+    printmethod = printmethod or connection._show_method
 
     def n_markup(*args, **kwargs):
         kwargs['do_html'] = do_html
@@ -245,10 +246,7 @@ def SHOW_SERVICE_TYPES(connection, service_types=None, verbose=False,
         html_string = html_string.replace(html_close, ">")
     if print_table:
         out = html_string or str(main_pt)
-        if printmethod:
-            printmethod(out)
-        else:
-            connection.debug_method(out)
+        printmethod(out)
     else:
         return html_string or main_pt
 
@@ -293,6 +291,7 @@ def SHOW_SERVICE_TYPES_VERBOSE(connection, service_types=None, printmethod=None,
     :param print_table: bool, if True will print table, if False will return table obj
     :return: see print_table param.
     """
+    printmethod = printmethod or connection._show_method
     service_types = service_types or connection.get_service_types()
     if not isinstance(service_types, list):
         service_types = [service_types]
@@ -311,10 +310,7 @@ def SHOW_SERVICE_TYPES_VERBOSE(connection, service_types=None, printmethod=None,
                          service.partitioned, service.publicapiservice, service.registerable,
                          service.requiresname, service.description])
     if print_table:
-        if printmethod:
-            printmethod(main_pt.get_string(sortby=parent_hdr))
-        else:
-            connection.debug_method(main_pt.get_string(sortby=parent_hdr))
+        printmethod(main_pt.get_string(sortby=parent_hdr))
     else:
         return main_pt
 

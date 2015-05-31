@@ -189,15 +189,16 @@ class SystemConnection(ServiceConnection):
 
 
     def show_hosts(self, host_dict=None, partition=None, service_type=None,
-                              columns=4, print_method=None, print_table=True):
+                              serv_columns=None, update=True, print_method=None,
+                              print_table=True):
         print_method = print_method or self._show_method
         ins_id_len = 10
         ins_type_len = 13
         ins_dev_len = 16
         ins_st_len = 15
         ins_total = (ins_id_len + ins_dev_len + ins_type_len + ins_st_len) + 5
-        machine_hdr = (markup('MACHINE'), 20)
-        service_hdr = (markup('SERVICES'), 100)
+        machine_hdr = (markup('MACHINE INFO'), 20)
+        service_hdr = (markup('EUCALYPTUS SERVICES'), 100)
         pt = PrettyTable([machine_hdr[0], service_hdr[0]])
         pt.align = 'l'
         pt.hrules = 1
@@ -212,14 +213,20 @@ class SystemConnection(ServiceConnection):
         # rows string into the machines columns
         for hostip, host in eucahosts.iteritems():
             for serv in host.services:
+                if update:
+                    serv.update()
                 total.append(serv)
                 if serv.child_services:
                     total.extend(serv.child_services)
         # Create a large table showing the service states, grab the first 3 columns
         # for type, name, state, and zone
         servpt = self.show_services(total, print_table=False)
-        serv_lines = servpt.get_string(border=0, padding_width=2,
-                                       fields=servpt._field_names[0: columns]).splitlines()
+        # Get a subset of the show services fields...
+        if serv_columns is None:
+            fields = servpt._field_names[0:4]
+        else:
+            fields = servpt._fields_names[serv_columns]
+        serv_lines = servpt.get_string(border=0, padding_width=2, fields=fields).splitlines()
         header = serv_lines[0]
         ansi_escape = re.compile(r'\x1b[^m]*m')
         # Now build the machine table...
@@ -247,22 +254,25 @@ class SystemConnection(ServiceConnection):
                         # Add this line to the services to be displayed for this machine
                         if line_name not in servbuf:
                             servbuf += line + "\n"
-                if serv.type == 'node' and getattr(serv, 'instances', None):
-                    servbuf += "\n" + markup('INSTANCES', [1, 4]) + " \n"
-                    for x in serv.instances:
-                        servbuf += ("{0}{1}{2}{3}"
-                                    .format(str(x.id).ljust(ins_id_len),
-                                            str('(' + x.state + '),').ljust(ins_st_len),
-                                            str(x.instance_type + ",").ljust(ins_type_len),
-                                            str(x.root_device_type).ljust(ins_dev_len))
-                                    .ljust(ins_total)).strip() + "\n"
+                if serv.type == 'node':
+                    if getattr(serv, 'instances', None):
+                        servbuf += "\n" + markup('INSTANCES', [1, 4]) + " \n"
+                        for x in serv.instances:
+                            servbuf += ("{0}{1}{2}{3}"
+                                        .format(str(x.id).ljust(ins_id_len),
+                                                str('(' + x.state + '),').ljust(ins_st_len),
+                                                str(x.instance_type + ",").ljust(ins_type_len),
+                                                str(x.root_device_type).ljust(ins_dev_len))
+                                        .ljust(ins_total)).strip() + "\n"
                     nc_status = host.euca_nc_helpers.get_last_capacity_status()
-                    servbuf += "\n{0}\n-CPU:{1}\n-MEM:{2}\n-DISK:{3}"\
+                    servbuf += "\n{0}\n-CPU:{1}\n-MEM:{2}\n-DISK:{3}\n"\
                         .format(markup("LAST REPORTED NC AVAILABILITY ({0}):"
                                        .format(nc_status.get('status')), [1, 4]),
                                        nc_status.get('cores'),
                                        nc_status.get('mem'),
                                        nc_status.get('disk'))
+            ps_sum_pt = host.show_euca_process_summary(print_table=False)
+            servbuf += "\n" + ps_sum_pt.get_string()
             host_info = "{0}\n".format(markup(hostip, [1, 4, 94])).ljust(machine_hdr[1])
             host_info += "{0}:{1}\n".format(markup('Ver:'), host.get_eucalyptus_version())
             sys_pt = host.show_sys_info(print_table=False)

@@ -30,9 +30,11 @@
 #
 
 import os
+from prettytable import PrettyTable
 import re
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 from cloud_utils.system_utils.machine import Machine
+from cloud_utils.log_utils import markup
 from cloud_admin.hosts.nc_helpers import NodeControllerHelpers
 from cloud_admin.hosts.cc_helpers import ClusterControllerHelpers
 from cloud_admin.hosts.sc_helpers import StorageControllerHelpers
@@ -247,6 +249,54 @@ class EucaHost(Machine):
         Attempts to return the url in use for this package
         """
         return self.package_manager.get_url_for_package('euca2ools')
+
+    def get_euca_process_summary(self):
+        ret = {}
+        for service in self.services:
+            if service.type == 'cluster':
+                ret['eucalytus-cc'] = self.get_pid_info(self.get_eucalyptus_cc_pid())
+            elif service.type == 'node':
+                ret['eucalyptus-nc'] = self.get_pid_info(self.get_eucalyptus_nc_pid())
+            else:
+                if not 'eucalyptus' in ret:
+                    ret['eucalyptus'] = self.get_pid_info(self.get_eucalyptus_cloud_pid())
+        mido_pid = self.get_midolman_service_pid()
+        if mido_pid:
+            ret['midolman'] = self.get_pid_info(mido_pid)
+        return ret
+
+    def show_euca_process_summary(self, printmethod=None, print_table=True):
+        printmethod = printmethod or self.log.info
+        ps_sum = self.get_euca_process_summary()
+        pt = PrettyTable([markup('EUCA SERVICE', [1, 4]),
+                          markup('COMMAND', [1, 4]),
+                          markup('%CPU', [1, 4]),
+                          markup('%MEM', [1, 4]),
+                          markup('UPTIME', [1, 4])])
+        pt.align = 'l'
+        pt.border = 0
+        for service, command_dict in ps_sum.iteritems():
+            pt.add_row([markup(service), "", "", "", ""])
+            for command, info in command_dict.iteritems():
+                pt.add_row(["", command, info.get('%CPU', None),
+                            info.get('%MEM', None), info.get('ELAPSED', None)])
+        if print_table:
+            printmethod("\n{0}\n".format(pt))
+        else:
+            return pt
+
+    def get_midolman_service_pid(self):
+        ret = None
+        try:
+            out = self.sys('status midolman', code=0)
+        except CommandExitCodeException:
+            return None
+        else:
+            for line in out:
+                match = re.search('^\s*midolman*.*process\s+(\d+)\s*$', line)
+                if match:
+                    ret = int(match.group(1))
+        return ret
 
     def get_eucalyptus_service_pid(self, eucalyptus_service):
         """
