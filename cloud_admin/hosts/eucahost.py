@@ -366,6 +366,9 @@ class EucaHost(Machine):
         out = machine.sys('ls /usr/sbin/ | grep eucalyptus')
         if out:
             return '/'
+        if hasattr(machine, 'eucalyptus_conf') and machine.eucalyptus_conf.EUCALYPTUS:
+            return machine.eucalyptus_conf.EUCALYPTUS
+        return "/"
 
     def get_eucalyptus_home(self):
         """

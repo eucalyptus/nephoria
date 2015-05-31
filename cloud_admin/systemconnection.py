@@ -256,33 +256,15 @@ class SystemConnection(ServiceConnection):
                                             str(x.instance_type + ",").ljust(ins_type_len),
                                             str(x.root_device_type).ljust(ins_dev_len))
                                     .ljust(ins_total)).strip() + "\n"
+                    nc_status = host.euca_nc_helpers.get_last_capacity_status()
+                    servbuf += "\n{0}\n-CPU:{1}\n-MEM:{2}\n-DISK:{3}"\
+                        .format(markup("LAST REPORTED NC AVAILABILITY ({0}):"
+                                       .format(nc_status.get('status')), [1, 4]),
+                                       nc_status.get('cores'),
+                                       nc_status.get('mem'),
+                                       nc_status.get('disk'))
             host_info = "{0}\n".format(markup(hostip, [1, 4, 94])).ljust(machine_hdr[1])
-            sys_pt = PrettyTable(['name', 'value', 'percent'])
-            sys_pt.header = False
-            sys_pt.border = 0
-            sys_pt.align = 'l'
-            sys_pt.padding_width = 0
-            sys_pt.add_row([markup("Mem:"), "", ""])
-            free = host.get_free_mem() or 0
-            used = host.get_used_mem() or 0
-            total = host.get_total_mem() or 0
-            swap = host.get_swap_used() or 0
-            per_used = "{0:.2f}".format(used / float(total))
-            per_free = "{0:.2f}".format(free / float(total))
-            per_swap = "{0:.2f}".format(swap / float(total))
-            sys_pt.add_row([" Used:", "{0}".format(used), "{0}%".format(per_used)])
-            sys_pt.add_row([" Free:", "{0}".format(free), "{0}%".format(per_free)])
-            sys_pt.add_row([" Swap:", "{0}".format(swap), "{0}%".format(per_swap)])
-            sys_pt.add_row([markup("CPU:"), "", ""])
-            cpu_info = host.cpu_info
-            all = cpu_info.pop('all', None)
-            for cpu in sorted(cpu_info):
-                values = cpu_info[cpu]
-                sys_pt.add_row([" #{0}:".format(cpu), "{0}%".format(values.get('used',None)), ""])
-            # if all:
-            #     sys_pt.add_row([' ALL:', "{0}%".format(values.get('used',None)), ""])
-
-
+            sys_pt = host.show_sys_info(print_table=False)
             host_info += "\n{0}\n".format(sys_pt)
             pt.add_row(["{0}\n{1}".format(str("").rjust(machine_hdr[1]), host_info), servbuf])
         if print_table:

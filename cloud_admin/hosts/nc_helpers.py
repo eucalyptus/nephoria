@@ -1,5 +1,6 @@
 
 import os
+import re
 import stat
 import time
 import types
@@ -8,6 +9,7 @@ from xml.dom.minidom import parseString
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException, \
     CommandTimeoutException, SshCbReturn
 from cloud_admin.hosts import EucaMachineHelpers
+from cloud_utils.log_utils import get_traceback
 
 ##################################################################################################
 #               The Node Controller 'Machine' or 'Host' helper methods...                        #
@@ -24,6 +26,31 @@ class NodeControllerHelpers(EucaMachineHelpers):
             if service.type == 'node':
                 return service
         return None
+
+    def get_last_capacity_status(self):
+        """
+        returning status=enabled cores=30/32 mem=7538/8050 disk=47/57 iqn=iqn.1994-05.com.redhat:ff10a4a8d0db
+        """
+        ret = {"status": None,
+               'cores': None,
+               'mem': None,
+               'disk': None,
+               'iqn': None}
+        euca_path = self.machine.get_eucalyptus_home() or ""
+        nclog = os.path.join(euca_path, 'var/log/eucalyptus/nc.log')
+        try:
+            out = self.sys('tac {0} | grep -m1 "returning status="'.format(nclog), code=0,
+                           listformat=False)
+            if out:
+                for val in ['status', 'cores', 'mem', 'disk', 'iqn']:
+                    search = "({0}=\S+)".format(val)
+                    grp = re.search(search, out)
+                    if grp:
+                        ret[val] = grp.group(1).split('=')[1]
+        except CommandExitCodeException as CE:
+            self.log.warn('{0}\nError fetching nc status:"{1}"'.format(get_traceback(), str(CE)))
+        return ret
+
 
     def get_hypervisor_from_euca_conf(self):
         """

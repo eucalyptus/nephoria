@@ -5,7 +5,7 @@ import threading
 import time
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import get_traceback
-from cloud_utils.log_utils import printinfo
+from cloud_utils.log_utils import printinfo, markup
 from cloud_utils.file_utils import render_file_template
 from cloud_utils.net_utils.sshconnection import (
     CommandExitCodeException,
@@ -14,6 +14,7 @@ from cloud_utils.net_utils.sshconnection import (
 )
 import re
 import os
+from prettytable import PrettyTable
 import sys
 import tempfile
 from repoutils import Yum, Apt
@@ -652,6 +653,37 @@ class Machine(object):
 
     def mount(self, device, path):
         self.sys("mount " + device + " " + path)
+
+    def show_sys_info(self, mem=True, cpu=True, print_method=None, print_table=True):
+        print_method = print_method or self.log.info
+        sys_pt = PrettyTable(['name', 'value', 'percent'])
+        sys_pt.header = False
+        sys_pt.border = 0
+        sys_pt.align = 'l'
+        sys_pt.padding_width = 0
+        if mem:
+            sys_pt.add_row([markup("Mem:"), "", ""])
+            free = self.get_free_mem() or 0
+            used = self.get_used_mem() or 0
+            total = self.get_total_mem() or 0
+            swap = self.get_swap_used() or 0
+            per_used = "{0:.2f}".format(used / float(total))
+            per_free = "{0:.2f}".format(free / float(total))
+            per_swap = "{0:.2f}".format(swap / float(total))
+            sys_pt.add_row([" Used:", "{0}".format(used), "{0}%".format(per_used)])
+            sys_pt.add_row([" Free:", "{0}".format(free), "{0}%".format(per_free)])
+            sys_pt.add_row([" Swap:", "{0}".format(swap), "{0}%".format(per_swap)])
+            sys_pt.add_row([markup("CPU:"), "", ""])
+        if cpu:
+            cpu_info = self.cpu_info
+            all = cpu_info.pop('all', None)
+            for cpu in sorted(cpu_info):
+                values = cpu_info[cpu]
+                sys_pt.add_row([" #{0}:".format(cpu), "{0}%".format(values.get('used', None)), ""])
+        if print_table:
+            print_method("\n{0}\n".format(sys_pt))
+        return sys_pt
+
 
     ###############################################################################################
     #                               Process Utils                                                 #
