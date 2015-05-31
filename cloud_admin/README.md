@@ -485,7 +485,87 @@ yum-options: --nogpg
 
 
 ```
+### Get Host Summary Information:
 
+```
+In [1]: from cloud_admin.systemconnection import SystemConnection
+In [2]: sc = SystemConnection('10.111.5.105', password='foobar', log_level='info')
+In [3]: sc.show_hosts()
+[2015-05-30 17:34:52,755][INFO][SystemConnection]:
++------------------+----------------------------------------------------------------------------+
+| MACHINE          | SERVICES                                                                   |
++------------------+----------------------------------------------------------------------------+
+|    HOST:         |   TYPE              NAME                              STATE      CLUSTER   |
+| 10.111.5.105     |   eucalyptus        10.111.5.105                      ENABLED              |
+| Ver::4.2.0       |                                                                            |
+| Mem:             |                                                                            |
+|  Used:7710 0.98% |                                                                            |
+|  Free:164  0.02% |                                                                            |
+|  Swap:133  0.02% |                                                                            |
+| CPU:             |                                                                            |
+|  #0:  8.36%      |                                                                            |
+|  #1:  7.3%       |                                                                            |
+|  #2:  6.26%      |                                                                            |
+|  #3:  5.32%      |                                                                            |
++------------------+----------------------------------------------------------------------------+
+|    HOST:         |   TYPE              NAME                              STATE      CLUSTER   |
+| 10.111.1.1       |   node              10.111.1.1                        ENABLED      one     |
+| Ver::4.2.0       |                                                                            |
+| Mem:             | INSTANCES                                                                  |
+|  Used:7662 0.97% | i-b2b1ae7c(running),     t1.micro,    instance-store                       |
+|  Free:199  0.03% | i-6e433312(running),     m1.small,    instance-store                       |
+|  Swap:5    0.00% | i-7a0a2ae3(running),     m1.small,    instance-store                       |
+| CPU:             |                                                                            |
+|  #0:  1.72%      | LAST REPORTED NC AVAILABILITY (enabled):                                   |
+|  #1:  1.17%      | -CPU:29/32                                                                 |
+|  #2:  0.63%      | -MEM:7282/8050                                                             |
+|  #3:  0.54%      | -DISK:42/57                                                                |
++------------------+----------------------------------------------------------------------------+
+|    HOST:         |   TYPE              NAME                              STATE      CLUSTER   |
+| 10.111.5.83      |   node              10.111.5.83                       ENABLED      one     |
+| Ver::4.2.0       |                                                                            |
+| Mem:             | INSTANCES                                                                  |
+|  Used:7686 0.98% | i-653e7220(running),     m1.small,    instance-store                       |
+|  Free:173  0.02% | i-46c2e16d(running),     m1.small,    instance-store                       |
+|  Swap:1    0.00% | i-efab806f(running),     t1.micro,    instance-store                       |
+| CPU:             | i-c9f98b25(running),     m1.small,    instance-store                       |
+|  #0:  2.42%      |                                                                            |
+|  #1:  1.65%      | LAST REPORTED NC AVAILABILITY (enabled):                                   |
+|  #2:  0.7%       | -CPU:28/32                                                                 |
+|  #3:  0.8%       | -MEM:7024/8048                                                             |
+|                  | -DISK:37/57                                                                |
++------------------+----------------------------------------------------------------------------+
+|    HOST:         |   TYPE              NAME                              STATE      CLUSTER   |
+| 10.111.5.33      |   storage           one-sc-1                          ENABLED      one     |
+| Ver::4.2.0       |   cluster           one-cc-1                          ENABLED      one     |
+| Mem:             |                                                                            |
+|  Used:7624 0.97% |                                                                            |
+|  Free:235  0.03% |                                                                            |
+|  Swap:0    0.00% |                                                                            |
+| CPU:             |                                                                            |
+|  #0:  2.68%      |                                                                            |
+|  #1:  2.01%      |                                                                            |
+|  #2:  1.92%      |                                                                            |
+|  #3:  2.17%      |                                                                            |
++------------------+----------------------------------------------------------------------------+
+|    HOST:         |   TYPE              NAME                              STATE      CLUSTER   |
+| 10.111.5.32      |   user-api          API_10.111.5.32                   ENABLED              |
+| Ver::4.2.0       |   autoscaling       API_10.111.5.32.autoscaling       ENABLED              |
+| Mem:             |   cloudformation    API_10.111.5.32.cloudformation    ENABLED              |
+|  Used:5133 0.65% |   cloudwatch        API_10.111.5.32.cloudwatch        ENABLED              |
+|  Free:2726 0.35% |   compute           API_10.111.5.32.compute           ENABLED              |
+|  Swap:0    0.00% |   dns               API_10.111.5.32.dns               ENABLED              |
+| CPU:             |   euare             API_10.111.5.32.euare             ENABLED              |
+|  #0:  5.03%      |   identity          API_10.111.5.32.identity          ENABLED              |
+|  #1:  4.27%      |   imaging           API_10.111.5.32.imaging           ENABLED              |
+|  #2:  4.35%      |   loadbalancing     API_10.111.5.32.loadbalancing     ENABLED              |
+|  #3:  4.35%      |   objectstorage     API_10.111.5.32.objectstorage     ENABLED              |
+|                  |   simpleworkflow    API_10.111.5.32.simpleworkflow    ENABLED              |
+|                  |   tokens            API_10.111.5.32.tokens            ENABLED              |
+|                  |   walrusbackend     walrus-1                          ENABLED              |
+|                  |                                                                            |
++------------------+----------------------------------------------------------------------------+
+```
 
 ### Get Legacy Cloud summary representation
 #### (aka older QA/Eutester config file text)...
