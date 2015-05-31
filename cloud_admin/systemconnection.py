@@ -265,12 +265,15 @@ class SystemConnection(ServiceConnection):
                                                 str(x.root_device_type).ljust(ins_dev_len))
                                         .ljust(ins_total)).strip() + "\n"
                     nc_status = host.euca_nc_helpers.get_last_capacity_status()
-                    servbuf += "\n{0}\n-CPU:{1}\n-MEM:{2}\n-DISK:{3}\n"\
+                    servbuf += "\n{0}\n{1}:{2}\n{3}:{4}\n{5}:{6}\n"\
                         .format(markup("LAST REPORTED NC AVAILABILITY ({0}):"
                                        .format(nc_status.get('status')), [1, 4]),
-                                       nc_status.get('cores'),
-                                       nc_status.get('mem'),
-                                       nc_status.get('disk'))
+                                               markup('CPU', [1, 32]).rjust(15),
+                                               nc_status.get('cores').rjust(15),
+                                               markup('MEM', [1, 32]).rjust(15),
+                                               nc_status.get('mem').rjust(15),
+                                               markup('DISK', [1, 32]).rjust(15),
+                                               nc_status.get('disk').rjust(15))
             ps_sum_pt = host.show_euca_process_summary(print_table=False)
             servbuf += "\n" + ps_sum_pt.get_string()
             host_info = "{0}\n".format(markup(hostip, [1, 4, 94])).ljust(machine_hdr[1])

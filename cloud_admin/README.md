@@ -119,80 +119,97 @@ These are accessed as 'hosts' through the systemconnection interface...
 In [1]: from cloud_admin.systemconnection import SystemConnection
 In [2]: sc = SystemConnection('10.111.5.105', password='foobar', log_level='info')
 In [3]: sc.show_hosts()
-[2015-05-30 17:34:52,755][INFO][SystemConnection]:
-+------------------+----------------------------------------------------------------------------+
-| MACHINE          | SERVICES                                                                   |
-+------------------+----------------------------------------------------------------------------+
-|    HOST:         |   TYPE              NAME                              STATE      CLUSTER   |
-| 10.111.5.105     |   eucalyptus        10.111.5.105                      ENABLED              |
-| Ver::4.2.0       |                                                                            |
-| Mem:             |                                                                            |
-|  Used:7710 0.98% |                                                                            |
-|  Free:164  0.02% |                                                                            |
-|  Swap:133  0.02% |                                                                            |
-| CPU:             |                                                                            |
-|  #0:  8.36%      |                                                                            |
-|  #1:  7.3%       |                                                                            |
-|  #2:  6.26%      |                                                                            |
-|  #3:  5.32%      |                                                                            |
-+------------------+----------------------------------------------------------------------------+
-|    HOST:         |   TYPE              NAME                              STATE      CLUSTER   |
-| 10.111.1.1       |   node              10.111.1.1                        ENABLED      one     |
-| Ver::4.2.0       |                                                                            |
-| Mem:             | INSTANCES                                                                  |
-|  Used:7662 0.97% | i-b2b1ae7c(running),     t1.micro,    instance-store                       |
-|  Free:199  0.03% | i-6e433312(running),     m1.small,    instance-store                       |
-|  Swap:5    0.00% | i-7a0a2ae3(running),     m1.small,    instance-store                       |
-| CPU:             |                                                                            |
-|  #0:  1.72%      | LAST REPORTED NC AVAILABILITY (enabled):                                   |
-|  #1:  1.17%      | -CPU:29/32                                                                 |
-|  #2:  0.63%      | -MEM:7282/8050                                                             |
-|  #3:  0.54%      | -DISK:42/57                                                                |
-+------------------+----------------------------------------------------------------------------+
-|    HOST:         |   TYPE              NAME                              STATE      CLUSTER   |
-| 10.111.5.83      |   node              10.111.5.83                       ENABLED      one     |
-| Ver::4.2.0       |                                                                            |
-| Mem:             | INSTANCES                                                                  |
-|  Used:7686 0.98% | i-653e7220(running),     m1.small,    instance-store                       |
-|  Free:173  0.02% | i-46c2e16d(running),     m1.small,    instance-store                       |
-|  Swap:1    0.00% | i-efab806f(running),     t1.micro,    instance-store                       |
-| CPU:             | i-c9f98b25(running),     m1.small,    instance-store                       |
-|  #0:  2.42%      |                                                                            |
-|  #1:  1.65%      | LAST REPORTED NC AVAILABILITY (enabled):                                   |
-|  #2:  0.7%       | -CPU:28/32                                                                 |
-|  #3:  0.8%       | -MEM:7024/8048                                                             |
-|                  | -DISK:37/57                                                                |
-+------------------+----------------------------------------------------------------------------+
-|    HOST:         |   TYPE              NAME                              STATE      CLUSTER   |
-| 10.111.5.33      |   storage           one-sc-1                          ENABLED      one     |
-| Ver::4.2.0       |   cluster           one-cc-1                          ENABLED      one     |
-| Mem:             |                                                                            |
-|  Used:7624 0.97% |                                                                            |
-|  Free:235  0.03% |                                                                            |
-|  Swap:0    0.00% |                                                                            |
-| CPU:             |                                                                            |
-|  #0:  2.68%      |                                                                            |
-|  #1:  2.01%      |                                                                            |
-|  #2:  1.92%      |                                                                            |
-|  #3:  2.17%      |                                                                            |
-+------------------+----------------------------------------------------------------------------+
-|    HOST:         |   TYPE              NAME                              STATE      CLUSTER   |
-| 10.111.5.32      |   user-api          API_10.111.5.32                   ENABLED              |
-| Ver::4.2.0       |   autoscaling       API_10.111.5.32.autoscaling       ENABLED              |
-| Mem:             |   cloudformation    API_10.111.5.32.cloudformation    ENABLED              |
-|  Used:5133 0.65% |   cloudwatch        API_10.111.5.32.cloudwatch        ENABLED              |
-|  Free:2726 0.35% |   compute           API_10.111.5.32.compute           ENABLED              |
-|  Swap:0    0.00% |   dns               API_10.111.5.32.dns               ENABLED              |
-| CPU:             |   euare             API_10.111.5.32.euare             ENABLED              |
-|  #0:  5.03%      |   identity          API_10.111.5.32.identity          ENABLED              |
-|  #1:  4.27%      |   imaging           API_10.111.5.32.imaging           ENABLED              |
-|  #2:  4.35%      |   loadbalancing     API_10.111.5.32.loadbalancing     ENABLED              |
-|  #3:  4.35%      |   objectstorage     API_10.111.5.32.objectstorage     ENABLED              |
-|                  |   simpleworkflow    API_10.111.5.32.simpleworkflow    ENABLED              |
-|                  |   tokens            API_10.111.5.32.tokens            ENABLED              |
-|                  |   walrusbackend     walrus-1                          ENABLED              |
-|                  |                                                                            |
-+------------------+----------------------------------------------------------------------------+
+In [3]: sc.show_hosts()
+[2015-05-30 23:32:43,018][INFO][SystemConnection]:
++-------------------+-----------------------------------------------------------------------------+
+| MACHINE INFO      | EUCALYPTUS SERVICES                                                         |
++-------------------+-----------------------------------------------------------------------------+
+|    HOST:          |   TYPE              NAME                               STATE      CLUSTER   |
+| 10.111.5.156      |   eucalyptus        10.111.5.156                       ENABLED              |
+| Ver::4.2.0        |   user-api          API_10.111.5.156                   ENABLED              |
+| Mem:              |   autoscaling       API_10.111.5.156.autoscaling       ENABLED              |
+|  Used:6961  0.98% |   cloudformation    API_10.111.5.156.cloudformation    ENABLED              |
+|  Free:123   0.02% |   cloudwatch        API_10.111.5.156.cloudwatch        ENABLED              |
+|  Swap:522   0.07% |   compute           API_10.111.5.156.compute           ENABLED              |
+| CPU:              |   euare             API_10.111.5.156.euare             ENABLED              |
+|  #0:  10.65%      |   identity          API_10.111.5.156.identity          ENABLED              |
+|  #1:  9.44%       |   imaging           API_10.111.5.156.imaging           ENABLED              |
+|  #2:  10.4%       |   loadbalancing     API_10.111.5.156.loadbalancing     ENABLED              |
+|  #3:  9.48%       |   objectstorage     API_10.111.5.156.objectstorage     ENABLED              |
+|                   |   simpleworkflow    API_10.111.5.156.simpleworkflow    ENABLED              |
+|                   |   tokens            API_10.111.5.156.tokens            ENABLED              |
+|                   |   walrusbackend     walrus-1                           ENABLED              |
+|                   |                                                                             |
+|                   |  EUCA SERVICE  COMMAND          %CPU  %MEM  UPTIME                          |
+|                   |  eucalyptus                                                                 |
+|                   |                eucalyptus-clou  21.1  33.3  18-01:04:17                     |
+|                   |  eucanetd                                                                   |
+|                   |                eucanetd         0.4   0.8   18-00:37:36                     |
+|                   |  midolman                                                                   |
+|                   |                java             9.8   22.4  11-07:18:02                     |
+|                   |                wdog             0.0   0.0   11-07:18:02                     |
++-------------------+-----------------------------------------------------------------------------+
+|    HOST:          |   TYPE              NAME                               STATE      CLUSTER   |
+| 10.111.5.151      |   node              10.111.5.151                       ENABLED      one     |
+| Ver::4.2.0        |                                                                             |
+| Mem:              | LAST REPORTED NC AVAILABILITY (enabled):                                    |
+|  Used:6237 0.88%  |  CPU:          32/32                                                        |
+|  Free:847  0.12%  |  MEM:      7254/7254                                                        |
+|  Swap:1    0.00%  | DISK:          57/57                                                        |
+| CPU:              |                                                                             |
+|  #0:  4.31%       |  EUCA SERVICE   COMMAND  %CPU  %MEM  UPTIME                                 |
+|  #1:  3.85%       |  eucalyptus-nc                                                              |
+|  #2:  4.37%       |                 httpd    0.3   1.5   01:13:15                               |
+|  #3:  3.44%       |  midolman                                                                   |
+|                   |                 java     9.2   21.9  11-07:17:55                            |
+|                   |                 wdog     0.0   0.0   11-07:17:55                            |
++-------------------+-----------------------------------------------------------------------------+
+|    HOST:          |   TYPE              NAME                               STATE      CLUSTER   |
+| 10.111.5.85       |   node              10.111.5.85                        ENABLED      two     |
+| Ver::4.2.0        |                                                                             |
+| Mem:              | INSTANCES                                                                   |
+|  Used:7712 0.98%  | i-44274273(running),     m1.small,    instance-store                        |
+|  Free:147  0.02%  | i-51475876(running),     m1.small,    instance-store                        |
+|  Swap:7    0.00%  | i-3fea5ffe(running),     m1.small,    instance-store                        |
+| CPU:              |                                                                             |
+|  #0:  1.39%       | LAST REPORTED NC AVAILABILITY (enabled):                                    |
+|  #1:  1.21%       |  CPU:          29/32                                                        |
+|  #2:  0.62%       |  MEM:      7280/8048                                                        |
+|  #3:  0.61%       | DISK:          42/57                                                        |
+|                   |                                                                             |
+|                   |  EUCA SERVICE   COMMAND  %CPU  %MEM  UPTIME                                 |
+|                   |  eucalyptus-nc                                                              |
+|                   |                 httpd    0.4   1.8   18-00:46:56                            |
+|                   |  midolman                                                                   |
+|                   |                 java     16.6  19.9  11-07:18:02                            |
+|                   |                 wdog     0.0   0.0   11-07:18:02                            |
++-------------------+-----------------------------------------------------------------------------+
+|    HOST:          |   TYPE              NAME                               STATE      CLUSTER   |
+| 10.111.5.180      |   storage           one-sc-1                           ENABLED      one     |
+| Ver::4.2.0        |   cluster           one-cc-1                           ENABLED      one     |
+| Mem:              |                                                                             |
+|  Used:6807 0.96%  |  EUCA SERVICE  COMMAND          %CPU  %MEM  UPTIME                          |
+|  Free:277  0.04%  |  eucalytus-cc                                                               |
+|  Swap:30   0.00%  |                httpd            0.0   1.0   18-00:36:58                     |
+| CPU:              |  eucalyptus                                                                 |
+|  #0:  2.41%       |                eucalyptus-clou  10.5  19.2  18-00:49:23                     |
+|  #1:  3.05%       |  eucanetd                                                                   |
+|  #2:  2.96%       |                eucanetd         0.4   0.9   18-00:50:06                     |
+|  #3:  4.11%       |                                                                             |
++-------------------+-----------------------------------------------------------------------------+
+|    HOST:          |   TYPE              NAME                               STATE      CLUSTER   |
+| 10.111.1.116      |   storage           two-sc-1                           ENABLED      two     |
+| Ver::4.2.0        |   cluster           two-cc-1                           ENABLED      two     |
+| Mem:              |                                                                             |
+|  Used:6898 0.97%  |  EUCA SERVICE  COMMAND          %CPU  %MEM  UPTIME                          |
+|  Free:186  0.03%  |  eucalytus-cc                                                               |
+|  Swap:16   0.00%  |                httpd            0.0   0.8   13-04:02:04                     |
+| CPU:              |  eucalyptus                                                                 |
+|  #0:  2.17%       |                eucalyptus-clou  10.6  20.4  18-00:49:16                     |
+|  #1:  2.72%       |  eucanetd                                                                   |
+|  #2:  1.99%       |                eucanetd         0.4   0.9   18-00:50:00                     |
+|  #3:  6.12%       |                                                                             |
++-------------------+-----------------------------------------------------------------------------+
 ```
 
 

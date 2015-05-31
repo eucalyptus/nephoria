@@ -263,6 +263,9 @@ class EucaHost(Machine):
         mido_pid = self.get_midolman_service_pid()
         if mido_pid:
             ret['midolman'] = self.get_pid_info(mido_pid)
+        eucanetd_pid = self.get_eucanetd_service_pid()
+        if eucanetd_pid:
+            ret['eucanetd'] = self.get_pid_info(eucanetd_pid)
         return ret
 
     def show_euca_process_summary(self, printmethod=None, print_table=True):
@@ -294,6 +297,20 @@ class EucaHost(Machine):
         else:
             for line in out:
                 match = re.search('^\s*midolman*.*process\s+(\d+)\s*$', line)
+                if match:
+                    ret = int(match.group(1))
+        return ret
+
+    def get_eucanetd_service_pid(self):
+        ret = None
+        try:
+            path = os.path.join(self.get_eucalyptus_home(), 'var/run/eucalyptus/eucanetd.pid')
+            out = self.sys('cat {0}'.format(path), code=0)
+        except CommandExitCodeException:
+            return None
+        else:
+            for line in out:
+                match = re.search('^\s*(\d+)\s*$', line)
                 if match:
                     ret = int(match.group(1))
         return ret
