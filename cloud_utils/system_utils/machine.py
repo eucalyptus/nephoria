@@ -654,7 +654,7 @@ class Machine(object):
     def mount(self, device, path):
         self.sys("mount " + device + " " + path)
 
-    def show_sys_info(self, mem=True, cpu=True, print_method=None, print_table=True):
+    def show_sys_info(self, mem=True, cpu=True, disk=True, print_method=None, print_table=True):
         print_method = print_method or self.log.info
         sys_pt = PrettyTable(['name', 'value', 'percent'])
         sys_pt.header = False
@@ -673,13 +673,18 @@ class Machine(object):
             sys_pt.add_row([" Used:", "{0}".format(used), "{0}%".format(per_used)])
             sys_pt.add_row([" Free:", "{0}".format(free), "{0}%".format(per_free)])
             sys_pt.add_row([" Swap:", "{0}".format(swap), "{0}%".format(per_swap)])
-            sys_pt.add_row([markup("CPU:"), "", ""])
         if cpu:
+            sys_pt.add_row([markup("CPU:"), "", ""])
             cpu_info = self.cpu_info
             all = cpu_info.pop('all', None)
             for cpu in sorted(cpu_info):
                 values = cpu_info[cpu]
                 sys_pt.add_row([" #{0}:".format(cpu), "{0}%".format(values.get('used', None)), ""])
+        if disk:
+            sys_pt.add_row([markup("DISK:"), "", ""])
+            disk_info = self.get_disk_summary()
+            for fs, info in disk_info.iteritems():
+                sys_pt.add_row([os.path.basename(fs) + " ", info.get('size'), info.get('use%')])
         if print_table:
             print_method("\n{0}\n".format(sys_pt))
         return sys_pt
@@ -1204,7 +1209,17 @@ class Machine(object):
             raise
         return ret
 
-    def get_df_info(self, path=None, verbose=False):
+    def get_disk_summary(self, dfargs=None, verbose=False):
+        ret = {}
+        if dfargs is None:
+            dfargs = "-h"
+        df_info = self.get_df_info(path="", dfargs=dfargs, verbose=verbose)
+        for df in df_info:
+            fs = df.pop('filesystem')
+            ret[fs] = df
+        return ret
+
+    def get_df_info(self, path=None, dfargs=None, verbose=False):
         """
         Return df's output in dict format for a given path.
         If path is not given will give the df info for the current working dir used in the ssh
@@ -1215,35 +1230,38 @@ class Machine(object):
                             this command.
         Example:
             dirpath = '/disk1/storage'
-            dfout = self.get_df_info(path=dirpath)
+            dfout = self.get_df_info_at_path(path=dirpath)
             available_space = dfout['available']
             mounted_on = dfout['mounted']
             filesystem = dfout['filesystem']
         """
-        ret = {}
+        ret = []
         if path is None:
             path = '${PWD}'
-        cmd = 'df ' + str(path)
+        if dfargs is None:
+            dfargs = ""
+        else:
+            if isinstance(dfargs, list):
+                dfargs = " ".join(dfargs)
+        cmd = 'df -P {0} {1}'.format(dfargs, path)
         if verbose:
-            self.log.debug('get_df_info cmd:' + str(cmd))
+            self.log.debug('get_df_info_at_path cmd:' + str(cmd))
         output = self.sys(cmd, code=0, verbose=verbose)
         # Get the presented fields from commands output,
         # Convert to lowercase, use this as our dict keys
-        fields = []
-        line = 0
-        for field in str(output[line]).split():
-            fields.append(str(field).lower())
-        # Move line forward and gather columns into the dict to be returned
-        x = 0
-        line += 1
-        # gather columns equal to the number of column headers accounting for newlines...
-        while x < (len(fields) - 1):
-            for value in str(output[line]).split():
-                ret[fields[x]] = value
-                if verbose:
-                    self.log.debug(str('DF FIELD: ' + fields[x]) + ' = ' + str(value))
-                x += 1
-            line += 1
+
+        def add_underscore(grp):
+            word = grp.group(0)
+
+            return str(word).replace(" ", "_")
+        field_line = str(re.sub('[A-Z]\w*(\s+)[a-z]\w*', add_underscore, output[0]))
+        fields = field_line.lower().split()
+        for line in output[1:]:
+            line = str(line).lower().split()
+            fs_dict = {}
+            for field in fields:
+                fs_dict[field] = line[fields.index(field)]
+            ret.append(fs_dict)
         return ret
 
     def get_available(self, path, unit=1):
@@ -1253,7 +1271,7 @@ class Machine(object):
         unit - optional -integer used to divide return value.
                Can be used to convert KB to MB, GB, TB, etc..
         """
-        size = int(self.get_df_info(path=path)['available'])
+        size = int(self.get_df_info_at_path(path=path)['available'])
         return size / unit
 
     def assertFilePresent(self, filepath):

@@ -197,8 +197,8 @@ class SystemConnection(ServiceConnection):
         ins_dev_len = 16
         ins_st_len = 15
         ins_total = (ins_id_len + ins_dev_len + ins_type_len + ins_st_len) + 5
-        machine_hdr = (markup('MACHINE INFO'), 20)
-        service_hdr = (markup('EUCALYPTUS SERVICES'), 100)
+        machine_hdr = (markup('MACHINE INFO'), 30)
+        service_hdr = (markup('EUCALYPTUS SERVICES'), 90)
         pt = PrettyTable([machine_hdr[0], service_hdr[0]])
         pt.align = 'l'
         pt.hrules = 1

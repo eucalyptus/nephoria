@@ -275,7 +275,7 @@ class EucaHost(Machine):
                           markup('COMMAND', [1, 4]),
                           markup('%CPU', [1, 4]),
                           markup('%MEM', [1, 4]),
-                          markup('UPTIME', [1, 4])])
+                          markup('PS_UPTIME', [1, 4])])
         pt.align = 'l'
         pt.border = 0
         for service, command_dict in ps_sum.iteritems():

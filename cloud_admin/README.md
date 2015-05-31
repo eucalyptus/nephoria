@@ -120,96 +120,106 @@ In [1]: from cloud_admin.systemconnection import SystemConnection
 In [2]: sc = SystemConnection('10.111.5.105', password='foobar', log_level='info')
 In [3]: sc.show_hosts()
 In [3]: sc.show_hosts()
-[2015-05-30 23:32:43,018][INFO][SystemConnection]:
-+-------------------+-----------------------------------------------------------------------------+
-| MACHINE INFO      | EUCALYPTUS SERVICES                                                         |
-+-------------------+-----------------------------------------------------------------------------+
-|    HOST:          |   TYPE              NAME                               STATE      CLUSTER   |
-| 10.111.5.156      |   eucalyptus        10.111.5.156                       ENABLED              |
-| Ver::4.2.0        |   user-api          API_10.111.5.156                   ENABLED              |
-| Mem:              |   autoscaling       API_10.111.5.156.autoscaling       ENABLED              |
-|  Used:6961  0.98% |   cloudformation    API_10.111.5.156.cloudformation    ENABLED              |
-|  Free:123   0.02% |   cloudwatch        API_10.111.5.156.cloudwatch        ENABLED              |
-|  Swap:522   0.07% |   compute           API_10.111.5.156.compute           ENABLED              |
-| CPU:              |   euare             API_10.111.5.156.euare             ENABLED              |
-|  #0:  10.65%      |   identity          API_10.111.5.156.identity          ENABLED              |
-|  #1:  9.44%       |   imaging           API_10.111.5.156.imaging           ENABLED              |
-|  #2:  10.4%       |   loadbalancing     API_10.111.5.156.loadbalancing     ENABLED              |
-|  #3:  9.48%       |   objectstorage     API_10.111.5.156.objectstorage     ENABLED              |
-|                   |   simpleworkflow    API_10.111.5.156.simpleworkflow    ENABLED              |
-|                   |   tokens            API_10.111.5.156.tokens            ENABLED              |
-|                   |   walrusbackend     walrus-1                           ENABLED              |
-|                   |                                                                             |
-|                   |  EUCA SERVICE  COMMAND          %CPU  %MEM  UPTIME                          |
-|                   |  eucalyptus                                                                 |
-|                   |                eucalyptus-clou  21.1  33.3  18-01:04:17                     |
-|                   |  eucanetd                                                                   |
-|                   |                eucanetd         0.4   0.8   18-00:37:36                     |
-|                   |  midolman                                                                   |
-|                   |                java             9.8   22.4  11-07:18:02                     |
-|                   |                wdog             0.0   0.0   11-07:18:02                     |
-+-------------------+-----------------------------------------------------------------------------+
-|    HOST:          |   TYPE              NAME                               STATE      CLUSTER   |
-| 10.111.5.151      |   node              10.111.5.151                       ENABLED      one     |
-| Ver::4.2.0        |                                                                             |
-| Mem:              | LAST REPORTED NC AVAILABILITY (enabled):                                    |
-|  Used:6237 0.88%  |  CPU:          32/32                                                        |
-|  Free:847  0.12%  |  MEM:      7254/7254                                                        |
-|  Swap:1    0.00%  | DISK:          57/57                                                        |
-| CPU:              |                                                                             |
-|  #0:  4.31%       |  EUCA SERVICE   COMMAND  %CPU  %MEM  UPTIME                                 |
-|  #1:  3.85%       |  eucalyptus-nc                                                              |
-|  #2:  4.37%       |                 httpd    0.3   1.5   01:13:15                               |
-|  #3:  3.44%       |  midolman                                                                   |
-|                   |                 java     9.2   21.9  11-07:17:55                            |
-|                   |                 wdog     0.0   0.0   11-07:17:55                            |
-+-------------------+-----------------------------------------------------------------------------+
-|    HOST:          |   TYPE              NAME                               STATE      CLUSTER   |
-| 10.111.5.85       |   node              10.111.5.85                        ENABLED      two     |
-| Ver::4.2.0        |                                                                             |
-| Mem:              | INSTANCES                                                                   |
-|  Used:7712 0.98%  | i-44274273(running),     m1.small,    instance-store                        |
-|  Free:147  0.02%  | i-51475876(running),     m1.small,    instance-store                        |
-|  Swap:7    0.00%  | i-3fea5ffe(running),     m1.small,    instance-store                        |
-| CPU:              |                                                                             |
-|  #0:  1.39%       | LAST REPORTED NC AVAILABILITY (enabled):                                    |
-|  #1:  1.21%       |  CPU:          29/32                                                        |
-|  #2:  0.62%       |  MEM:      7280/8048                                                        |
-|  #3:  0.61%       | DISK:          42/57                                                        |
-|                   |                                                                             |
-|                   |  EUCA SERVICE   COMMAND  %CPU  %MEM  UPTIME                                 |
-|                   |  eucalyptus-nc                                                              |
-|                   |                 httpd    0.4   1.8   18-00:46:56                            |
-|                   |  midolman                                                                   |
-|                   |                 java     16.6  19.9  11-07:18:02                            |
-|                   |                 wdog     0.0   0.0   11-07:18:02                            |
-+-------------------+-----------------------------------------------------------------------------+
-|    HOST:          |   TYPE              NAME                               STATE      CLUSTER   |
-| 10.111.5.180      |   storage           one-sc-1                           ENABLED      one     |
-| Ver::4.2.0        |   cluster           one-cc-1                           ENABLED      one     |
-| Mem:              |                                                                             |
-|  Used:6807 0.96%  |  EUCA SERVICE  COMMAND          %CPU  %MEM  UPTIME                          |
-|  Free:277  0.04%  |  eucalytus-cc                                                               |
-|  Swap:30   0.00%  |                httpd            0.0   1.0   18-00:36:58                     |
-| CPU:              |  eucalyptus                                                                 |
-|  #0:  2.41%       |                eucalyptus-clou  10.5  19.2  18-00:49:23                     |
-|  #1:  3.05%       |  eucanetd                                                                   |
-|  #2:  2.96%       |                eucanetd         0.4   0.9   18-00:50:06                     |
-|  #3:  4.11%       |                                                                             |
-+-------------------+-----------------------------------------------------------------------------+
-|    HOST:          |   TYPE              NAME                               STATE      CLUSTER   |
-| 10.111.1.116      |   storage           two-sc-1                           ENABLED      two     |
-| Ver::4.2.0        |   cluster           two-cc-1                           ENABLED      two     |
-| Mem:              |                                                                             |
-|  Used:6898 0.97%  |  EUCA SERVICE  COMMAND          %CPU  %MEM  UPTIME                          |
-|  Free:186  0.03%  |  eucalytus-cc                                                               |
-|  Swap:16   0.00%  |                httpd            0.0   0.8   13-04:02:04                     |
-| CPU:              |  eucalyptus                                                                 |
-|  #0:  2.17%       |                eucalyptus-clou  10.6  20.4  18-00:49:16                     |
-|  #1:  2.72%       |  eucanetd                                                                   |
-|  #2:  1.99%       |                eucanetd         0.4   0.9   18-00:50:00                     |
-|  #3:  6.12%       |                                                                             |
-+-------------------+-----------------------------------------------------------------------------+
+[2015-05-31 09:08:12,811][INFO][SystemConnection]:
++--------------------------+-----------------------------------------------------------------------------+
+| MACHINE INFO             | EUCALYPTUS SERVICES                                                         |
++--------------------------+-----------------------------------------------------------------------------+
+|         HOST:            |   TYPE              NAME                               STATE      CLUSTER   |
+| 10.111.5.156             |   eucalyptus        10.111.5.156                       ENABLED              |
+|     Ver::4.2.0           |   user-api          API_10.111.5.156                   ENABLED              |
+| Mem:                     |   autoscaling       API_10.111.5.156.autoscaling       ENABLED              |
+|  Used:       6957  0.98% |   cloudformation    API_10.111.5.156.cloudformation    ENABLED              |
+|  Free:       127   0.02% |   cloudwatch        API_10.111.5.156.cloudwatch        ENABLED              |
+|  Swap:       535   0.08% |   compute           API_10.111.5.156.compute           ENABLED              |
+| CPU:                     |   euare             API_10.111.5.156.euare             ENABLED              |
+|  #0:         10.66%      |   identity          API_10.111.5.156.identity          ENABLED              |
+|  #1:         9.43%       |   imaging           API_10.111.5.156.imaging           ENABLED              |
+|  #2:         10.41%      |   loadbalancing     API_10.111.5.156.loadbalancing     ENABLED              |
+|  #3:         9.47%       |   objectstorage     API_10.111.5.156.objectstorage     ENABLED              |
+| DISK:                    |   simpleworkflow    API_10.111.5.156.simpleworkflow    ENABLED              |
+| md0          244m  15%   |   tokens            API_10.111.5.156.tokens            ENABLED              |
+| vg01-lv_root 196g  6%    |   walrusbackend     walrus-1                           ENABLED              |
+| tmpfs        3.5g  0%    |                                                                             |
+|                          |  EUCA SERVICE  COMMAND          %CPU  %MEM  PS_UPTIME                       |
+|                          |  eucalyptus                                                                 |
+|                          |                eucalyptus-clou  21.2  33.2  18-10:39:46                     |
+|                          |  eucanetd                                                                   |
+|                          |                eucanetd         0.4   0.8   18-10:13:05                     |
+|                          |  midolman                                                                   |
+|                          |                java             9.8   22.4  11-16:53:31                     |
+|                          |                wdog             0.0   0.0   11-16:53:31                     |
++--------------------------+-----------------------------------------------------------------------------+
+|         HOST:            |   TYPE              NAME                               STATE      CLUSTER   |
+| 10.111.5.151             |   node              10.111.5.151                       ENABLED      one     |
+|     Ver::4.2.0           |                                                                             |
+| Mem:                     | LAST REPORTED NC AVAILABILITY (enabled):                                    |
+|  Used:       6246 0.88%  |  CPU:          32/32                                                        |
+|  Free:       838  0.12%  |  MEM:      7254/7254                                                        |
+|  Swap:       1    0.00%  | DISK:          57/57                                                        |
+| CPU:                     |                                                                             |
+|  #0:         4.31%       |  EUCA SERVICE   COMMAND  %CPU  %MEM  PS_UPTIME                              |
+|  #1:         3.82%       |  eucalyptus-nc                                                              |
+|  #2:         4.41%       |                 httpd    0.3   1.5   10:48:44                               |
+|  #3:         3.42%       |  midolman                                                                   |
+| DISK:                    |                 java     9.2   21.9  11-16:53:23                            |
+| md0          244m 15%    |                 wdog     0.0   0.0   11-16:53:23                            |
+| vg01-lv_root 196g 4%     |                                                                             |
+| tmpfs        3.5g 0%     |                                                                             |
++--------------------------+-----------------------------------------------------------------------------+
+|         HOST:            |   TYPE              NAME                               STATE      CLUSTER   |
+| 10.111.5.85              |   node              10.111.5.85                        ENABLED      two     |
+|      Ver::4.2.0          |                                                                             |
+| Mem:                     | INSTANCES                                                                   |
+|  Used:       7704 0.98%  | i-44274273(running),     m1.small,    instance-store                        |
+|  Free:       155  0.02%  | i-51475876(running),     m1.small,    instance-store                        |
+|  Swap:       8    0.00%  | i-3fea5ffe(running),     m1.small,    instance-store                        |
+| CPU:                     |                                                                             |
+|  #0:         1.4%        | LAST REPORTED NC AVAILABILITY (enabled):                                    |
+|  #1:         1.21%       |  CPU:          29/32                                                        |
+|  #2:         0.62%       |  MEM:      7280/8048                                                        |
+|  #3:         0.61%       | DISK:          42/57                                                        |
+| DISK:                    |                                                                             |
+| md0          244m 15%    |  EUCA SERVICE   COMMAND  %CPU  %MEM  PS_UPTIME                              |
+| vg01-lv_root 196g 4%     |  eucalyptus-nc                                                              |
+| tmpfs        3.9g 0%     |                 httpd    0.4   1.8   18-10:22:25                            |
+|                          |  midolman                                                                   |
+|                          |                 java     16.5  20.0  11-16:53:32                            |
+|                          |                 wdog     0.0   0.0   11-16:53:32                            |
++--------------------------+-----------------------------------------------------------------------------+
+|         HOST:            |   TYPE              NAME                               STATE      CLUSTER   |
+| 10.111.5.180             |   storage           one-sc-1                           ENABLED      one     |
+|     Ver::4.2.0           |   cluster           one-cc-1                           ENABLED      one     |
+| Mem:                     |                                                                             |
+|  Used:       6882 0.97%  |  EUCA SERVICE  COMMAND          %CPU  %MEM  PS_UPTIME                       |
+|  Free:       201  0.03%  |  eucalytus-cc                                                               |
+|  Swap:       30   0.00%  |                httpd            0.0   1.0   18-10:12:27                     |
+| CPU:                     |  eucalyptus                                                                 |
+|  #0:         2.41%       |                eucalyptus-clou  10.5  19.2  18-10:24:52                     |
+|  #1:         3.05%       |  eucanetd                                                                   |
+|  #2:         2.96%       |                eucanetd         0.4   0.9   18-10:25:35                     |
+|  #3:         4.1%        |                                                                             |
+| DISK:                    |                                                                             |
+| md0          244m 15%    |                                                                             |
+| vg01-lv_root 196g 4%     |                                                                             |
+| tmpfs        3.5g 1%     |                                                                             |
++--------------------------+-----------------------------------------------------------------------------+
+|         HOST:            |   TYPE              NAME                               STATE      CLUSTER   |
+| 10.111.1.116             |   storage           two-sc-1                           ENABLED      two     |
+|     Ver::4.2.0           |   cluster           two-cc-1                           ENABLED      two     |
+| Mem:                     |                                                                             |
+|  Used:       6864 0.97%  |  EUCA SERVICE  COMMAND          %CPU  %MEM  PS_UPTIME                       |
+|  Free:       220  0.03%  |  eucalytus-cc                                                               |
+|  Swap:       16   0.00%  |                httpd            0.0   0.8   13-13:37:33                     |
+| CPU:                     |  eucalyptus                                                                 |
+|  #0:         2.17%       |                eucalyptus-clou  10.6  20.4  18-10:24:46                     |
+|  #1:         2.72%       |  eucanetd                                                                   |
+|  #2:         1.99%       |                eucanetd         0.4   0.9   18-10:25:29                     |
+|  #3:         6.12%       |                                                                             |
+| DISK:                    |                                                                             |
+| md0          244m 15%    |                                                                             |
+| vg01-lv_root 196g 4%     |                                                                             |
+| tmpfs        3.5g 1%     |                                                                             |
++--------------------------+-----------------------------------------------------------------------------+
 ```
 
 
