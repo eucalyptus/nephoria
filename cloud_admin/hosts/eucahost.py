@@ -45,7 +45,8 @@ from cloud_admin.hosts.eucalyptusconf import EucalyptusConf
 
 class EucaHost(Machine):
 
-    def __init__(self, hostname, services, **kwargs):
+    def __init__(self, connection, hostname, services, **kwargs):
+        self.connection=connection
         self._euca_cc_helpers = None
         self._euca_clc_helpers = None
         self._euca_dns_helpers = None
@@ -73,6 +74,9 @@ class EucaHost(Machine):
         Used as a callback for extending this class without super().__init__()
         """
         pass
+
+    def show(self):
+        return self.connection.show_hosts(hosts=self)
 
     @property
     def euca_service_codes(self):
@@ -279,7 +283,7 @@ class EucaHost(Machine):
         pt.align = 'l'
         pt.border = 0
         for service, command_dict in ps_sum.iteritems():
-            pt.add_row([markup(service), "", "", "", ""])
+            pt.add_row([markup(service + ":", [1, 32]), "", "", "", ""])
             for command, info in command_dict.iteritems():
                 pt.add_row(["", command, info.get('%CPU', None),
                             info.get('%MEM', None), info.get('ELAPSED', None)])

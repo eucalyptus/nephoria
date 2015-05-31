@@ -108,8 +108,12 @@ class SystemConnection(ServiceConnection):
         if 'hostname' in connect_kwargs:
             connect_kwargs.pop('hostname')
         for ip, services in machines.iteritems():
-            self._eucahosts[ip] = EucaHost(hostname=ip, services=services, **connect_kwargs)
+            self._eucahosts[ip] = EucaHost(connection=self, hostname=ip, services=services,
+                                           **connect_kwargs)
         return self._eucahosts
+
+    def get_host_by_hostname(self, hostname):
+        return self.eucahosts.get(hostname, None)
 
     def get_hosts_by_service_type(self, servicetype):
         ret_list = []
@@ -188,7 +192,7 @@ class SystemConnection(ServiceConnection):
             return pt
 
 
-    def show_hosts(self, host_dict=None, partition=None, service_type=None,
+    def show_hosts(self, hosts=None, partition=None, service_type=None,
                               serv_columns=None, update=True, print_method=None,
                               print_table=True):
         print_method = print_method or self._show_method
@@ -204,7 +208,17 @@ class SystemConnection(ServiceConnection):
         pt.hrules = 1
         pt.max_width[machine_hdr[0]] = machine_hdr[1]
         total = []
-        eucahosts = host_dict or self.eucahosts
+        eucahosts = {}
+        if hosts is None:
+             eucahosts = self.eucahosts
+        if isinstance(hosts, list):
+            for host in hosts:
+                eucahosts[host.hostname] = host
+        elif isinstance(hosts, EucaHost):
+            eucahosts[hosts.hostname] = hosts
+        else:
+            raise ValueError('show_hosts: Unknown type passed for hosts:"{0}/{1}'
+                             .format(hosts, type(hosts)))
         if not isinstance(eucahosts, dict):
             raise ValueError('show_machine_mappings requires dict example: '
                              '{"host ip":[host objs]}, got:"{0}/{1}"'
@@ -275,7 +289,7 @@ class SystemConnection(ServiceConnection):
                                                markup('DISK', [1, 32]).rjust(15),
                                                nc_status.get('disk').rjust(15))
             ps_sum_pt = host.show_euca_process_summary(print_table=False)
-            servbuf += "\n" + ps_sum_pt.get_string()
+            servbuf += "\n" + ps_sum_pt.get_string(border=1, vrules=2, hrules=0)
             host_info = "{0}\n".format(markup(hostip, [1, 4, 94])).ljust(machine_hdr[1])
             host_info += "{0}:{1}\n".format(markup('Ver:'), host.get_eucalyptus_version())
             sys_pt = host.show_sys_info(print_table=False)
