@@ -264,9 +264,10 @@ class SystemConnection(ServiceConnection):
                                        nc_status.get('mem'),
                                        nc_status.get('disk'))
             host_info = "{0}\n".format(markup(hostip, [1, 4, 94])).ljust(machine_hdr[1])
+            host_info += "{0}:{1}\n".format(markup('Ver:'), host.get_eucalyptus_version())
             sys_pt = host.show_sys_info(print_table=False)
-            host_info += "\n{0}\n".format(sys_pt)
-            pt.add_row(["{0}\n{1}".format(str("").rjust(machine_hdr[1]), host_info), servbuf])
+            host_info += "{0}".format(sys_pt)
+            pt.add_row(["{0}\n{1}".format((markup('HOST:')).center(machine_hdr[1]), host_info), servbuf])
         if print_table:
             print_method("\n{0}\n".format(pt.get_string(sortby=pt.field_names[1])))
         else:
