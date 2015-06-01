@@ -662,7 +662,7 @@ class Machine(object):
         sys_pt.align = 'l'
         sys_pt.padding_width = 0
         if mem:
-            sys_pt.add_row([markup("Mem:", [1,4]), "", ""])
+            sys_pt.add_row([markup("Mem:", [1, 4]), "", ""])
             free = self.get_free_mem() or 0
             used = self.get_used_mem() or 0
             total = self.get_total_mem() or 0
@@ -674,14 +674,14 @@ class Machine(object):
             sys_pt.add_row([" Free:", "{0}".format(free), "{0}%".format(per_free)])
             sys_pt.add_row([" Swap:", "{0}".format(swap), "{0}%".format(per_swap)])
         if cpu:
-            sys_pt.add_row([markup("CPU:", [1,4]), "", ""])
+            sys_pt.add_row([markup("CPU:", [1, 4]), "", ""])
             cpu_info = self.cpu_info
             all = cpu_info.pop('all', None)
             for cpu in sorted(cpu_info):
                 values = cpu_info[cpu]
                 sys_pt.add_row([" #{0}:".format(cpu), "{0}%".format(values.get('used', None)), ""])
         if disk:
-            sys_pt.add_row([markup("DISK:", [1,4]), "", ""])
+            sys_pt.add_row([markup("DISK:", [1, 4]), "", ""])
             disk_info = self.get_disk_summary()
             for fs, info in disk_info.iteritems():
                 sys_pt.add_row([os.path.basename(fs) + " ", info.get('size'), info.get('use%')])

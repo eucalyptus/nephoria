@@ -264,28 +264,40 @@ class EucaHost(Machine):
             else:
                 if not 'eucalyptus' in ret:
                     ret['eucalyptus'] = self.get_pid_info(self.get_eucalyptus_cloud_pid())
-        mido_pid = self.get_midolman_service_pid()
-        if mido_pid:
-            ret['midolman'] = self.get_pid_info(mido_pid)
         eucanetd_pid = self.get_eucanetd_service_pid()
         if eucanetd_pid:
             ret['eucanetd'] = self.get_pid_info(eucanetd_pid)
+        # Midokura related services...
+        mido_pid = self.get_midolman_service_pid()
+        zookeeper_pid = self.get_zookeeper_pid()
+        cassandra_pid = self.get_cassandra_pid()
+        tomcat_pid = self.get_tomcat_pid()
+        if mido_pid:
+            ret['midolman'] = self.get_pid_info(mido_pid)
+        if zookeeper_pid:
+            ret['zookeeper'] = self.get_pid_info(zookeeper_pid)
+        if cassandra_pid:
+            ret['cassandra'] = self.get_pid_info(cassandra_pid)
+        if tomcat_pid:
+            ret['tomcat'] = self.get_pid_info(tomcat_pid)
         return ret
 
     def show_euca_process_summary(self, printmethod=None, print_table=True):
         printmethod = printmethod or self.log.info
         ps_sum = self.get_euca_process_summary()
-        pt = PrettyTable([markup('EUCA SERVICE', [1, 4]),
+        serv_hdr = markup('EUCA SERVICE', [1, 4])
+        pt = PrettyTable([serv_hdr,
                           markup('COMMAND', [1, 4]),
                           markup('%CPU', [1, 4]),
                           markup('%MEM', [1, 4]),
                           markup('PS_UPTIME', [1, 4])])
         pt.align = 'l'
+        pt.align[serv_hdr] = 'r'
         pt.border = 0
         for service, command_dict in ps_sum.iteritems():
             pt.add_row([markup(service + ":", [1, 32]), "", "", "", ""])
             for command, info in command_dict.iteritems():
-                pt.add_row(["", command, info.get('%CPU', None),
+                pt.add_row(["  --->", command, info.get('%CPU', None),
                             info.get('%MEM', None), info.get('ELAPSED', None)])
         if print_table:
             printmethod("\n{0}\n".format(pt))
@@ -304,6 +316,39 @@ class EucaHost(Machine):
                 if match:
                     ret = int(match.group(1))
         return ret
+
+    def get_cassandra_pid(self):
+        try:
+            out = self.sys('cat /var/run/cassandra/cassandra.pid', code=0)
+            if out:
+                match = re.match("^(\d+)$", out[0])
+                if match:
+                    return int(match.group(1))
+        except CommandExitCodeException:
+            return None
+
+    def get_zookeeper_pid(self):
+        for path in ['/var/lib/zookeeper/data/zookeeper_server.pid',
+                     '/var/run/zookeeper/zookeeper*.pid']:
+            try:
+                out = self.sys("cat {0}".format(path), code=0)
+                if out:
+                    match = re.match("^(\d+)$", out[0])
+                    if match:
+                        return int(match.group(1))
+            except CommandExitCodeException:
+                pass
+        return None
+
+    def get_tomcat_pid(self):
+        try:
+            out = self.sys('cat /var/run/tomcat.pid', code=0)
+            if out:
+                match = re.match("^(\d+)$", out[0])
+                if match:
+                    return int(match.group(1))
+        except CommandExitCodeException:
+            return None
 
     def get_eucanetd_service_pid(self):
         ret = None

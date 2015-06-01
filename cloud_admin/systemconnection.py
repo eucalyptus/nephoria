@@ -191,6 +191,15 @@ class SystemConnection(ServiceConnection):
         else:
             return pt
 
+    @staticmethod
+    def vm_state_markup(state):
+        if state in ['shutting-down', 'stopped', 'stopping']:
+            return [1, 91]
+        if state == 'terminated':
+            return [1, 97]
+        if state == 'running':
+            return [1, 92]
+        return [1, 93]
 
     def show_hosts(self, hosts=None, partition=None, service_type=None,
                               serv_columns=None, update=True, print_method=None,
@@ -204,6 +213,7 @@ class SystemConnection(ServiceConnection):
         machine_hdr = (markup('MACHINE INFO'), 30)
         service_hdr = (markup('EUCALYPTUS SERVICES'), 90)
         pt = PrettyTable([machine_hdr[0], service_hdr[0]])
+        pt.header = False
         pt.align = 'l'
         pt.hrules = 1
         pt.max_width[machine_hdr[0]] = machine_hdr[1]
@@ -211,14 +221,12 @@ class SystemConnection(ServiceConnection):
         eucahosts = {}
         if hosts is None:
              eucahosts = self.eucahosts
-        if isinstance(hosts, list):
+        elif isinstance(hosts, list):
             for host in hosts:
                 eucahosts[host.hostname] = host
         elif isinstance(hosts, EucaHost):
             eucahosts[hosts.hostname] = hosts
-        else:
-            raise ValueError('show_hosts: Unknown type passed for hosts:"{0}/{1}'
-                             .format(hosts, type(hosts)))
+
         if not isinstance(eucahosts, dict):
             raise ValueError('show_machine_mappings requires dict example: '
                              '{"host ip":[host objs]}, got:"{0}/{1}"'
@@ -232,7 +240,7 @@ class SystemConnection(ServiceConnection):
                 total.append(serv)
                 if serv.child_services:
                     total.extend(serv.child_services)
-        # Create a large table showing the service states, grab the first 3 columns
+        # Create a table showing the service states, grab the first 3 columns
         # for type, name, state, and zone
         servpt = self.show_services(total, print_table=False)
         # Get a subset of the show services fields...
@@ -246,6 +254,10 @@ class SystemConnection(ServiceConnection):
         # Now build the machine table...
         for hostip, host in eucahosts.iteritems():
             assert isinstance(host, EucaHost)
+            pt.add_row([markup("HOST:") + markup(hostip, [1, 4, 94]),
+                        markup('EUCALYPTUS SERVICES:') + markup('[ {0} ]'
+                               .format(" ".join(str(x) for x in host.euca_service_codes)),
+                               [1, 34])])
             servbuf = header + "\n"
             mservices = []
             # Get the child services (ie for UFS)
@@ -270,14 +282,21 @@ class SystemConnection(ServiceConnection):
                             servbuf += line + "\n"
                 if serv.type == 'node':
                     if getattr(serv, 'instances', None):
-                        servbuf += "\n" + markup('INSTANCES', [1, 4]) + " \n"
-                        for x in serv.instances:
-                            servbuf += ("{0}{1}{2}{3}"
-                                        .format(str(x.id).ljust(ins_id_len),
-                                                str('(' + x.state + '),').ljust(ins_st_len),
-                                                str(x.instance_type + ",").ljust(ins_type_len),
-                                                str(x.root_device_type).ljust(ins_dev_len))
-                                        .ljust(ins_total)).strip() + "\n"
+                        if serv.instances:
+                            vm_pt = PrettyTable([markup('INSTANCES', [1, 4]),
+                                                 markup('STATE:', [1, 4]),
+                                                 markup('VMTYPE:', [1, 4]),
+                                                 markup('ROOT_DEV:', [1, 4])])
+                            vm_pt.align = 'l'
+                            vm_pt.border = 1
+                            vm_pt.vrules = 2
+                            vm_pt.hrules = 0
+                            for x in serv.instances:
+                                vm_pt.add_row([x.id,
+                                               markup(x.state, self.vm_state_markup(x.state)),
+                                               x.instance_type,
+                                               x.root_device_type])
+                            servbuf += "{0}".format(vm_pt)
                     nc_status = host.euca_nc_helpers.get_last_capacity_status()
                     servbuf += "\n{0}\n{1}:{2}\n{3}:{4}\n{5}:{6}\n"\
                         .format(markup("LAST REPORTED NC AVAILABILITY ({0}):"
@@ -290,13 +309,16 @@ class SystemConnection(ServiceConnection):
                                                nc_status.get('disk').rjust(15))
             ps_sum_pt = host.show_euca_process_summary(print_table=False)
             servbuf += "\n" + ps_sum_pt.get_string(border=1, vrules=2, hrules=0)
-            host_info = "{0}\n".format(markup(hostip, [1, 4, 94])).ljust(machine_hdr[1])
-            host_info += "{0}:{1}\n".format(markup('Ver:'), host.get_eucalyptus_version())
+            host_info = "{0}:{1}\n".format(markup('Ver'),
+                                           host.get_eucalyptus_version()).ljust(machine_hdr[1])
+            host_info += "Hostname:".ljust(machine_hdr[1])
+            host_info += markup(host.hostname).ljust(machine_hdr[1])
             sys_pt = host.show_sys_info(print_table=False)
             host_info += "{0}".format(sys_pt)
-            pt.add_row(["{0}\n{1}".format((markup('HOST:')).center(machine_hdr[1]), host_info), servbuf])
+            pt.add_row([host_info, servbuf])
         if print_table:
-            print_method("\n{0}\n".format(pt.get_string(sortby=pt.field_names[1])))
+            #print_method("\n{0}\n".format(pt.get_string(sortby=pt.field_names[1])))
+            print_method("\n{0}\n".format(pt.get_string()))
         else:
             return pt
 
