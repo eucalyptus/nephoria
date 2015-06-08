@@ -1,4 +1,6 @@
 
+from boto.resultset import ResultSet
+import time
 from cloud_utils.log_utils import get_traceback
 
 
@@ -65,6 +67,7 @@ class IamAccount(object):
         if ename:
             if ename == 'accountid':
                 self.id = value
-            if ename == 'accountname':
+            elif ename == 'accountname':
                 self.name = value
-            setattr(self, ename.lower(), value)
+            else:
+                setattr(self, ename.lower(), value)

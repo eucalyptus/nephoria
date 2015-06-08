@@ -180,6 +180,8 @@ class ServiceConnection(AWSQueryConnection):
         # debug is an int representation of the debug level. Use log.debug() for
         # logging debug information
         self.debug = boto_debug_level
+        if self.debug:
+            boto.set_stream_logger('boto')
         if not logger:
             logger = eulogger.Eulogger(identifier=self.__repr__())
         self.log = logger
@@ -689,14 +691,6 @@ class ServiceConnection(AWSQueryConnection):
         for cc in ccs:
             cluster_names.append(cc.partition)
         return cluster_names
-
-    def get_all_clusters(self, name=None, get_instances=True, get_storage=True,
-                         get_cluster_controllers=True):
-        raise NotImplemented('Finish this!')
-        controllers = self.get_all_cluster_controller_services()
-        for cc in controllers:
-            assert isinstance(cc, EucaClusterControllerService)
-            new_cluster = cc.partition
 
     def get_all_object_storage_gateway_services(self):
         """
@@ -1291,7 +1285,7 @@ class ServiceConnection(AWSQueryConnection):
             ret_list.append(Cluster(self, cname))
         return ret_list
 
-    def show_clusters(self, clusters=None, name=None, print_table=True):
+    def show_cluster_mappings(self, clusters=None, name=None, print_table=True):
         maintpt = PrettyTable([markup('SHOW CLUSTERS')])
         maintpt.align = 'l'
         if clusters:

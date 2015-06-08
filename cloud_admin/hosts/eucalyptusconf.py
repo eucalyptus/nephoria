@@ -45,7 +45,7 @@ class EucalyptusConf(Namespace):
         self.VNET_BROADCAST = ''
         self.VNET_ROUTER = ''
         self.VNET_DOMAINNAME = ''
-        self.LOG_LEVEL = ''
+        self.LOGLEVEL = ''
         self.METADATA_USE_VM_PRIVATE = ''
         self.METADATA_IP = ''
         self.NC_ROUTER = ''

@@ -29,34 +29,21 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 
+import inspect
 import os
 from prettytable import PrettyTable
 import re
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 from cloud_utils.system_utils.machine import Machine
 from cloud_utils.log_utils import markup
-from cloud_admin.hosts.nc_helpers import NodeControllerHelpers
-from cloud_admin.hosts.cc_helpers import ClusterControllerHelpers
-from cloud_admin.hosts.sc_helpers import StorageControllerHelpers
-from cloud_admin.hosts.clc_helpers import CloudControllerHelpers
-from cloud_admin.hosts.walrus_helpers import WalrusHelpers
 from cloud_admin.hosts.eucalyptusconf import EucalyptusConf
+from cloud_admin.hosts.helpers.helpernamespace import HelperNamespace
 
 
 class EucaHost(Machine):
 
-    def __init__(self, connection, hostname, services, **kwargs):
+    def __init__(self, connection, hostname, services, helper_classes=None, **kwargs):
         self.connection=connection
-        self._euca_cc_helpers = None
-        self._euca_clc_helpers = None
-        self._euca_dns_helpers = None
-        self._euca_nc_helpers = None
-        self._euca_osg_helpers = None
-        self._euca_sc_helpers = None
-        self._euca_ufs_helpers = None
-        self._euca_ws_helpers = None
-        self.__helpers = None
-        self._nc_helpers = None
         self._eucalyptus_repo_file = None
         self._eucalyptus_enterprise_repo_file = None
         self._euca2ools_repo_file = None
@@ -68,6 +55,7 @@ class EucaHost(Machine):
         self.services = services
         kwargs['hostname'] = hostname
         super(EucaHost, self).__init__(**kwargs)
+        self.helpers = HelperNamespace(self)
 
     def machine_setup(self):
         """
@@ -134,66 +122,6 @@ class EucaHost(Machine):
     @eucalyptus_conf.setter
     def eucalyptus_conf(self, new_config):
         self._config = new_config
-
-    @property
-    def euca_nc_helpers(self):
-        """
-        Machine helper methods specific to the Eucalyptus services running on this machine
-        """
-        if not self._euca_nc_helpers:
-            self._euca_nc_helpers = NodeControllerHelpers(self)
-        return self._euca_nc_helpers
-
-    @property
-    def euca_cc_helpers(self):
-        """
-        Machine helper methods specific to the Eucalyptus services running on this machine
-        """
-        if not self._euca_cc_helpers:
-            self._euca_cc_helpers = ClusterControllerHelpers(self)
-        return self._euca_cc_helpers
-
-    @property
-    def euca_sc_helpers(self):
-        """
-        Machine helper methods specific to the Eucalyptus services running on this machine
-        """
-        if not self._euca_sc_helpers:
-            self._euca_sc_helpers = StorageControllerHelpers(self)
-        return self._euca_sc_helpers
-
-    @property
-    def euca_clc_helpers(self):
-        """
-        Machine helper methods specific to the Eucalyptus services running on this machine
-        """
-        if not self._euca_clc_helpers:
-            self._euca_clc_helpers = CloudControllerHelpers(self)
-        return self._euca_clc_helpers
-
-    @property
-    def euca_ws_helpers(self):
-        """
-        Machine helper methods specific to the Eucalyptus services running on this machine
-        """
-        if not self._euca_ws_helpers:
-            self._euca_ws_helpers = WalrusHelpers(self)
-        return self._euca_ws_helpers
-
-    @property
-    def euca_osg_helpers(self):
-        """
-        Machine helper methods specific to the Eucalyptus services running on this machine
-        """
-        if not self._euca_osg_helpers:
-            self._euca_osg_helpers = NodeControllerHelpers(self)
-        return self._euca_osg_helpers
-
-    @property
-    def euca_ufs_helpers(self):
-        # if not self._euca_ufs_helpers:
-            # self._euca_ufs_helpers = <ADD UFS HELPERS>(self)
-        return self._euca_osg_helpers
 
     @property
     def eucalyptus_repo_file(self):
@@ -267,25 +195,13 @@ class EucaHost(Machine):
         eucanetd_pid = self.get_eucanetd_service_pid()
         if eucanetd_pid:
             ret['eucanetd'] = self.get_pid_info(eucanetd_pid)
-        # Midokura related services...
-        mido_pid = self.get_midolman_service_pid()
-        zookeeper_pid = self.get_zookeeper_pid()
-        cassandra_pid = self.get_cassandra_pid()
-        tomcat_pid = self.get_tomcat_pid()
-        if mido_pid:
-            ret['midolman'] = self.get_pid_info(mido_pid)
-        if zookeeper_pid:
-            ret['zookeeper'] = self.get_pid_info(zookeeper_pid)
-        if cassandra_pid:
-            ret['cassandra'] = self.get_pid_info(cassandra_pid)
-        if tomcat_pid:
-            ret['tomcat'] = self.get_pid_info(tomcat_pid)
+        ret.update(self.helpers.midonet.get_midonet_process_summary())
         return ret
 
     def show_euca_process_summary(self, printmethod=None, print_table=True):
         printmethod = printmethod or self.log.info
         ps_sum = self.get_euca_process_summary()
-        serv_hdr = markup('EUCA SERVICE', [1, 4])
+        serv_hdr = markup('HOST SERVICE', [1, 4])
         pt = PrettyTable([serv_hdr,
                           markup('COMMAND', [1, 4]),
                           markup('%CPU', [1, 4]),
@@ -303,52 +219,6 @@ class EucaHost(Machine):
             printmethod("\n{0}\n".format(pt))
         else:
             return pt
-
-    def get_midolman_service_pid(self):
-        ret = None
-        try:
-            out = self.sys('status midolman', code=0)
-        except CommandExitCodeException:
-            return None
-        else:
-            for line in out:
-                match = re.search('^\s*midolman*.*process\s+(\d+)\s*$', line)
-                if match:
-                    ret = int(match.group(1))
-        return ret
-
-    def get_cassandra_pid(self):
-        try:
-            out = self.sys('cat /var/run/cassandra/cassandra.pid', code=0)
-            if out:
-                match = re.match("^(\d+)$", out[0])
-                if match:
-                    return int(match.group(1))
-        except CommandExitCodeException:
-            return None
-
-    def get_zookeeper_pid(self):
-        for path in ['/var/lib/zookeeper/data/zookeeper_server.pid',
-                     '/var/run/zookeeper/zookeeper*.pid']:
-            try:
-                out = self.sys("cat {0}".format(path), code=0)
-                if out:
-                    match = re.match("^(\d+)$", out[0])
-                    if match:
-                        return int(match.group(1))
-            except CommandExitCodeException:
-                pass
-        return None
-
-    def get_tomcat_pid(self):
-        try:
-            out = self.sys('cat /var/run/tomcat.pid', code=0)
-            if out:
-                match = re.match("^(\d+)$", out[0])
-                if match:
-                    return int(match.group(1))
-        except CommandExitCodeException:
-            return None
 
     def get_eucanetd_service_pid(self):
         ret = None
@@ -467,6 +337,19 @@ class EucaHost(Machine):
         except CommandExitCodeException:
             return self.sys('cat /opt/eucalyptus' + versionpath, code=0)[0]
 
+    def get_euca2ools_version(self, brief=True):
+        try:
+            out = self.sys('euca-version', code=0)
+            for line in out:
+                if re.search("^euca2ools", line):
+                    split = line.split()
+                    if not brief:
+                        return " ".join(split[1:])
+                    return split[1]
+        except CommandExitCodeException as CE:
+            self.log.debug('Failed to fetch euca2ools version, err:"{0}"'.format(str(CE)))
+        return None
+
     @staticmethod
     def _get_eucalyptus_home(machine):
         """
@@ -508,6 +391,7 @@ class EucaHost(Machine):
         config = None
         out = None
         message = ""
+        eucalyptus_conf = None
         for path in basepaths:
             try:
                 eucalyptus_conf_path = os.path.join(str(path), '/etc/eucalyptus/eucalyptus.conf')
@@ -535,12 +419,10 @@ class EucaHost(Machine):
                 eucalyptus_conf = EucalyptusConf(lines=out)
                 self.eucalyptus_conf = eucalyptus_conf
             except Exception, e:
-                out = 'Error while trying to create euconfig from eucalyptus_conf:' + str(e)
+                out = 'Error while trying to create EucalyptusConf():' + str(e)
+                self.log.warn(out)
                 if eof:
-                    self.log.debug(out)
                     raise
-                else:
-                    self.log.debug(out)
         return eucalyptus_conf
 
     def __str__(self):

@@ -3,17 +3,17 @@ from prettytable import PrettyTable
 from cloud_utils.log_utils import markup
 
 
-def show_cluster(connection, cluster, print_table=True):
+def show_cluster(connection, cluster, printmethod=None, print_table=True):
+    printmethod = printmethod or connection._show_method
     maintpt = PrettyTable([markup('CLUSTER: {0}'.format(cluster.name))])
     machpt = connection.show_machine_mappings(machine_dict=cluster.machines, print_table=False)
     maintpt.add_row([machpt.get_string(sortby=machpt.field_names[1], reversesort=True)])
     proppt = connection.show_properties(cluster.properties, print_table=False)
     maintpt.add_row([proppt.get_string()])
     if print_table:
-        connection.debug_method("\n{0}\n".format(maintpt))
+        printmethod("\n{0}\n".format(maintpt))
     else:
         return maintpt
-
 
 class Cluster(object):
     def __init__(self, connection, name):
@@ -42,24 +42,26 @@ class Cluster(object):
     def show_full(self, print_table=True):
         return show_cluster(connection=self.connection, cluster=self, print_table=print_table)
 
-    def show_summary(self, print_table=True):
-        pt = self.show_machines(print_table=False)
+    def show_summary(self, printmethod=None, print_table=True):
+        printmethod = printmethod or self.connection._show_method
+        pt = self.show_machine_mapping(print_table=False)
         if print_table:
-            self.connection.debug_method('\n\t{0}"{1}"\n{2}'.format(markup('\nCLUSTER:'),
-                                                                    self.name,
-                                                                    str(pt)))
+            printmethod('\n\t{0}"{1}"\n{2}'.format(markup('\nCLUSTER:'), self.name, str(pt)))
         else:
             return pt
 
-    def show_machines(self, print_table=True):
+    def show_machine_mappings(self, printmethod=None, print_table=True):
+        printmethod = printmethod or self.connection._show_method
         pt = self.connection.show_machine_mappings(machine_dict=self.machines, print_table=False)
         if print_table:
-            self.connection.debug_method("\n{0}\n".format(pt.get_string(sortby=pt.field_names[1],
-                                                                        reversesort=True)))
+            printmethod("\n{0}\n".format(pt.get_string(sortby=pt.field_names[1],
+                                                       reversesort=True)))
         else:
             return pt
 
-    def show_properties(self, prefix=None, show_description=True, grid=True, print_table=True):
+    def show_properties(self, prefix=None, show_description=True, grid=True, printmethod=None,
+                        print_table=True):
+        printmethod = printmethod or self.connection._show_method
         show_list = []
         if prefix:
             if not str(prefix).startswith(self.name):
@@ -71,7 +73,7 @@ class Cluster(object):
             show_list = self.properties
         print ''
         self.connection.show_properties(show_list, description=show_description, grid=grid,
-                                        print_table=print_table)
+                                        printmethod=printmethod, print_table=print_table)
 
     def get_cluster_property(self, name):
         if name:

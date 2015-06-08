@@ -668,7 +668,6 @@ class EucaServiceGroupMembers(ResultSet):
 
     def startElement(self, name, value, connection):
         ename = name.lower().replace('euca:', '')
-        print 'group member: name:{0}, value:{1}'.format(name, value)
         if ename == 'item':
             new_member = EucaSeviceGroupMember(connection=connection)
             self.append(new_member)

@@ -1,5 +1,5 @@
 
-from cloud_admin.hosts import EucaMachineHelpers
+from cloud_admin.hosts.helpers import EucaMachineHelpers
 
 
 class StorageControllerHelpers(EucaMachineHelpers):

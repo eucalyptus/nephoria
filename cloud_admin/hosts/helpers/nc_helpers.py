@@ -1,5 +1,6 @@
 
 import os
+from prettytable import PrettyTable
 import re
 import stat
 import time
@@ -8,8 +9,9 @@ from xml.dom.minidom import parseString
 
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException, \
     CommandTimeoutException, SshCbReturn
-from cloud_admin.hosts import EucaMachineHelpers
-from cloud_utils.log_utils import get_traceback
+from cloud_admin.hosts.helpers import EucaMachineHelpers
+from cloud_utils.log_utils import get_traceback, markup
+
 
 ##################################################################################################
 #               The Node Controller 'Machine' or 'Host' helper methods...                        #
@@ -29,28 +31,108 @@ class NodeControllerHelpers(EucaMachineHelpers):
 
     def get_last_capacity_status(self):
         """
-        returning status=enabled cores=30/32 mem=7538/8050 disk=47/57 iqn=iqn.1994-05.com.redhat:ff10a4a8d0db
+        Attempts to find and parse the last reported status line from nc.log
+        Sample line:
+        returning status=enabled cores=30/32 mem=7538/8050 disk=47/57
         """
+        last = getattr(self, '__capacity_status', None)
+        if last:
+            if (time.time() - last.get('updated')) <= 5:
+                return last
         ret = {"status": None,
+               'updated': 0,
                'cores': None,
+               'cores_total': None,
                'mem': None,
+               'mem_total': None,
                'disk': None,
-               'iqn': None}
-        euca_path = self.machine.get_eucalyptus_home() or ""
+               'disk_total': None}
+        if str(self.eucahost.eucalyptus_conf.LOGLEVEL).lower() not in ['debug', 'trace']:
+            self.log.debug('Cant fetch capacity status from node with loglevel: DEBUG < "{0}"'
+                           .format(self.eucahost.eucalyptus_conf.LOG_LEVEL))
+            return ret
+        euca_path = self.eucahost.get_eucalyptus_home() or ""
         nclog = os.path.join(euca_path, 'var/log/eucalyptus/nc.log')
         try:
             out = self.sys('tac {0} | grep -m1 "returning status="'.format(nclog), code=0,
                            listformat=False)
             if out:
-                for val in ['status', 'cores', 'mem', 'disk', 'iqn']:
-                    search = "({0}=\S+)".format(val)
+                timestamp = re.search("^(\d+-\d+-\d+\s+\d+:\d+:\d+)\s", out)
+                if timestamp:
+                    ret['timestamp'] = timestamp.group(1)
+                else:
+                    ret['timestamp'] = 'unknown'
+                for val in ['status', 'cores', 'mem', 'disk']:
+                    search = "{0}=(\S+)".format(val)
                     grp = re.search(search, out)
                     if grp:
-                        ret[val] = grp.group(1).split('=')[1]
+                        if val == 'status':
+                            ret[val] = grp.group(1)
+                        else:
+                            cur, tot = grp.group(1).split('/')
+                            ret[val] = int(cur)
+                            ret[val + "_total"] = int(tot)
+            ret['updated'] = time.time()
+            setattr(self, '__capacity_status', ret)
         except CommandExitCodeException as CE:
             self.log.warn('{0}\nError fetching nc status:"{1}"'.format(get_traceback(), str(CE)))
         return ret
 
+    def get_vm_availability(self):
+        av = self.get_last_capacity_status()
+        ret = []
+        if not av:
+            return ret
+        for key, value in av.iteritems():
+            if value is None:
+                self.log.warn('Cant get vm availability due to None value: {0}={1}'
+                              .format(key, value))
+                return ret
+        vm_types = self.eucahost.connection.ec2_connection.get_all_instance_types()
+        for t in vm_types:
+
+            disk_max = av.get('disk_total') / int(t.disk)
+            mem_max = av.get('mem_total') / int(t.memory)
+            cpu_max = av.get('cores_total') / int(t.cores)
+            t.total = min(mem_max, disk_max, cpu_max)
+            # Dont add vmtypes this node/host can never service...
+            if not t.total:
+                continue
+            mem_cur = av.get('mem') / int(t.memory)
+            disk_cur = av.get('disk') / int(t.disk)
+            cpu_cur = av.get('cores') / int(t.cores)
+            t.current = min([mem_cur, disk_cur, cpu_cur])
+            ret.append(t)
+        return ret
+
+    def show_availability_for_node(self, printmethod=None, print_table=True):
+        printmethod = printmethod or self.eucahost.log.info
+        vmtypes = self.get_vm_availability()
+        cap = self.get_last_capacity_status()
+        main_pt = PrettyTable([markup('("{0}"\'s VM AVAILABILITY @ {1})')
+                                   .format(self.eucahost.hostname, cap.get('timestamp'))])
+        main_pt.border = 0
+        main_pt.align = 'l'
+        cpu_hdr = markup('CPU({0}/{1})'.format(cap.get('cores'), cap.get('cores_total')))
+        mem_hdr = markup('MEM({0}/{1})'.format(cap.get('mem'), cap.get('mem_total')))
+        disk_hdr = markup('DISK({0}/{1})'.format(cap.get('disk'), cap.get('disk_total')))
+        vm_hdr = markup('VMTYPE')
+        av_hdr = markup('AVAIL')
+        pt = PrettyTable([vm_hdr, av_hdr, cpu_hdr, mem_hdr, disk_hdr])
+        pt.align = 'l'
+        pt.align[cpu_hdr] = 'c'
+        pt.align[av_hdr] = 'c'
+        pt.border = 1
+        pt.vrules = 2
+        pt.hrules = 0
+        pt.padding_width = 0
+        for t in vmtypes:
+            pt.add_row([t.name, "{0} / {1}".format(t.current, t.total), t.cores, t.memory, t.disk])
+        main_pt.add_row([pt])
+        if print_table:
+            printmethod("\n{0}\n".format(main_pt))
+        else:
+            return main_pt
 
     def get_hypervisor_from_euca_conf(self):
         """
@@ -87,9 +169,9 @@ class NodeControllerHelpers(EucaMachineHelpers):
 
         """
         instance_list = []
-        if self.machine:
+        if self.eucahost:
             keys = []
-            output = self.machine.sys('virsh list', code=0)
+            output = self.eucahost.sys('virsh list', code=0)
             if len(output) > 1:
                 keys = str(output[0]).strip().lower().split()
                 for line in output[2:]:
@@ -123,7 +205,7 @@ class NodeControllerHelpers(EucaMachineHelpers):
         print_method = print_method or self.debug
         prefix = str(instance) + " Console Output:"
         try:
-            self.machine.cmd('tail -F ' + str(console_path),
+            self.eucahost.cmd('tail -F ' + str(console_path),
                              verbose=False,
                              cb=self.remote_tail_monitor_cb,
                              cbargs=[instance,
@@ -183,7 +265,7 @@ class NodeControllerHelpers(EucaMachineHelpers):
         if not isinstance(instance, types.StringTypes):
             instance = instance.id
         mpath_dev = self.get_instance_multipath_dev_for_instance_block_dev(instance, ebs_block_dev)
-        mpath_dev_info = self.machine.sys(
+        mpath_dev_info = self.eucahost.sys(
             'multipath -ll ' + str(mpath_dev) + " | sed 's/[[:cntrl:]]//g' ",
             verbose=verbose, code=0)
         return mpath_dev_info
@@ -201,7 +283,7 @@ class NodeControllerHelpers(EucaMachineHelpers):
         if not isinstance(instance, types.StringTypes):
             instance = instance.id
         dm_dev = self.get_instance_block_disk_dev_on_node(instance, ebs_block_dev)
-        sym_links = self.machine.sys('udevadm info --name ' + str(dm_dev) + ' --query symlink',
+        sym_links = self.eucahost.sys('udevadm info --name ' + str(dm_dev) + ' --query symlink',
                                      verbose=verbose, code=0)[0]
         for path in str(sym_links).split():
             if str(path).startswith('mapper/'):
@@ -215,8 +297,8 @@ class NodeControllerHelpers(EucaMachineHelpers):
             instance = instance.id
         paths = self.get_instance_block_disk_source_paths(instance)
         sym_link = paths[block_dev]
-        real_dev = self.machine.sys('readlink -e ' + sym_link, verbose=False, code=0)[0]
-        fs_stat = self.machine.get_file_stat(real_dev)
+        real_dev = self.eucahost.sys('readlink -e ' + sym_link, verbose=False, code=0)[0]
+        fs_stat = self.eucahost.get_file_stat(real_dev)
         if stat.S_ISBLK(fs_stat.st_mode):
             return real_dev
         else:
@@ -270,5 +352,5 @@ class NodeControllerHelpers(EucaMachineHelpers):
     def get_instance_xml_text(self, instance_id):
         if not isinstance(instance_id, types.StringTypes):
             instance = instance_id.id
-        return self.machine.sys('virsh dumpxml ' + str(instance_id), listformat=False,
+        return self.eucahost.sys('virsh dumpxml ' + str(instance_id), listformat=False,
                                 verbose=False, code=0)

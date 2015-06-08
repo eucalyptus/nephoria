@@ -667,9 +667,9 @@ class Machine(object):
             used = self.get_used_mem() or 0
             total = self.get_total_mem() or 0
             swap = self.get_swap_used() or 0
-            per_used = "{0:.2f}".format(used / float(total))
-            per_free = "{0:.2f}".format(free / float(total))
-            per_swap = "{0:.2f}".format(swap / float(total))
+            per_used = "{0:.1f}".format((used / float(total)) * 100)
+            per_free = "{0:.1f}".format((free / float(total)) * 100)
+            per_swap = "{0:.1f}".format((swap / float(total)) * 100)
             sys_pt.add_row([" Used:", "{0}".format(used), "{0}%".format(per_used)])
             sys_pt.add_row([" Free:", "{0}".format(free), "{0}%".format(per_free)])
             sys_pt.add_row([" Swap:", "{0}".format(swap), "{0}%".format(per_swap)])

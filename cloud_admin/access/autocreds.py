@@ -162,8 +162,8 @@ class AutoCreds(Eucarc):
         self._clc_ip = hostname
         self._clc_machine = None
         self._credpath = credpath
-        self._aws_account_name = aws_account_name
-        self._aws_user_name = aws_user_name
+        self._account_name = aws_account_name
+        self._user_name = aws_user_name
         self.aws_secret_key = aws_secret_key
         self.aws_access_key = aws_access_key
         self.debug = self.log.debug
@@ -359,12 +359,12 @@ class AutoCreds(Eucarc):
 
         def try_clc_db(self):
             self.debug('trying clc db...')
-            if self._clc_ip and self._aws_account_name and self._aws_user_name:
+            if self._clc_ip and self.aws_account_name and self.aws_user_name:
                 machine = self.clc_machine or self.connect_to_clc()
                 if machine:
                     try:
-                        res = self.get_existing_keys_from_clc(account=self._aws_account_name,
-                                                              user=self._aws_user_name,
+                        res = self.get_existing_keys_from_clc(account=self.aws_account_name,
+                                                              user=self.aws_user_name,
                                                               machine=machine)
                         try:
                             # With keys, try filling in remainder with service urls/attributes
@@ -410,7 +410,7 @@ class AutoCreds(Eucarc):
             dbpass = str(out[0]).split()[0]
 
         dbsel = ("\"select k.auth_access_key_query_id, k.auth_access_key_key, "
-                 "a.auth_account_number, c.auth_certificate_pem "
+                 "a.auth_account_number, a.auth_account_name, c.auth_certificate_pem "
                  "from eucalyptus_auth.auth_access_key k "
                  "join eucalyptus_auth.auth_user u on k.auth_access_key_owning_user=u.id "
                  "join eucalyptus_auth.auth_cert c on c.auth_certificate_owning_user=u.id "
@@ -429,11 +429,13 @@ class AutoCreds(Eucarc):
                 ret['AWS_ACCESS_KEY'] = values[names.index('auth_access_key_query_id')]
                 ret['AWS_SECRET_KEY'] = values[names.index('auth_access_key_key')]
                 ret['EC2_ACCOUNT_NUMBER'] = values[names.index('auth_account_number')]
+                ret['EC2_ACCOUNT_NAME'] = values[names.index('auth_account_name')]
                 ret['CERT'] = values[names.index('auth_certificate_pem')]
                 self.aws_access_key = ret['AWS_ACCESS_KEY']
                 self.aws_secret_key = ret['AWS_SECRET_KEY']
                 self.ec2_user_id = ret['EC2_ACCOUNT_NUMBER']
                 self.ec2_account_number = ret['EC2_ACCOUNT_NUMBER']
+                self.ec2_account_name = ret['EC2_ACCOUNT_NAME']
             except Exception as PE:
                 self.log.error('Output:\n{0}\nFailed parsing creds lookup output, err:{1}'
                                .format("\n".join(qout), str(PE)))

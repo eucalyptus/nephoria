@@ -1,7 +1,9 @@
 from prettytable import PrettyTable
 from boto.iam import IAMConnection
+from boto import set_stream_logger
 from cloud_utils.file_utils.eucarc import Eucarc
 from cloud_utils.log_utils.eulogger import Eulogger
+from cloud_utils.log_utils import markup
 from cloud_admin.access.account import IamAccount
 from cloud_admin.access.user import IamUser
 from cloud_admin.access.group import IamGroup
@@ -11,37 +13,48 @@ import re
 
 class AccessConnection(IAMConnection):
 
-    def __init__(self, eucarc=None, host=None, aws_access_key=None, aws_secret_key=None,
-                 is_secure=None, port=None, path=None, logger=None, verbose=False, **kwargs):
-        self._eucarc = eucarc
-        self._verbose = verbose
+    def __init__(self, creds=None, host=None, aws_access_key=None, aws_secret_key=None,
+                 is_secure=None, port=None, path=None, logger=None, boto_debug=0, **kwargs):
+
+        self.debug = boto_debug
+        if self.debug:
+            set_stream_logger('boto')
+        if creds and not isinstance(creds, Eucarc):
+            credsattr = getattr(creds, 'creds', None)
+            if not isinstance(credsattr, Eucarc):
+                raise ValueError('Unknown type passed for creds arg: "{0}/{1}"'
+                                 .format(creds, type(creds)))
+            creds = credsattr
+        self._eucarc = creds
         self.account_id = None
         self.user_id = None
         if not logger:
             logger = Eulogger(identifier=self.__class__.__name__)
         self.log = logger
-        if eucarc:
-            self.user_id = eucarc.ec2_user_id
-            self.account_id = eucarc.ec2_account_number
-            assert isinstance(eucarc, Eucarc), 'UserAdmin. eucarc not of type Eucarc(), ' \
-                                               'got:"{0}/{1}"'.format(eucarc, type(eucarc))
-            urlp = urlparse(eucarc.euare_url)
+        if creds:
+            self.user_id = creds.ec2_user_id
+            self.account_id = creds.ec2_account_number
+            assert isinstance(creds, Eucarc), 'UserAdmin. eucarc not of type Eucarc(), ' \
+                                               'got:"{0}/{1}"'.format(creds, type(creds))
+            urlp = urlparse(creds.euare_url)
             host = host or getattr(urlp, 'hostname', None)
             port = port or getattr(urlp, 'port', 8773)
             path = path or getattr(urlp, 'path', '/services/Euare')
             if is_secure is None and urlp.scheme == 'https':
                 is_secure = True
-            aws_secret_key = aws_secret_key or eucarc.aws_secret_key
-            aws_access_key = aws_access_key or eucarc.aws_access_key
+            aws_secret_key = aws_secret_key or creds.aws_secret_key
+            aws_access_key = aws_access_key or creds.aws_access_key
         is_secure = is_secure or False
-        super(AccessConnection, self).__init__(host=host, aws_access_key=aws_access_key,
-                                              aws_secret_access_key=aws_secret_key,
-                                              is_secure=is_secure, port=port, path=path, **kwargs)
-
-    def debug(self, msg):
-        if not self._verbose:
-            return
-        self.log.debug(msg)
+        ac_kwargs = {'host': host, 'aws_access_key_id': aws_access_key,
+                     'aws_secret_access_key': aws_secret_key,
+                     'is_secure': is_secure,
+                     'port': port, 'path': path}
+        ac_kwargs.update(kwargs)
+        try:
+            super(AccessConnection, self).__init__(**ac_kwargs)
+        except:
+            self.log.error('Failed to create AccessConnection with kwargs:"{0}"'.format(ac_kwargs))
+            raise
 
     def get_self(self):
         user = self.get_object(action='GetUser', params={}, cls=IamUser, verb='GET')
@@ -60,13 +73,12 @@ class AccessConnection(IAMConnection):
             re_meth = re.search
         else:
             re_meth = re.match
-        self.debug('Attempting to fetch all accounts matching- account_id:{0} account_name:{1}'
+        self.log.debug('Attempting to fetch all accounts matching- account_id:{0} account_name:{1}'
                    .format(str(account_id), str(account_name)))
-        response = self.connection('ListAccounts', {}, list_marker='Accounts')
         params = {}
         accounts = self.get_list(action='ListAccounts',
                                  params=params,
-                                 markers=('member', IamAccount),
+                                 markers=[('member', IamAccount)],
                                  verb='GET')
         retlist = []
         # Filter based on criteria provided
@@ -103,8 +115,8 @@ class AccessConnection(IAMConnection):
                        strings must occur)
         :return:
         """
-        self.debug('Attempting to fetch all access matching- user_id:{0} user_name:{1} '
-                   'acct_name:{2}'.format(str(user_id), str(user_name), str(delegate_account)))
+        self.log.debug('Attempting to fetch all access matching- user_id:{0} user_name:{1} '
+                       'acct_name:{2}'.format(str(user_id), str(user_name), str(delegate_account)))
         retlist = []
         params = {}
         account = None
@@ -115,7 +127,7 @@ class AccessConnection(IAMConnection):
         if delegate_account:
             account = self.get_account(delegate_account)
             params['DelegateAccount'] = delegate_account
-        users = self.get_list(action='ListUsers', params=params, markers=('member', IamUser))
+        users = self.get_list(action='ListUsers', params=params, markers=[('member', IamUser)])
         for user in users:
             if path is not None and not re_meth(path, user.path):
                 continue
@@ -150,8 +162,8 @@ class AccessConnection(IAMConnection):
             re_meth = re.search
         else:
             re_meth = re.match
-        self.debug('Attempting to fetch all accounts matching- account_id:{0} account_name:{1}'
-                   .format(str(account_id), str(account_name)))
+        self.log.debug('Attempting to fetch all accounts matching- account_id:{0} account_name:{1}'
+                       .format(str(account_id), str(account_name)))
         response = self.connection('ListAccounts', {}, list_marker='Accounts')
         params = {}
         accounts = self.get_list(action='ListAccounts',
@@ -197,16 +209,24 @@ class AccessConnection(IAMConnection):
             users = self.get_users_from_account(path=path,
                                                 user_name=user_name,
                                                 user_id=user_id,
-                                                delegate_account=account['account_name'],
+                                                delegate_account=account.name,
                                                 search=search)
             for user in users:
-                user['account_name'] = account['account_name']
-                user['account_id'] = account['account_id']
+                user.account = account
                 userlist.append(user)
         return userlist
 
+    def get_all_groups(self, path_prefix='/', delegate_account=None):
+
+        params = {'PathPrefix': path_prefix}
+        if delegate_account:
+            account = self.get_account(delegate_account)
+            params['DelegateAccount'] = account.id
+        else:
+            account = self.get_account(self.account_id)
+
     def show_all_accounts(self, account=None, account_name=None, account_id=None, search=False,
-                          print_table=True):
+                          print_method = None, print_table=True):
         """
         Debug Method to print an account list based on given filter criteria
 
@@ -215,7 +235,8 @@ class AccessConnection(IAMConnection):
         :param search: boolean - specify whether to use match or search when filtering the
                        returned list
         """
-        pt = PrettyTable(['ACCOUNT_NAME', 'ACCOUNT_ID'])
+        print_method = print_method or self.log.info
+        pt = PrettyTable([markup('ACCOUNT_NAME'), markup('ACCOUNT_ID')])
         pt.hrules = 1
         pt.align = 'l'
         if account:
@@ -230,21 +251,12 @@ class AccessConnection(IAMConnection):
         for account in alist:
             pt.add_row([account.name, account.id])
         if print_table:
-            self.debug("\n" + str(pt) + "\n")
+            print_method("\n" + str(pt) + "\n")
         else:
             return pt
 
-    def get_all_groups(self, path_prefix='/', delegate_account=None):
-
-        params = {'PathPrefix': path_prefix}
-        if delegate_account:
-            account = self.get_account(delegate_account)
-            params['DelegateAccount'] = account.id
-        else:
-            account = self.get_account(self.account_id)
-
-    def show_all_groups(self, account_name=None,  account_id=None,  path=None,
-                        group_name=None,  group_id=None,  search=False, print_table=True):
+    def show_all_groups(self, account_name=None,  account_id=None,  path=None, group_name=None,
+                        group_id=None,  search=False, print_method=None, print_table=True):
         """
         Print all groups in an account
 
@@ -256,7 +268,8 @@ class AccessConnection(IAMConnection):
         :param search:  boolean - specify whether to use match or search when filtering
                         the returned list
         """
-        pt = PrettyTable(['ACCOUNT:', 'GROUPNAME:', 'GROUP_ID:'])
+        print_method = print_method or self.log.info
+        pt = PrettyTable([markup('ACCOUNT:'), markup('GROUPNAME:'), markup('GROUP_ID:')])
         pt.hrules = 1
         pt.align = 'l'
         glist = self.get_all_groups(account_name=account_name, account_id=account_id,
@@ -265,12 +278,13 @@ class AccessConnection(IAMConnection):
         for group in glist:
             pt.add_row([group['account_name'], group['group_name'], group['group_id']])
         if print_table:
-            self.debug("\n" + str(pt) + "\n")
+            print_method("\n" + str(pt) + "\n")
         else:
             return pt
 
     def show_all_users(self, users=None, account_name=None, account_id=None,  path=None,
-                       user_name=None, user_id=None, search=False, print_table=True):
+                       user_name=None, user_id=None, search=False, print_method=None,
+                       print_table=True):
         """
         Debug Method to print a user list based on given filter criteria
 
@@ -282,7 +296,9 @@ class AccessConnection(IAMConnection):
         :param search: boolean - specify whether to use match or search when filtering the
                                  returned list
         """
-        pt = PrettyTable(['ACCOUNT:', 'USERNAME:', 'USER_ID', 'ACCT_ID'])
+        print_method = print_method or self.log.info
+        pt = PrettyTable([markup('ACCOUNT:'), markup('USERNAME:'), markup('USER_ID'),
+                          markup('ACCT_ID')])
         pt.hrules = 1
         pt.align = 'l'
         if users:
@@ -300,6 +316,6 @@ class AccessConnection(IAMConnection):
         for user in ulist:
             pt.add_row([user.account_name, user.name, user.id, user.account_id])
         if print_table:
-            self.debug("\n" + str(pt) + "\n")
+            print_method("\n" + str(pt) + "\n")
         else:
             return pt

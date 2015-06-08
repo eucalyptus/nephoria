@@ -254,7 +254,7 @@ class SystemConnection(ServiceConnection):
         # Now build the machine table...
         for hostip, host in eucahosts.iteritems():
             assert isinstance(host, EucaHost)
-            pt.add_row([markup("HOST:") + markup(hostip, [1, 4, 94]),
+            pt.add_row([markup("HOST:") + markup(hostip, [1, 94]),
                         markup('EUCALYPTUS SERVICES:') + markup('[ {0} ]'
                                .format(" ".join(str(x) for x in host.euca_service_codes)),
                                [1, 34])])
@@ -296,23 +296,17 @@ class SystemConnection(ServiceConnection):
                                                markup(x.state, self.vm_state_markup(x.state)),
                                                x.instance_type,
                                                x.root_device_type])
-                            servbuf += "{0}".format(vm_pt)
-                    nc_status = host.euca_nc_helpers.get_last_capacity_status()
-                    servbuf += "\n{0}\n{1}:{2}\n{3}:{4}\n{5}:{6}\n"\
-                        .format(markup("LAST REPORTED NC AVAILABILITY ({0}):"
-                                       .format(nc_status.get('status')), [1, 4]),
-                                               markup('CPU', [1, 32]).rjust(15),
-                                               nc_status.get('cores').rjust(15),
-                                               markup('MEM', [1, 32]).rjust(15),
-                                               nc_status.get('mem').rjust(15),
-                                               markup('DISK', [1, 32]).rjust(15),
-                                               nc_status.get('disk').rjust(15))
+                            servbuf += "{0}\n".format(vm_pt)
+                    av_pt =  host.helpers.node_controller.show_availability_for_node(
+                        print_table=False)
+                    servbuf += av_pt.get_string()
             ps_sum_pt = host.show_euca_process_summary(print_table=False)
             servbuf += "\n" + ps_sum_pt.get_string(border=1, vrules=2, hrules=0)
-            host_info = "{0}:{1}\n".format(markup('Ver'),
-                                           host.get_eucalyptus_version()).ljust(machine_hdr[1])
-            host_info += "Hostname:".ljust(machine_hdr[1])
-            host_info += markup(host.hostname).ljust(machine_hdr[1])
+            host_info = markup('Euca Versions:').ljust(machine_hdr[1])
+            host_info += "Cloud: {0}".format(host.get_eucalyptus_version()).ljust(machine_hdr[1])
+            host_info += "2ools: {0}".format(host.get_euca2ools_version()).ljust(machine_hdr[1])
+            host_info += markup("Hostname:").ljust(machine_hdr[1])
+            host_info += str(host.hostname).ljust(machine_hdr[1])
             sys_pt = host.show_sys_info(print_table=False)
             host_info += "{0}".format(sys_pt)
             pt.add_row([host_info, servbuf])

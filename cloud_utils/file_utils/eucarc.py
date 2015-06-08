@@ -6,7 +6,7 @@ from prettytable import PrettyTable
 from cloud_utils.log_utils.eulogger import Eulogger
 
 
-class Eucarc(dict):
+class Eucarc(object):
     _KEY_DIR_STR = '\${EUCA_KEY_DIR}'
 
     def __init__(self, filepath=None, string=None, sshconnection=None, keysdir=None, logger=None):
@@ -31,29 +31,31 @@ class Eucarc(dict):
                         be created with the class name as the identifier
         """
         # init most common eucarc values to None...
-        self.ec2_account_number = None
-        self.euare_url = None
-        self.ec2_user_id = None
-        self.token_url = None
-        self.ec2_url = None
-        self.aws_elb_url = None
-        self.aws_cloudformation_url = None
-        self.aws_secret_key = None
-        self.aws_cloudwatch_url = None
-        self.eucalyptus_cert = None
-        self.s3_url = None
-        self.aws_iam_url = None
-        self.aws_simpleworkflow_url = None
+        self._account_name = None
+        self._account_id = None
+        self._user_name = None
+
         self.aws_access_key = None
-        self.ec2_private_key = None
-        self.ec2_access_key = None
-        self.ec2_secret_key = None
-        self.ec2_jvm_args = None
-        self.eustore_url = None
-        self.aws_credential_file = None
-        self.ec2_cert = None
         self.aws_auto_scaling_url = None
+        self.aws_cloudformation_url = None
+        self.aws_cloudwatch_url = None
+        self.aws_credential_file = None
+        self.aws_elb_url = None
+        self.aws_iam_url = None
+        self.aws_secret_key = None
+        self.aws_simpleworkflow_url = None
+        self.ec2_access_key = None
+        self.ec2_cert = None
+        self.ec2_jvm_args = None
+        self.ec2_private_key = None
+        self.ec2_secret_key = None
+        self.ec2_user_id = None
+        self.ec2_url = None
+        self.eucalyptus_cert = None
         self.eustore_url = 'http://emis.eucalyptus.com/'
+
+        self.s3_url = None
+        self.token_url = None
 
         # End of init default eucarc attrs
         if not logger:
@@ -72,6 +74,89 @@ class Eucarc(dict):
         elif filepath:
             self._from_filepath(filepath=filepath, sshconnection=sshconnection, keysdir=filepath)
 
+    # Properties to accommodate all the prefixes which reference the same values...
+    ##############################################################################################
+    # Base values...
+    ##############################################################################################
+    @property
+    def account_id(self):
+        return self._account_id
+
+    @account_id.setter
+    def account_id(self, value):
+        self._account_id = value
+
+    @property
+    def account_name(self):
+        return self._account_name
+
+    @account_name.setter
+    def account_name(self, value):
+        self._account_name = value
+
+    @property
+    def user_name(self):
+        return self._user_name
+
+    @user_name.setter
+    def user_name(self, value):
+        self._user_name = value
+
+    ##############################################################################################
+    # With the EC2 prefix...
+    ##############################################################################################
+    @property
+    def ec2_account_id(self):
+        return self._account_id
+
+    @ec2_account_id.setter
+    def ec2_account_id(self, value):
+        self._account_id = value
+
+    @property
+    def ec2_account_number(self):
+        return self._account_id
+
+    @ec2_account_number.setter
+    def ec2_account_number(self, value):
+        self._account_id = value
+
+    @property
+    def ec2_account_name(self):
+        return self._account_name
+
+    @ec2_account_name.setter
+    def ec2_account_name(self, value):
+        self._account_name = value
+
+    ##############################################################################################
+    # With the AWS prefix...
+    ##############################################################################################
+    @property
+    def aws_account_id(self):
+        return self._account_id
+
+    @aws_account_id.setter
+    def aws_account_id(self, value):
+        self._account_id = value
+
+    @property
+    def aws_account_name(self):
+        return self._account_name
+
+    @aws_account_name.setter
+    def aws_account_name(self, value):
+        self._account_name = value
+
+    @property
+    def aws_user_name(self):
+        return self._user_name
+
+    @aws_user_name.setter
+    def aws_user_name(self, value):
+        self._user_name = value
+
+    # Hold these values as properties so the dict only returns cred info, not obj info...
     @property
     def log(self):
         return self._log
@@ -206,3 +291,10 @@ class Eucarc(dict):
                 if not skip:
                     ret_dict[key] = value
         return ret_dict
+
+    def get_urls(self):
+        ret = {}
+        for key, value in self.__dict__.iteritems():
+            if re.match('.*url$', key):
+                ret[key] = value
+        return ret
