@@ -246,7 +246,7 @@ def SHOW_SERVICE_TYPES(connection, service_types=None, verbose=False,
         html_string = html_string.replace(html_close, ">")
     if print_table:
         out = html_string or str(main_pt)
-        printmethod(out)
+        printmethod("\n{0}\n".format(out))
     else:
         return html_string or main_pt
 
@@ -310,7 +310,7 @@ def SHOW_SERVICE_TYPES_VERBOSE(connection, service_types=None, printmethod=None,
                          service.partitioned, service.publicapiservice, service.registerable,
                          service.requiresname, service.description])
     if print_table:
-        printmethod(main_pt.get_string(sortby=parent_hdr))
+        printmethod("\n{0}\n".format(main_pt.get_string(sortby=parent_hdr)))
     else:
         return main_pt
 
