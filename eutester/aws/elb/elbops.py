@@ -28,7 +28,6 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 #
-# Author: vic.iglesias@eucalyptus.com
 import re
 import copy
 import time
@@ -38,7 +37,8 @@ from concurrent.futures import ThreadPoolExecutor
 import urllib2
 import cookielib
 import requests
-from eutester import Eutester
+from eutester import TestConnection
+from boto.ec2.elb import ELBConnection
 from boto.ec2.elb.listener import Listener
 from boto.ec2.elb.healthcheck import HealthCheck
 from os.path import join, abspath
@@ -52,44 +52,40 @@ ELBRegionData = {
     'ap-southeast-1': 'elasticloadbalancing.ap-southeast-1.amazonaws.com'}
 
 
-class ELBops(Eutester):
-    def __init__(self, host=None, credpath=None, endpoint=None, aws_access_key_id=None, aws_secret_access_key=None,
-                 username="root", region=None, is_secure=False, path='/', port=80, boto_debug=0, test_resources=None):
-        """
+class ELBops(ELBConnection, TestConnection):
 
-        :param host:
-        :param credpath:
-        :param endpoint:
-        :param aws_access_key_id:
-        :param aws_secret_access_key:
-        :param username:
-        :param region:
-        :param is_secure:
-        :param path:
-        :param port:
-        :param boto_debug:
-        """
-        self.aws_access_key_id = aws_access_key_id
-        self.aws_secret_access_key = aws_secret_access_key
-        self.account_id = None
-        self.user_id = None
-        self.connection = None
-        if test_resources:
-            self.test_resources = test_resources
+    EUCARC_URL_NAME = 'aws_elb_url'
+    def __init__(self, eucarc=None, credpath=None,
+                 aws_access_key_id=None, aws_secret_access_key=None,
+                 is_secure=False, port=None, host=None, region=None, endpoint=None,
+                 boto_debug=0, path=None, APIVersion=None, validate_certs=None,
+                 test_resources=None, logger=None):
 
-        super(ELBops, self).__init__(credpath=credpath)
+        # Init test connection first to sort out base parameters...
+        TestConnection.__init__(self,
+                                eucarc=eucarc,
+                                credpath=credpath,
+                                test_resources=test_resources,
+                                logger=logger,
+                                aws_access_key_id=aws_access_key_id,
+                                aws_secret_access_key=aws_secret_access_key,
+                                is_secure=is_secure,
+                                port=port,
+                                host=host,
+                                APIVersion=APIVersion,
+                                validate_certs=validate_certs,
+                                boto_debug=boto_debug,
+                                test_resources=test_resources,
+                                path=path)
+        if self.boto_debug:
+            self.show_connection_kwargs()
+        # Init IAM connection...
+        try:
+            ELBConnection.__init__(self, **self._connection_kwargs)
+        except:
+            self.show_connection_kwargs()
+            raise
 
-        self.setup_elb_connection(host=host,
-                                  region=region,
-                                  endpoint=endpoint,
-                                  aws_access_key_id=self.aws_access_key_id,
-                                  aws_secret_access_key=self.aws_secret_access_key,
-                                  is_secure=is_secure,
-                                  path=path,
-                                  port=port,
-                                  boto_debug=boto_debug)
-        self.poll_count = 48
-        self.username = username
 
     def setup_elb_connection(self, endpoint=None, aws_access_key_id=None, aws_secret_access_key=None, is_secure=True,
                              host=None, region=None, path="/", port=443, boto_debug=0):

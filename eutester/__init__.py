@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
-from boto import set_stream_logger
+from boto import set_stream_logger, regioninfo
+from boto import __version__ as boto_version
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils import net_utils, file_utils, log_utils
 from cloud_utils.file_utils.eucarc import Eucarc
@@ -17,13 +18,22 @@ from urlparse import urlparse
 
 __version__ = '2.0'
 
+AWSRegionData = {
+    'us-east-1': 'elasticloadbalancing.us-east-1.amazonaws.com',
+    'us-west-1': 'elasticloadbalancing.us-west-1.amazonaws.com',
+    'us-west-2': 'elasticloadbalancing.us-west-2.amazonaws.com',
+    'eu-west-1': 'elasticloadbalancing.eu-west-1.amazonaws.com',
+    'ap-northeast-1': 'elasticloadbalancing.ap-northeast-1.amazonaws.com',
+    'ap-southeast-1': 'elasticloadbalancing.ap-southeast-1.amazonaws.com'}
+
 class TestConnection(object):
     EUCARC_URL_NAME=None
 
     def __init__(self, eucarc=None, credpath=None, service_url=None,
                  aws_access_key_id=None, aws_secret_access_key=None,
-                 is_secure=False, port=None, host=None, boto_debug=0, path=None,
-                 test_resources=None, logger=None):
+                 is_secure=False, port=None, host=None, endpoint=None, region=None,
+                 boto_debug=0, path=None, validate_certs=None, test_resources=None, logger=None,
+                 APIVersion=None):
         if self.EUCARC_URL_NAME is None:
             raise NotImplementedError('EUCARC_URL_NAME not set for this class:"{0}"'
                                       .format(self.__class__.__name__))
@@ -54,7 +64,13 @@ class TestConnection(object):
         self.service_host = host
         self.service_port = port
         self.service_path = path
+        self.service_region = self._get_region_info(host=host, endpoint=endpoint,
+                                                    region_name=region)
         self.boto_debug = boto_debug
+        if validate_certs is None:
+            validate_certs = True
+            if re.search('2.6', boto_version):
+                validate_certs = False
 
         self._connection_kwargs = {'aws_access_key_id': self.eucarc.aws_access_key,
                                    'aws_secret_access_key': self.eucarc.aws_secret_key,
@@ -62,7 +78,12 @@ class TestConnection(object):
                                    'port': self.service_port,
                                    'host': self.service_host,
                                    'debug': self.boto_debug,
+                                   'region': self.service_region,
+                                   'validate_certs': validate_certs,
                                    'path': path}
+        if APIVersion:
+            self._connection_kwargs['api_version'] = APIVersion,
+        # Verify the required params have been set...
         required = []
         for key, value in self._connection_kwargs.iteritems():
             if value is None:
@@ -89,6 +110,28 @@ class TestConnection(object):
                                                 self.service_path or "")
                     return url
         return self._service_url
+
+    def _get_region_info(self, host=None, endpoint=None, region_name=None):
+        if (host or endpoint or region_name):
+            region = regioninfo.RegionInfo()
+            if region_name:
+                region.name = region_name
+                self.logger.debug("Check region: " + str(region))
+                try:
+                    if not endpoint:
+                        region.endpoint = AWSRegionData[region]
+                    else:
+                        region.endpoint = endpoint
+                except KeyError:
+                    raise Exception('Unknown region: %s' % region)
+            else:
+                region.name = host or endpoint
+                if endpoint:
+                    region.endpoint = endpoint
+                elif host:
+                    region.endpoint = host
+            return region
+        return None
 
     def show_connection_kwargs(self):
         debug_buf = 'Current "{0}" connection kwargs for\n'.format(self.__class__.__name__)

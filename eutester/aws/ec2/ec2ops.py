@@ -124,11 +124,9 @@ disable_root: false"""
     def __init__(self, eucarc=None, credpath=None,
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, region=None, endpoint=None,
-                 boto_debug=0, path=None, APIVersion='2012-07-20', validate_certs=None,
+                 boto_debug=0, path=None, APIVersion=None, validate_certs=None,
                  test_resources=None, logger=None):
-        self.test_resources = {}
-        self.key_dir = "./"
-        self.ec2_source_ip = None  #Source ip on local test machine used to reach instances
+
         # Init test connection first to sort out base parameters...
         TestConnection.__init__(self,
                                 eucarc=eucarc,
@@ -140,15 +138,13 @@ disable_root: false"""
                                 is_secure=is_secure,
                                 port=port,
                                 host=host,
+                                APIVersion=APIVersion,
+                                validate_certs=validate_certs,
                                 boto_debug=boto_debug,
+                                test_resources=test_resources,
                                 path=path)
-
-        self._connection_kwargs['validate_certs'] = validate_certs
-        self._connection_kwargs['endpoint'] = endpoint
-        self._connection_kwargs['APIVersion'] = APIVersion
-        self._connection_kwargs['region'] = region
-        # Sanity check and setup the connection params
-        self._connection_kwargs = self._setup_connection_params(**self._connection_kwargs)
+        self.key_dir = "./"
+        self.ec2_source_ip = None  #Source ip on local test machine used to reach instances
         if self.boto_debug:
             self.show_connection_kwargs()
         # Init IAM connection...
@@ -158,52 +154,6 @@ disable_root: false"""
             self.show_connection_kwargs()
             raise
 
-    @classmethod
-    def _setup_connection_params(cls, endpoint=None, aws_access_key_id=None,
-                                 aws_secret_access_key=None, is_secure=True,host=None ,
-                                 region=None, path="/", port=443,  APIVersion='2012-07-20',
-                                 validate_certs=None, debug=0, debug_method=None):
-        def _debug(msg):
-            if debug_method:
-                return debug_method(msg)
-            print(msg)
-
-        ec2_region = RegionInfo()
-        if region:
-            _debug("Check region: " + str(region))
-            try:
-                if not endpoint:
-                    ec2_region.endpoint = EC2RegionData[region]
-                else:
-                    ec2_region.endpoint = endpoint
-            except KeyError:
-                raise Exception('Unknown region: %s' % region)
-        else:
-            if host:
-                ec2_region.name = host
-                ec2_region.endpoint = host
-            if not host:
-                ec2_region.name = 'eucalyptus'
-                ec2_region.endpoint = endpoint
-
-        connection_args = { 'aws_access_key_id' : aws_access_key_id,
-                            'aws_secret_access_key': aws_secret_access_key,
-                            'is_secure': is_secure,
-                            'debug': debug,
-                            'port' : port,
-                            'path' : path,
-                            'host' : host}
-
-        if validate_certs is None:
-            validate_certs = True
-            if re.search('2.6', boto.__version__):
-                validate_certs = False
-
-        connection_args['validate_certs'] = validate_certs
-        connection_args['path'] = path
-        connection_args['api_version'] = APIVersion
-        connection_args['region'] = ec2_region
-        return connection_args
 
     def create_tags(self, resource_ids, tags):
         """

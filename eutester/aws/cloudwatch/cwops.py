@@ -82,12 +82,14 @@ EbsMetricsArray     = [
 
 class CWops(CloudWatchConnection, TestConnection):
 
-    EUCARC_URL_NAME = 'aws_iam_url'
+    EUCARC_URL_NAME = 'aws_cloudwatch_url'
     @printinfo
     def __init__(self, eucarc=None, credpath=None,
                  aws_access_key_id=None, aws_secret_access_key=None,
-                 is_secure=False, port=None, host=None, boto_debug=0, path=None,
-                 validate_certs=False, test_resources=None, logger=None):
+                 is_secure=False, port=None, host=None, region=None, endpoint=None,
+                 boto_debug=0, path=None, APIVersion=None, validate_certs=None,
+                 test_resources=None, logger=None):
+
         # Init test connection first to sort out base parameters...
         TestConnection.__init__(self,
                                 eucarc=eucarc,
@@ -99,9 +101,11 @@ class CWops(CloudWatchConnection, TestConnection):
                                 is_secure=is_secure,
                                 port=port,
                                 host=host,
+                                APIVersion=APIVersion,
+                                validate_certs=validate_certs,
                                 boto_debug=boto_debug,
+                                test_resources=test_resources,
                                 path=path)
-        self._connection_kwargs['validate_certs'] = validate_certs
         if self.boto_debug:
             self.show_connection_kwargs()
         # Init IAM connection...
