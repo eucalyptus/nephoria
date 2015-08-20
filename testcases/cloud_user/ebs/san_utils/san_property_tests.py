@@ -42,9 +42,9 @@ and it creates a small amount of additional metadata in the process.
 '''
 
 from eucaops import Eucaops
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 from san_client import San_Client
-from eutester.euvolume import EuVolume
+from nephoria.euvolume import EuVolume
 import time
 import types
 import re
@@ -73,14 +73,14 @@ class San_Properties_Test(EutesterTestCase):
         self.show_args()
         #if self.args.config:
         #    setattr(self.args, 'config_file',self.args.config)
-        # Setup basic eutester object
+        # Setup basic nephoria object
         if not self.tester:
             try:
                 self.tester = self.do_with_args(Eucaops)
             except Exception, e:
                 raise Exception('Couldnt create Eucaops tester object, make sure credpath, ' \
                                 'or config_file and password was provided, err:' + str(e))
-            #replace default eutester debugger with eutestcase's for more verbosity...
+            #replace default nephoria debugger with eutestcase's for more verbosity...
             self.tester.debug = lambda msg: self.debug(msg, traceback=2, linebyline=False)
         self.tester.update_property_manager()
         self.san_ip = san_ip

@@ -33,7 +33,7 @@
 
 import time
 from eucaops import Eucaops, CFNops
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 import os
 
 
@@ -50,7 +50,7 @@ class CloudFormationTemplateURLTests(EutesterTestCase):
         self.get_args()
         self.show_args()
         self.template_urls = self.args.template_urls.split(',')
-        # Setup basic eutester object
+        # Setup basic nephoria object
         if self.args.region:
             self.tester = CFNops(credpath=self.args.credpath, region=self.args.region)
         else:

@@ -35,7 +35,7 @@ import time
 from eucaops import Eucaops
 from eucaops import ELBops
 from boto.ec2.elb import LoadBalancer
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 import os
 import random
 
@@ -49,7 +49,7 @@ class StickinessBasics(EutesterTestCase):
                 self.parser.add_argument(arg)
         self.get_args()
 
-        # Setup basic eutester object
+        # Setup basic nephoria object
         if self.args.region:
             self.tester = ELBops(credpath=self.args.credpath, region=self.args.region)
         else:

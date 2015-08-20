@@ -32,7 +32,7 @@
 # Author: clarkmatthew
 
 import eucaops
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 import time
 
 class MyTestCase(EutesterTestCase):

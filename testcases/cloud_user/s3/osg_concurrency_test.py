@@ -10,7 +10,7 @@ from cStringIO import StringIO
 from concurrent.futures import ThreadPoolExecutor
 from eucaops import Eucaops
 from eucaops import S3ops
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 
 
 class OSGConcurrency(EutesterTestCase):
@@ -27,7 +27,7 @@ class OSGConcurrency(EutesterTestCase):
                                       "value in Kilobyte. Any value less than 5120KB will result single file upload. "
                                       "Default value is used when not passed as an argument.")
         self.get_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         if self.args.region:
             self.tester = S3ops( credpath=self.args.credpath, region=self.args.region)
         else:
@@ -58,7 +58,7 @@ class OSGConcurrency(EutesterTestCase):
         """
         self.debug("Getting object '" + key_name + "'")
         ret_key = bucket.get_key(key_name)
-        temp_object = tempfile.NamedTemporaryFile(mode="w+b", prefix="eutester-mpu")
+        temp_object = tempfile.NamedTemporaryFile(mode="w+b", prefix="nephoria-mpu")
         self.temp_files.append(temp_object)
         ret_key.get_contents_to_file(temp_object)
         if meta:
@@ -125,7 +125,7 @@ class OSGConcurrency(EutesterTestCase):
     def get_hash(self, file_path):
         return hashlib.md5(self.get_content(file_path)).hexdigest()
 
-    def create_file(self, size_in_kb, file_name="eutester-object"):
+    def create_file(self, size_in_kb, file_name="nephoria-object"):
         temp_file = tempfile.NamedTemporaryFile(mode='w+b', prefix=file_name)
         self.temp_files.append(temp_file)
         temp_file.write(os.urandom(1024 * size_in_kb))

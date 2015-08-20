@@ -26,7 +26,7 @@
 
 from eucaops import Eucaops
 from xml.etree import ElementTree
-from eutester import xmlrunner
+from nephoria import xmlrunner
 import argparse
 import unittest
 import httplib

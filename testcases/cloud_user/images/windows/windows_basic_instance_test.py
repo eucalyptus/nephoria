@@ -2,7 +2,7 @@ __author__ = 'clarkmatthew'
 
 import sys
 import time
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 from eucaops import Eucaops
 from eucaops.ec2ops import ResourceNotFoundException
 from testcases.cloud_user.images.imageutils import ImageUtils
@@ -51,7 +51,7 @@ class Windows_Basic_Instance_Test(EutesterTestCase):
         self.show_args()
         #if self.args.config:
         #    setattr(self.args, 'config_file',self.args.config)
-        # Setup basic eutester object
+        # Setup basic nephoria object
         if not self.tester:
             try:
                 self.tester = self.do_with_args(Eucaops)
@@ -101,7 +101,7 @@ class Windows_Basic_Instance_Test(EutesterTestCase):
         if self.args.image_id:
             self.image = self.tester.get_emi(self.args.image_id)
         else:
-            # See if a eutester windows image already exists on the system
+            # See if a nephoria windows image already exists on the system
             # If an image url was provided try that first...
             if self.args.image_url:
                 try:
@@ -114,9 +114,9 @@ class Windows_Basic_Instance_Test(EutesterTestCase):
                                .format(self.args.image_url))
                     self.create_image_from_url(self.args.image_url)
             else:
-                # Otherwise look for a eutester created windows image...
+                # Otherwise look for a nephoria created windows image...
                 self.image = self.tester.get_emi(
-                    filters={'tag-key':'eutester-created',
+                    filters={'tag-key':'nephoria-created',
                              'platform':'windows'})
         self.debug('Using the following image to run this test. '
                    'ID:{0}, Name:{1}'.format(self.image.id, self.image.name))

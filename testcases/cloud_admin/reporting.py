@@ -8,8 +8,8 @@ import re
 
 import time
 from eucaops import Eucaops
-from eutester.euinstance import EuInstance
-from eutester.eutestcase import EutesterTestCase
+from nephoria.euinstance import EuInstance
+from nephoria.eutestcase import EutesterTestCase
 import os
 import random
 from collections import namedtuple
@@ -17,7 +17,7 @@ from collections import namedtuple
 class ReportingBasics(EutesterTestCase):
     def __init__(self, config_file=None, password=None):
         self.setuptestcase()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         self.tester = Eucaops( config_file=config_file, password=password)
         self.tester.poll_count = 120
 

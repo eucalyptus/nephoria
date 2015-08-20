@@ -24,8 +24,8 @@
 
 
 import unittest
-from eutester.eutestcase import EutesterTestCase
-from eutester.eutestcase import TestColor
+from nephoria.eutestcase import EutesterTestCase
+from nephoria.eutestcase import TestColor
 from eucaops import Eucaops
 import time
 
@@ -43,7 +43,7 @@ class Qa_214_volume_churn(EutesterTestCase):
         self.parser.add_argument('--timepergig', type=int, help='Time allowed per gig size of volume during volume creation, default:120',default=120)
         self.parser.add_argument('--deletetimeout', type=int, help='Time allowed for volume to transition from deleting to deleted, default:120',default=120)
         self.get_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         self.tester = self.do_with_args(Eucaops)
         self.tester.debug = lambda msg: self.debug(msg, traceback=2, linebyline=False)
         self.reservation = None

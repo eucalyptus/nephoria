@@ -55,17 +55,17 @@ Storage Controller Test points:
 __author__ = 'clarkmatthew'
 
 
-from eutester.eutestcase import EutesterTestCase, SkipTestException
-from eutester.eutestcase import TestColor
+from nephoria.eutestcase import EutesterTestCase, SkipTestException
+from nephoria.eutestcase import TestColor
 from eucaops import ec2ops
-#from eutester.euinstance import EuInstance
-#from eutester.euvolume import EuVolume
-#from eutester.eusnapshot import EuSnapshot
-from eutester.sshconnection import SshCbReturn
-from eutester.euproperties import Euproperty_Type, EupropertyNotFoundException
+#from nephoria.euinstance import EuInstance
+#from nephoria.euvolume import EuVolume
+#from nephoria.eusnapshot import EuSnapshot
+from nephoria.sshconnection import SshCbReturn
+from nephoria.euproperties import Euproperty_Type, EupropertyNotFoundException
 from testcases.cloud_user.ebs.path_controller import Path_Controller
 from eucaops import Eucaops
-import eutester
+import nephoria
 import time
 import copy
 import os
@@ -141,7 +141,7 @@ class Mpath_Suite(EutesterTestCase):
         self.show_args()
         #if self.args.config:
         #    setattr(self.args, 'config_file',self.args.config)
-        # Setup basic eutester object
+        # Setup basic nephoria object
         if not self.tester:
             try:
                 self.tester = self.do_with_args(Eucaops)
@@ -150,7 +150,7 @@ class Mpath_Suite(EutesterTestCase):
                                 'or config_file and password was provided, err:' + str(e))
 
         self.test_tag = 'mpath_suite'
-        #replace default eutester debugger with eutestcase's for more verbosity...
+        #replace default nephoria debugger with eutestcase's for more verbosity...
         self.tester.debug = lambda msg: self.debug(msg, traceback=2, linebyline=False)
         self.reservation = None
         self.instance = None
@@ -308,7 +308,7 @@ class Mpath_Suite(EutesterTestCase):
                 self.path_controllers.append(path_controller)
 
     def clear_rules_on_all_nodes(self):
-        self.status('Clearing eutester rules on all nodes...')
+        self.status('Clearing nephoria rules on all nodes...')
         self.create_controller_for_each_node()
         for pc in self.path_controllers:
             self.status('Clearing all rules on: ' + str(pc.host) )
@@ -345,13 +345,13 @@ class Mpath_Suite(EutesterTestCase):
                 if (now - last_clear_attempt_time) > clear_timeout:
                     raise Exception('Could not clear paths within ' + str(clear_timeout) + 'seconds:' + ",".join(blocked_paths))
                 if (now - last_clear_attempt_time > clear_retry_interval):
-                    #Try to clear all eutester iptables rules
+                    #Try to clear all nephoria iptables rules
                     path_controller.clear_all_eutester_rules(retry=False)
             elif last_cleared_time and ((now - last_cleared_time) > self.path_recovery_interval):
                 status = "Issued block on new path"
                 path_controller.block_next_path()
             elif not last_cleared_time:
-                status = 'Waiting for iptables to clear all eutester rules'
+                status = 'Waiting for iptables to clear all nephoria rules'
                 path_controller.clear_all_eutester_rules(retry=False)
             else:
                 status = "Waiting for recovery interval"
@@ -665,7 +665,7 @@ class Mpath_Suite(EutesterTestCase):
             self.stdscr = None
 
 
-    #@eutester.Eutester.printinfo
+    #@nephoria.Eutester.printinfo
     def remote_ssh_io_script_monitor_cb(self,
                                         buf,
                                         write_value,
@@ -1214,7 +1214,7 @@ class Mpath_Suite(EutesterTestCase):
         sc = self.get_enabled_storage_controller_for_zone(zone=zone)
         paths = self.get_sc_paths_by_sc(sc)
         pc = Path_Controller(node=sc,sp_ip_list=paths)
-        self.status('Clearing all eutester rules on: ' + str(pc.host))
+        self.status('Clearing all nephoria rules on: ' + str(pc.host))
         if pc.get_blocked_paths():
             pc.clear_all_eutester_rules()
             time.sleep(60)
@@ -1265,7 +1265,7 @@ class Mpath_Suite(EutesterTestCase):
         if not len(paths) > 1:
             raise SkipTestException('Skipping test - Did not find > 1 path in scpaths property:' + str(paths))
         pc = Path_Controller(node=sc,sp_ip_list=paths)
-        self.status('Clearing all eutester rules on: ' + str(pc.host))
+        self.status('Clearing all nephoria rules on: ' + str(pc.host))
         if pc.get_blocked_paths():
             pc.clear_all_eutester_rules()
             time.sleep(60)

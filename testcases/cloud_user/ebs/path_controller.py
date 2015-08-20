@@ -3,9 +3,9 @@ import time
 import re
 import sys
 import Queue 
-from eutester.sshconnection import SshConnection
-from eutester.eutestcase import EutesterTestCase
-from eutester.eutestcase import EutesterTestResult
+from nephoria.sshconnection import SshConnection
+from nephoria.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestResult
 import types
 
 
@@ -14,7 +14,7 @@ my_queue = Queue.Queue()
 
 class Path_Controller(EutesterTestCase):
     #a unique comment to add to iptables rules to signify the rule was added by this test
-    ipt_msg = "eutester block data to san"
+    ipt_msg = "nephoria block data to san"
     
     def __init__(self,
                  node=None,
@@ -28,7 +28,7 @@ class Path_Controller(EutesterTestCase):
         if not (node or queue or sp_ip_list):
             self.setup_parser(testname='Path_Controller', vmtype=False,zone=False, keypair=False,emi=False,credpath=False,
                               description='Run multipath failover script')
-            self.parser.add_argument('--clear_rules', help='If set will clear all eutester applied rules matching ipt_msg string',action='store_true', default=False)
+            self.parser.add_argument('--clear_rules', help='If set will clear all nephoria applied rules matching ipt_msg string',action='store_true', default=False)
             self.parser.add_argument('--hostname', help='String representing host address or FQDN',default=None)
             self.parser.add_argument('--clear_on_exit', help='If set will clear rules on exit',action='store_true', default=False)
             self.parser.add_argument('--username', help='String representing username for host login, default:root',default='root')
@@ -125,7 +125,7 @@ class Path_Controller(EutesterTestCase):
         output = self.sys('iptables -L -n --line-numbers | grep "'+str(self.ipt_msg)+'"')
         while output and elapsed < timeout:
             elapsed = int(time.time()-start)
-            self.debug("Attempting to remove "+str(len(output))+" eutester rules from system. Elapsed: "+str(elapsed)+'/'+str(timeout))
+            self.debug("Attempting to remove "+str(len(output))+" nephoria rules from system. Elapsed: "+str(elapsed)+'/'+str(timeout))
             for line in output:
                 self.debug('Clearing rule: '+str(line))
                 rule_number = str(line).split()[0]

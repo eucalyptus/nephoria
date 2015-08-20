@@ -35,13 +35,13 @@ try:
     from setuptools import setup, find_packages
 except ImportError:
     from distutils.core import setup
-import eutester
+import nephoria
 
-setup(name="eutester",
-      version=eutester.__version__,
+setup(name="nephoria",
+      version=nephoria.__version__,
       description="Test Framework and utilities for AWS compatible clouds",
       long_description="Test Framework and utilities for AWS compatible clouds",
-      url="https://github.com/eucalyptus/eutester",
+      url="https://github.com/eucalyptus/nephoria",
       install_requires=['paramiko >= 1.7',
                         'boto >= 2.5.2',
                         'jinja2 >= 2.7',

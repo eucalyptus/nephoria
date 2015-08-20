@@ -36,10 +36,10 @@
 import os
 import time
 from eucaops import Eucaops
-from eutester.euinstance import EuInstance
-from eutester.eutestcase import EutesterTestCase
+from nephoria.euinstance import EuInstance
+from nephoria.eutestcase import EutesterTestCase
 import random
-from eutester.euvolume import EuVolume
+from nephoria.euvolume import EuVolume
 from testcases.cloud_user.instances.bfebstest import BFEBSBasics
 
 

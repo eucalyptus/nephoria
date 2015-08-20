@@ -31,7 +31,7 @@ class EucaopsClient(Eucaops):
             result = method(*args, **kwargs)
         except Exception as e:
             total_time = int((time.time() - start_time) * 1000)
-            events.request_failure.fire(request_type="eutester",
+            events.request_failure.fire(request_type="nephoria",
                                         name=method_name,
                                         response_time=total_time, exception=e)
             self.output_file.write(output_format.format(method_name, total_time,
@@ -42,7 +42,7 @@ class EucaopsClient(Eucaops):
                 length = len(result)
             except:
                 length = 0
-            events.request_success.fire(request_type="eutester",
+            events.request_success.fire(request_type="nephoria",
                                         name=method_name,
                                         response_time=total_time,
                                         response_length=length)

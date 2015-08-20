@@ -2,7 +2,7 @@
 
 import time
 from eucaops import Eucaops
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 import os
 
 class InstanceBasicsTest(EutesterTestCase):
@@ -15,7 +15,7 @@ class InstanceBasicsTest(EutesterTestCase):
         self.parser.add_argument("--build-number", default='')
         self.get_args()
 
-        # Setup basic eutester object
+        # Setup basic nephoria object
         if not self.args.credpath:
             self.tester = Eucaops(config_file=self.args.config, password=self.args.password)
         else:
@@ -79,4 +79,4 @@ if __name__ == "__main__":
 # cat > test_script << EOF
 # $script
 # EOF
-# /share/eutester-base/bin/python ./test_script --credpath credentials --zone $zone --emi $emi --build-number $BUILD_NUMBER
+# /share/nephoria-base/bin/python ./test_script --credpath credentials --zone $zone --emi $emi --build-number $BUILD_NUMBER

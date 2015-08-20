@@ -31,8 +31,8 @@
 #    @author: clarkmatthew
 
 import unittest
-from eutester.eutestcase import EutesterTestCase
-from eutester.eutestcase import EutesterTestResult
+from nephoria.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestResult
 from ebstestsuite import EbsTestSuite
 import argparse
 import os
@@ -42,7 +42,7 @@ import os
 if __name__ == "__main__":
     ## If given command line arguments, use them as test names to launch
 
-    #create a eutester testcase object...
+    #create a nephoria testcase object...
     testcase= EutesterTestCase(name='ebs_extended_test')
 
     #add/remove arguements to the default cli and config file argument list, see testcase class for all default cli args

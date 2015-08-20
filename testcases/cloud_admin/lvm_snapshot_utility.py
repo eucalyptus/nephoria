@@ -35,9 +35,9 @@ from platform import machine
 from eucaops import Eucaops
 import re
 import string
-from eutester.euinstance import EuInstance
-from eutester.eutestcase import EutesterTestCase
-from eutester.sshconnection import CommandTimeoutException
+from nephoria.euinstance import EuInstance
+from nephoria.eutestcase import EutesterTestCase
+from nephoria.sshconnection import CommandTimeoutException
 
 
 class LVMSnapshotUtility(EutesterTestCase):
@@ -50,7 +50,7 @@ class LVMSnapshotUtility(EutesterTestCase):
                 self.parser.add_argument(arg)
         self.parser.add_argument("--name", default="post_config")
         self.get_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         self.tester = Eucaops( config_file=self.args.config, password=self.args.password, download_creds=False)
 
     def clean_method(self):

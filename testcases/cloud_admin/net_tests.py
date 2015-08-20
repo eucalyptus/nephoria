@@ -106,12 +106,12 @@ test 6 (Multi-zone/cluster env):
 
 from paramiko import SSHException
 from eucaops import Eucaops
-from eutester import Eutester, WaitForResultException
-from eutester.eutestcase import EutesterTestCase
-from eutester.eutestcase import SkipTestException
-from eutester.euinstance import EuInstance
+from nephoria import Eutester, WaitForResultException
+from nephoria.eutestcase import EutesterTestCase
+from nephoria.eutestcase import SkipTestException
+from nephoria.euinstance import EuInstance
 from boto.ec2.instance import Instance
-from eutester.sshconnection import CommandExitCodeException, SshConnection
+from nephoria.sshconnection import CommandExitCodeException, SshConnection
 import socket
 import json
 import time
@@ -175,11 +175,11 @@ class Net_Tests(EutesterTestCase):
         ### Create the Eucaops object, by default this will be Eucalyptus/Admin and have ssh
         ### access to components
         if not tester and not self.args.config:
-            print "Need eutester config file to execute this test. As well as system ssh " \
+            print "Need nephoria config file to execute this test. As well as system ssh " \
                   "credentials (key, password, etc)"
             self.parser.print_help()
             sys.exit(1)
-        # Setup basic eutester object
+        # Setup basic nephoria object
         if not self.tester:
             self.debug('Creating Eucaops tester object from args provided...')
             self.tester = self.do_with_args(Eucaops)
@@ -239,7 +239,7 @@ class Net_Tests(EutesterTestCase):
         if not self._vpc_backend:
             vpc_backend_host = self.args.vpc_backend_host or self.tester.clc.hostname
             try:
-                from eutester.midget import Midget
+                from nephoria.midget import Midget
                 self._vpc_backend = Midget(vpc_backend_host, tester=self.tester)
             except:
                 self.debug('FYI... Failed to create vpc backend interface, err:\n{0}'

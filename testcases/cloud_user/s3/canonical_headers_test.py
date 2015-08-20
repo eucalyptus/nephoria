@@ -34,7 +34,7 @@
 import unittest
 import time
 from eucaops import Eucaops
-from eutester import xmlrunner
+from nephoria import xmlrunner
 from rest import S3Connection, Auth
 import os
 import random

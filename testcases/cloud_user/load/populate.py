@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 from eucaops import Eucaops
-from eutester import eupopulator
+from nephoria import eupopulator
 import argparse
 import os
 

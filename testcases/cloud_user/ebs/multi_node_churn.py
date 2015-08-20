@@ -23,8 +23,8 @@
 #    @author: clarkmatthew
 
 import unittest
-from eutester.eutestcase import EutesterTestCase
-from eutester.eutestcase import EutesterTestResult
+from nephoria.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestResult
 from ebstestsuite import EbsTestSuite
 import argparse
 import os

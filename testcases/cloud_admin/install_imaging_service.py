@@ -1,9 +1,9 @@
 #!/usr/bin/python
 
 from eucaops import Eucaops
-from eutester.eutestcase import EutesterTestCase
-from eutester.machine import Machine
-from eutester.sshconnection import CommandExitCodeException
+from nephoria.eutestcase import EutesterTestCase
+from nephoria.machine import Machine
+from nephoria.sshconnection import CommandExitCodeException
 import os
 import re
 import requests
@@ -60,7 +60,7 @@ class ConfigureImagingService(EutesterTestCase):
                                       ' imaging property')
 
         self.get_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         self.tester = Eucaops(config_file=self.args.config,
                               password=self.args.password)
         clcs = self.tester.get_component_machines("clc")
@@ -204,7 +204,7 @@ class ConfigureImagingService(EutesterTestCase):
                 if not re.search("^#.*." + searchkey, orig_key):
                     machine.sys('perl -p -i -e "s/^*.*' +str(orig_key) + '/\#' +
                             str(orig_key).strip() +
-                                '#Commented out by eutester/g" ' + conf,
+                                '#Commented out by nephoria/g" ' + conf,
                             timeout=10, code=0)
         except CommandExitCodeException:
            pass

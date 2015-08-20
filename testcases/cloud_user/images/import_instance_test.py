@@ -34,8 +34,8 @@
 
 from eucaops import Eucaops
 from imageutils import ImageUtils
-from eutester.sshconnection import CommandExitCodeException
-from eutester.eutestcase import EutesterTestCase
+from nephoria.sshconnection import CommandExitCodeException
+from nephoria.eutestcase import EutesterTestCase
 from testcases.cloud_user.images.imageutils import ImageUtils
 from testcases.cloud_user.images.conversiontask import ConversionTask
 from boto.exception import S3ResponseError
@@ -155,14 +155,14 @@ class ImportInstanceTests(EutesterTestCase):
             print 'Setting kwarg:'+str(kw)+" to "+str(kwargs[kw])
             self.set_arg(kw ,kwargs[kw])
         self.show_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         if not self.tester:
             try:
                 self.tester = self.do_with_args(Eucaops)
             except Exception, e:
                 raise Exception('Couldnt create Eucaops tester object, make sure credpath, ' \
                                 'or config_file and password was provided, err:' + str(e))
-            #replace default eutester debugger with eutestcase's for more verbosity...
+            #replace default nephoria debugger with eutestcase's for more verbosity...
             self.tester.debug = lambda msg: self.debug(msg, traceback=2, linebyline=False)
         self.set_arg('tester', self.tester)
         if not self.url:

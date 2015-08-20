@@ -62,7 +62,7 @@
 import unittest
 import time
 from eucaops import Eucaops
-from eutester import xmlrunner
+from nephoria import xmlrunner
 import os
 import re
 import random
@@ -74,7 +74,7 @@ import datetime
 
 class LoadGenerator(unittest.TestCase):
     def setUp(self):
-        # Setup basic eutester object
+        # Setup basic nephoria object
         if options.config_file:
             self.tester = Eucaops(config_file=options.config_file, password=options.clc_password)
         else:

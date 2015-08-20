@@ -36,9 +36,9 @@ import re
 import time
 import random
 from eucaops import EC2ops, Eucaops
-from eutester.euinstance import EuInstance
-from eutester.eutestcase import EutesterTestCase
-from eutester.machine import Machine
+from nephoria.euinstance import EuInstance
+from nephoria.eutestcase import EutesterTestCase
+from nephoria.machine import Machine
 
 class ImageCreator(EutesterTestCase):
     def __init__(self):
@@ -49,7 +49,7 @@ class ImageCreator(EutesterTestCase):
             for arg in extra_args:
                 self.parser.add_argument(arg)
         self.get_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         if self.args.region:
             self.tester = EC2ops( credpath=self.args.credpath, region=self.args.region)
         else:

@@ -1,6 +1,6 @@
 #!/usr/bin/python
 from eucaops import Eucaops
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 
 class GatherDebug(EutesterTestCase):
     basic_commands = ['df -B M',
@@ -54,7 +54,7 @@ class GatherDebug(EutesterTestCase):
         self.setuptestcase()
         self.setup_parser()
         self.get_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         self.tester = Eucaops( config_file=self.args.config_file, password=self.args.password,download_creds=True)
 
     def clean_method(self):

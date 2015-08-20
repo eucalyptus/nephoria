@@ -3,7 +3,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from eucaops import Eucaops
 from eucaops import S3ops
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 
 class WalrusConcurrent(EutesterTestCase):
     def __init__(self):
@@ -13,7 +13,7 @@ class WalrusConcurrent(EutesterTestCase):
         self.parser.add_argument("-c", "--concurrent", type=int, default=10)
         self.parser.add_argument("-s", "--size", type=int, default=1024)
         self.get_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         if self.args.region:
             self.tester = S3ops( credpath=self.args.credpath, region=self.args.region)
         else:

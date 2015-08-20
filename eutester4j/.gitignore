@@ -1,8 +1,0 @@
-.classpath
-.project
-eucarc*
-awsrc*
-build/
-dependencies/
-eutester4j_results/
-test-output/

@@ -15,7 +15,7 @@ machine02       CENTOS  6.3     64      BZR     [NC00
 import unittest
 import shutil
 from eucaops import Eucaops
-from eutester.euproperties import EucaProperties
+from nephoria.euproperties import EucaProperties
 
 class Euca2366(unittest.TestCase):
 

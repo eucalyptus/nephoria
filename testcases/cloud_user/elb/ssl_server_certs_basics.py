@@ -31,7 +31,7 @@
 # Author: Tony Beckham tony@eucalyptus.com
 #
 from eucaops import Eucaops
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 
 class SSLIAMServerCerts(EutesterTestCase):
     def __init__(self, extra_args= None):
@@ -42,7 +42,7 @@ class SSLIAMServerCerts(EutesterTestCase):
                 self.parser.add_argument(arg)
         self.get_args()
 
-        # Setup basic eutester object
+        # Setup basic nephoria object
         self.tester = Eucaops( credpath=self.args.credpath, config_file=self.args.config,password=self.args.password)
 
 

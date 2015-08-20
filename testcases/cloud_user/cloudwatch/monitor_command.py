@@ -1,9 +1,9 @@
 #!/usr/bin/python
 import subprocess
-from eutester.euca.euca_ops import Eucaops
-from eutester.aws.ec2.ec2ops import EC2ops
-from eutester.utils.eutestcase import EutesterTestCase
-from eutester.utils.sshconnection import CommandExitCodeException
+from nephoria.euca.euca_ops import Eucaops
+from nephoria.aws.ec2.ec2ops import EC2ops
+from nephoria.utils.eutestcase import EutesterTestCase
+from nephoria.utils.sshconnection import CommandExitCodeException
 
 class CloudWatchCustom(EutesterTestCase):
     def __init__(self, extra_args= None):
@@ -18,7 +18,7 @@ class CloudWatchCustom(EutesterTestCase):
             for arg in extra_args:
                 self.parser.add_argument(arg)
         self.get_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         if self.args.region:
             self.tester = EC2ops( credpath=self.args.credpath, region=self.args.region)
         else:

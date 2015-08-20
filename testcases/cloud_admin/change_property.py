@@ -32,7 +32,7 @@
 # Author: vic.iglesias@eucalyptus.com
 
 from eucaops import Eucaops
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 
 class ChangeProperty(EutesterTestCase):
 
@@ -45,7 +45,7 @@ class ChangeProperty(EutesterTestCase):
         self.parser.add_argument("--property", default="cloud.euca_log_level")
         self.parser.add_argument("--value", default="DEBUG")
         self.get_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         self.tester = Eucaops( config_file=self.args.config, password=self.args.password)
 
     def clean_method(self):

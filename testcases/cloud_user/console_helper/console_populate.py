@@ -3,7 +3,7 @@
 import time
 from eucaops import Eucaops
 from eucaops import EC2ops
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 import os
 import random
 
@@ -17,7 +17,7 @@ class ConsoleCleanUp(EutesterTestCase):
         self.get_args()
         for kwarg in kwargs:
             self.args[kwarg] = kwarg[kwarg]
-        # Setup basic eutester object
+        # Setup basic nephoria object
         if self.args.region:
             self.tester = EC2ops( credpath=self.args.credpath, region=self.args.region)
         else:

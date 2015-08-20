@@ -8,7 +8,7 @@
 
 import time
 from eucaops import Eucaops
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 
 class MyTestCase(EutesterTestCase):
     def __init__(self, config_file=None, password=None):
@@ -17,7 +17,7 @@ class MyTestCase(EutesterTestCase):
         self.parser.add_argument("--command", default="free")
         self.parser.add_argument("--component", default=None)
         self.get_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         self.tester = Eucaops( config_file=self.args.config_file, password=self.args.password,download_creds=False)
 
     def clean_method(self):

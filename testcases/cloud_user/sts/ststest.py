@@ -26,7 +26,7 @@
 
 import unittest
 from eucaops import Eucaops
-from eutester import xmlrunner
+from nephoria import xmlrunner
 import os
 import argparse
 import boto.ec2, boto.sts, boto.ec2.regioninfo, boto.regioninfo, boto.s3, boto.s3.connection

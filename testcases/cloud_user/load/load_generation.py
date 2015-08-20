@@ -2,7 +2,7 @@
 import unittest
 import time
 from eucaops import Eucaops
-from eutester import xmlrunner
+from nephoria import xmlrunner
 import os
 import re
 import random
@@ -10,7 +10,7 @@ import argparse
 
 class LoadGenerator(unittest.TestCase):
     def setUp(self):
-        # Setup basic eutester object
+        # Setup basic nephoria object
         self.tester = Eucaops( config_file="../input/2b_tested.lst", password="foobar")
         self.tester.poll_count = 40
         

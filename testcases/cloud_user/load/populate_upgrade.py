@@ -3,7 +3,7 @@
 import time
 from eucaops import Eucaops
 from eucaops import EC2ops
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 import os
 import random
 
@@ -15,7 +15,7 @@ class PopulateUpgrade(EutesterTestCase):
             for arg in extra_args:
                 self.parser.add_argument(arg)
         self.get_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         self.tester = Eucaops( credpath=self.args.credpath, config_file=self.args.config,password=self.args.password)
         self.tester.poll_count = 120
 

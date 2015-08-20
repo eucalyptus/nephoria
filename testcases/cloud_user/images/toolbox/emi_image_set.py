@@ -42,7 +42,7 @@ import urllib2
 import cStringIO
 from tar_utils import Local_Tarutils
 from tar_utils import Http_Tarutils
-#from eutester.machine import Machine
+#from nephoria.machine import Machine
 
 
 

@@ -13,9 +13,9 @@ IP ADDRESS CENTOS  6.3     64      BZR     [NC00]
 '''
 import unittest
 import shutil
-import eutester.euproperties
+import nephoria.euproperties
 from eucaops import Eucaops
-from eutester.euproperties import Euproperty_Manager
+from nephoria.euproperties import Euproperty_Manager
 
 class Euca4229(unittest.TestCase):
 

@@ -34,8 +34,8 @@ __author__ = 'clarkmatthew'
 
 
 from san_volume_info import  San_Volume_Info
-from eutester.sshconnection import SshConnection, SshCbReturn, CommandExitCodeException, CommandTimeoutException
-from eutester.eulogger import Eulogger
+from nephoria.sshconnection import SshConnection, SshCbReturn, CommandExitCodeException, CommandTimeoutException
+from nephoria.eulogger import Eulogger
 import re
 import string
 

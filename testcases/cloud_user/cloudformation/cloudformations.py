@@ -36,9 +36,9 @@ from troposphere import Base64, FindInMap, GetAtt
 from troposphere import Parameter, Ref, Template
 import troposphere.ec2 as ec2
 import time
-from eutester.aws.cloudformation.cfnops import CFNops
-from eutester.euca.euca_ops import Eucaops
-from eutester.utils.eutestcase import EutesterTestCase
+from nephoria.aws.cloudformation.cfnops import CFNops
+from nephoria.euca.euca_ops import Eucaops
+from nephoria.utils.eutestcase import EutesterTestCase
 import os
 
 class CloudFormations(EutesterTestCase):
@@ -49,7 +49,7 @@ class CloudFormations(EutesterTestCase):
             for arg in extra_args:
                 self.parser.add_argument(arg)
         self.get_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         if self.args.region:
             self.tester = CFNops( credpath=self.args.credpath, region=self.args.region)
         else:

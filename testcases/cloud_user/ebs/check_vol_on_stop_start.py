@@ -1,6 +1,6 @@
 from eucaops import Eucaops
-from eutester.eutestcase import EutesterTestCase
-from eutester.euinstance import EuInstance
+from nephoria.eutestcase import EutesterTestCase
+from nephoria.euinstance import EuInstance
 import time
 
 

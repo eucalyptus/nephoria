@@ -7,8 +7,8 @@ import sys
 import time
 from BeautifulSoup import BeautifulSoup
 from eucaops import Eucaops, S3ops, Machine
-from eutester.sshconnection import CommandExitCodeException
-from eutester.eutestcase import EutesterTestCase
+from nephoria.sshconnection import CommandExitCodeException
+from nephoria.eutestcase import EutesterTestCase
 
 
 
@@ -42,7 +42,7 @@ class InstallRiak(EutesterTestCase):
             print 'Setting kwarg:'+str(kw)+" to "+str(kwargs[kw])
             self.set_arg(kw ,kwargs[kw])
         self.show_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         self.tester = Eucaops( config_file=self.args.config,password=self.args.password)
         self.machines = []
         if self.args.bare_machines:

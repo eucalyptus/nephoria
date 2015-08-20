@@ -213,7 +213,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('index', 'eutester', u'Eutester Documentation',
+    ('index', 'nephoria', u'Eutester Documentation',
      [u'Vic Iglesias, Matt Clark, Harold Spencer'], 1)
 ]
 

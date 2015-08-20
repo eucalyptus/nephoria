@@ -8,7 +8,7 @@
 #    (https://bugs.launchpad.net/eucalyptus/+bug/737335)            
 #
 
-from eutester import Eutester
+from nephoria import Eutester
 import argparse
 
 if __name__ == '__main__':

@@ -189,7 +189,7 @@ def get_options():
         version="Test Case [clusterbasics.py] Version 0.1.1",
         description="Run an iterative test of operations on a cloud to test Eucalyptus Cluster \
             functionality.  For more information, please refer to \
-            https://github.com/hspencer77/eutester/wiki/clusterbasics")
+            https://github.com/hspencer77/nephoria/wiki/clusterbasics")
     parser.add_argument("-n", "--number", dest="number", type=int,
         help="Number of security groups to create", default=3)
     parser.add_argument("-i", "--image", dest="image", 

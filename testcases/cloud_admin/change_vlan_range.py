@@ -34,8 +34,8 @@
 from eucaops import Eucaops
 import re
 import string
-from eutester.euinstance import EuInstance
-from eutester.eutestcase import EutesterTestCase
+from nephoria.euinstance import EuInstance
+from nephoria.eutestcase import EutesterTestCase
 
 class ChangeVLAN(EutesterTestCase):
     
@@ -48,7 +48,7 @@ class ChangeVLAN(EutesterTestCase):
         self.parser.add_argument("--min-vlan", default=1)
         self.parser.add_argument("--max-vlan", default=4096)
         self.get_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         self.tester = Eucaops( config_file=self.args.config, password=self.args.password)
 
     def clean_method(self):

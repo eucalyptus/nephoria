@@ -17,14 +17,14 @@
 
 
 
-from eutester.eutestcase import EutesterTestCase
-from eutester.eutestcase import TestColor
+from nephoria.eutestcase import EutesterTestCase
+from nephoria.eutestcase import TestColor
 from eucaops import ec2ops
-#from eutester.euinstance import EuInstance
-#from eutester.euvolume import EuVolume
-#from eutester.eusnapshot import EuSnapshot
+#from nephoria.euinstance import EuInstance
+#from nephoria.euvolume import EuVolume
+#from nephoria.eusnapshot import EuSnapshot
 from eucaops import Eucaops
-import eutester
+import nephoria
 import time
 import copy
 
@@ -66,9 +66,9 @@ class Ebs_Persistance_Tests(EutesterTestCase):
                                  default=False)
 
         self.get_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         self.tester = self.do_with_args(Eucaops)
-        #replace default eutester debugger with eutestcase's for more verbosity...
+        #replace default nephoria debugger with eutestcase's for more verbosity...
         self.tester.debug = lambda msg: self.debug(msg, traceback=2, linebyline=False)
         self.reservation = None
         self.instance = None
@@ -398,7 +398,7 @@ class Ebs_Persistance_Tests(EutesterTestCase):
         for sc in sc_list:
             sc.machine.sys('service tgtd start', code=0)
 
-    @eutester.Eutester.printinfo
+    @nephoria.Eutester.printinfo
     def start_all_services_on_storage_controllers(self, sc_list):
         self.status("Waiting for storage controller's services to start...",
                     testcolor=TestColor.get_canned_color('whiteonblue'))

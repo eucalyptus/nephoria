@@ -3,7 +3,7 @@ import os
 import time
 import random
 from eucaops import Eucaops
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 from testcases.cloud_user.instances.instancetest import InstanceBasics
 
 class NCAdmin(EutesterTestCase, InstanceBasics):

@@ -8,7 +8,7 @@
 
 import time
 from eucaops import Eucaops
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 import os
 import random
 
@@ -17,7 +17,7 @@ class InstanceRestore(EutesterTestCase):
         self.setuptestcase()
         self.setup_parser()
         self.get_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         self.tester = Eucaops( config_file=self.args.config_file, password=self.args.password)
         self.tester.poll_count = 120
 

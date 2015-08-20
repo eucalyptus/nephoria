@@ -52,7 +52,7 @@ and /dev/sdj to an empty EBS volume that is 100 GiB in size. The output is the I
 '''
 
 from eucaops import Eucaops
-from eutester.eutestcase import EutesterTestCase
+from nephoria.eutestcase import EutesterTestCase
 from argparse import ArgumentError
 
 from boto.ec2.blockdevicemapping import BlockDeviceMapping, BlockDeviceType
@@ -117,14 +117,14 @@ class Block_Device_Mapping_Tests(EutesterTestCase):
         self.show_args()
         #if self.args.config:
         #    setattr(self.args, 'config_file',self.args.config)
-        # Setup basic eutester object
+        # Setup basic nephoria object
         if not self.tester:
             try:
                 self.tester = self.do_with_args(Eucaops)
             except Exception, e:
                 raise Exception('Couldnt create Eucaops tester object, make sure credpath, ' \
                                 'or config_file and password was provided, err:' + str(e))
-            #replace default eutester debugger with eutestcase's for more verbosity...
+            #replace default nephoria debugger with eutestcase's for more verbosity...
             self.tester.debug = lambda msg: self.debug(msg, traceback=2, linebyline=False)
         if not self.url:
             if not self.args.url:

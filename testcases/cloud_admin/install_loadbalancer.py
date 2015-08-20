@@ -1,8 +1,8 @@
 #!/usr/bin/python
 
 from eucaops import Eucaops
-from eutester.eutestcase import EutesterTestCase
-from eutester.machine import Machine
+from nephoria.eutestcase import EutesterTestCase
+from nephoria.machine import Machine
 
 
 class ConfigureLoadBalancer(EutesterTestCase):
@@ -11,7 +11,7 @@ class ConfigureLoadBalancer(EutesterTestCase):
         self.setup_parser()
         self.parser.add_argument("--img-repo")
         self.get_args()
-        # Setup basic eutester object
+        # Setup basic nephoria object
         self.tester = Eucaops( config_file=self.args.config,password=self.args.password)
 
     def clean_method(self):

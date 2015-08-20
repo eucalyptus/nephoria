@@ -31,12 +31,12 @@
 # Author: matt.clark@eucalyptus.com
   
 from eucaops import Eucaops
-from eutester.eutestcase import EutesterTestCase
-from eutester import Eutester
-from eutester import machine
+from nephoria.eutestcase import EutesterTestCase
+from nephoria import Eutester
+from nephoria import machine
 from testcases.cloud_user.images.imageutils import ImageUtils
 from testcases.cloud_user.ebs.ebstestsuite import TestZone
-from eutester.euvolume import EuVolume
+from nephoria.euvolume import EuVolume
 import socket
 import os
 import time
@@ -46,7 +46,7 @@ from datetime import datetime
 class WindowsTests(EutesterTestCase):
     
     def __init__(self,
-                 #setup eutester and test environment...
+                 #setup nephoria and test environment...
                  tester=None, 
                  config_file=None,
                  password=None, 
@@ -85,8 +85,8 @@ class WindowsTests(EutesterTestCase):
         related tests. Most TestUnits will use a subset of these methods to define a testcase/operation. See sample
         testcases scripts which reference this class for examples and use cases.
 
-        :param tester: eutester object
-        :param config_file: eutester config file
+        :param tester: nephoria object
+        :param config_file: nephoria config file
         :param credpath: path to cloud credentials/eucarc
         :param password: password used to access remote components
         :param eof: boolean, end on failure
