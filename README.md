@@ -1,7 +1,7 @@
-# nephology
+# Nephoria
 Cloud Utilties and Automated Test Framework for Eucalyptus
 =======
-Nephology (previously known as eutester)
+Nephoria (previously known as eutester)
 ======================
 
 [![Build Status](https://secure.travis-ci.org/eucalyptus/eutester.png)](https://travis-ci.org/eucalyptus/eutester)
