@@ -47,8 +47,7 @@ Sample usage:
 
 from boto.ec2.instance import Instance, InstanceState
 from boto.ec2.networkinterface import NetworkInterface
-from eutester import Eutester
-from cloud_utils.log_utils import eulogger
+from cloud_utils.log_utils import eulogger, printinfo, markup
 from eutester.aws.ec2.euvolume import EuVolume
 from eutester.euca.taggedresource import TaggedResource
 from cloud_utils.net_utils.sshconnection import SshConnection, CommandExitCodeException, \
@@ -57,7 +56,6 @@ from cloud_utils.system_utils.machine import Machine
 from random import randint
 from prettytable import PrettyTable, ALL
 from datetime import datetime
-import sys
 import os
 import re
 import time
@@ -128,7 +126,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         newins.debugmethod = debugmethod
         if newins.debugmethod is None:
             newins.logger = eulogger.Eulogger(identifier=str(instance.id))
-            newins.debugmethod = newins.logger.log.debug
+            newins.debugmethod = newins.logger.debug
 
         if (keypair is not None):
             if isinstance(keypair, types.StringTypes):
@@ -232,7 +230,6 @@ class EuInstance(Instance, TaggedResource, Machine):
         return "\n" + line + "\n"
 
     def printself(self, title=True, footer=True, printmethod=None, printme=True):
-        markup = self.tester.markup
 
         def state_markup(state):
             # Markup instance state...
@@ -368,7 +365,7 @@ class EuInstance(Instance, TaggedResource, Machine):
 
     def show_summary(self, printmethod=None, printme=True):
         def header(text):
-            return self.tester.markup(text=text, markups=[1, 4, 94])
+            return markup(text=text, markups=[1, 4, 94])
 
         reservation_id = None
         if self.reservation:
@@ -1162,7 +1159,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         fillcmd = "dd if=/dev/zero of=" + str(voldev) + "; sync"
         return self.time_dd(fillcmd)
 
-    @Eutester.printinfo
+    @printinfo
     def random_fill_volume(self, euvolume, srcdev=None, length=None, timepergig=90):
         '''
         Attempts to fill the entire given euvolume with unique non-zero data.

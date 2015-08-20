@@ -30,47 +30,47 @@
 #
 # Author: vic.iglesias@eucalyptus.com
 
-import boto
+from boto.iam import IAMConnection
+from boto.exception import BotoServerError
 import json
 import re
 import urllib
-from eutester import Eutester
+from cloud_utils.log_utils.eulogger import Eulogger
+from cloud_utils.file_utils.eucarc import Eucarc
+from urlparse import urlparse
 from prettytable import PrettyTable
+from eutester import TestConnection
 
 
-class IAMops(Eutester):
-
-    def __init__(self, credpath=None, endpoint="iam.amazonaws.com", aws_access_key_id=None, aws_secret_access_key=None,
-                 is_secure=True, port=443, path='/', boto_debug=0, test_resources=None):
-        self.aws_access_key_id = aws_access_key_id
-        self.aws_secret_access_key = aws_secret_access_key
-        self.user_id = None
-        self.account_id = None
-        self.connection = None
-        if test_resources:
-            self.test_resource = test_resources
-        super(IAMops, self).__init__(credpath=credpath)
-        self.setup_iam_connection(endpoint=endpoint,
-                                  aws_access_key_id=self.aws_access_key_id,
-                                  aws_secret_access_key=self.aws_secret_access_key,
-                                  is_secure=is_secure,
-                                  port=port,
-                                  path=path,
-                                  boto_debug=boto_debug)
-
-    def setup_iam_connection(self, endpoint="iam.amazonaws.com", aws_access_key_id=None,aws_secret_access_key=None,
-                             is_secure=True, port=443, path='/', boto_debug=0):
+class IAMops(TestConnection, IAMConnection):
+    EUCARC_URL_NAME = 'aws_iam_url'
+    def __init__(self, eucarc=None, credpath=None,
+                 aws_access_key_id=None, aws_secret_access_key=None,
+                 is_secure=False, port=None, host=None, boto_debug=0, path=None,
+                 validate_certs=False, test_resources=None, logger=None):
+        # Init test connection first to sort out base parameters...
+        TestConnection.__init__(self,
+                                eucarc=eucarc,
+                                credpath=credpath,
+                                test_resources=test_resources,
+                                logger=logger,
+                                aws_access_key_id=aws_access_key_id,
+                                aws_secret_access_key=aws_secret_access_key,
+                                is_secure=is_secure,
+                                port=port,
+                                host=host,
+                                boto_debug=boto_debug,
+                                path=path)
+        self._connection_kwargs['validate_certs'] = validate_certs
+        if self.boto_debug:
+            self.show_connection_kwargs()
+        # Init IAM connection...
         try:
-            euare_connection_args = {'aws_access_key_id' : aws_access_key_id,
-                                     'aws_secret_access_key': aws_secret_access_key,
-                                     'is_secure': is_secure,
-                                     'debug': boto_debug,
-                                     'port': port,
-                                     'path': path,
-                                     'host': endpoint}
-            self.connection = boto.connect_iam(**euare_connection_args)
-        except Exception, e:
-            self.critical("Was unable to create IAM connection because of exception: " + str(e))
+            IAMConnection.__init__(self, **self._connection_kwargs)
+        except:
+            self.show_connection_kwargs()
+            raise
+
 
     def create_account(self, account_name):
         """
@@ -78,10 +78,10 @@ class IAMops(Eutester):
 
         :param account_name: str name of account to create
         """
-        self.debug("Creating account: " + account_name)
+        self.logger.debug("Creating account: " + account_name)
         params = {'AccountName': account_name}
         self.test_resource["iam_accounts"].append(account_name)
-        self.connection.get_response('CreateAccount', params)
+        self.get_response('CreateAccount', params)
     
     def delete_account(self, account_name, recursive=False):
         """
@@ -90,12 +90,12 @@ class IAMops(Eutester):
         :param account_name: str name of account to delete
         :param recursive:
         """
-        self.debug("Deleting account: " + account_name)
+        self.logger.debug("Deleting account: " + account_name)
         params = {
             'AccountName': account_name,
             'Recursive': recursive
         }
-        self.connection.get_response('DeleteAccount', params)
+        self.get_response('DeleteAccount', params)
 
     def get_all_accounts(self, account_id=None, account_name=None, search=False):
         """
@@ -110,8 +110,8 @@ class IAMops(Eutester):
             re_meth = re.search
         else:
             re_meth = re.match
-        self.debug('Attempting to fetch all accounts matching- account_id:'+str(account_id)+' account_name:'+str(account_name))
-        response = self.connection.get_response('ListAccounts', {}, list_marker='Accounts')
+        self.logger.debug('Attempting to fetch all accounts matching- account_id:'+str(account_id)+' account_name:'+str(account_name))
+        response = self.get_response('ListAccounts', {}, list_marker='Accounts')
         retlist = []
         for account in response['list_accounts_response']['list_accounts_result']['accounts']:
             if account_name is not None and not re_meth( account_name, account['account_name']):
@@ -129,12 +129,12 @@ class IAMops(Eutester):
         :param path: str user path
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
         """
-        self.debug("Attempting to create user: " + user_name)
+        self.logger.debug("Attempting to create user: " + user_name)
         params = {'UserName': user_name,
                   'Path': path }
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.connection.get_response('CreateUser',params)
+        self.get_response('CreateUser',params)
     
     def delete_user(self, user_name, delegate_account=None):
         """
@@ -143,11 +143,11 @@ class IAMops(Eutester):
         :param user_name: str name of user
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
         """
-        self.debug("Deleting user " + user_name)
+        self.logger.debug("Deleting user " + user_name)
         params = {'UserName': user_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.connection.get_response('DeleteUser', params)
+        self.get_response('DeleteUser', params)
 
     def get_users_from_account(self, path=None, user_name=None, user_id=None, delegate_account=None, search=False):
         """
@@ -160,7 +160,7 @@ class IAMops(Eutester):
         :param search: use regex search (any occurrence) rather than match (exact same strings must occur)
         :return:
         """
-        self.debug('Attempting to fetch all access matching- user_id:'+str(user_id)+' user_name:'+str(user_name)+" acct_name:"+str(delegate_account))
+        self.logger.debug('Attempting to fetch all access matching- user_id:'+str(user_id)+' user_name:'+str(user_name)+" acct_name:"+str(delegate_account))
         retlist = []
         params = {}
         if search:
@@ -169,7 +169,7 @@ class IAMops(Eutester):
             re_meth = re.match
         if delegate_account:
             params['DelegateAccount'] = delegate_account         
-        response = self.connection.get_response('ListUsers', params, list_marker='Users')
+        response = self.get_response('ListUsers', params, list_marker='Users')
         for user in response['list_users_response']['list_users_result']['access']:
             if path is not None and not re_meth(path, user['path']):
                 continue
@@ -197,7 +197,7 @@ class IAMops(Eutester):
         for account in list:
             pt.add_row([account['account_name'], account['account_id']])
         if print_table:
-            self.debug("\n" + str(pt) + "\n")
+            self.logger.debug("\n" + str(pt) + "\n")
         else:
             return pt
 
@@ -223,7 +223,7 @@ class IAMops(Eutester):
         for group in list:
             pt.add_row([group['account_name'], group['group_name'], group['group_id']])
         if print_table:
-            self.debug("\n" + str(pt) + "\n")
+            self.logger.debug("\n" + str(pt) + "\n")
         else:
             return pt
 
@@ -249,7 +249,7 @@ class IAMops(Eutester):
             pt.add_row([user['account_name'], user['user_name'],
                         user['user_id'], user['account_id']])
         if print_table:
-            self.debug("\n" + str(pt) + "\n")
+            self.logger.debug("\n" + str(pt) + "\n")
         else:
             return pt
 
@@ -318,7 +318,7 @@ class IAMops(Eutester):
         if delegate_account:
             params['DelegateAccount'] = delegate_account
         try:
-            response = self.connection.get_response('ListUserPolicies', params,
+            response = self.get_response('ListUserPolicies', params,
                                                     list_marker='PolicyNames')
             p_names = response['list_user_policies_response']['list_user_policies_result']\
                               ['policy_names']
@@ -326,10 +326,10 @@ class IAMops(Eutester):
                 if policy_name is not None and not re_meth(policy_name, name):
                     continue
                 retlist.append(name)
-        except boto.exception.BotoServerError, BE:
+        except BotoServerError, BE:
             err = 'Error fetching policy for params:\n{0}: '.format(params, BE)
             if BE.status == 403 and ignore_admin_err and str(user_name).strip() == 'admin':
-                self.debug('IGNORING: '+ err)
+                self.logger.debug('IGNORING: '+ err)
             else:
                 self.critical(err)
                 raise
@@ -363,22 +363,22 @@ class IAMops(Eutester):
             if delegate_account:
                 params['DelegateAccount'] = delegate_account
             try:
-                policy = self.connection.get_response(
+                policy = self.get_response(
                     'GetUserPolicy',
                     params,
                     verb='POST')['get_user_policy_response']['get_user_policy_result']
-            except boto.exception.BotoServerError, BE:
+            except BotoServerError, BE:
                 err_msg = 'Error fetching policy for params:\n{0}: "{1}"'.format(params, BE)
                 if BE.status == 403 and ignore_admin_err and str(p_name).strip() == 'admin':
-                    self.debug('IGNORING:' + str(err_msg))
+                    self.logger.debug('IGNORING:' + str(err_msg))
                 else:
-                    self.critical(err_msg)
+                    self.logger.critical(err_msg)
                     raise
             if doc is not None and not re_meth(doc, policy['policy_document']):
                 continue
             retlist.append(policy)
         return retlist
-        
+
     def show_user_policy_summary(self,user_name,policy_name=None,delegate_account=None,
                                  doc=None, search=False, print_table=True):
         """
@@ -407,10 +407,10 @@ class IAMops(Eutester):
                 pretty_json = (json.dumps(p_json, indent=2) or "") + "\n"
                 main_pt.add_row([pretty_json])
         if print_table:
-            self.debug("\n" + str(main_pt) + "\n")
+            self.logger.debug("\n" + str(main_pt) + "\n")
         else:
             return main_pt
-    
+
     def show_user_summary(self,user_name, delegate_account=None, account_id=None,
                           print_table=True):
         """
@@ -424,7 +424,7 @@ class IAMops(Eutester):
         if delegate_account is None:
             account_id=self.get_account_id()
             delegate_account= self.get_all_accounts(account_id=account_id)[0]['account_name']
-        self.debug('Fetching user summary for: user_name:' + str(user_name) +
+        self.logger.debug('Fetching user summary for: user_name:' + str(user_name) +
                    " account:" + str(delegate_account) + " account_id:" + str(account_id))
         title = 'USER SUMMARY: user:{0}, account:{1}'.format(user_name, delegate_account)
         pt = PrettyTable([title])
@@ -442,7 +442,7 @@ class IAMops(Eutester):
         new_pt._rows = pol_pt._rows
         pt.add_row([new_pt])
         if print_table:
-            self.debug("\n" + str(pt) + "\n")
+            self.logger.debug("\n" + str(pt) + "\n")
         else:
             return pt
 
@@ -452,7 +452,7 @@ class IAMops(Eutester):
         Debug method used to display the who am I info related to iam/euare.
         """
 
-        user= self.connection.get_user()['get_user_response']['get_user_result']['user']
+        user= self.get_user()['get_user_response']['get_user_result']['user']
 
         user_id = user['user_id']
         user_name = user['user_name']
@@ -470,7 +470,7 @@ class IAMops(Eutester):
                                                  print_table=False))])
         main_pt.add_row([str(self.show_user_policy_summary(user_name, print_table=False))])
         if print_table:
-            self.debug("\n" + str(main_pt) + "\n")
+            self.logger.debug("\n" + str(main_pt) + "\n")
         else:
             return main_pt
         
@@ -484,13 +484,13 @@ class IAMops(Eutester):
         :param policy_json: Policy text
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
         """
-        self.debug("Attaching the following policy to " + user_name + ":" + policy_json)
+        self.logger.debug("Attaching the following policy to " + user_name + ":" + policy_json)
         params = {'UserName': user_name,
                   'PolicyName': policy_name,
                   'PolicyDocument': policy_json}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.connection.get_response('PutUserPolicy', params, verb='POST')
+        self.get_response('PutUserPolicy', params, verb='POST')
     
     def detach_policy_user(self, user_name, policy_name, delegate_account=None):
         """
@@ -501,12 +501,12 @@ class IAMops(Eutester):
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
-        self.debug("Detaching the following policy from " + user_name + ":" + policy_name)
+        self.logger.debug("Detaching the following policy from " + user_name + ":" + policy_name)
         params = {'UserName': user_name,
                   'PolicyName': policy_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.connection.get_response('DeleteUserPolicy', params, verb='POST')
+        self.get_response('DeleteUserPolicy', params, verb='POST')
 
     def get_all_groups(self, account_name=None, account_id=None, path=None, group_name=None,
                        group_id=None, search=False ):
@@ -552,7 +552,7 @@ class IAMops(Eutester):
         :param search: specify whether to use match or search when filtering the returned list
         :return:
         """
-        self.debug('Attempting to fetch all groups matching- group_id:' + str(group_id) +
+        self.logger.debug('Attempting to fetch all groups matching- group_id:' + str(group_id) +
                    ' group_name:' + str(group_name) + " acct_name:" + str(delegate_account))
         retlist = []
         params = {}
@@ -562,7 +562,7 @@ class IAMops(Eutester):
             re_meth = re.match
         if delegate_account:
             params['DelegateAccount'] = delegate_account         
-        response = self.connection.get_response('ListGroups', params, list_marker='Groups')
+        response = self.get_response('ListGroups', params, list_marker='Groups')
         for group in response['list_groups_response']['list_groups_result']['groups']:
             if path is not None and not re_meth(path, group['path']):
                 continue
@@ -585,7 +585,7 @@ class IAMops(Eutester):
         if delegate_account:
             params['DelegateAccount'] = delegate_account
         params['GroupName'] = group_name
-        response = self.connection.get_response('GetGroup', params, list_marker='Users')
+        response = self.get_response('GetGroup', params, list_marker='Users')
         for user in response['get_group_response']['get_group_result']['access']:
             ret_list.append(user)
         return ret_list
@@ -610,7 +610,7 @@ class IAMops(Eutester):
         params = {'GroupName': group_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        response = self.connection.get_response('ListGroupPolicies',
+        response = self.get_response('ListGroupPolicies',
                                                 params, list_marker='PolicyNames')
         for name in response['list_group_policies_response']['list_group_policies_result']\
                 ['policy_names']:
@@ -646,7 +646,7 @@ class IAMops(Eutester):
                       'PolicyName': p_name}
             if delegate_account:
                 params['DelegateAccount'] = delegate_account
-            policy = self.connection.get_response('GetGroupPolicy', params, verb='POST')\
+            policy = self.get_response('GetGroupPolicy', params, verb='POST')\
                 ['get_group_policy_response']['get_group_policy_result']
             if doc is not None and not re_meth(doc, policy['policy_document']):
                 continue
@@ -662,12 +662,12 @@ class IAMops(Eutester):
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
-        self.debug("Attempting to create group: " + group_name)
+        self.logger.debug("Attempting to create group: " + group_name)
         params = {'GroupName': group_name,
                   'Path': path}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.connection.get_response('CreateGroup', params)
+        self.get_response('CreateGroup', params)
     
     def delete_group(self, group_name, delegate_account=None):
         """
@@ -676,11 +676,11 @@ class IAMops(Eutester):
         :param group_name: name of group to delete
         :param delegate_account:
         """
-        self.debug("Deleting group " + group_name)
+        self.logger.debug("Deleting group " + group_name)
         params = {'GroupName': group_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.connection.get_response('DeleteGroup', params)
+        self.get_response('DeleteGroup', params)
     
     def add_user_to_group(self, group_name, user_name, delegate_account=None):
         """
@@ -691,12 +691,12 @@ class IAMops(Eutester):
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
-        self.debug("Adding user "  +  user_name + " to group " + group_name)
+        self.logger.debug("Adding user "  +  user_name + " to group " + group_name)
         params = {'GroupName': group_name,
                   'UserName': user_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.connection.get_response('AddUserToGroup', params)
+        self.get_response('AddUserToGroup', params)
     
     def remove_user_from_group(self, group_name, user_name, delegate_account=None):
         """
@@ -707,12 +707,12 @@ class IAMops(Eutester):
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
-        self.debug("Removing user "  +  user_name + " to group " + group_name)
+        self.logger.debug("Removing user "  +  user_name + " to group " + group_name)
         params = {'GroupName': group_name,
                   'UserName': user_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.connection.get_response('RemoveUserFromGroup', params)
+        self.get_response('RemoveUserFromGroup', params)
     
     def attach_policy_group(self, group_name, policy_name, policy_json, delegate_account=None):
         """
@@ -724,13 +724,13 @@ class IAMops(Eutester):
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
-        self.debug("Attaching the following policy to " + group_name + ":" + policy_json)
+        self.logger.debug("Attaching the following policy to " + group_name + ":" + policy_json)
         params = {'GroupName': group_name,
                   'PolicyName': policy_name,
                   'PolicyDocument': policy_json}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.connection.get_response('PutGroupPolicy', params, verb='POST')
+        self.get_response('PutGroupPolicy', params, verb='POST')
     
     def detach_policy_group(self, group_name, policy_name, delegate_account=None):
         """
@@ -741,12 +741,12 @@ class IAMops(Eutester):
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
-        self.debug("Detaching the following policy from " + group_name + ":" + policy_name)
+        self.logger.debug("Detaching the following policy from " + group_name + ":" + policy_name)
         params = {'GroupName': group_name,
                   'PolicyName': policy_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.connection.get_response('DeleteGroupPolicy', params, verb='POST')
+        self.get_response('DeleteGroupPolicy', params, verb='POST')
     
     def create_access_key(self, user_name=None, delegate_account=None):
         """
@@ -758,11 +758,11 @@ class IAMops(Eutester):
         :return: A tuple of access key and and secret key with keys: 'access_key_id' and
                 'secret_access_key'
         """
-        self.debug("Creating access key for " + user_name )
+        self.logger.debug("Creating access key for " + user_name )
         params = {'UserName': user_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        response = self.connection.get_response('CreateAccessKey', params)
+        response = self.get_response('CreateAccessKey', params)
         access_tuple = {}
         access_tuple['access_key_id'] = response['create_access_key_response']\
             ['create_access_key_result']['access_key']['access_key_id']
@@ -780,47 +780,47 @@ class IAMops(Eutester):
             params['UserName'] = username
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        response = self.connection.get_response('ListAccessKeys', params)
+        response = self.get_response('ListAccessKeys', params)
         result = response['list_access_keys_response']['list_access_keys_result']
         return result['access_key_metadata']['member']['access_key_id']
 
 
     def upload_server_cert(self, cert_name, cert_body, private_key):
-        self.debug("uploading server certificate: " + cert_name)
-        self.connection.upload_server_cert(cert_name=cert_name, cert_body=cert_body,
+        self.logger.debug("uploading server certificate: " + cert_name)
+        self.upload_server_cert(cert_name=cert_name, cert_body=cert_body,
                                            private_key=private_key)
-        if cert_name not in str(self.connection.get_server_certificate(cert_name)):
+        if cert_name not in str(self.get_server_certificate(cert_name)):
             raise Exception("certificate " + cert_name + " not uploaded")
 
     def update_server_cert(self, cert_name, new_cert_name=None, new_path=None):
-        self.debug("updating server certificate: " + cert_name)
-        self.connection.update_server_cert(cert_name=cert_name, new_cert_name=new_cert_name,
+        self.logger.debug("updating server certificate: " + cert_name)
+        self.update_server_cert(cert_name=cert_name, new_cert_name=new_cert_name,
                                            new_path=new_path)
-        if (new_cert_name and new_path) not in str(self.connection.get_server_certificate(new_cert_name)):
+        if (new_cert_name and new_path) not in str(self.get_server_certificate(new_cert_name)):
             raise Exception("certificate " + cert_name + " not updated.")
 
     def get_server_cert(self, cert_name):
-        self.debug("getting server certificate: " + cert_name)
-        cert = self.connection.get_server_certificate(cert_name=cert_name)
-        self.debug(cert)
+        self.logger.debug("getting server certificate: " + cert_name)
+        cert = self.get_server_certificate(cert_name=cert_name)
+        self.logger.debug(cert)
         return cert
 
     def delete_server_cert(self, cert_name):
-        self.debug("deleting server certificate: " + cert_name)
-        self.connection.delete_server_cert(cert_name)
-        if (cert_name) in str(self.connection.get_all_server_certs()):
+        self.logger.debug("deleting server certificate: " + cert_name)
+        self.delete_server_cert(cert_name)
+        if (cert_name) in str(self.get_all_server_certs()):
             raise Exception("certificate " + cert_name + " not deleted.")
 
     def list_server_certs(self, path_prefix='/', marker=None, max_items=None):
-        self.debug("listing server certificates")
-        certs = self.connection.list_server_certs(path_prefix=path_prefix, marker=marker, max_items=max_items)
-        self.debug(certs)
+        self.logger.debug("listing server certificates")
+        certs = self.list_server_certs(path_prefix=path_prefix, marker=marker, max_items=max_items)
+        self.logger.debug(certs)
         return certs
 
     def create_login_profile(self, user_name, password, delegate_account=None):
-        self.debug("Creating login profile for: " + user_name + " with password: " + password)
+        self.logger.debug("Creating login profile for: " + user_name + " with password: " + password)
         params = {'UserName': user_name,
                   'Password': password}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.connection.get_response('CreateLoginProfile', params, verb='POST')
+        self.get_response('CreateLoginProfile', params, verb='POST')

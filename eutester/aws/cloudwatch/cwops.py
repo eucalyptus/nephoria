@@ -31,9 +31,11 @@
 # Author: vic.iglesias@eucalyptus.com
 import re
 import copy
+from boto import __version__ as boto_version
 from boto.ec2.regioninfo import RegionInfo
-import boto.ec2.cloudwatch
-from eutester import Eutester
+from boto.ec2.cloudwatch import CloudWatchConnection
+from cloud_utils.log_utils import printinfo
+from eutester import TestConnection
 
 
 CWRegionData =        {
@@ -78,47 +80,43 @@ EbsMetricsArray     = [
                       {'name':'VolumeConsumedReadWriteOps','unit':'Count'}
                       ]
 
-class CWops(Eutester):
-    @Eutester.printinfo
-    def __init__(self, host=None, credpath=None, endpoint=None, aws_access_key_id=None, aws_secret_access_key=None,
-                 username='root', region=None, is_secure=False, path='/', port=80, boto_debug=0):
-        '''
+class CWops(CloudWatchConnection, TestConnection):
 
-        :param host:
-        :param credpath:
-        :param endpoint:
-        :param aws_access_key_id:
-        :param aws_secret_access_key:
-        :param username:
-        :param region:
-        :param is_secure:
-        :param path:
-        :param port:
-        :param boto_debug:
-        '''
-        self.aws_access_key_id = aws_access_key_id
-        self.aws_secret_access_key = aws_secret_access_key
-        self.account_id = None
-        self.user_id = None
-        self.connection = None
-        super(CWops, self).__init__(credpath=credpath)
-
-        self.setup_cw_connection(host=host,
-                                 region=region,
-                                 endpoint=endpoint,
-                                 aws_access_key_id=self.aws_access_key_id,
-                                 aws_secret_access_key=self.aws_secret_access_key,
-                                 is_secure=is_secure,
-                                 path=path,
-                                 port=port,
-                                 boto_debug=boto_debug)
-        self.poll_count = 48
-        self.username = username
+    EUCARC_URL_NAME = 'aws_iam_url'
+    @printinfo
+    def __init__(self, eucarc=None, credpath=None,
+                 aws_access_key_id=None, aws_secret_access_key=None,
+                 is_secure=False, port=None, host=None, boto_debug=0, path=None,
+                 validate_certs=False, test_resources=None, logger=None):
+        # Init test connection first to sort out base parameters...
+        TestConnection.__init__(self,
+                                eucarc=eucarc,
+                                credpath=credpath,
+                                test_resources=test_resources,
+                                logger=logger,
+                                aws_access_key_id=aws_access_key_id,
+                                aws_secret_access_key=aws_secret_access_key,
+                                is_secure=is_secure,
+                                port=port,
+                                host=host,
+                                boto_debug=boto_debug,
+                                path=path)
+        self._connection_kwargs['validate_certs'] = validate_certs
+        if self.boto_debug:
+            self.show_connection_kwargs()
+        # Init IAM connection...
+        try:
+            CloudWatchConnection.__init__(self, **self._connection_kwargs)
+        except:
+            self.show_connection_kwargs()
+            raise
         self.test_resources = {}
         self.setup_cw_resource_trackers()
 
-    def setup_cw_connection(self, endpoint=None, aws_access_key_id=None, aws_secret_access_key=None, is_secure=True,
-                            host=None, region=None, path='/', port=443, boto_debug=0):
+
+    def get_cw_connection_args(self, endpoint=None, aws_access_key_id=None,
+                               aws_secret_access_key=None, is_secure=True,
+                               host=None, region=None, path='/', port=443, boto_debug=0):
         '''
 
         :param endpoint:
@@ -157,17 +155,12 @@ class CWops(Eutester):
                            'path': path,
                            'region': cw_region}
 
-        if re.search('2.6', boto.__version__):
+        if re.search('2.6', boto_version):
             connection_args['validate_certs'] = False
-
-        try:
-            cw_connection_args = copy.copy(connection_args)
-            cw_connection_args['path'] = path
-            cw_connection_args['region'] = cw_region
-            self.debug('Attempting to create cloud watch connection to ' + cw_region.endpoint + ':' + str(port) + path)
-            self.connection = boto.connect_cloudwatch(**cw_connection_args)
-        except Exception, e:
-            self.critical('Was unable to create Cloud Watch connection because of exception: ' + str(e))
+        cw_connection_args = copy.copy(connection_args)
+        cw_connection_args['path'] = path
+        cw_connection_args['region'] = cw_region
+        return cw_connection_args
 
     def setup_cw_resource_trackers(self):
         '''

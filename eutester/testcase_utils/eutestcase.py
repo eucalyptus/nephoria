@@ -602,7 +602,7 @@ class EutesterTestCase(unittest.TestCase):
                 name = 'EutesterTestCase'
         self.logger = Eulogger(identifier=str(name), stdout_level=log_level, logfile=logfile,
                                logfile_level='debug')
-        self.debugmethod = self.logger.log.debug
+        self.debugmethod = self.logger.debug
         if not self.has_arg('logger'):
             self.add_arg('logger', self.logger)
         if not self.has_arg('debug_method'):

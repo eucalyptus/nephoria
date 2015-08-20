@@ -35,7 +35,7 @@ Created on Mar 21, 2013
 Place holder for availability zone test specific convenience methods+objects to extend boto's zone class
 
 '''
-import eutester
+from cloud_utils.log_utils import get_traceback, printinfo
 from boto.ec2.zone import Zone
 import re
 
@@ -49,8 +49,9 @@ class Vm_Type():
         self.disk = disk
 
 class EuZone(Zone):
-    tester = None
-    vm_types = []
+    def __init__(self, connection=None):
+        connection = connection
+        vm_types = []
 
     @classmethod
     def make_euzone_from_zone(cls, zone, tester):
@@ -61,22 +62,22 @@ class EuZone(Zone):
         return newzone
 
     def debug(self,msg):
-        self.tester.debug(msg)
+        self.tester.logger.debug(msg)
 
     def update(self):
         super(EuZone, self).update()
         self.vm_types = self.get_all_vm_type_info()
 
-    @eutester.Eutester.printinfo
+    @printinfo
     def get_all_vm_type_info(self):
         vm_types = []
         get_zone = [str(self.name)]
         get_zone.append('verbose')
         found = False
         try:
-            myzone = self.tester.connection.get_all_zones(zones=get_zone)
+            myzone = self.connection.get_all_zones(zones=get_zone)
         except Exception, e:
-            tb = self.tester.get_traceback()
+            tb = get_traceback()
             raise Exception(str(tb) + '\n Could not get zone:' + str(self.name) + "\n" + str(e))
         for zone in myzone:
             if zone.name == self.name:
@@ -102,7 +103,7 @@ class EuZone(Zone):
                         break
         return vm_types
 
-    @eutester.Eutester.printinfo
+    @printinfo
     def get_vm_types(self, name=None, free=None, max=None, cpu=None, ram=None, disk=None, refresh_types=False):
         ret_list = []
         if refresh_types or not self.vm_types:

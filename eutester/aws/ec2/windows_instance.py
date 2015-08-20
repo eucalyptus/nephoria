@@ -56,17 +56,14 @@ import copy
 import types
 import operator
 from boto.ec2.instance import Instance
-from eutester import Eutester
-#from eucaops import Eucaops
 from eutester.aws.ec2.euvolume import EuVolume
-from cloud_utils.log_utils import eulogger
+from cloud_utils.log_utils import eulogger, get_line
 from eutester.euca.taggedresource import TaggedResource
 from boto.ec2.instance import InstanceState
 from datetime import datetime
 from cloud_utils.net_utils import winrm_connection
 
-get_line = Eutester.get_line
-
+termline = get_line()
 
 class WinInstanceDiskType():
     gigabyte = 1073741824
@@ -439,7 +436,7 @@ class WinInstance(Instance, TaggedResource):
         newins.debugmethod = debugmethod
         if newins.debugmethod is None:
             newins.logger = eulogger.Eulogger(identifier= str(instance.id))
-            newins.debugmethod= newins.logger.log.debug
+            newins.debugmethod= newins.logger.debug
 
         if (keypair is not None):
             if isinstance(keypair,types.StringTypes):
@@ -695,7 +692,7 @@ class WinInstance(Instance, TaggedResource):
         '''
         self.debug("{0}connect_to_instance starting.\nwait_for_boot:{1} "
                    "seconds\ntimeout from boot:{2}{3}"
-                   .format(get_line(), wait_for_boot, timeout, get_line()))
+                   .format(termline, wait_for_boot, timeout, termline))
         try:
             self.poll_for_port_status_with_boot_delay(waitforboot=wait_for_boot,
                                                       timeout=timeout)
@@ -744,7 +741,7 @@ class WinInstance(Instance, TaggedResource):
             self.update_system_and_disk_info()
             self.init_attached_volumes()
         self.debug("{0}connect_to_instance completed{1}"
-                   .format(get_line(), get_line()))
+                   .format(termline, termline))
 
     def get_connection_debug(self):
         # Add network debug/diag info here...
@@ -787,9 +784,9 @@ class WinInstance(Instance, TaggedResource):
                     volume.md5 = self.get_dev_md5(disk.cygwin_scsi_drive, volume.md5len)
                     if not self.get_volume_from_attached_list_by_id(volume.id):
                         self.debug("{0} updating with root vol:{1}{2}"
-                                   .format(get_line(),
+                                   .format(termline,
                                            volume.id,
-                                           get_line()))
+                                           termline))
                         self.attached_vols.append(volume)
                     disk.update_md5_info_from_ebs()
                     return
@@ -929,9 +926,9 @@ class WinInstance(Instance, TaggedResource):
             raise Exception(errmsg)
 
     def sync_attached_volumes_with_clouds_view(self):
-        self.debug(get_line() +
+        self.debug(termline +
                    "Starting sync_attached_volumes_with_clouds_view"
-                   + get_line() )
+                   + termline )
         badvols = []
         errors = []
         ret = {'errors':errors, 'badvols':badvols}
@@ -956,9 +953,9 @@ class WinInstance(Instance, TaggedResource):
         for local_vol in locallist:
             badvols.append(local_vol)
             errors.append(local_vol.id + ' Error unattached volume found in guests attach list. \n')
-        self.debug(get_line() +
+        self.debug(termline +
                    "Finishing sync_attached_volumes_with_clouds_view"
-                   + get_line() )
+                   + termline )
         return ret
 
 
@@ -1790,7 +1787,7 @@ class WinInstance(Instance, TaggedResource):
 
     def update_volume_guest_info(self, volume, md5=None, md5len=None, guestdev=None):
         self.debug("{0} update_volume_guest_info: {1} {2}"
-                   .format(get_line(), volume, get_line()))
+                   .format(termline, volume, termline))
         if not self.is_volume_attached_to_this_instance(volume):
             raise Exception('Volume not attached to this instance')
         disk = None

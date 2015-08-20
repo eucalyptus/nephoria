@@ -61,43 +61,72 @@ import os
 
 class Eucaops(Eutester):
     
-    def __init__(self, config_file=None, password=None, keypath=None, credpath=None, aws_access_key_id=None,
-                 aws_secret_access_key = None,  account="eucalyptus", user="admin", username=None, APIVersion='2013-10-15',
+    def __init__(self,
+                 # Administrative info:
+                 # (Topology description, Cloud admin account/user...)
+                 config_file=None, euca_path=None, clc_addr=None,
+                 euca_admin_user='admin', euca_admin_account='eucalyptus',
+                 euca_admin_credpath=None,
+                 # (SSH credentials to machines running the cloud...)
+                 ssh_username=None, ssh_password=None, ssh_keypath=None,
+                 ssh_proxy_host=None, ssh_proxy_user=None, ssh_proxy_password=None,
+
+                 # Cloud/AWS info:
+                 # (Cloud/ user credentials used for tests...)
+                 account="eucalyptus", username="admin", create_user=True,
+                 credpath=None, aws_access_key_id=None, aws_secret_access_key = None,
+                 region=None, download_creds=True,
+                 # (Cloud API/Endpoint information...)
+                 APIVersion='2013-10-15', port=8773,
                  ec2_ip=None, ec2_path=None, iam_ip=None, iam_path=None, s3_ip=None, s3_path=None,
                  as_ip=None, as_path=None, elb_ip=None, elb_path=None, cw_ip=None, cw_path=None,
                  cfn_ip=None, cfn_path=None, sts_ip=None, sts_path=None,
-                 port=8773, download_creds=True, boto_debug=0, debug_method=None, region=None):
-        self.config_file = config_file 
-        self.APIVersion = APIVersion
-        self.eucapath = "/opt/eucalyptus"
-        self.ssh = None
-        self.sftp = None
-        self.clc = None
-        self.password = password
-        self.keypath = keypath
+                 boto_debug=0, debug_method=None):
+
+        # System and Cloud admin interface(s)
+        self._system = None
+
+        # Eucalyptus Cloud info topology info...
+        self.config_file = config_file
+
+        self.eucapath =  euca_path or "/opt/eucalyptus"
+        self.clc_addr = clc_addr
+        self._clc_host = None
+
+        #Eucalyptus Admin info...
+        self.euca_admin_user = euca_admin_user
+        self.euca_admin_account = euca_admin_account
+        self.euca_admin_credpath = euca_admin_credpath
+
+
+
+        # SSH info...
+        self.ssh_password = ssh_password
+        self.ssh_username = ssh_username
+        self.ssh_keypath = ssh_keypath
+
+        # Globals...
         self.timeout = 30
-        self.delay = 0
-        self.exit_on_fail = 0
-        self.fail_count = 0
-        self.start_time = time.time()
+        self.logger = eulogger.Eulogger(identifier="EUCAOPS")
+        self.debug = debug_method or self.logger.debug
+        self.critical = self.logger.critical
+        self.info = self.logger.info
+
+        # Directory to search for and save (EC2) keys
         self.key_dir = "./"
-        self.clc_index = 0
+
+        # Cloud user info...
         self.credpath = credpath
         self.account_name = account
-        self.aws_username = user
-        self.download_creds = download_creds
-        self.logger = eulogger.Eulogger(identifier="EUCAOPS")
-        self.debug = debug_method or self.logger.log.debug
-        self.critical = self.logger.log.critical
-        self.info = self.logger.log.info
-        self.username = username
         self.account_id = None
+        self.username = username
+        self.download_creds = download_creds
         self.aws_access_key_id = aws_access_key_id
         self.aws_secret_access_key = aws_secret_access_key
-        self._property_manager = None
 
+        #  API/endpoint info...
         self.boto_debug = boto_debug
-
+        self.APIVersion = APIVersion
         self.region = region
         self.ec2_ip = ec2_ip
         self.ec2_path = ec2_path
@@ -143,13 +172,15 @@ class Eucaops(Eutester):
             clc_array = self.get_component_machines("clc")
             self.clc = clc_array[0]
             self.sftp = self.clc.ssh.connection.open_sftp()
+
+
             if self.download_creds:
                 if self.credpath is None:
                     ### TRY TO GET CREDS ON FIRST CLC if it fails try on second listed clc, if that fails weve hit a terminal condition
                     try:
                         self.debug("Attempting to get credentials and setup sftp")
                         self.sftp = self.clc.ssh.connection.open_sftp()
-                        self.credpath = self.get_credentials(account,user)
+                        self.credpath = self.get_credentials(self.account_name, self.username)
                         self.debug("Successfully downloaded and synced credentials")
                     except Exception, e:
                         tb = self.get_traceback()
@@ -159,7 +190,7 @@ class Eucaops(Eutester):
                             raise Exception(str(tb) + "\nCould not get credentials from first CLC and no other to try")
                         self.swap_clc()
                         self.sftp = self.clc.ssh.connection.open_sftp()
-                        self.get_credentials(account, user)
+                        self.get_credentials(account, cloud_user)
                         
                 self.service_manager = EuserviceManager(self)
                 if account is "eucalyptus":
@@ -183,6 +214,17 @@ class Eucaops(Eutester):
         #                                   region=region, aws_access_key_id=aws_access_key_id,
         #                                   aws_secret_access_key=aws_secret_access_key, boto_debug=boto_debug)
         #
+
+
+    @property
+    def system(self):
+        if not self._system:
+
+
+    @property
+    def clc(self):
+        if not self._clc_host:
+            
 
     def setup_ec2_resource_trackers(self):
         """
