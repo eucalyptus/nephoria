@@ -23,10 +23,10 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from nephoria import Eutester
+from nephoria import TestConnection
 import boto
 from boto.ec2.regioninfo import RegionInfo
-
+from boto.sts import STSConnection
 EC2RegionData = {
     'us-east-1': 'ec2.us-east-1.amazonaws.com',
     'us-west-1': 'ec2.us-west-1.amazonaws.com',
@@ -35,24 +35,38 @@ EC2RegionData = {
     'ap-southeast-1': 'ec2.ap-southeast-1.amazonaws.com'}
 
 
-class STSops(Eutester):
+class STSops(STSConnection, TestConnection):
+    AWS_REGION_SERVICE_PREFIX = 'ec2'
+    EUCARC_URL_NAME = 'sts_url'
+    def __init__(self, eucarc=None, credpath=None,
+                 aws_access_key_id=None, aws_secret_access_key=None,
+                 is_secure=False, port=None, host=None, region=None, endpoint=None,
+                 boto_debug=0, path=None, APIVersion=None, validate_certs=None,
+                 test_resources=None, logger=None):
 
-    def __init__(self, endpoint=None, region=None, credpath=None, aws_access_key_id=None, aws_secret_access_key=None,
-                 path="/", port=443, is_secure=True, boto_debug=0):
-        self.aws_access_key_id = aws_access_key_id
-        self.aws_secret_access_key = aws_secret_access_key
-        self.user_id = None
-        self.account_id = None
-        self.connection = None
-        super(STSops, self).__init__(credpath=credpath)
-        self.setup_sts_connection(endpoint=endpoint,
-                                  path=path,
-                                  port=port,
-                                  region=region,
-                                  is_secure=is_secure,
-                                  aws_access_key_id=self.aws_access_key_id,
-                                  aws_secret_access_key=self.aws_secret_access_key,
-                                  boto_debug=boto_debug)
+        # Init test connection first to sort out base parameters...
+        TestConnection.__init__(self,
+                                eucarc=eucarc,
+                                credpath=credpath,
+                                test_resources=test_resources,
+                                logger=logger,
+                                aws_access_key_id=aws_access_key_id,
+                                aws_secret_access_key=aws_secret_access_key,
+                                is_secure=is_secure,
+                                port=port,
+                                host=host,
+                                APIVersion=APIVersion,
+                                validate_certs=validate_certs,
+                                boto_debug=boto_debug,
+                                path=path)
+        if self.boto_debug:
+            self.show_connection_kwargs()
+        # Init IAM connection...
+        try:
+            STSConnection.__init__(self, **self._connection_kwargs)
+        except:
+            self.show_connection_kwargs()
+            raise
 
     def setup_sts_connection(self, endpoint=None, region=None, aws_access_key_id=None, aws_secret_access_key=None,
                              path="/", port=443, is_secure=True, boto_debug=0):

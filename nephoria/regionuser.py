@@ -39,12 +39,16 @@ from nephoria.aws.iam.iamops import IAMops
 from nephoria.aws.s3.s3ops import S3ops
 from nephoria.aws.ec2.ec2ops import EC2ops
 from nephoria.aws.elb.elbops import ELBops
+from nephoria.aws.sts.stsops import STSops
+from nephoria.aws.cloudformation.cfnops import CFNops
+from nephoria.aws.cloudwatch.cwops import CWops
+from nephoria.aws.autoscaling.asops import ASops
 
 class RegionUser(Eucarc):
     def __init__(self, testconnection, filepath=None, string=None, sshconnection=None,
                  keysdir=None, logger=None):
 
-        super(RegionUser, self).__init__(self, filepath=filepath, string=string,
+        super(RegionUser, self).__init__(filepath=filepath, string=string,
                                          sshconnection=sshconnection, keysdir=keysdir,
                                          logger=logger)
         self.testconnection = testconnection
@@ -52,7 +56,7 @@ class RegionUser(Eucarc):
 
         # Logging setup
         if not logger:
-            logger = Eulogger(name=self.name)
+            logger = Eulogger(self.account_id)
         self.logger = logger
         self.debug = self.logger.debug
         self.critical = self.logger.critical
@@ -92,6 +96,38 @@ class RegionUser(Eucarc):
     def elb(self):
         name = 'elb'
         ops_class = ELBops
+        if not self._connections.get(name, None):
+            self._connections[name] = ops_class(eucarc=self)
+        return self._connections[name]
+
+    @property
+    def sts(self):
+        name = 'sts'
+        ops_class = STSops
+        if not self._connections.get(name, None):
+            self._connections[name] = ops_class(eucarc=self)
+        return self._connections[name]
+
+    @property
+    def autoscaling(self):
+        name = 'autoscaling'
+        ops_class = ASops
+        if not self._connections.get(name, None):
+            self._connections[name] = ops_class(eucarc=self)
+        return self._connections[name]
+
+    @property
+    def cloudwatch(self):
+        name = 'cloudwatch'
+        ops_class = CWops
+        if not self._connections.get(name, None):
+            self._connections[name] = ops_class(eucarc=self)
+        return self._connections[name]
+
+    @property
+    def cloudformation(self):
+        name = 'cloudformation'
+        ops_class = CFNops
         if not self._connections.get(name, None):
             self._connections[name] = ops_class(eucarc=self)
         return self._connections[name]

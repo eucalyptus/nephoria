@@ -81,8 +81,8 @@ EbsMetricsArray     = [
                       ]
 
 class CWops(CloudWatchConnection, TestConnection):
-
-    EUCARC_URL_NAME = 'aws_cloudwatch_url'
+    AWS_REGION_SERVICE_PREFIX = 'monitoring'
+    EUCARC_URL_NAME = 'cloudwatch_url'
     @printinfo
     def __init__(self, eucarc=None, credpath=None,
                  aws_access_key_id=None, aws_secret_access_key=None,

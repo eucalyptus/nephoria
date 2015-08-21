@@ -93,7 +93,6 @@ class S3ops(S3Connection, TestConnection):
         except:
             self.show_connection_kwargs()
             raise
-        self.test_resources = test_resources
         self.setup_s3_resource_trackers()
 
     def setup_s3_resource_trackers(self):

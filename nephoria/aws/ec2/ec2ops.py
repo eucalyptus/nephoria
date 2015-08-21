@@ -119,7 +119,7 @@ class EC2ops(VPCConnection, TestConnection):
 
     enable_root_user_data = """#cloud-config
 disable_root: false"""
-
+    AWS_REGION_SERVICE_PREFIX = 'ec2'
     EUCARC_URL_NAME = 'ec2_url'
     def __init__(self, eucarc=None, credpath=None,
                  aws_access_key_id=None, aws_secret_access_key=None,
@@ -152,7 +152,6 @@ disable_root: false"""
         except:
             self.show_connection_kwargs()
             raise
-
 
     def create_tags(self, resource_ids, tags):
         """

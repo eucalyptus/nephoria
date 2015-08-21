@@ -30,37 +30,43 @@
 #
 # Author: Vic Iglesias vic.iglesias@eucalyptus.com
 #
-from nephoria import Eutester
+from nephoria import TestConnection
 import boto
 from boto.ec2.regioninfo import RegionInfo
+from boto.cloudformation import CloudFormationConnection
 
-class CFNops(Eutester):
+class CFNops(CloudFormationConnection, TestConnection):
 
-    def __init__(self,
-                 endpoint=None,
-                 path=None,
-                 port=None,
-                 region=None,
-                 credpath=None,
-                 aws_access_key_id=None,
-                 aws_secret_access_key=None,
-                 is_secure=True,
-                 boto_debug=0):
-        self.aws_access_key_id = aws_access_key_id
-        self.aws_secret_access_key = aws_secret_access_key
-        self.user_id = None
-        self.account_id = None
-        self.connection = None
-        super(CFNops, self).__init__(credpath=credpath)
+    EUCARC_URL_NAME = 'cloudformation_url'
+    def __init__(self, eucarc=None, credpath=None,
+                 aws_access_key_id=None, aws_secret_access_key=None,
+                 is_secure=False, port=None, host=None, region=None, endpoint=None,
+                 boto_debug=0, path=None, APIVersion=None, validate_certs=None,
+                 test_resources=None, logger=None):
 
-        self.setup_cfn_connection(endpoint=endpoint,
-                                  path=path,
-                                  port=port,
-                                  region=region,
-                                  aws_access_key_id=self.aws_access_key_id,
-                                  aws_secret_access_key=self.aws_secret_access_key,
-                                  is_secure=True,
-                                  boto_debug=0)
+        # Init test connection first to sort out base parameters...
+        TestConnection.__init__(self,
+                                eucarc=eucarc,
+                                credpath=credpath,
+                                test_resources=test_resources,
+                                logger=logger,
+                                aws_access_key_id=aws_access_key_id,
+                                aws_secret_access_key=aws_secret_access_key,
+                                is_secure=is_secure,
+                                port=port,
+                                host=host,
+                                APIVersion=APIVersion,
+                                validate_certs=validate_certs,
+                                boto_debug=boto_debug,
+                                path=path)
+        if self.boto_debug:
+            self.show_connection_kwargs()
+        # Init IAM connection...
+        try:
+            CloudFormationConnection.__init__(self, **self._connection_kwargs)
+        except:
+            self.show_connection_kwargs()
+            raise
 
     def setup_cfn_connection(self,
                              endpoint=None,

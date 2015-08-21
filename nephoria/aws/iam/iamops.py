@@ -43,7 +43,7 @@ from nephoria import TestConnection
 
 
 class IAMops(TestConnection, IAMConnection):
-    EUCARC_URL_NAME = 'aws_iam_url'
+    EUCARC_URL_NAME = 'iam_url'
     def __init__(self, eucarc=None, credpath=None,
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, region=None, endpoint=None,

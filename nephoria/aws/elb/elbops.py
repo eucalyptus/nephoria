@@ -43,18 +43,10 @@ from boto.ec2.elb.listener import Listener
 from boto.ec2.elb.healthcheck import HealthCheck
 from os.path import join, abspath
 
-ELBRegionData = {
-    'us-east-1': 'elasticloadbalancing.us-east-1.amazonaws.com',
-    'us-west-1': 'elasticloadbalancing.us-west-1.amazonaws.com',
-    'us-west-2': 'elasticloadbalancing.us-west-2.amazonaws.com',
-    'eu-west-1': 'elasticloadbalancing.eu-west-1.amazonaws.com',
-    'ap-northeast-1': 'elasticloadbalancing.ap-northeast-1.amazonaws.com',
-    'ap-southeast-1': 'elasticloadbalancing.ap-southeast-1.amazonaws.com'}
-
 
 class ELBops(ELBConnection, TestConnection):
-
-    EUCARC_URL_NAME = 'aws_elb_url'
+    AWS_REGION_SERVICE_PREFIX = 'elasticloadbalancing'
+    EUCARC_URL_NAME = 'elb_url'
     def __init__(self, eucarc=None, credpath=None,
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, region=None, endpoint=None,

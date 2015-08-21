@@ -36,59 +36,43 @@ import boto
 from boto.ec2.autoscale import ScalingPolicy, Instance
 from boto.ec2.autoscale import Tag
 from boto.ec2.autoscale import LaunchConfiguration
-from boto.ec2.autoscale import AutoScalingGroup
+from boto.ec2.autoscale import AutoScalingGroup, AutoScaleConnection
 from boto.ec2.regioninfo import RegionInfo
-
-from nephoria import Eutester
-
-
-ASRegionData = {
-    'us-east-1': 'autoscaling.us-east-1.amazonaws.com',
-    'us-west-1': 'autoscaling.us-west-1.amazonaws.com',
-    'us-west-2': 'autoscaling.us-west-2.amazonaws.com',
-    'eu-west-1': 'autoscaling.eu-west-1.amazonaws.com',
-    'ap-northeast-1': 'autoscaling.ap-northeast-1.amazonaws.com',
-    'ap-southeast-1': 'autoscaling.ap-southeast-1.amazonaws.com',
-    'ap-southeast-2': 'autoscaling.ap-southeast-2.amazonaws.com',
-    'sa-east-1': 'autoscaling.sa-east-1.amazonaws.com'}
+from nephoria import TestConnection
 
 
-class ASops(Eutester):
-    def __init__(self, host=None, credpath=None, endpoint=None, aws_access_key_id=None, aws_secret_access_key=None,
-                 username="root", region=None, is_secure=False, path='/', port=80, boto_debug=0, test_resources=None):
-        """
-        :param host:
-        :param credpath:
-        :param endpoint:
-        :param aws_access_key_id:
-        :param aws_secret_access_key:
-        :param username:
-        :param region:
-        :param is_secure:
-        :param path:
-        :param port:
-        :param boto_debug:
-        """
-        self.aws_access_key_id = aws_access_key_id
-        self.aws_secret_access_key = aws_secret_access_key
-        self.account_id = None
-        self.user_id = None
-        if test_resources:
-            self.test_resources = test_resources
-        self.connection = None
-        self.as_source_ip = None
-        super(ASops, self).__init__(credpath=credpath)
-        self.setup_as_connection(host=host,
-                                 region=region,
-                                 endpoint=endpoint,
-                                 aws_access_key_id=self.aws_access_key_id,
-                                 aws_secret_access_key=self.aws_secret_access_key,
-                                 is_secure=is_secure,
-                                 path=path,
-                                 port=port,
-                                 boto_debug=boto_debug)
-        self.poll_count = 48
-        self.username = username
+class ASops(AutoScaleConnection, TestConnection):
+    EUCARC_URL_NAME = 'autoscaling_url'
+    AWS_REGION_SERVICE_PREFIX = 'autoscaling'
+    def __init__(self, eucarc=None, credpath=None,
+                 aws_access_key_id=None, aws_secret_access_key=None,
+                 is_secure=False, port=None, host=None, region=None, endpoint=None,
+                 boto_debug=0, path=None, APIVersion=None, validate_certs=None,
+                 test_resources=None, logger=None):
+
+        # Init test connection first to sort out base parameters...
+        TestConnection.__init__(self,
+                                eucarc=eucarc,
+                                credpath=credpath,
+                                test_resources=test_resources,
+                                logger=logger,
+                                aws_access_key_id=aws_access_key_id,
+                                aws_secret_access_key=aws_secret_access_key,
+                                is_secure=is_secure,
+                                port=port,
+                                host=host,
+                                APIVersion=APIVersion,
+                                validate_certs=validate_certs,
+                                boto_debug=boto_debug,
+                                path=path)
+        if self.boto_debug:
+            self.show_connection_kwargs()
+        # Init IAM connection...
+        try:
+            AutoScaleConnection.__init__(self, **self._connection_kwargs)
+        except:
+            self.show_connection_kwargs()
+            raise
 
     def setup_as_connection(self, endpoint=None, aws_access_key_id=None, aws_secret_access_key=None, is_secure=True,
                             host=None, region=None, path="/", port=443, boto_debug=0):
