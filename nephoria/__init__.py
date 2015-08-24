@@ -30,7 +30,7 @@ class TestConnection(object):
     EUCARC_URL_NAME = None
     AWS_REGION_SERVICE_PREFIX = None
 
-    def __init__(self, eucarc=None, credpath=None, service_url=None, nephomaniac=None,
+    def __init__(self, eucarc=None, credpath=None, service_url=None, context_mgr=None,
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, endpoint=None, region=None,
                  boto_debug=0, path=None, validate_certs=None, test_resources=None, logger=None,
@@ -43,7 +43,7 @@ class TestConnection(object):
         self.service_port = None
         self.service_path = None
         self._original_connection = None
-        self.nephomaniac = nephomaniac
+        self.context_mgr = context_mgr
         if boto_debug:
             set_stream_logger('boto')
         if not logger:
@@ -98,14 +98,32 @@ class TestConnection(object):
 
     # Experiment to allow setting context for all boto objects created despite the
     # connection they possess. '_connection' is used by the underlying boto connection class(s)
-    # to retrieve the http connection from pool or create a new one. 
+    # to retrieve the http connection from pool or create a new one.
+
     @property
-    def _connection(self):
-        if self.nephomaniac:
-            current_context = self.nephomaniac.get_context(self)
-            if current_context and current_context != self._original_connection:
+    def connection(self):
+        self.logger.debug('!!!!!!!!!!!!!! Getting Connection property......')
+        if self.context_mgr:
+            self.logger.debug('Got a context manager...')
+            current_context = self.context_mgr.get_connection_context(ops=self)
+            self.logger.debug('Got connection context: {0}'.format(current_context))
+            if current_context:
+                self.logger.debug('Context connection, host: {0}'.format(current_context.host))
                 return current_context
-        return self._original_connection
+        self.logger.debug('No context so returning super...')
+        return super(TestConnection, self).get_http_connection(*self._connection)
+
+    def get_http_connection(self, *args, **kwargs):
+        self.logger.debug('!!!!!!!!!!!!!! Getting HTTP Connection......')
+        if self.context_mgr:
+            self.logger.debug('Got a context manager...')
+            current_context = self.context_mgr.get_current_ops_context(ops=self)
+            self.logger.debug('Got connection context: {0}'.format(current_context))
+            if current_context:
+                self.logger.debug('Context connection, host: {0}'.format(current_context.host))
+                return current_context.get_http_connection(*current_context._connection)
+        self.logger.debug('No context so returning super...')
+        return super(TestConnection, self).get_http_connection(*args, **kwargs)
 
     @property
     def service_url(self):
@@ -151,6 +169,7 @@ class TestConnection(object):
                     region.endpoint = host
             return region
         return None
+
 
     def _clean_connection_kwargs(self):
         classes = self.__class__.__bases__

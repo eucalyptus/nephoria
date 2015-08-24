@@ -56,14 +56,14 @@ class S3opsException(Exception):
         print self.msg
 
 
-class S3ops(S3Connection, TestConnection):
+class S3ops(TestConnection, S3Connection):
     s3_groups = {
              "all_users":"http://acs.amazonaws.com/groups/global/AllUsers",
              "authenticated_users":"http://acs.amazonaws.com/groups/global/AuthenticatedUsers",
              "log_delivery":"http://acs.amazonaws.com/groups/s3/LogDelivery"
              }
     EUCARC_URL_NAME = 's3_url'
-    def __init__(self, eucarc=None, credpath=None,
+    def __init__(self, eucarc=None, credpath=None, context_mgr=None,
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, region=None, endpoint=None,
                  boto_debug=0, path=None, APIVersion=None, validate_certs=None,
@@ -73,6 +73,7 @@ class S3ops(S3Connection, TestConnection):
         TestConnection.__init__(self,
                                 eucarc=eucarc,
                                 credpath=credpath,
+                                context_mgr=context_mgr,
                                 test_resources=test_resources,
                                 logger=logger,
                                 aws_access_key_id=aws_access_key_id,

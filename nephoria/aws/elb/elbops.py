@@ -44,10 +44,10 @@ from boto.ec2.elb.healthcheck import HealthCheck
 from os.path import join, abspath
 
 
-class ELBops(ELBConnection, TestConnection):
+class ELBops(TestConnection, ELBConnection):
     AWS_REGION_SERVICE_PREFIX = 'elasticloadbalancing'
     EUCARC_URL_NAME = 'elb_url'
-    def __init__(self, eucarc=None, credpath=None,
+    def __init__(self, eucarc=None, credpath=None, context_mgr=None,
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, region=None, endpoint=None,
                  boto_debug=0, path=None, APIVersion=None, validate_certs=None,
@@ -57,6 +57,7 @@ class ELBops(ELBConnection, TestConnection):
         TestConnection.__init__(self,
                                 eucarc=eucarc,
                                 credpath=credpath,
+                                context_mgr=context_mgr,
                                 test_resources=test_resources,
                                 logger=logger,
                                 aws_access_key_id=aws_access_key_id,

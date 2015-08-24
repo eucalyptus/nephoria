@@ -44,7 +44,7 @@ from nephoria import TestConnection
 
 class IAMops(TestConnection, IAMConnection):
     EUCARC_URL_NAME = 'iam_url'
-    def __init__(self, eucarc=None, credpath=None,
+    def __init__(self, eucarc=None, credpath=None, context_mgr=None,
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, region=None, endpoint=None,
                  boto_debug=0, path=None, APIVersion=None, validate_certs=None,
@@ -54,6 +54,7 @@ class IAMops(TestConnection, IAMConnection):
         TestConnection.__init__(self,
                                 eucarc=eucarc,
                                 credpath=credpath,
+                                context_mgr=context_mgr,
                                 test_resources=test_resources,
                                 logger=logger,
                                 aws_access_key_id=aws_access_key_id,

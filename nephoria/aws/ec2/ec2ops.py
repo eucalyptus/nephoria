@@ -62,7 +62,7 @@ import boto
 
 from nephoria import TestConnection
 from cloud_utils.net_utils import sshconnection
-from cloud_utils.log_utils import printinfo, get_traceback
+from cloud_utils.log_utils import printinfo, get_traceback, markup
 from nephoria.aws.ec2.euinstance import EuInstance
 from nephoria.aws.ec2.windows_instance import WinInstance
 from nephoria.aws.ec2.euvolume import EuVolume
@@ -115,13 +115,13 @@ EC2RegionData = {
     'ap-southeast-1': 'ec2.ap-southeast-1.amazonaws.com'}
 
 
-class EC2ops(VPCConnection, TestConnection):
+class EC2ops(TestConnection, VPCConnection):
 
     enable_root_user_data = """#cloud-config
 disable_root: false"""
     AWS_REGION_SERVICE_PREFIX = 'ec2'
     EUCARC_URL_NAME = 'ec2_url'
-    def __init__(self, eucarc=None, credpath=None,
+    def __init__(self, eucarc=None, credpath=None, context_mgr=None,
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, region=None, endpoint=None,
                  boto_debug=0, path=None, APIVersion=None, validate_certs=None,
@@ -131,6 +131,7 @@ disable_root: false"""
         TestConnection.__init__(self,
                                 eucarc=eucarc,
                                 credpath=credpath,
+                                context_mgr=context_mgr,
                                 test_resources=test_resources,
                                 logger=logger,
                                 aws_access_key_id=aws_access_key_id,
@@ -429,7 +430,7 @@ disable_root: false"""
 
         old_api_version = self.APIVersion
         try:
-            #self.ec2.APIVersion = "2009-10-31"
+            #self.APIVersion = "2009-10-31"
             if src_security_group_name:
                 self.logger.debug( "Attempting authorization of: {0}, from group:{1},"
                             " on port range: {2} to {3}, proto:{4}"
@@ -1121,7 +1122,7 @@ disable_root: false"""
                 if len(volumes) == 1:
                     volume = volumes[0]
                     #previous_status = volume.status
-                    #self.ec2.delete_volume(volume.id)
+                    #self.delete_volume(volume.id)
                 elif len(volumes) == 0:
                     vollist.remove(volume)
                     continue
@@ -4587,9 +4588,9 @@ disable_root: false"""
             raise ValueError('Unknown type provided for image:"{0}:{1}"'.format(image,
                                                                                 type(image)))
         def header(text):
-            return self.markup(text=text, markups=header_markups)
+            return markup(text=text, markups=header_markups)
 
-        title =self.markup("IMAGE ID: {0},    IMAGE NAME:{1}".format(image.id, image.name),
+        title =markup("IMAGE ID: {0},    IMAGE NAME:{1}".format(image.id, image.name),
                            markups=[1,94])
 
         main_pt = PrettyTable([title])
@@ -4632,8 +4633,8 @@ disable_root: false"""
         cloud admin using verbose filter
         :param addresses:
         """
-        pt = PrettyTable([self.markup('PUBLIC IP'), self.markup('ACCOUNT NAME'),
-                          self.markup('REGION'), self.markup('ADDRESS INFO')])
+        pt = PrettyTable([markup('PUBLIC IP'), markup('ACCOUNT NAME'),
+                          markup('REGION'), markup('ADDRESS INFO')])
         pt.align = 'l'
         show_addresses = []
         get_addresses = []
@@ -4651,14 +4652,14 @@ disable_root: false"""
                                          .format(address, type(address)))
                 if get_addresses and verbose:
                     get_addresses.append('verbose')
-                ad_list = show_addresses.extend(self.ec2.get_all_addresses(
+                ad_list = show_addresses.extend(self.get_all_addresses(
                     addresses=get_addresses))
             else:
                 if verbose:
                     get_addresses = ['verbose']
                 else:
                     get_addresses = None
-                ad_list = self.ec2.get_all_addresses(addresses=get_addresses)
+                ad_list = self.get_all_addresses(addresses=get_addresses)
             for ad in ad_list:
                 instance_id = ad.instance_id
                 public_ip = ad.public_ip
@@ -4673,10 +4674,10 @@ disable_root: false"""
                         account_id = match.split(':')[4]
                         account_name = self.get_all_accounts(account_id=account_id)[0]['account_name']
                         if account_name:
-                            account_name = self.markup(account_name)
-                            instance_id = self.markup(instance_id)
-                            public_ip = self.markup(public_ip)
-                            region = self.markup(region)
+                            account_name = markup(account_name)
+                            instance_id = markup(instance_id)
+                            public_ip = markup(public_ip)
+                            region = markup(region)
                     except:pass
                 pt.add_row([public_ip, account_name, region, instance_id])
         except Exception, e:
@@ -4954,7 +4955,7 @@ disable_root: false"""
         if zone:
             zones = [zone]
         else:
-            zones = self.ec2.get_all_zones()
+            zones = self.get_all_zones()
         for zone in zones:
             buf += "------------------------( " + str(zone) + " )--------------------------------------------\n"
             for vm in self.get_vm_type_list_from_zone(zone):
@@ -4965,7 +4966,7 @@ disable_root: false"""
 
     def show_security_groups(self, groups=None, verbose=True, printme=True):
         ret_buf = ""
-        groups = groups or self.ec2.get_all_security_groups()
+        groups = groups or self.get_all_security_groups()
         for group in groups:
             ret_buf += "\n" + str(self.show_security_group(group, printme=False))
         if printme:
@@ -4984,7 +4985,7 @@ disable_root: false"""
         if not group:
             raise ValueError('Show sec group failed. Could not fetch group:'
                              + str(group))
-        title = self.markup("Security Group: {0}/{1}, VPC: {2}"
+        title = markup("Security Group: {0}/{1}, VPC: {2}"
                             .format(group.name, group.id, group.vpc_id))
         maintable = PrettyTable([title])
         table = PrettyTable(["CIDR_IP", "SRC_GRP_NAME",
@@ -5009,7 +5010,7 @@ disable_root: false"""
 
     def show_security_groups_for_instance(self, instance, printmethod=None, printme=True):
         buf = ""
-        title = self.markup("EUCA SECURITY GROUPS FOR INSTANCE:{0}".format(instance.id))
+        title = markup("EUCA SECURITY GROUPS FOR INSTANCE:{0}".format(instance.id))
         pt = PrettyTable([title])
         pt.align['title'] = 'l'
         for group in instance.groups:
@@ -5022,10 +5023,10 @@ disable_root: false"""
             return pt
 
     def show_account_attributes(self, attribute_names=None, printmethod=None, printme=True):
-        attrs = self.ec2.describe_account_attributes(attribute_names=attribute_names)
+        attrs = self.describe_account_attributes(attribute_names=attribute_names)
 
-        main_pt = PrettyTable([self.markup('ACCOUNT ATTRIBUTES')])
-        pt = PrettyTable([self.markup('NAME'), self.markup('VALUE')])
+        main_pt = PrettyTable([markup('ACCOUNT ATTRIBUTES')])
+        pt = PrettyTable([markup('NAME'), markup('VALUE')])
         pt.hrules = ALL
         for attr in attrs:
             pt.add_row([attr.attribute_name, attr.attribute_values])
