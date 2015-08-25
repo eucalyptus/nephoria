@@ -99,30 +99,23 @@ class TestConnection(object):
     # Experiment to allow setting context for all boto objects created despite the
     # connection they possess. '_connection' is used by the underlying boto connection class(s)
     # to retrieve the http connection from pool or create a new one.
-
     @property
     def connection(self):
-        self.logger.debug('!!!!!!!!!!!!!! Getting Connection property......')
         if self.context_mgr:
-            self.logger.debug('Got a context manager...')
             current_context = self.context_mgr.get_connection_context(ops=self)
-            self.logger.debug('Got connection context: {0}'.format(current_context))
             if current_context:
-                self.logger.debug('Context connection, host: {0}'.format(current_context.host))
+                self.logger.debug('"{0}":connection, Got a different connection context:"{1}"'
+                                  .format(self, current_context))
                 return current_context
-        self.logger.debug('No context so returning super...')
         return super(TestConnection, self).get_http_connection(*self._connection)
 
     def get_http_connection(self, *args, **kwargs):
-        self.logger.debug('!!!!!!!!!!!!!! Getting HTTP Connection......')
         if self.context_mgr:
-            self.logger.debug('Got a context manager...')
             current_context = self.context_mgr.get_current_ops_context(ops=self)
-            self.logger.debug('Got connection context: {0}'.format(current_context))
             if current_context:
-                self.logger.debug('Context connection, host: {0}'.format(current_context.host))
+                self.logger.debug('"{0}": get_http_connection, Got a different ops context:"{1}"'
+                                  .format(self, current_context))
                 return current_context.get_http_connection(*current_context._connection)
-        self.logger.debug('No context so returning super...')
         return super(TestConnection, self).get_http_connection(*args, **kwargs)
 
     @property

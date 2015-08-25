@@ -11,8 +11,19 @@ class ContextManager(object):
 
     def __init__(self, endpoints=None, username='root', password=None, admincreds=None,
                  testcreds=None, testaccount='testaccount1', testuser='testuser1'):
-        self.current_context = None
+        self._current_user_context = None
 
+    def set_current_user_context(self, user_context):
+        if not (user_context is None or isinstance(user_context, UserContext)):
+            raise ValueError('Unsupported type for user_context: "{0}"'.format(user_context))
+        self._current_user_context = user_context
+
+    @property
+    def current_user_context(self):
+        return self._current_user_context
+
+    def clear_current_user_context(self):
+        self.current_user_context = None
 
     def get_current_ops_context(self, ops):
         """
@@ -23,15 +34,17 @@ class ContextManager(object):
         """
         conn_attr = None
         # First check to see if a context is set...
-        if isinstance(self.current_context, UserContext):
+        if isinstance(self.current_user_context, UserContext):
             # Get the attribute name of this specific ops class for the user_context obj...
-            conn_attr = UserContext.CLASS_MAP.get(ops.__class__, None)
+            conn_attr = UserContext.CLASS_MAP.get(ops.__class__.__name__, None)
         elif isclass(ops):
+            conn_attr = UserContext.CLASS_MAP.get(ops.__name__)
+        elif isinstance(ops, basestring):
             conn_attr = UserContext.CLASS_MAP.get(ops)
 
         if conn_attr:
             # Get the current ops/connection obj that matching the requesting ops...
-            current_ops = getattr(self.current_context, conn_attr)
+            current_ops = getattr(self.current_user_context, conn_attr)
             # If this is the same ops obj, then return None so the requestor knows to use
             # it's own connection...
             if current_ops != ops:
@@ -55,5 +68,6 @@ class ContextManager(object):
             # requesting ops obj use this connection for it's specific service instead...
             return current_ops.get_http_connection(*current_ops._connection)
         return None
+
 
 

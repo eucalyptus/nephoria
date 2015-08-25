@@ -47,14 +47,14 @@ from nephoria.aws.autoscaling.asops import ASops
 class UserContext(Eucarc):
 
     # This map is used for context lookups...
-    CLASS_MAP = {IAMops: 'iam',
-                 S3ops: 's3',
-                 EC2ops: 'ec2',
-                 ELBops: 'elb',
-                 STSops: 'sts',
-                 CWops: 'cloudwatch',
-                 CFNops: 'cloudformation',
-                 ASops: 'autoscaling'}
+    CLASS_MAP = {IAMops.__name__: 'iam',
+                 S3ops.__name__: 's3',
+                 EC2ops.__name__: 'ec2',
+                 ELBops.__name__: 'elb',
+                 STSops.__name__: 'sts',
+                 CWops.__name__: 'cloudwatch',
+                 CFNops.__name__: 'cloudformation',
+                 ASops.__name__: 'autoscaling'}
 
     def __init__(self, context_mgr=None, filepath=None, string=None, sshconnection=None,
                  keysdir=None, logger=None):
@@ -63,6 +63,7 @@ class UserContext(Eucarc):
                                          sshconnection=sshconnection, keysdir=keysdir,
                                          logger=logger)
         self._connections = {}
+        self._previous_context = None
         self.context_mgr = context_mgr
         # Logging setup
         if not logger:
@@ -73,15 +74,20 @@ class UserContext(Eucarc):
         self.info = self.logger.info
 
     def __enter__(self):
-        self.testconnection.set_current_user(self)
+        self._previous_context = self.context_mgr.current_user_context
+        self.context_mgr.set_current_user_context(self)
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.testconnection.set_current_user(None)
+        self.context_mgr.set_current_user_context(self._previous_context)
+
+    def __repr__(self):
+        return "{0}:{1}".format(self.__class__.__name__, self.account_id)
 
     @property
     def iam(self):
         ops_class = IAMops
-        name = self.CLASS_MAP[ops_class]
+        name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
             self._connections[name] = ops_class(eucarc=self, context_mgr=self.context_mgr)
         return self._connections[name]
@@ -89,7 +95,7 @@ class UserContext(Eucarc):
     @property
     def s3(self):
         ops_class = S3ops
-        name = self.CLASS_MAP[ops_class]
+        name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
             self._connections[name] = ops_class(eucarc=self, context_mgr=self.context_mgr)
         return self._connections[name]
@@ -97,7 +103,7 @@ class UserContext(Eucarc):
     @property
     def ec2(self):
         ops_class = EC2ops
-        name = self.CLASS_MAP[ops_class]
+        name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
             self._connections[name] = ops_class(eucarc=self, context_mgr=self.context_mgr)
         return self._connections[name]
@@ -105,7 +111,7 @@ class UserContext(Eucarc):
     @property
     def elb(self):
         ops_class = ELBops
-        name = self.CLASS_MAP[ops_class]
+        name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
             self._connections[name] = ops_class(eucarc=self, context_mgr=self.context_mgr)
         return self._connections[name]
@@ -113,7 +119,7 @@ class UserContext(Eucarc):
     @property
     def sts(self):
         ops_class = STSops
-        name = self.CLASS_MAP[ops_class]
+        name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
             self._connections[name] = ops_class(eucarc=self, context_mgr=self.context_mgr)
         return self._connections[name]
@@ -121,7 +127,7 @@ class UserContext(Eucarc):
     @property
     def autoscaling(self):
         ops_class = ASops
-        name = self.CLASS_MAP[ops_class]
+        name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
             self._connections[name] = ops_class(eucarc=self, context_mgr=self.context_mgr)
         return self._connections[name]
@@ -129,7 +135,7 @@ class UserContext(Eucarc):
     @property
     def cloudwatch(self):
         ops_class = CWops
-        name = self.CLASS_MAP[ops_class]
+        name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
             self._connections[name] = ops_class(eucarc=self, context_mgr=self.context_mgr)
         return self._connections[name]
@@ -137,7 +143,7 @@ class UserContext(Eucarc):
     @property
     def cloudformation(self):
         ops_class = CFNops
-        name = self.CLASS_MAP[ops_class]
+        name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
             self._connections[name] = ops_class(eucarc=self, context_mgr=self.context_mgr)
         return self._connections[name]
