@@ -84,7 +84,7 @@ class IAMops(TestConnection, IAMConnection):
         self.logger.debug("Creating account: " + account_name)
         params = {'AccountName': account_name}
         try:
-            res = self.get_response_at_marker('CreateAccount', params, item_marker='account')
+            res = self.get_response_items('CreateAccount', params, item_marker='account')
         except BotoServerError as BE:
             if not (BE.status == 409 and ignore_existing):
                 raise
@@ -124,7 +124,7 @@ class IAMops(TestConnection, IAMConnection):
                 account_name = account_id
                 account_id = None
         self.logger.debug('Attempting to fetch all accounts matching- account_id:'+str(account_id)+' account_name:'+str(account_name))
-        response = self.get_response_at_marker('ListAccounts', {}, item_marker='accounts',
+        response = self.get_response_items('ListAccounts', {}, item_marker='accounts',
                                                list_marker='Accounts')
         retlist = []
         for account in response:
@@ -144,12 +144,19 @@ class IAMops(TestConnection, IAMConnection):
         :param search: boolean - specify whether to use match or search when filtering the returned list
         :return: account dict
         """
+        if not (account_id or account_name):
+            aliases = self.get_account_aliases()
+            if aliases:
+                account_name = aliases[0]
+            else:
+                raise ValueError('get_account(). Account id, name, or alias not found')
         accounts = self.get_all_accounts(account_id=account_id, account_name=account_name,
                                          search=search)
         if accounts:
             if len(accounts) > 1:
                 raise ValueError('get_account matched more than a single account with the '
-                                 'provided criteria: {0}'.format(accounts))
+                                 'provided criteria: account_id="{0}", account_name="{1}"'
+                                 .format(account_id, account_name))
             else:
                 return accounts[0]
         return None
@@ -169,7 +176,7 @@ class IAMops(TestConnection, IAMConnection):
         if delegate_account:
             params['DelegateAccount'] = delegate_account
         try:
-            res = self.get_response_at_marker('CreateUser', params, item_marker='user')
+            res = self.get_response_items('CreateUser', params, item_marker='user')
         except BotoServerError as BE:
             if not (BE.status == 409 and ignore_existing):
                 raise
@@ -183,7 +190,7 @@ class IAMops(TestConnection, IAMConnection):
             params['UserName'] = user_name
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        return self.get_response_at_marker('GetUser', params, item_marker='user')
+        return self.get_response_items('GetUser', params, item_marker='user')
 
     
     def delete_user(self, user_name, delegate_account=None):
@@ -222,7 +229,7 @@ class IAMops(TestConnection, IAMConnection):
             re_meth = re.match
         if delegate_account:
             params['DelegateAccount'] = delegate_account         
-        response = self.get_response_at_marker('ListUsers', params, item_marker='users',
+        response = self.get_response_items('ListUsers', params, item_marker='users',
                                                list_marker='Users')
         for user in response:
             if path is not None and not re_meth(path, user['path']):
@@ -312,23 +319,25 @@ class IAMops(TestConnection, IAMConnection):
         params = {}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        resp = self.get_response_at_marker('ListAccountAliases', params,
+        resp = self.get_response_items('ListAccountAliases', params,
                                            item_marker='account_aliases',
-                                           list_marker='AccountAliases')
-        return resp.get('member', None)
+                                           list_marker='AccountAliases') or []
+        return resp
 
 
-    def get_euare_username(self):
+    def get_connections_username(self):
         """
         Get all access in the current access account
         """
-        return self.get_all_users(account_id=str(self.get_account_id()))[0]['user_name']
+        user_info = self.get_user_info()
+        return  getattr(user_info, 'user_name', None)
     
-    def get_euare_accountname(self):
+    def get_connections_accountname(self):
         """
         Get account name of current user
         """
-        return self.get_all_users(account_id=str(self.get_account_id()))[0]['account_name']
+        account_info = self.get_account()
+        return  getattr(account_info, 'account_name', None)
 
     def get_all_users(self,  account_name=None,  account_id=None,  path=None,
                       user_name=None,  user_id=None,  search=False ):
@@ -902,7 +911,7 @@ class IAMops(TestConnection, IAMConnection):
                         return res
         return {}
 
-    def get_response_at_marker(self, action, params, item_marker, path='/', parent=None,
+    def get_response_items(self, action, params, item_marker, path='/', parent=None,
                                verb='POST', list_marker='Set'):
         if list_marker is None:
             list_marker = 'Set'
@@ -916,7 +925,8 @@ class IAMops(TestConnection, IAMConnection):
             params['UserName'] = username
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        return self.get_response_at_marker(action='GetUser', params=params, list_marker='user')
+        return self.get_response_items(action='GetUser', params=params, item_marker='user',
+                                        list_marker='user')
 
 
 class IAMResourceNotFoundException(Exception):

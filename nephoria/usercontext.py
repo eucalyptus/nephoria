@@ -107,7 +107,9 @@ class UserContext(Eucarc):
     @property
     def account_name(self):
         if not self._account_name:
-            self._account_name = self.iam.get_account_aliases(delegate_account=self.account_id)
+            account_names = self.iam.get_account_aliases(delegate_account=self.account_id)
+            if account_names:
+                self._account_name = account_names[0]
         return self._account_name
 
     @property
