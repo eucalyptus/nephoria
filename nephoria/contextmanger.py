@@ -1,6 +1,7 @@
 __author__ = 'clarkmatthew'
 
 from nephoria.usercontext import UserContext
+from nephoria.testconnection import TestConnection
 from inspect import isclass
 
 
@@ -22,6 +23,13 @@ class ContextManager(object):
     def current_user_context(self):
         return self._current_user_context
 
+    @current_user_context.setter
+    def current_user_context(self, context):
+        if context is None or isinstance(context, UserContext):
+            self._current_user_context = context
+        else:
+            raise ValueError('Uknown type for user context: "{0}"'.format(context))
+
     def clear_current_user_context(self):
         self.current_user_context = None
 
@@ -34,7 +42,10 @@ class ContextManager(object):
         """
         conn_attr = None
         # First check to see if a context is set...
-        if isinstance(self.current_user_context, UserContext):
+        if not self.current_user_context:
+            return None
+
+        if isinstance(ops, TestConnection):
             # Get the attribute name of this specific ops class for the user_context obj...
             conn_attr = UserContext.CLASS_MAP.get(ops.__class__.__name__, None)
         elif isclass(ops):

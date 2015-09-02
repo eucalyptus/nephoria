@@ -35,11 +35,8 @@ from boto.exception import BotoServerError
 import json
 import re
 import urllib
-from cloud_utils.log_utils.eulogger import Eulogger
-from cloud_utils.file_utils.eucarc import Eucarc
-from urlparse import urlparse
 from prettytable import PrettyTable
-from nephoria import TestConnection
+from nephoria.testconnection import TestConnection
 
 
 class IAMops(TestConnection, IAMConnection):
@@ -48,7 +45,7 @@ class IAMops(TestConnection, IAMConnection):
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, region=None, endpoint=None,
                  boto_debug=0, path=None, APIVersion=None, validate_certs=None,
-                 test_resources=None, logger=None):
+                 test_resources=None, logger=None, log_level=None):
 
         # Init test connection first to sort out base parameters...
         TestConnection.__init__(self,
@@ -65,7 +62,8 @@ class IAMops(TestConnection, IAMConnection):
                                 APIVersion=APIVersion,
                                 validate_certs=validate_certs,
                                 boto_debug=boto_debug,
-                                path=path)
+                                path=path,
+                                log_level=log_level)
         if self.boto_debug:
             self.show_connection_kwargs()
         # Init IAM connection...
@@ -74,9 +72,10 @@ class IAMops(TestConnection, IAMConnection):
         except:
             self.show_connection_kwargs()
             raise
+        self.test_resources["iam_accounts"] = self.test_resources.get('iam_accounts', [])
 
 
-    def create_account(self, account_name):
+    def create_account(self, account_name, ignore_existing=True):
         """
         Create an account with the given name
 
@@ -84,8 +83,14 @@ class IAMops(TestConnection, IAMConnection):
         """
         self.logger.debug("Creating account: " + account_name)
         params = {'AccountName': account_name}
-        self.test_resource["iam_accounts"].append(account_name)
-        self.get_response('CreateAccount', params)
+        try:
+            res = self.get_response_at_marker('CreateAccount', params, item_marker='account')
+        except BotoServerError as BE:
+            if not (BE.status == 409 and ignore_existing):
+                raise
+            res = self.get_account(account_name=account_name)
+        self.test_resources["iam_accounts"].append(account_name)
+        return res
     
     def delete_account(self, account_name, recursive=False):
         """
@@ -114,18 +119,43 @@ class IAMops(TestConnection, IAMConnection):
             re_meth = re.search
         else:
             re_meth = re.match
+        if account_id and not re.match("\d{12}", account_id):
+            if not account_name:
+                account_name = account_id
+                account_id = None
         self.logger.debug('Attempting to fetch all accounts matching- account_id:'+str(account_id)+' account_name:'+str(account_name))
-        response = self.get_response('ListAccounts', {}, list_marker='Accounts')
+        response = self.get_response_at_marker('ListAccounts', {}, item_marker='accounts',
+                                               list_marker='Accounts')
         retlist = []
-        for account in response['list_accounts_response']['list_accounts_result']['accounts']:
+        for account in response:
             if account_name is not None and not re_meth( account_name, account['account_name']):
                 continue
             if account_id is not None and not re_meth(account_id, account['account_id']):
                 continue
             retlist.append(account)
         return retlist
-             
-    def create_user(self, user_name, path="/", delegate_account=None):
+
+    def get_account(self, account_id=None, account_name=None, search=False):
+        """
+        Request a specific account, returns an account dict that matches the given criteria
+
+        :param account_id: regex string - to use for account_name
+        :param account_name: regex - to use for account ID
+        :param search: boolean - specify whether to use match or search when filtering the returned list
+        :return: account dict
+        """
+        accounts = self.get_all_accounts(account_id=account_id, account_name=account_name,
+                                         search=search)
+        if accounts:
+            if len(accounts) > 1:
+                raise ValueError('get_account matched more than a single account with the '
+                                 'provided criteria: {0}'.format(accounts))
+            else:
+                return accounts[0]
+        return None
+
+
+    def create_user(self, user_name, path="/", delegate_account=None, ignore_existing=True):
         """
         Create a user
 
@@ -138,7 +168,23 @@ class IAMops(TestConnection, IAMConnection):
                   'Path': path }
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.get_response('CreateUser',params)
+        try:
+            res = self.get_response_at_marker('CreateUser', params, item_marker='user')
+        except BotoServerError as BE:
+            if not (BE.status == 409 and ignore_existing):
+                raise
+            res = self.get_user(user_name=user_name, delegate_account=delegate_account)
+        return res
+
+
+    def get_user(self, user_name=None, delegate_account=None):
+        params = {}
+        if user_name:
+            params['UserName'] = user_name
+        if delegate_account:
+            params['DelegateAccount'] = delegate_account
+        return self.get_response_at_marker('GetUser', params, item_marker='user')
+
     
     def delete_user(self, user_name, delegate_account=None):
         """
@@ -153,7 +199,8 @@ class IAMops(TestConnection, IAMConnection):
             params['DelegateAccount'] = delegate_account
         self.get_response('DeleteUser', params)
 
-    def get_users_from_account(self, path=None, user_name=None, user_id=None, delegate_account=None, search=False):
+    def get_users_from_account(self, path=None, user_name=None, user_id=None,
+                               delegate_account=None, search=False):
         """
         Returns access that match given criteria. By default will return current account.
 
@@ -164,7 +211,9 @@ class IAMops(TestConnection, IAMConnection):
         :param search: use regex search (any occurrence) rather than match (exact same strings must occur)
         :return:
         """
-        self.logger.debug('Attempting to fetch all access matching- user_id:'+str(user_id)+' user_name:'+str(user_name)+" acct_name:"+str(delegate_account))
+        self.logger.debug('Attempting to fetch all access matching- user_id:' +
+                          str(user_id) + ' user_name:' + str(user_name) + " acct_name:" +
+                          str(delegate_account))
         retlist = []
         params = {}
         if search:
@@ -173,8 +222,9 @@ class IAMops(TestConnection, IAMConnection):
             re_meth = re.match
         if delegate_account:
             params['DelegateAccount'] = delegate_account         
-        response = self.get_response('ListUsers', params, list_marker='Users')
-        for user in response['list_users_response']['list_users_result']['access']:
+        response = self.get_response_at_marker('ListUsers', params, item_marker='users',
+                                               list_marker='Users')
+        for user in response:
             if path is not None and not re_meth(path, user['path']):
                 continue
             if user_name is not None and not re_meth(user_name, user['user_name']):
@@ -184,7 +234,8 @@ class IAMops(TestConnection, IAMConnection):
             retlist.append(user)
         return retlist
 
-    def show_all_accounts(self, account_name=None, account_id=None, search=False, print_table=True):
+    def show_all_accounts(self, account_name=None, account_id=None, search=False,
+                          print_table=True):
         """
         Debug Method to print an account list based on given filter criteria
 
@@ -201,7 +252,7 @@ class IAMops(TestConnection, IAMConnection):
         for account in list:
             pt.add_row([account['account_name'], account['account_id']])
         if print_table:
-            self.logger.debug("\n" + str(pt) + "\n")
+            self.logger.info("\n" + str(pt) + "\n")
         else:
             return pt
 
@@ -227,7 +278,7 @@ class IAMops(TestConnection, IAMConnection):
         for group in list:
             pt.add_row([group['account_name'], group['group_name'], group['group_id']])
         if print_table:
-            self.logger.debug("\n" + str(pt) + "\n")
+            self.logger.info("\n" + str(pt) + "\n")
         else:
             return pt
 
@@ -253,9 +304,19 @@ class IAMops(TestConnection, IAMConnection):
             pt.add_row([user['account_name'], user['user_name'],
                         user['user_id'], user['account_id']])
         if print_table:
-            self.logger.debug("\n" + str(pt) + "\n")
+            self.logger.info("\n" + str(pt) + "\n")
         else:
             return pt
+
+    def get_account_aliases(self, delegate_account=None):
+        params = {}
+        if delegate_account:
+            params['DelegateAccount'] = delegate_account
+        resp = self.get_response_at_marker('ListAccountAliases', params,
+                                           item_marker='account_aliases',
+                                           list_marker='AccountAliases')
+        return resp.get('member', None)
+
 
     def get_euare_username(self):
         """
@@ -411,7 +472,7 @@ class IAMops(TestConnection, IAMConnection):
                 pretty_json = (json.dumps(p_json, indent=2) or "") + "\n"
                 main_pt.add_row([pretty_json])
         if print_table:
-            self.logger.debug("\n" + str(main_pt) + "\n")
+            self.logger.info("\n" + str(main_pt) + "\n")
         else:
             return main_pt
 
@@ -446,7 +507,7 @@ class IAMops(TestConnection, IAMConnection):
         new_pt._rows = pol_pt._rows
         pt.add_row([new_pt])
         if print_table:
-            self.logger.debug("\n" + str(pt) + "\n")
+            self.logger.info("\n" + str(pt) + "\n")
         else:
             return pt
 
@@ -474,7 +535,7 @@ class IAMops(TestConnection, IAMConnection):
                                                  print_table=False))])
         main_pt.add_row([str(self.show_user_policy_summary(user_name, print_table=False))])
         if print_table:
-            self.logger.debug("\n" + str(main_pt) + "\n")
+            self.logger.info("\n" + str(main_pt) + "\n")
         else:
             return main_pt
         
@@ -828,3 +889,39 @@ class IAMops(TestConnection, IAMConnection):
         if delegate_account:
             params['DelegateAccount'] = delegate_account
         self.get_response('CreateLoginProfile', params, verb='POST')
+
+    @staticmethod
+    def _search_dict(dictionary, marker):
+        if marker in dictionary.keys():
+            return dictionary.get(marker)
+        else:
+            for value in dictionary.itervalues():
+                if isinstance(value, dict):
+                    res = IAMops._search_dict(value, marker)
+                    if res:
+                        return res
+        return {}
+
+    def get_response_at_marker(self, action, params, item_marker, path='/', parent=None,
+                               verb='POST', list_marker='Set'):
+        if list_marker is None:
+            list_marker = 'Set'
+        resp = self.get_response(action=action, params=params, path=path, parent=parent,
+                                 verb=verb, list_marker=list_marker)
+        return IAMops._search_dict(resp, item_marker)
+
+    def get_user_info(self, username=None, delegate_account=None):
+        params = {}
+        if username:
+            params['UserName'] = username
+        if delegate_account:
+            params['DelegateAccount'] = delegate_account
+        return self.get_response_at_marker(action='GetUser', params=params, list_marker='user')
+
+
+class IAMResourceNotFoundException(Exception):
+    def __init__(self, value):
+        self.value = value
+
+    def __str__(self):
+        return repr(self.value)

@@ -37,11 +37,11 @@ from concurrent.futures import ThreadPoolExecutor
 import urllib2
 import cookielib
 import requests
-from nephoria import TestConnection
+from nephoria.testconnection import TestConnection
 from boto.ec2.elb import ELBConnection
 from boto.ec2.elb.listener import Listener
 from boto.ec2.elb.healthcheck import HealthCheck
-from os.path import join, abspath
+from os.path import join
 
 
 class ELBops(TestConnection, ELBConnection):
@@ -51,7 +51,7 @@ class ELBops(TestConnection, ELBConnection):
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, region=None, endpoint=None,
                  boto_debug=0, path=None, APIVersion=None, validate_certs=None,
-                 test_resources=None, logger=None):
+                 test_resources=None, logger=None, log_level=None):
 
         # Init test connection first to sort out base parameters...
         TestConnection.__init__(self,
@@ -68,7 +68,8 @@ class ELBops(TestConnection, ELBConnection):
                                 APIVersion=APIVersion,
                                 validate_certs=validate_certs,
                                 boto_debug=boto_debug,
-                                path=path)
+                                path=path,
+                                log_level=log_level)
         if self.boto_debug:
             self.show_connection_kwargs()
         # Init IAM connection...

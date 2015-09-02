@@ -32,7 +32,6 @@
 #
 
 
-
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.file_utils.eucarc import Eucarc
 from nephoria.aws.iam.iamops import IAMops
@@ -57,13 +56,14 @@ class UserContext(Eucarc):
                  ASops.__name__: 'autoscaling'}
 
     def __init__(self, context_mgr=None, filepath=None, string=None, sshconnection=None,
-                 keysdir=None, logger=None):
+                 keysdir=None, logger=None, boto_debug=0, log_level=):
 
         super(UserContext, self).__init__(filepath=filepath, string=string,
-                                         sshconnection=sshconnection, keysdir=keysdir,
-                                         logger=logger)
+                                          sshconnection=sshconnection, keysdir=keysdir,
+                                          logger=logger)
         self._connections = {}
         self._previous_context = None
+        self._user_info = {}
         self.context_mgr = context_mgr
         # Logging setup
         if not logger:
@@ -72,6 +72,10 @@ class UserContext(Eucarc):
         self.debug = self.logger.debug
         self.critical = self.logger.critical
         self.info = self.logger.info
+        self._connection_kwargs = {'eucarc': self, 
+                                   'context_mgr': self.context_mgr,
+                                   'boto_debug': boto_debug,
+                                   'log_level': log_level}
 
     def __enter__(self):
         self._previous_context = self.context_mgr.current_user_context
@@ -85,11 +89,33 @@ class UserContext(Eucarc):
         return "{0}:{1}".format(self.__class__.__name__, self.account_id)
 
     @property
+    def user_info(self):
+        if not self._user_info:
+            self._user_info = self.iam.get_user_info(delegate_account=self.account_id)
+        return self._user_info
+
+    @property
+    def user_name(self):
+        if not self._user_name:
+            self._user_name = self.user_info.get('user_name', None)
+        return self._user_name
+
+    @property
+    def user_id(self):
+        return self.user_info.get('user_id', None)
+
+    @property
+    def account_name(self):
+        if not self._account_name:
+            self._account_name = self.iam.get_account_aliases(delegate_account=self.account_id)
+        return self._account_name
+
+    @property
     def iam(self):
         ops_class = IAMops
         name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
-            self._connections[name] = ops_class(eucarc=self, context_mgr=self.context_mgr)
+            self._connections[name] = ops_class(**self._connection_kwargs)
         return self._connections[name]
 
     @property
@@ -97,7 +123,7 @@ class UserContext(Eucarc):
         ops_class = S3ops
         name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
-            self._connections[name] = ops_class(eucarc=self, context_mgr=self.context_mgr)
+            self._connections[name] = ops_class(**self._connection_kwargs)
         return self._connections[name]
 
     @property
@@ -105,7 +131,7 @@ class UserContext(Eucarc):
         ops_class = EC2ops
         name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
-            self._connections[name] = ops_class(eucarc=self, context_mgr=self.context_mgr)
+            self._connections[name] = ops_class(**self._connection_kwargs)
         return self._connections[name]
 
     @property
@@ -113,7 +139,7 @@ class UserContext(Eucarc):
         ops_class = ELBops
         name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
-            self._connections[name] = ops_class(eucarc=self, context_mgr=self.context_mgr)
+            self._connections[name] = ops_class(**self._connection_kwargs)
         return self._connections[name]
 
     @property
@@ -121,7 +147,7 @@ class UserContext(Eucarc):
         ops_class = STSops
         name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
-            self._connections[name] = ops_class(eucarc=self, context_mgr=self.context_mgr)
+            self._connections[name] = ops_class(**self._connection_kwargs)
         return self._connections[name]
 
     @property
@@ -129,7 +155,7 @@ class UserContext(Eucarc):
         ops_class = ASops
         name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
-            self._connections[name] = ops_class(eucarc=self, context_mgr=self.context_mgr)
+            self._connections[name] = ops_class(**self._connection_kwargs)
         return self._connections[name]
 
     @property
@@ -137,7 +163,7 @@ class UserContext(Eucarc):
         ops_class = CWops
         name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
-            self._connections[name] = ops_class(eucarc=self, context_mgr=self.context_mgr)
+            self._connections[name] = ops_class(**self._connection_kwargs)
         return self._connections[name]
 
     @property
@@ -145,7 +171,7 @@ class UserContext(Eucarc):
         ops_class = CFNops
         name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
-            self._connections[name] = ops_class(eucarc=self, context_mgr=self.context_mgr)
+            self._connections[name] = ops_class(**self._connection_kwargs)
         return self._connections[name]
 
 

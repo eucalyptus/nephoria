@@ -30,7 +30,7 @@
 #
 # Author: Vic Iglesias vic.iglesias@eucalyptus.com
 #
-from nephoria import TestConnection
+from nephoria.testconnection import TestConnection
 import boto
 from boto.ec2.regioninfo import RegionInfo
 from boto.cloudformation import CloudFormationConnection
@@ -42,7 +42,7 @@ class CFNops(TestConnection, CloudFormationConnection):
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, region=None, endpoint=None,
                  boto_debug=0, path=None, APIVersion=None, validate_certs=None,
-                 test_resources=None, logger=None):
+                 test_resources=None, logger=None, log_level=None):
 
         # Init test connection first to sort out base parameters...
         TestConnection.__init__(self,
@@ -59,7 +59,8 @@ class CFNops(TestConnection, CloudFormationConnection):
                                 APIVersion=APIVersion,
                                 validate_certs=validate_certs,
                                 boto_debug=boto_debug,
-                                path=path)
+                                path=path,
+                                log_level=log_level)
         if self.boto_debug:
             self.show_connection_kwargs()
         # Init IAM connection...

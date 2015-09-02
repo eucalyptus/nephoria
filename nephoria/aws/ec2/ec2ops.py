@@ -52,15 +52,13 @@ from boto.ec2.blockdevicemapping import BlockDeviceMapping, BlockDeviceType
 from boto.ec2.volume import Volume
 from boto.ec2.bundleinstance import BundleInstanceTask
 from boto.exception import EC2ResponseError
-from boto.ec2.regioninfo import RegionInfo
 from boto.resultset import ResultSet
 from boto.ec2.securitygroup import SecurityGroup, IPPermissions
 from boto.ec2.address import Address
 from boto.vpc.subnet import Subnet as BotoSubnet
 from boto.vpc import VPCConnection
-import boto
 
-from nephoria import TestConnection
+from nephoria.testconnection import TestConnection
 from cloud_utils.net_utils import sshconnection
 from cloud_utils.log_utils import printinfo, get_traceback, markup
 from nephoria.aws.ec2.euinstance import EuInstance
@@ -125,7 +123,7 @@ disable_root: false"""
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, region=None, endpoint=None,
                  boto_debug=0, path=None, APIVersion=None, validate_certs=None,
-                 test_resources=None, logger=None):
+                 test_resources=None, logger=None, log_level=None):
 
         # Init test connection first to sort out base parameters...
         TestConnection.__init__(self,
@@ -142,7 +140,8 @@ disable_root: false"""
                                 APIVersion=APIVersion,
                                 validate_certs=validate_certs,
                                 boto_debug=boto_debug,
-                                path=path)
+                                path=path,
+                                log_level=log_level)
         self.key_dir = "./"
         self.ec2_source_ip = None  #Source ip on local test machine used to reach instances
         if self.boto_debug:
@@ -2174,7 +2173,7 @@ disable_root: false"""
             if max_count and len(ret_list) >= max_count:
                 return ret_list
         if not ret_list:
-            raise ResourceNotFoundException("Unable to find an EMI")
+            raise EC2ResourceNotFoundException("Unable to find an EMI")
         return ret_list
 
 
@@ -2532,7 +2531,7 @@ disable_root: false"""
                 volume = EuVolume.make_euvol_from_vol(volume)
             retlist.append(volume)
         if eof and retlist == []:
-            raise ResourceNotFoundException("Unable to find matching volume")
+            raise EC2ResourceNotFoundException("Unable to find matching volume")
         else:
             return retlist
 
@@ -4091,7 +4090,7 @@ disable_root: false"""
                                    ConversionTask,
                                    verb='POST')
         if not task:
-            raise ResourceNotFoundException('"{0}". Conversion task not found'
+            raise EC2ResourceNotFoundException('"{0}". Conversion task not found'
                                             .format(taskid))
         return task
 
@@ -4571,7 +4570,7 @@ disable_root: false"""
         if not images:
             try:
                 images = self.get_images(emi='',basic_image=basic_image, state=None) or []
-            except ResourceNotFoundException, nfe:
+            except EC2ResourceNotFoundException, nfe:
                 printmethod("\nNo images found\n")
                 return
         for image in images:
@@ -4583,7 +4582,7 @@ disable_root: false"""
         if isinstance(image, basestring):
             image = self.get_emi(emi=image, state=None)
             if not image:
-                raise ResourceNotFoundException('Image:"{0}" not found'.format(image))
+                raise EC2ResourceNotFoundException('Image:"{0}" not found'.format(image))
         if not isinstance(image, Image):
             raise ValueError('Unknown type provided for image:"{0}:{1}"'.format(image,
                                                                                 type(image)))
@@ -5046,7 +5045,7 @@ class VolumeStateException(Exception):
     def __str__(self):
         return repr(self.value)
 
-class ResourceNotFoundException(Exception):
+class EC2ResourceNotFoundException(Exception):
     def __init__(self, value):
         self.value = value
 
