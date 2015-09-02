@@ -537,7 +537,7 @@ disable_root: false"""
         try:
             from prettytable import PrettyTable, ALL
         except ImportError as IE:
-            self.logger.debug('No pretty table import failed:' + str(IE))
+            self.logger.info('No pretty table import failed:' + str(IE))
             return
         group = self.get_security_group(id=group.id)
         if not group:
@@ -559,7 +559,7 @@ disable_root: false"""
                                end_port, proto])
         table.hrules = ALL
         header.add_row([str(table)])
-        self.logger.debug("\n{0}".format(str(header)))
+        self.logger.info("\n{0}".format(str(header)))
 
     def revoke(self, group,
                      port=22,
@@ -2335,7 +2335,7 @@ disable_root: false"""
         buf = "\n" + line + header + line + buf + line
         if not display:
             return buf
-        self.logger.debug(buf)
+        self.logger.info(buf)
 
 
     def allocate_address(self, domain=None):
@@ -4565,7 +4565,7 @@ disable_root: false"""
 
 
     def show_images(self, images=None, verbose=False, basic_image=False, printmethod=None):
-        printmethod = printmethod or self.logger.debug
+        printmethod = printmethod or self.logger.info
         buf = "\n"
         if not images:
             try:
@@ -4621,7 +4621,7 @@ disable_root: false"""
             mainbuf += str(self.show_tags(image.tags, printme=False)) + "\n"
         main_pt.add_row([mainbuf])
         if printme:
-            printmethod = printmethod or self.logger.debug
+            printmethod = printmethod or self.logger.info
             printmethod( "\n" + str(main_pt) + "\n")
         else:
             return main_pt
@@ -4684,7 +4684,7 @@ disable_root: false"""
             self.critical( str(tb) + "\n ERROR in show_all_addresses_verbose:" + str(e))
         if not printme:
             return pt
-        self.logger.debug("\n" + str(pt) + "\n")
+        self.logger.info("\n" + str(pt) + "\n")
 
     def show_instance(self, instance, printme=True):
         if not isinstance(instance, EuInstance):
@@ -4785,7 +4785,7 @@ disable_root: false"""
                 if pt_max > max:
                     maintable._max_width[key] = pt_max
         if printme:
-            self.logger.debug("\n"+str(maintable)+"\n")
+            self.logger.info("\n"+str(maintable)+"\n")
         else:
             return maintable
 
@@ -4829,7 +4829,7 @@ disable_root: false"""
         if footer:
             buf += str("\n" + line)
         if printout:
-            self.logger.debug(buf)
+            self.logger.info(buf)
         return buf
 
     def show_conversion_task_list(self,
@@ -4837,7 +4837,7 @@ disable_root: false"""
                                    doprint=True,
                                    printmethod=None):
         clist = clist or self.get_all_conversion_tasks()
-        printmethod = printmethod or self.logger.debug
+        printmethod = printmethod or self.logger.info
         taskidlen = 19
         statusmsglen = 24
         availzonelen=14
@@ -4924,7 +4924,7 @@ disable_root: false"""
             return buf
 
     def show_block_device_map(self,block_device_map, printmethod=None, printme=True ):
-        printmethod = printmethod or self.logger.debug
+        printmethod = printmethod or self.logger.info
 
         title = 'BLOCK DEVICE MAP'
         main_pt = PrettyTable([title])
@@ -4949,7 +4949,7 @@ disable_root: false"""
             return main_pt
 
     def show_vm_types(self,zone=None, debugmethod=None):
-        debugmethod = debugmethod or self.logger.debug
+        debugmethod = debugmethod or self.logger.info
         buf = "\n"
         if zone:
             zones = [zone]
@@ -4969,7 +4969,7 @@ disable_root: false"""
         for group in groups:
             ret_buf += "\n" + str(self.show_security_group(group, printme=False))
         if printme:
-            self.logger.debug(ret_buf)
+            self.logger.info(ret_buf)
         else:
             return ret_buf
 
@@ -5016,7 +5016,7 @@ disable_root: false"""
             buf += str(self.show_security_group(group=group, printme=False))
         pt.add_row([buf])
         if printme:
-            printmethod = printmethod or self.logger.debug
+            printmethod = printmethod or self.logger.info
             printmethod('\n{0}\n'.format(pt))
         else:
             return pt
@@ -5031,7 +5031,7 @@ disable_root: false"""
             pt.add_row([attr.attribute_name, attr.attribute_values])
         main_pt.add_row([str(pt)])
         if printme:
-            printmethod = printmethod or self.logger.debug
+            printmethod = printmethod or self.logger.info
             printmethod( "\n" + str(main_pt) + "\n")
         else:
             return main_pt

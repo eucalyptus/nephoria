@@ -31,7 +31,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 
-
+from logging import INFO
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.file_utils.eucarc import Eucarc
 from nephoria.aws.iam.iamops import IAMops
@@ -56,7 +56,7 @@ class UserContext(Eucarc):
                  ASops.__name__: 'autoscaling'}
 
     def __init__(self, context_mgr=None, filepath=None, string=None, sshconnection=None,
-                 keysdir=None, logger=None, boto_debug=0, log_level=):
+                 keysdir=None, logger=None, boto_debug=0, log_level=INFO):
 
         super(UserContext, self).__init__(filepath=filepath, string=string,
                                           sshconnection=sshconnection, keysdir=keysdir,

@@ -400,7 +400,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                                                          printme=False))
         main_pt.add_row([mainbuf])
         if printme:
-            printmethod = printmethod or self.debug
+            printmethod = printmethod or self.log.info
             printmethod("\n" + str(main_pt) + "\n")
         return main_pt
 
@@ -436,7 +436,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 enipt.add_row([(str(pt))])
                 buf += str(enipt)
         if printme:
-            self.debug(buf)
+            self.log.info(buf)
         else:
             return buf
 
