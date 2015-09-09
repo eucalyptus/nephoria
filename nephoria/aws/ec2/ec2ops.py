@@ -123,7 +123,7 @@ disable_root: false"""
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, region=None, endpoint=None,
                  boto_debug=0, path=None, APIVersion=None, validate_certs=None,
-                 test_resources=None, logger=None, log_level=None):
+                 test_resources=None, logger=None, log_level=None, user_context=None,):
 
         # Init test connection first to sort out base parameters...
         TestConnection.__init__(self,
@@ -141,7 +141,8 @@ disable_root: false"""
                                 validate_certs=validate_certs,
                                 boto_debug=boto_debug,
                                 path=path,
-                                log_level=log_level)
+                                log_level=log_level,
+                                user_context=user_context)
         self.key_dir = "./"
         self.ec2_source_ip = None  #Source ip on local test machine used to reach instances
         if self.boto_debug:
@@ -2778,7 +2779,7 @@ disable_root: false"""
                     keypair = keypair.name
             self.logger.debug('Euinstance list prior to running image...')
             try:
-                self.print_euinstance_list()
+                self.show_instances()
             except Exception, e:
                 self.logger.debug('Failed to print euinstance list before running image, err:' +str(e))
             #self.logger.debug( "Attempting to run "+ str(image.root_device_type)  +" image " + str(image) + " in group " + str(group))
@@ -2971,7 +2972,7 @@ disable_root: false"""
             for instance in waiting:
                 buf += str(instance.id)+":"+str(instance.ip_address)+","
             raise Exception(buf)
-        self.print_euinstance_list(good)
+        self.show_instances(good)
         return good
 
     @printinfo
@@ -3262,7 +3263,7 @@ disable_root: false"""
             if monitor:
                 time.sleep(poll_interval)
                 
-        self.print_euinstance_list(instance_list)
+        self.show_instances(instance_list)
         if monitor:
             failmsg = "Some instances did not go to state:"+str(state)+' within timeout:'+str(timeout)+"\nFailed:"
             for instance in monitor:
@@ -3276,57 +3277,6 @@ disable_root: false"""
             else:
                 self.logger.debug(failmsg)
 
-    def print_euinstance_list(self,
-                              euinstance_list=None,
-                              state=None,
-                              instance_id=None,
-                              reservation=None,
-                              root_device_type=None,
-                              zone=None,
-                              key=None,
-                              public_ip=None,
-                              private_ip=None,
-                              ramdisk=None,
-                              kernel=None,
-                              image_id=None
-                              ):
-        """
-
-        :param euinstance_list: list of euinstance objs
-        :raise:
-        """
-        plist = []
-        if not euinstance_list:
-            euinstance_list = []
-            instances = self.get_instances(state=state,
-                                           idstring=instance_id,
-                                           reservation=reservation,
-                                           rootdevtype=root_device_type,
-                                           zone=zone,
-                                           key=key,
-                                           pubip=public_ip,
-                                           privip=private_ip,
-                                           ramdisk=ramdisk,
-                                           kernel=kernel,
-                                           image_id=image_id)
-            for instance in instances:
-                if instance:
-                    instance_res = getattr(instance, 'reservation', None)
-                    euinstance_list.append(self.convert_instance_to_euisntance(
-                        instance, reservation=instance_res, auto_connect=False))
-        if not euinstance_list:
-            self.logger.debug('No instances to print')
-            return
-        for instance in euinstance_list:
-            if not isinstance(instance,EuInstance) and not isinstance(instance, WinInstance):
-                self.logger.debug("print instance list passed non-EuInstnace type")
-                instance = self.convert_instance_to_euisntance(instance, auto_connect=False)
-            plist.append(instance)
-        first = plist.pop(0)
-        buf = first.printself(title=True, footer=True)
-        for instance in plist:
-            buf += instance.printself(title=False, footer=True)
-        self.logger.debug("\n"+str(buf)+"\n")
 
     @printinfo
     def wait_for_valid_ip(self, instances, regex="0.0.0.0", poll_interval=10, timeout = 60):
@@ -3666,7 +3616,7 @@ disable_root: false"""
         return buf
     
 
-    def terminate_instances(self, reservation=None, timeout=480):
+    def terminate_instances(self, reservation=None, dry_run=False, timeout=480):
         """
         Terminate instances in the system
 
@@ -3686,7 +3636,7 @@ disable_root: false"""
                 raise Exception('Unknown type:' + str(type(reservation)) + ', for reservation passed to terminate_instances')
         else:
             if reservation is None:
-                reservation = self.get_all_instances()
+                reservation = self.get_all_instances('verbose')
             #first send terminate for all instances
             for res in reservation:
                 if isinstance(res, Reservation):
@@ -3699,7 +3649,7 @@ disable_root: false"""
         for instance in instance_list:
             self.logger.debug( "Sending terminate for " + str(instance))
             try:
-               instance.terminate()
+               super(EC2ops, self).terminate_instances([instance.id], dry_run=dry_run)
                instance.update()
                if instance.state != 'terminated':
                     monitor_list.append(instance)
@@ -3711,7 +3661,7 @@ disable_root: false"""
                 else:
                     raise e
         try:
-            self.print_euinstance_list(euinstance_list=monitor_list)
+            self.show_instances(euinstance_list=monitor_list)
         except:
             pass
         try:

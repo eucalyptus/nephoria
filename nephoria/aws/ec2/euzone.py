@@ -35,7 +35,7 @@ Created on Mar 21, 2013
 Place holder for availability zone test specific convenience methods+objects to extend boto's zone class
 
 '''
-from cloud_utils.log_utils import get_traceback, printinfo
+from cloud_utils.log_utils import get_traceback, printinfo, eulogger
 from boto.ec2.zone import Zone
 import re
 
@@ -52,6 +52,13 @@ class EuZone(Zone):
     def __init__(self, connection=None):
         connection = connection
         vm_types = []
+        if hasattr(connection, 'logger'):
+            self.logger = connection.logger
+        else:
+            self.logger = eulogger.Eulogger(str(self))
+
+    def __repr__(self):
+        return "{0}:{1}".format(self.__class__.__name__, self.name)
 
     @classmethod
     def make_euzone_from_zone(cls, zone, tester):
@@ -68,7 +75,6 @@ class EuZone(Zone):
         super(EuZone, self).update()
         self.vm_types = self.get_all_vm_type_info()
 
-    @printinfo
     def get_all_vm_type_info(self):
         vm_types = []
         get_zone = [str(self.name)]
@@ -103,7 +109,6 @@ class EuZone(Zone):
                         break
         return vm_types
 
-    @printinfo
     def get_vm_types(self, name=None, free=None, max=None, cpu=None, ram=None, disk=None, refresh_types=False):
         ret_list = []
         if refresh_types or not self.vm_types:

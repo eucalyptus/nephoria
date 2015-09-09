@@ -31,7 +31,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 
-from logging import INFO
+from logging import INFO, DEBUG
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_admin.access.autocreds import AutoCreds
 from nephoria.aws.iam.iamops import IAMops
@@ -58,7 +58,7 @@ class UserContext(AutoCreds):
     def __init__(self,  aws_access_key=None, aws_secret_key=None, aws_account_name=None,
                  aws_user_name=None, context_mgr=None, credpath=None, string=None,
                  machine=None, keysdir=None, logger=None, service_connection=None,
-                 eucarc=None, existing_certs=False, boto_debug=0, loglevel=INFO):
+                 eucarc=None, existing_certs=False, boto_debug=0, log_level=DEBUG):
 
         super(UserContext, self).__init__(aws_access_key=aws_access_key,
                                           aws_secret_key=aws_secret_key,
@@ -66,7 +66,7 @@ class UserContext(AutoCreds):
                                           aws_user_name=aws_user_name,
                                           credpath=credpath, string=string,
                                           machine=machine, keysdir=keysdir,
-                                          logger=logger, loglevel=loglevel,
+                                          logger=logger, loglevel=log_level,
                                           existing_certs=existing_certs,
                                           service_connection=service_connection,
                                           auto_create=False)
@@ -77,7 +77,7 @@ class UserContext(AutoCreds):
         self.context_mgr = context_mgr
         # Logging setup
         if not logger:
-            logger = Eulogger(self.account_id, stdout_level=loglevel)
+            logger = Eulogger(self.account_id, stdout_level=log_level)
         self.logger = logger
         self.debug = self.logger.debug
         self.critical = self.logger.critical
@@ -92,7 +92,8 @@ class UserContext(AutoCreds):
         self._connection_kwargs = {'eucarc': self, 
                                    'context_mgr': self.context_mgr,
                                    'boto_debug': boto_debug,
-                                   'log_level': loglevel}
+                                   'user_context': self,
+                                   'log_level': log_level}
 
     def __enter__(self):
         self._previous_context = self.context_mgr.current_user_context
@@ -103,7 +104,20 @@ class UserContext(AutoCreds):
         self.context_mgr.set_current_user_context(self._previous_context)
 
     def __repr__(self):
-        return "{0}:{1}".format(self.__class__.__name__, self.account_id)
+        account_name = ""
+        user_name = ""
+        try:
+            account_name = self.account_name
+            user_name = self.user_name
+            if account_name:
+                account_name = "({0})".format(account_name)
+            if user_name:
+                user_name = "({0})".format(user_name)
+        except:
+            pass
+
+        return "{0}:{1}{2}{3}".format(self.__class__.__name__, self.account_id,
+                                      account_name, user_name)
 
     @property
     def user_info(self):
@@ -118,7 +132,7 @@ class UserContext(AutoCreds):
         return self._user_name
 
     @property
-    def x(self):
+    def user_id(self):
         return self.user_info.get('user_id', None)
 
     @property

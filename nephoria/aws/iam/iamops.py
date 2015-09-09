@@ -46,7 +46,7 @@ class IAMops(TestConnection, IAMConnection):
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, region=None, endpoint=None,
                  boto_debug=0, path=None, APIVersion=None, validate_certs=None,
-                 test_resources=None, logger=None, log_level=None):
+                 test_resources=None, logger=None, log_level=None, user_context=None,):
 
         # Init test connection first to sort out base parameters...
         TestConnection.__init__(self,
@@ -64,7 +64,8 @@ class IAMops(TestConnection, IAMConnection):
                                 validate_certs=validate_certs,
                                 boto_debug=boto_debug,
                                 path=path,
-                                log_level=log_level)
+                                log_level=log_level,
+                                user_context=user_context)
         if self.boto_debug:
             self.show_connection_kwargs()
         # Init IAM connection...
@@ -124,15 +125,22 @@ class IAMops(TestConnection, IAMConnection):
             if not account_name:
                 account_name = account_id
                 account_id = None
-        self.logger.debug('Attempting to fetch all accounts matching- account_id:'+str(account_id)+' account_name:'+str(account_name))
+        self.logger.debug('Attempting to fetch all accounts matching- account_id:' +
+                          str(account_id) + ' account_name:' + str(account_name))
         response = self.get_response_items('ListAccounts', {}, item_marker='accounts',
-                                               list_marker='Accounts')
+                                            list_marker='Accounts')
         retlist = []
         for account in response:
-            if account_name is not None and not re_meth( account_name, account['account_name']):
-                continue
-            if account_id is not None and not re_meth(account_id, account['account_id']):
-                continue
+            if account_name is not None:
+                if not search:
+                    account_name = "^{0}$".format(account_name.strip())
+                if not re_meth(account_name, account['account_name']):
+                    continue
+            if account_id is not None:
+                if not search:
+                    user_name = "^{0}$".format(user_name.strip())
+                if not re_meth(account['account_id'], account_id):
+                    continue
             retlist.append(account)
         return retlist
 
@@ -156,8 +164,10 @@ class IAMops(TestConnection, IAMConnection):
         if accounts:
             if len(accounts) > 1:
                 raise ValueError('get_account matched more than a single account with the '
-                                 'provided criteria: account_id="{0}", account_name="{1}"'
-                                 .format(account_id, account_name))
+                                 'provided criteria: account_id="{0}", account_name="{1}". '
+                                 'Matched:{2}'
+                                 .format(account_id, account_name,
+                                         ", ".join(str(x) for x in accounts)))
             else:
                 return accounts[0]
         return None
@@ -548,34 +558,6 @@ class IAMops(TestConnection, IAMConnection):
         else:
             return pt
 
-
-    def show_whoami(self, print_table=True):
-        """
-        Debug method used to display the who am I info related to iam/euare.
-        """
-
-        user= self.get_user()['get_user_response']['get_user_result']['user']
-
-        user_id = user['user_id']
-        user_name = user['user_name']
-        account_id = self.get_account_id()
-        account_name = None
-        try:
-            account = self.get_all_accounts(account_id=account_id)[0]
-            account_name = account['account_name']
-        except IndexError:
-            self.critical('Failed to lookup account for user:({0}:{1}), account_id:{2}'
-                             .format(user_name, user_id, account_id))
-        main_pt = PrettyTable(['WHO AM I?  ({0}:{1})'.format(user_name, account_name)])
-        main_pt.align = 'l'
-        main_pt.add_row([str(self.show_all_users(account_id=account_id, user_id=user_id,
-                                                 print_table=False))])
-        main_pt.add_row([str(self.show_user_policy_summary(user_name, print_table=False))])
-        if print_table:
-            self.logger.info("\n" + str(main_pt) + "\n")
-        else:
-            return main_pt
-        
     
     def attach_policy_user(self, user_name, policy_name, policy_json, delegate_account=None):
         """
