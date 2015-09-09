@@ -85,7 +85,7 @@ class UserContext(AutoCreds):
         if eucarc:
             for key, value in eucarc.__dict__.iteritems():
                 setattr(self, key, value)
-        else:
+        elif not (self.aws_access_key and aws_secret_key and self.serviceconnection):
             self.auto_find_credentials(assume_admin=False)
         if service_connection:
             self.update_attrs_from_cloud_services()

@@ -1,10 +1,38 @@
 import operator
+import signal
 import time
 
 
 class TimeoutFunctionException(Exception):
     """Exception to raise on a timeout"""
     pass
+
+class TimeoutError(Exception):
+    def __init__(self, message, elapsed=None, *args, **kwargs):
+        self.elapsed = elapsed
+        super(TimeoutError, self).__init__(message, *args, **kwargs)
+
+
+class TimerSeconds:
+    def __init__(self, time=1, timeout_message=None):
+        self.time = time or 1
+        self.message = timeout_message
+        self.start_time = None
+        self.elapsed = None
+    def handle_timeout(self, signum, frame):
+        if self.start_time is not None:
+            self.elapsed = time.time() - self.start_time
+        message  = self.message or 'TimeOut fired after "{0}/{1}" seconds!'\
+            .format(self.elapsed, self.time)
+        raise TimeoutError(message, elapsed=self.elapsed)
+    def __enter__(self):
+        self.start_time = time.time()
+        signal.signal(signal.SIGALRM, self.handle_timeout)
+        signal.alarm(self.time)
+    def __exit__(self, type, value, traceback):
+        if self.start_time is not None:
+            self.elapsed = time.time() - self.start_time
+        signal.alarm(0)
 
 
 class WaitForResultException(Exception):
