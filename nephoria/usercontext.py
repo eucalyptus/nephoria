@@ -33,7 +33,7 @@
 
 from logging import INFO
 from cloud_utils.log_utils.eulogger import Eulogger
-from cloud_utils.file_utils.eucarc import Eucarc
+from cloud_admin.access.autocreds import AutoCreds
 from nephoria.aws.iam.iamops import IAMops
 from nephoria.aws.s3.s3ops import S3ops
 from nephoria.aws.ec2.ec2ops import EC2ops
@@ -43,7 +43,7 @@ from nephoria.aws.cloudformation.cfnops import CFNops
 from nephoria.aws.cloudwatch.cwops import CWops
 from nephoria.aws.autoscaling.asops import ASops
 
-class UserContext(Eucarc):
+class UserContext(AutoCreds):
 
     # This map is used for context lookups...
     CLASS_MAP = {IAMops.__name__: 'iam',
@@ -55,27 +55,44 @@ class UserContext(Eucarc):
                  CFNops.__name__: 'cloudformation',
                  ASops.__name__: 'autoscaling'}
 
-    def __init__(self, context_mgr=None, filepath=None, string=None, sshconnection=None,
-                 keysdir=None, logger=None, boto_debug=0, log_level=INFO):
+    def __init__(self,  aws_access_key=None, aws_secret_key=None, aws_account_name=None,
+                 aws_user_name=None, context_mgr=None, credpath=None, string=None,
+                 machine=None, keysdir=None, logger=None, service_connection=None,
+                 eucarc=None, existing_certs=False, boto_debug=0, loglevel=INFO):
 
-        super(UserContext, self).__init__(filepath=filepath, string=string,
-                                          sshconnection=sshconnection, keysdir=keysdir,
-                                          logger=logger)
+        super(UserContext, self).__init__(aws_access_key=aws_access_key,
+                                          aws_secret_key=aws_secret_key,
+                                          aws_account_name=aws_account_name,
+                                          aws_user_name=aws_user_name,
+                                          credpath=credpath, string=string,
+                                          machine=machine, keysdir=keysdir,
+                                          logger=logger, loglevel=loglevel,
+                                          existing_certs=existing_certs,
+                                          service_connection=service_connection,
+                                          auto_create=False)
         self._connections = {}
         self._previous_context = None
         self._user_info = {}
+
         self.context_mgr = context_mgr
         # Logging setup
         if not logger:
-            logger = Eulogger(self.account_id)
+            logger = Eulogger(self.account_id, stdout_level=loglevel)
         self.logger = logger
         self.debug = self.logger.debug
         self.critical = self.logger.critical
         self.info = self.logger.info
+        if eucarc:
+            for key, value in eucarc.__dict__.iteritems():
+                setattr(self, key, value)
+        else:
+            self.auto_find_credentials(assume_admin=False)
+        if service_connection:
+            self.update_attrs_from_cloud_services()
         self._connection_kwargs = {'eucarc': self, 
                                    'context_mgr': self.context_mgr,
                                    'boto_debug': boto_debug,
-                                   'log_level': log_level}
+                                   'log_level': loglevel}
 
     def __enter__(self):
         self._previous_context = self.context_mgr.current_user_context
@@ -101,7 +118,7 @@ class UserContext(Eucarc):
         return self._user_name
 
     @property
-    def user_id(self):
+    def x(self):
         return self.user_info.get('user_id', None)
 
     @property

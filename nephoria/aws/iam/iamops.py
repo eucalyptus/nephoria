@@ -33,6 +33,7 @@
 from boto.iam import IAMConnection
 from boto.exception import BotoServerError
 import json
+import os
 import re
 import urllib
 from prettytable import PrettyTable
@@ -325,12 +326,33 @@ class IAMops(TestConnection, IAMConnection):
         return resp
 
 
-    def get_connections_username(self):
+    def get_username_for_active_connection(self):
         """
-        Get all access in the current access account
+        Helper method to show the active connections username in the case that the active
+        context is not this IAMops class's connection/context.
         """
         user_info = self.get_user_info()
         return  getattr(user_info, 'user_name', None)
+
+    def get_accountname_for_active_connection(self):
+        """
+        Helper method to show the active connections account name/alias in the case that the active
+        context is not this IAMops class's connection/context.
+        """
+        aliases = self.get_account_aliases()
+        if aliases:
+            return aliases[0]
+        return None
+
+    def get_username_eucarc(self):
+        if self.eucarc:
+            return self.eucarc.user_name
+        return None
+
+    def get_accountname_eucarc(self):
+        if self.eucarc:
+            return self.eucarc.account_name
+        return None
     
     def get_connections_accountname(self):
         """
@@ -342,7 +364,8 @@ class IAMops(TestConnection, IAMConnection):
     def get_all_users(self,  account_name=None,  account_id=None,  path=None,
                       user_name=None,  user_id=None,  search=False ):
         """
-        Queries all accounts matching given account criteria, returns all access found within these accounts which then match the given user criteria.
+        Queries all accounts matching given account criteria, returns all access found within
+        these accounts which then match the given user criteria.
         Account info is added to the user dicts
 
         :param account_name: regex - to use for account name
@@ -350,7 +373,8 @@ class IAMops(TestConnection, IAMConnection):
         :param path: regex - to match for path
         :param user_name: regex - to match for user name
         :param user_id: regex - to match for user id
-        :param search: boolean - specify whether to use match or search when filtering the returned list
+        :param search: boolean - specify whether to use match or search when filtering the
+                      returned list
         :return: List of access with account name tuples
         """
         userlist=[]
@@ -360,10 +384,14 @@ class IAMops(TestConnection, IAMConnection):
             #if account['account_id'] == self.account_id:
             #    access =self.get_users_from_account()
             #else:
+            if account.get('account_id') == self.eucarc.account_id:
+                delegate_account = None
+            else:
+                delegate_account = account['account_name']
             users = self.get_users_from_account(path=path,
                                                 user_name=user_name,
                                                 user_id=user_id,
-                                                delegate_account=account['account_name'],
+                                                delegate_account=delegate_account,
                                                 search=search)
             for user in users:
                 user['account_name']=account['account_name']
@@ -844,19 +872,172 @@ class IAMops(TestConnection, IAMConnection):
             ['create_access_key_result']['access_key']['secret_access_key']
         return access_tuple
 
-    def get_aws_access_key(self, username=None, delegate_account=None):
-        if not username and not delegate_account and self.aws_access_key_id:
+    def get_aws_access_key(self, user_name=None, delegate_account=None):
+        if not user_name and not delegate_account and self.aws_access_key_id:
             aws_access_key = self.aws_access_key_id or self.get_access_key()
             if aws_access_key:
                 return  aws_access_key
         params = {}
-        if username:
-            params['UserName'] = username
+        if user_name:
+            params['UserName'] = user_name
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        response = self.get_response('ListAccessKeys', params)
-        result = response['list_access_keys_response']['list_access_keys_result']
-        return result['access_key_metadata']['member']['access_key_id']
+        response = self.get_response_items('ListAccessKeys', params, item_marker='member')
+        #result = response['list_access_keys_response']['list_access_keys_result']
+        #return result['access_key_metadata']['member']['access_key_id']
+        return response
+
+    def create_signing_cert(self, user_name=None, delegate_account=None):
+        params = {}
+        if user_name:
+            params['UserName'] = user_name
+        if delegate_account:
+            params['DelegateAccount'] = delegate_account
+        response = self.get_response_items('CreateSigningCertificate', params,
+                                           item_marker='certificate')
+
+    def delete_signing_cert(self, cert_id, user_name=None, delegate_account=None):
+        params = {'CertificateId': cert_id}
+        if user_name:
+            params['UserName'] = user_name
+        if delegate_account:
+            params['DelegateAccount'] = delegate_account
+        return self.get_response('DeleteSigningCertificate', params)
+
+    def delete_all_signing_certs(self, user_name=None, delegate_account=None, verbose=False):
+        for cert in self.get_all_signing_certs(user_name=user_name,
+                                               delegate_account=delegate_account):
+            certid = cert.get('certificate_id')
+            if certid:
+                if verbose:
+                    self.logger.debug('Deleting signing cert: "{0}"'.format(cert))
+                self.delete_signing_cert(certid, user_name=user_name,
+                                         delegate_account=delegate_account)
+            else:
+                raise ValueError('certificate_id not found for cert dict:"{0}"'.format(cert))
+
+
+    def get_all_signing_certs(self, marker=None, max_items=None,
+                              user_name=None, delegate_account=None):
+        params = {}
+        if marker:
+            params['Marker'] = marker
+        if max_items:
+            params['MaxItems'] = max_items
+        if user_name:
+            params['UserName'] = user_name
+        if delegate_account:
+            params['DelegateAccount'] = delegate_account
+        return self.get_response_items('ListSigningCertificates',
+                                       params, item_marker='certificates',
+                                       list_marker='Certificates')
+
+
+    def get_active_id_for_cert(self, certpath, machine):
+        '''
+        Attempt to get the cloud's active id for a certificate at 'certpath' on
+        the 'machine' filesystem. Also see is_ec2_cert_active() for validating the current
+        cert in use or the body (string buffer) of a cert.
+        :param certpath: string representing the certificate path on the machines filesystem
+        :param machine: Machine obj which certpath exists on
+        :returns :str() certificate id (if cert is found to be active) else None
+        '''
+        if not certpath:
+            raise ValueError('No ec2 certpath provided or set for eutester obj')
+        self.logger.debug('Verifying cert: "{0}"...'.format(certpath))
+        body = str("\n".join(machine.sys('cat {0}'.format(certpath), verbose=False)) ).strip()
+        certs = []
+        if body:
+            certs = self.get_all_signing_certs()
+        for cert in certs:
+            if str(cert.get('certificate_body')).strip() == body:
+                self.logger.debug('verified certificate with id "{0}" is still valid'
+                           .format(cert.get('certificate_id')))
+                return cert.get('certificate_id')
+        self.logger.debug('Cert: "{0}" is NOT active'.format(certpath or body))
+        return None
+
+    def find_active_cert_and_key_in_dir(self, machine, dir="", recursive=True):
+        '''
+        Attempts to find an "active" cert and the matching key files in the provided
+        directory 'dir' on the provided 'machine' via ssh.
+        If recursive is enabled, will attempt a recursive search from the provided directory.
+        :param dir: the base dir to search in on the machine provided
+        :param machine: a Machine() obj used for ssh search commands
+        :param recursive: boolean, if set will attempt to search recursively from the dir provided
+        :returns dict w/ values 'certpath' and 'keypath' or {} if not found.
+        '''
+        ret_dict = {}
+        if dir and not dir.endswith("/"):
+            dir += "/"
+        if recursive:
+            rec = "r"
+        else:
+            rec = ""
+        certfiles = machine.sys('grep "{0}" -l{1} {2}*.pem'.format('^-*BEGIN CERTIFICATE', rec, dir))
+        for f in certfiles:
+            if self.get_active_id_for_cert(f, machine=machine):
+                dir = os.path.dirname(f)
+                keypath = self.get_key_for_cert(certpath=f, keydir=dir, machine=machine)
+                if keypath:
+                    self.logger.debug('Found existing active cert and key on clc: {0}, {1}'
+                                      .format(f, keypath))
+                    return {'certpath':f, 'keypath':keypath}
+        return ret_dict
+
+    def get_key_for_cert(self, certpath, keydir, machine, recursive=True):
+        '''
+        Attempts to find a matching key for cert at 'certpath' in the provided directory 'dir'
+        on the provided 'machine'.
+        If recursive is enabled, will attempt a recursive search from the provided directory.
+        :param dir: the base dir to search in on the machine provided
+        :param machine: a Machine() obj used for ssh search commands
+        :param recursive: boolean, if set will attempt to search recursively from the dir provided
+        :returns string representing the path to the key found or None if not found.
+        '''
+        self.logger.debug('Looking for key to go with cert...')
+        if keydir and not keydir.endswith("/"):
+            keydir += "/"
+        if recursive:
+            rec = "r"
+        else:
+            rec = ""
+        certmodmd5 = machine.sys('openssl x509 -noout -modulus -in {0}  | md5sum'
+                                 .format(certpath))
+        if certmodmd5:
+            certmodmd5 = str(certmodmd5[0]).strip()
+        else:
+            return None
+        keyfiles = machine.sys('grep "{0}" -lz{1} {2}*.pem'
+                               .format("^\-*BEGIN RSA PRIVATE KEY.*\n.*END RSA PRIVATE KEY\-*",
+                                       rec, keydir))
+        for kf in keyfiles:
+            keymodmd5 = machine.sys('openssl rsa -noout -modulus -in {0} | md5sum'.format(kf))
+            if keymodmd5:
+                keymodmd5 = str(keymodmd5[0]).strip()
+            if keymodmd5 == certmodmd5:
+                self.logger.debug('Found key {0} for cert {1}'.format(kf, certpath))
+                return kf
+        return None
+
+    def is_ec2_cert_active(self, certbody=None):
+        '''
+        Attempts to verify if the current self.ec2_cert @ self.ec2_certpath is still active.
+        :param certbody
+        :returns the cert id if found active, otherwise returns None
+        '''
+        certbody = certbody or self.ec2_cert
+        if not certbody:
+            raise ValueError('No ec2 cert body provided or set for eutester to check for active')
+        if isinstance(certbody, dict):
+            checkbody = certbody.get('certificate_body')
+            if not checkbody:
+                raise ValueError('Invalid certbody provided, did not have "certificate body" attr')
+        for cert in self.get_all_signing_certs():
+            body = str(cert.get('certificate_body')).strip()
+            if body and body == str(certbody).strip():
+                return cert.get('certificate_id')
+        return None
 
 
     def upload_server_cert(self, cert_name, cert_body, private_key):
@@ -868,26 +1049,27 @@ class IAMops(TestConnection, IAMConnection):
 
     def update_server_cert(self, cert_name, new_cert_name=None, new_path=None):
         self.logger.debug("updating server certificate: " + cert_name)
-        self.update_server_cert(cert_name=cert_name, new_cert_name=new_cert_name,
-                                           new_path=new_path)
+        super(IAMops, self).update_server_cert(cert_name=cert_name, new_cert_name=new_cert_name,
+                                               new_path=new_path)
         if (new_cert_name and new_path) not in str(self.get_server_certificate(new_cert_name)):
             raise Exception("certificate " + cert_name + " not updated.")
 
     def get_server_cert(self, cert_name):
         self.logger.debug("getting server certificate: " + cert_name)
-        cert = self.get_server_certificate(cert_name=cert_name)
+        cert = super(IAMops, self).get_server_certificate(cert_name=cert_name)
         self.logger.debug(cert)
         return cert
 
     def delete_server_cert(self, cert_name):
         self.logger.debug("deleting server certificate: " + cert_name)
-        self.delete_server_cert(cert_name)
+        super(IAMops, self).delete_server_cert(cert_name)
         if (cert_name) in str(self.get_all_server_certs()):
             raise Exception("certificate " + cert_name + " not deleted.")
 
     def list_server_certs(self, path_prefix='/', marker=None, max_items=None):
         self.logger.debug("listing server certificates")
-        certs = self.list_server_certs(path_prefix=path_prefix, marker=marker, max_items=max_items)
+        certs = super(IAMops, self).list_server_certs(path_prefix=path_prefix,
+                                                      marker=marker, max_items=max_items)
         self.logger.debug(certs)
         return certs
 
@@ -897,7 +1079,7 @@ class IAMops(TestConnection, IAMConnection):
                   'Password': password}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.get_response('CreateLoginProfile', params, verb='POST')
+        return self.get_response('CreateLoginProfile', params, verb='POST')
 
     @staticmethod
     def _search_dict(dictionary, marker):
@@ -919,10 +1101,10 @@ class IAMops(TestConnection, IAMConnection):
                                  verb=verb, list_marker=list_marker)
         return IAMops._search_dict(resp, item_marker)
 
-    def get_user_info(self, username=None, delegate_account=None):
+    def get_user_info(self, user_name=None, delegate_account=None):
         params = {}
-        if username:
-            params['UserName'] = username
+        if user_name:
+            params['UserName'] = user_name
         if delegate_account:
             params['DelegateAccount'] = delegate_account
         return self.get_response_items(action='GetUser', params=params, item_marker='user',
