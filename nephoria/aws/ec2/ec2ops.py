@@ -59,7 +59,7 @@ from boto.vpc.subnet import Subnet as BotoSubnet
 from boto.vpc import VPCConnection
 
 from nephoria.testconnection import TestConnection
-from cloud_utils.net_utils import sshconnection
+from cloud_utils.net_utils import sshconnection, ping
 from cloud_utils.log_utils import printinfo, get_traceback, markup
 from nephoria.aws.ec2.euinstance import EuInstance
 from nephoria.aws.ec2.windows_instance import WinInstance
@@ -146,12 +146,28 @@ disable_root: false"""
         self.ec2_source_ip = None  #Source ip on local test machine used to reach instances
         if self.boto_debug:
             self.show_connection_kwargs()
-        # Init IAM connection...
+        # Init connection...
         try:
             VPCConnection.__init__(self, **self._connection_kwargs)
         except:
             self.show_connection_kwargs()
             raise
+        self.setup_ec2_resource_trackers()
+
+    def setup_ec2_resource_trackers(self):
+        """
+        Setup keys in the test_resources hash in order to track artifacts created
+        """
+        self.test_resources["reservations"] = []
+        self.test_resources["volumes"] = []
+        self.test_resources["snapshots"] = []
+        self.test_resources["keypairs"] = []
+        self.test_resources["security-groups"] = []
+        self.test_resources["images"] = []
+        self.test_resources["addresses"]=[]
+        self.test_resources["auto-scaling-groups"]=[]
+        self.test_resources["launch-configurations"]=[]
+        self.test_resources["conversion-tasks"]=[]
 
     def create_tags(self, resource_ids, tags):
         """
@@ -207,11 +223,10 @@ disable_root: false"""
             keyfile.write('KEYPAIR ' + str(key.name) + ' '+str(key.fingerprint)+"\n")
             keyfile.write(data)
             keyfile.close()
-            
             self.test_resources["keypairs"].append(key)
             return key
         else:
-            self.logger.debug("Key " + key_name + " already exists")
+            self.logger.warn("Key " + key_name + " already exists")
             
             
             
@@ -2682,7 +2697,7 @@ disable_root: false"""
                                     str(instance) + " did not receive a valid IP")
 
             if is_reachable:
-                self.ping(instance.ip_address, 20)
+                ping(instance.ip_address, 20)
 
         ## Add name tag
         if name:
@@ -2806,7 +2821,7 @@ disable_root: false"""
                                                                                  private_addressing=private_addressing,
                                                                                  timeout=timeout,
                                                                                  cmdstart=cmdstart,
-                                                                                 auto_connect=False )
+                                                                                 do_ssh_connect=False )
                     #set the connect flag in the euinstance object for future use
                     eu_instance.auto_connect = auto_connect
                     instances.append(eu_instance)
@@ -2927,7 +2942,7 @@ disable_root: false"""
                             #First try ping
                             self.logger.debug('Do Security group rules allow ping from this test machine:'+
                                        str(self.does_instance_sec_group_allow(instance, protocol='icmp', port=0)))
-                            self.ping(instance.ip_address, 2)
+                            ping(instance.ip_address, 2)
                             #now try to connect ssh or winrm
                             allow = "None"
                             try:
@@ -3142,7 +3157,7 @@ disable_root: false"""
         :param instance: boto instance or euinstance obj to use for lookup
         :return: :raise:
         """
-        if hasattr(self.ec2, 'get_all_reservations'):
+        if hasattr(self, 'get_all_reservations'):
             res = self.get_all_reservations(instance_ids=instance.id)
             if res and isinstance(res, types.ListType):
                 return res[0]
@@ -3152,7 +3167,7 @@ disable_root: false"""
                     if hasattr(instance,'reservation'):
                         instance.reservation = res
                     return res
-        raise Exception('No reservation found for instance:'+str(instance.id))
+        raise Exception('No reservation found for instance:' + str(instance.id))
     
     @printinfo    
     def monitor_euinstances_to_state(self,
@@ -3479,7 +3494,7 @@ disable_root: false"""
                 username = username,
                 password=password,
                 reservation=reservation,
-                auto_connect=auto_connect,
+                do_ssh_connect=auto_connect,
                 timeout=timeout)
         if 'instances' in self.test_resources:
             for x in xrange(0, len(self.test_resources['instances'])):

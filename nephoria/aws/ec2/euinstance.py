@@ -74,7 +74,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                                       keypath=None,
                                       password=None,
                                       username="root",
-                                      auto_connect=True,
+                                      do_ssh_connect=True,
                                       verbose=True,
                                       timeout=120,
                                       private_addressing=False,
@@ -82,7 +82,15 @@ class EuInstance(Instance, TaggedResource, Machine):
                                       cmdstart=None,
                                       try_non_root_exec=True,
                                       exec_password=None,
-                                      retry=2):
+                                      ssh_retry=2,
+                                      distro=None,
+                                      distro_ver=None,
+                                      arch=None,
+                                      proxy_hostname=None,
+                                      proxy_username='root',
+                                      proxy_password=None,
+                                      proxy_keypath=None):
+
         '''
         Primary constructor for this class. Note: to avoid an ssh session within this method,
         provide keys, username/pass later.
@@ -142,7 +150,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         newins.exec_password = exec_password or password
         newins.verbose = verbose
         newins.timeout = timeout
-        newins.retry = retry
+        newins.retry = ssh_retry
         newins.private_addressing = private_addressing
         newins.reservation = reservation or newins.get_reservation()
         if newins.reservation and newins.state != 'terminated':
@@ -151,7 +159,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             newins.security_groups = None
         newins.laststate = newins.state
         newins.cmdstart = cmdstart
-        newins.auto_connect = auto_connect
+        newins._do_ssh_connect = do_ssh_connect
         newins.set_last_status()
         if newins.state != 'terminated':
             newins.update_vm_type_info()
@@ -165,7 +173,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             except:
                 pass
 
-        if newins.auto_connect and newins.state == 'running':
+        if newins._do_ssh_connect and newins.state == 'running':
             newins.connect_to_instance(timeout=timeout)
         # Allow non-root access to try sudo if available else su -c to execute privileged commands
         newins.try_non_root_exec = try_non_root_exec
@@ -177,6 +185,14 @@ class EuInstance(Instance, TaggedResource, Machine):
                     newins.use_sudo = False
 
         return newins
+
+    @property
+    def ssh(self):
+        return self._ssh
+
+    @ssh.setter
+    def ssh(self, ssh):
+        self._ssh = ssh
 
     @property
     def age(self):
@@ -455,7 +471,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                                      username=self.username,
                                      timeout=timeout,
                                      retry=self.retry,
-                                     debugmethod=self.debugmethod,
+                                     logger=self.logger,
                                      verbose=self.verbose)
         else:
             self.debug("keypath or username/password need to be populated "
