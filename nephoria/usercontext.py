@@ -110,9 +110,9 @@ class UserContext(AutoCreds):
             account_name = self.account_name
             user_name = self.user_name
             if account_name:
-                account_name = "({0})".format(account_name)
+                account_name = ":{0}".format(account_name)
             if user_name:
-                user_name = "({0})".format(user_name)
+                user_name = ":{0}".format(user_name)
         except:
             pass
 

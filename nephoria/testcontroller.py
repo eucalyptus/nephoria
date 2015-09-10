@@ -136,14 +136,14 @@ class TestController(object):
                                      aws_access_key=None, aws_secret_key=None,
                                      credpath=None, eucarc=None,
                                      machine=None, service_connection=None, path='/',
-                                     loglevel=None):
-        if loglevel is None:
-            loglevel = self.logger.stdout_level or 'DEBUG'
-        self.logger.debug('Attempting to create user with params:\naccount:{0}\nname:{1}\n'
-                          'access_key:{2}\nsecret_key:{3}\ncredpath:{4}\neucarc:{5}'
-                          '\nmachine:{6}\nservice_connection:{7}\npath:{8}\nloglevel:{9}'
+                                     log_level=None):
+        if log_level is None:
+            log_level = self.logger.stdout_level or 'DEBUG'
+        self.logger.debug('Attempting to create user with params: account:{0}, name:{1}'
+                          'access_key:{2}, secret_key:{3}, credpath:{4}, eucarc:{5}'
+                          ', machine:{6}, service_connection:{7}, path:{8}, loglevel:{9}'
                           .format(aws_account_name, aws_user_name, aws_access_key, aws_secret_key,
-                                  credpath, eucarc, machine, service_connection, path, loglevel))
+                                  credpath, eucarc, machine, service_connection, path, log_level))
         service_connection = service_connection or self.sysadmin
         if eucarc:
             if aws_access_key:
@@ -157,7 +157,7 @@ class TestController(object):
             return UserContext(eucarc=eucarc,
                                service_connection=service_connection,
                                context_mgr=self.contextmanager,
-                               log_level=loglevel)
+                               log_level=log_level)
         if aws_access_key and aws_secret_key:
             return UserContext(aws_access_key=aws_access_key,
                                aws_secret_key=aws_secret_key,
@@ -165,12 +165,12 @@ class TestController(object):
                                aws_user_name=aws_user_name,
                                service_connection=service_connection,
                                context_mgr=self.contextmanager,
-                               log_level=loglevel)
+                               log_level=log_level)
         if credpath:
             return UserContext(credpath=credpath,
                                machine=machine,
                                context_mgr=self.contextmanager,
-                               log_level=loglevel)
+                               log_level=log_level)
 
         info = self.cloudadmin.iam.create_account(account_name=aws_account_name,
                                                   ignore_existing=True)
@@ -207,7 +207,7 @@ class TestController(object):
                             machine=self.sysadmin.clc_machine,
                             service_connection=self.sysadmin,
                             context_mgr=self.contextmanager,
-                            log_level=loglevel)
+                            log_level=log_level)
 
 
 

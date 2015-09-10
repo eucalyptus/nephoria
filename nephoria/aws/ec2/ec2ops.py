@@ -59,7 +59,7 @@ from boto.vpc.subnet import Subnet as BotoSubnet
 from boto.vpc import VPCConnection
 
 from nephoria.testconnection import TestConnection
-from cloud_utils.net_utils import sshconnection, ping
+from cloud_utils.net_utils import sshconnection, ping, is_address_in_network
 from cloud_utils.log_utils import printinfo, get_traceback, markup
 from nephoria.aws.ec2.euinstance import EuInstance
 from nephoria.aws.ec2.windows_instance import WinInstance
@@ -154,6 +154,7 @@ disable_root: false"""
             self.show_connection_kwargs()
             raise
         self.setup_ec2_resource_trackers()
+        self._zone_cache = []
 
     def setup_ec2_resource_trackers(self):
         """
@@ -3077,7 +3078,7 @@ disable_root: false"""
                         (port >= from_port and port <= to_port):
                     for grant in rule.grants:
                         if src_addr and grant.cidr_ip:
-                            if self.is_address_in_network(src_addr, str(grant)):
+                            if is_address_in_network(src_addr, str(grant)):
                                 self.logger.debug('sec_group DOES allow: group:"{0}"'
                                            ', src:"{1}", proto:"{2}", port:"{3}"'
                                            .format(group.name,
@@ -3105,27 +3106,6 @@ disable_root: false"""
                    .format(group.name, src_addr, src_group, protocol, port))
         return False
                     
-    @classmethod
-    @printinfo
-    def is_address_in_network(cls,ip_addr, network):
-        """
-
-        :param ip_addr: Ip address ie: 192.168.1.5
-        :param network: Ip network in cidr notation ie: 192.168.1.0/24
-        :return: boolean true if ip is found to be in network/mask, else false
-        """
-        ip_addr = str(ip_addr)
-        network = str(network)
-        # Check for 0.0.0.0/0 network first...
-        rem_zero = network.replace('0','')
-        if not re.search('\d', rem_zero):
-            return True
-        ipaddr = int(''.join([ '%02x' % int(x) for x in ip_addr.split('.') ]), 16)
-        netstr, bits = network.split('/')
-        netaddr = int(''.join([ '%02x' % int(x) for x in netstr.split('.') ]), 16)
-        mask = (0xffffffff << (32 - int(bits))) & 0xffffffff
-        return (ipaddr & mask) == (netaddr & mask)
-    
     def get_instance_security_groups(self,instance):
         """
         Definition: Look up and return all security groups this instance is referencing.
@@ -3509,6 +3489,7 @@ disable_root: false"""
                       ramdisk=None,
                       kernel=None,
                       image_id=None,
+                      verbose=True,
                       filters=None):
         """
         Return a list of instances matching the filters provided.
@@ -3528,11 +3509,16 @@ disable_root: false"""
         :return: list of instances
         """
         ilist = []
-        if isinstance(idstring, list):
-            instance_ids = idstring
-        elif idstring:
-            instance_ids = str(idstring)
+        if idstring:
+            if isinstance(idstring, list):
+                instance_ids = idstring
+            else:
+                instance_ids = [str(idstring)]
+            if verbose:
+                    instance_ids.append('verbose')
         else:
+            if verbose:
+                idstring = 'verbose'
             instance_ids = idstring
         
         reservations = self.get_all_instances(instance_ids=instance_ids, filters=filters)
@@ -4430,8 +4416,6 @@ disable_root: false"""
     def sign_policy(self, policy):
         my_hmac = hmac.new(self.aws_secret_access_key, policy, digestmod=hashlib.sha1)
         return base64.b64encode(my_hmac.digest())
-
-
 
     def get_euzones(self, zones=None):
         ret_list = []
