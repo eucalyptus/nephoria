@@ -77,7 +77,7 @@ class UserContext(AutoCreds):
         self.context_mgr = context_mgr
         # Logging setup
         if not logger:
-            logger = Eulogger(self.account_id, stdout_level=log_level)
+            logger = Eulogger(str(self), stdout_level=log_level)
         self.logger = logger
         self.debug = self.logger.debug
         self.critical = self.logger.critical
@@ -94,6 +94,8 @@ class UserContext(AutoCreds):
                                    'boto_debug': boto_debug,
                                    'user_context': self,
                                    'log_level': log_level}
+        self.logger.identifier = str(self)
+        self.logger.debug('Successfully created User Context')
 
     def __enter__(self):
         self._previous_context = self.context_mgr.current_user_context

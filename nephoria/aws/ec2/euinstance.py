@@ -296,11 +296,16 @@ class EuInstance(Instance, TaggedResource, Machine):
         virt_type = 'PV'
         if self.virtualization_type == 'hvm':
             virt_type = 'HVM'
+        if self.reservation:
+            owner_id = self.reservation.owner_id
+        else:
+            owner_id = "???"
         emi_string, emilen = multi_line(
             [markup("{0} {1}".format('EMI:', self.image_id)),
              "{0} {1}".format(markup('OS:'), self.platform or 'linux'),
              "{0} {1}".format(markup('VIRT:'), virt_type),
-             "({0})".format(emi_name)])
+             "({0})".format(emi_name),
+             "OWNER_ID: {0}".format(owner_id)])
 
         # Create a multi line field for the instance's state info
         if self.age:

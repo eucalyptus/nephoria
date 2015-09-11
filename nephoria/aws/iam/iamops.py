@@ -83,14 +83,16 @@ class IAMops(TestConnection, IAMConnection):
 
         :param account_name: str name of account to create
         """
-        self.logger.debug("Creating account: " + account_name)
+
         params = {'AccountName': account_name}
         try:
             res = self.get_response_items('CreateAccount', params, item_marker='account')
+            self.logger.debug("Created account: " + account_name)
         except BotoServerError as BE:
             if not (BE.status == 409 and ignore_existing):
                 raise
             res = self.get_account(account_name=account_name)
+            self.logger.debug("create_account(). Account already exists: " + account_name)
         self.test_resources["iam_accounts"].append(account_name)
         return res
     
@@ -181,17 +183,18 @@ class IAMops(TestConnection, IAMConnection):
         :param path: str user path
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
         """
-        self.logger.debug("Attempting to create user: " + user_name)
         params = {'UserName': user_name,
                   'Path': path }
         if delegate_account:
             params['DelegateAccount'] = delegate_account
         try:
             res = self.get_response_items('CreateUser', params, item_marker='user')
+            self.logger.debug("Created user: " + user_name)
         except BotoServerError as BE:
             if not (BE.status == 409 and ignore_existing):
                 raise
             res = self.get_user(user_name=user_name, delegate_account=delegate_account)
+            self.logger.debug("create_user(). User already exists: " + user_name)
         return res
 
 
