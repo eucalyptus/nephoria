@@ -2033,7 +2033,7 @@ class WinInstance(Instance, TaggedResource):
                         raise Exception(str(self.id) + ', Volume ' + str(volume.id) + ':' + str(volume.status)
                                         + ' state did not remain in-use during stop'  )
         self.debug("\n"+ str(self.id) + ": Printing Instance 'attached_vol' list:\n")
-        self.tester.print_euvolume_list(self.attached_vols)
+        self.tester.show_volumes(self.attached_vols)
         msg=""
         start = time.time()
         elapsed = 0

@@ -30,7 +30,7 @@
 #
 # Author: vic.iglesias@eucalyptus.com
 
-
+import json
 import re
 import os
 import copy
@@ -56,9 +56,11 @@ from boto.resultset import ResultSet
 from boto.ec2.securitygroup import SecurityGroup, IPPermissions
 from boto.ec2.address import Address
 from boto.vpc.subnet import Subnet as BotoSubnet
-from boto.vpc import VPCConnection
+from boto.ec2.tag import TagSet
+from boto.vpc import VPCConnection, VPC
 
 from nephoria.testconnection import TestConnection
+from nephoria.testcase_utils import wait_for_result
 from cloud_utils.net_utils import sshconnection, ping, is_address_in_network
 from cloud_utils.log_utils import printinfo, get_traceback, markup
 from nephoria.aws.ec2.euinstance import EuInstance
@@ -144,7 +146,7 @@ disable_root: false"""
                                 log_level=log_level,
                                 user_context=user_context)
         self.key_dir = "./"
-        self.ec2_source_ip = None  #Source ip on local test machine used to reach instances
+        self.local_machine_source_ip = None  # Source ip on local test machine used to reach VMs
         if self.boto_debug:
             self.show_connection_kwargs()
         # Init connection...
@@ -601,6 +603,251 @@ disable_root: false"""
                                        src_security_group_name=src_security_group_name,
                                        src_security_group_owner_id=src_security_group_owner_id)
 
+    def show_account_attributes(self, attribute_names=None, printmethod=None, printme=True):
+        attrs = self.describe_account_attributes(attribute_names=attribute_names)
+
+        main_pt = PrettyTable([markup('ACCOUNT ATTRIBUTES')])
+        pt = PrettyTable([markup('NAME'), markup('VALUE')])
+        pt.hrules = ALL
+        for attr in attrs:
+            pt.add_row([attr.attribute_name, attr.attribute_values])
+        main_pt.add_row([str(pt)])
+        if printme:
+            printmethod = printmethod or self.logger.info
+            printmethod( "\n" + str(main_pt) + "\n")
+        else:
+            return main_pt
+
+    def get_supported_platforms(self):
+        try:
+            attr = self.describe_account_attributes(attribute_names='supported-platforms')
+        except Exception as E:
+            try:
+                prop = self.property_manager.get_property_by_string('one.cluster.networkmode')
+                if prop and prop.value:
+                    return [prop.value]
+            except Exception as E:
+                try:
+                    err = "{0}\nFailed to get 'supported-platforms' fromcloud, err:'{1}'"\
+                          .format(self.get_traceback(),str(E))
+                    self.logger.info(markup(err, markups=[1, 31]))
+                except:
+                    pass
+        if attr:
+            return attr[0].attribute_values
+        return []
+
+    def get_default_vpc_attribute(self):
+        attr = self.describe_account_attributes(attribute_names='default-vpc')
+        if attr:
+            return attr[0].attribute_values
+        return []
+
+    def vpc_supported(self):
+        return 'VPC' in self.get_supported_platforms()
+
+    def get_default_vpcs(self):
+        vpc_ids = self.get_default_vpc_attribute()
+        if vpc_ids:
+            return self.get_all_vpcs(vpc_ids=vpc_ids)
+        return []
+
+    def get_all_vpcs(self, vpc_ids=None, filters=None, dry_run=False, verbose=True):
+         if verbose:
+            if vpc_ids:
+                if not isinstance(vpc_ids, list):
+                    if vpc_ids != 'verbose':
+                        subnet_ids = [vpc_ids, 'verbose']
+                elif 'verbose' not in vpc_ids:
+                    vpc_ids.append('verbose')
+            else:
+                vpc_ids = ['verbose']
+         return super(EC2ops, self).get_all_vpcs(vpc_ids=vpc_ids, filters=filters, dry_run=dry_run)
+
+    get_all_vpcs.__doc__ = "{0}".format(VPCConnection.get_all_vpcs.__doc__)
+
+    def get_vpc(self, vpc_id, verbose=True):
+        vpcs = self.get_all_vpcs(subnet_ids=[vpc_id], verbose=verbose) or []
+        for vpc in vpcs:
+            if vpc.id == vpc_id:
+                return vpc
+        return None
+
+    def show_vpc(self, vpc, printmethod=None, show_tags=True, printme=True):
+        if isinstance(vpc, str):
+            vpcs = self.get_all_vpcs(vpc)
+            if vpcs:
+                vpc = vpcs[0]
+        if not isinstance(vpc, VPC):
+             raise ValueError('show_vpc passed on non VPC type: "{0}:{1}"'.format(vpc, type(vpc)))
+        title = markup('  VPC SUMMARY: "{0}"'.format(vpc.id), markups=[1, 94])
+        main_pt = PrettyTable([title])
+        main_pt.align[title] = 'l'
+        main_pt.padding_width = 0
+        mainbuf = ""
+        summary_pt = PrettyTable(["CIDR BLOCK", "DHCP OPT ID", "INS TENANCY", "STATE",
+                                  "IS DEFAULT"])
+        summary_pt.padding_width = 0
+        summary_pt.add_row([vpc.cidr_block, vpc.dhcp_options_id, vpc.instance_tenancy, vpc.state,
+                            vpc.is_default])
+        mainbuf += str(summary_pt)
+        if show_tags and vpc.tags:
+            mainbuf += markup('\nVPC "{0}" TAGS:\n'.format(vpc.id), markups=[1,4])
+            mainbuf += str(self.show_tags(vpc.tags, printme=False)) + "\n"
+        main_pt.add_row([mainbuf])
+        if printme:
+            printmethod = printmethod or self.logger.info
+            printmethod( "\n" + str(main_pt) + "\n")
+        else:
+            return main_pt
+
+    def show_vpcs(self, vpcs=None, printmethod=None, show_tags=True, verbose=True, printme=True):
+        ret_buf = markup('--------------VPC LIST--------------', markups=[1, 94])
+        if not vpcs:
+            vpcs = self.get_all_vpcs(verbose=verbose)
+        for vpc in vpcs:
+            ret_buf += "\n" + str(self.show_vpc(vpc, show_tags=show_tags, printme=False))
+        if printme:
+            printmethod = printmethod or self.logger.info
+            printmethod( "\n" + str(ret_buf) + "\n")
+        else:
+            return ret_buf
+
+    def get_all_subnets(self, subnet_ids=None, filters=None, dry_run=False, verbose=True):
+        ret_list = []
+
+        if verbose:
+            if subnet_ids:
+                if not isinstance(subnet_ids, list):
+                    if subnet_ids != 'verbose':
+                        subnet_ids = [subnet_ids, 'verbose']
+                elif 'verbose' not in subnet_ids:
+                    subnet_ids.append('verbose')
+            else:
+                subnet_ids = ['verbose']
+        subnets = super(EC2ops, self).get_all_subnets(subnet_ids=subnet_ids, filters=filters,
+                                                      dry_run=dry_run)
+        for subnet in subnets:
+            euca_sub = EucaSubnet()
+            euca_sub.__dict__ = dict(euca_sub.__dict__.items() + subnet.__dict__.items())
+            euca_sub.mapPublicIpOnLaunch = subnet.mapPublicIpOnLaunch
+            euca_sub.defaultForAz = subnet.defaultForAz
+            ret_list.append(euca_sub)
+        return ret_list
+
+    get_all_subnets.__doc__ = "{0}".format(VPCConnection.get_all_subnets.__doc__)
+
+    def get_subnet(self, subnet_id, verbose=True):
+        subnets = self.get_all_subnets(subnet_ids=[subnet_id], verbose=verbose) or []
+        for subnet in subnets:
+            if subnet.id == subnet_id:
+                return subnet
+        return None
+
+
+    def get_default_subnets(self, zone=None):
+        ret_list = []
+        filters = None
+        if zone:
+            filters = {'availabilityZone':zone}
+        subnets = self.get_all_subnets(filters = filters, verbose=False)
+        for subnet in subnets:
+            if subnet.defaultForAz:
+                ret_list.append(subnet)
+        return ret_list
+
+    def modify_subnet_attribute(self, subnet, mapPublicIpAtLaunch):
+        if isinstance(subnet, str):
+            subnets = self.get_all_subnets(subnet)
+            if subnets:
+                subnet=subnets[0]
+        if not isinstance(subnet, BotoSubnet):
+             raise ValueError('modify_subnet_attribute passed on non Subnet type for subnet: '
+                              '"{0}:{1}"'.format(subnet, type(subnet)))
+        if not isinstance(mapPublicIpAtLaunch, bool):
+            raise ValueError('modify_subnet_attribute passed on non bool type for'
+                             ' mapPublicIpAtLaunch: "{0}:{1}"'.format(mapPublicIpAtLaunch,
+                                                                      type(mapPublicIpAtLaunch)))
+        ret = self.get_status('ModifySubnetAttribute',
+                                  {'SubnetId': subnet.id,
+                                   'MapPublicIpOnLaunch.Value': mapPublicIpAtLaunch},
+                                  verb='POST')
+        subnet = self.get_subnet(subnet.id)
+        if not str(subnet.mapPublicIpOnLaunch).upper().strip() == str(mapPublicIpAtLaunch).upper():
+            raise ValueError("Subnet: {0} mapPublicIpAtLaunch current value:'{1}' does not "
+                             "match the request value: '{2}'".format(subnet.id,
+                                                                     subnet.mapPublicIpOnLaunch,
+                                                                     mapPublicIpAtLaunch))
+        return ret
+
+    def show_subnet(self, subnet, printmethod=None, show_tags=True, printme=True):
+        subnet_id = subnet
+        if isinstance(subnet, str):
+            subnet = self.get_subnet(subnet_id)
+            if not subnet:
+                self.logger.warn('No subnet found for:"{0}"'.format(subnet_id))
+        if not isinstance(subnet, BotoSubnet):
+             raise ValueError('show_subnet passed on non Subnet type: "{0}:{1}"'
+                              .format(subnet, type(subnet)))
+        title = markup('  SUBNET SUMMARY: "{0}"'.format(subnet.id), markups=[1,94])
+        main_pt = PrettyTable([title])
+        main_pt.align[title] = 'l'
+        main_pt.padding_width = 0
+        mainbuf = ""
+        summary_pt = PrettyTable(["VPC ID", "CIDR BLOCK", "AVAIL IP CNT", "MAP PUB IP",
+                                  "STATE", "ZONE", "ZONE DEFAULT"])
+        summary_pt.padding_width = 0
+        if subnet:
+            summary_pt.add_row([subnet.vpc_id, subnet.cidr_block,
+                                subnet.available_ip_address_count, subnet.mapPublicIpOnLaunch,
+                                subnet.state, subnet.availability_zone, subnet.defaultForAz])
+        else:
+            summary_pt.add_row([subnet_id, 'Not Found', "N/A", "N/A", "N/A", "N/A", "N/A"])
+        mainbuf += str(summary_pt)
+        if show_tags and subnet.tags:
+            mainbuf += markup('\nSUBNET "{0}" TAGS:\n'.format(subnet.id), markups=[1,4])
+            mainbuf += str(self.show_tags(subnet.tags, printme=False)) + "\n"
+        main_pt.add_row([mainbuf])
+        if printme:
+            printmethod = printmethod or self.logger.info
+            printmethod( "\n" + str(main_pt) + "\n")
+        else:
+            return main_pt
+
+    def show_subnets(self, subnets=None, printmethod=None, show_tags=True, printme=True):
+        ret_buf = markup('--------------SUBNET LIST--------------', markups=[1,4,94])
+        if not subnets:
+            subnets = self.get_all_subnets()
+        for subnet in subnets:
+            subnet_pt = self.show_subnet(subnet, show_tags=show_tags, printme=False)
+            if subnet_pt:
+                ret_buf += "\n" + str(subnet_pt)
+        if printme:
+            printmethod = printmethod or self.logger.info
+            printmethod( "\n" + str(ret_buf) + "\n")
+        else:
+            return ret_buf
+
+    def get_backend_vpc_gateways(self):
+        propname = 'cloud.network.network_configuration'
+        prop = self.property_manager.get_property_by_string(propname)
+        if not prop:
+            raise ValueError('get_backend_vpc_gateways: Property not found: {0}'.format(propname))
+        value = json.loads(prop.value)
+        try:
+            midocfg = value['Mido']
+            # Note these property is expected to change to a list in the near future but
+            # the format is not yet known...
+            gwhost = midocfg['GatewayHost']
+            if gwhost:
+                return [str(gwhost)]
+            else:
+                return None
+        except KeyError:
+            self.logger.info('get_backend_vpc_gateways: VPC cloud config not found in '
+                             'network_configuration')
+        return None
+
     def terminate_single_instance(self, instance, timeout=300 ):
         """
         Terminate an instance
@@ -626,6 +873,10 @@ disable_root: false"""
         if poll_count is not None:
             timeout = poll_count*10 
         self.logger.debug( "Beginning poll loop for instance " + str(instance) + " to go to " + str(state) )
+        if not isinstance(instance, Instance):
+            instance = self.get_instances(idstring=instance)
+            if not instance:
+                instance = instance[0]
         instance.update()
         instance_original_state = instance.state
         start = time.time()
@@ -764,7 +1015,7 @@ disable_root: false"""
         self.logger.debug( str(len(volumes))+"/"+str(count)+" requests for volume creation succeeded." )
         
         if volumes:
-            self.print_euvolume_list(volumes)
+            self.show_volumes(volumes)
         
         if not monitor_to_state:
             self.test_resources["volumes"].extend(volumes)
@@ -896,7 +1147,7 @@ disable_root: false"""
                 retlist.remove(failedvol)
                 buf += str(failedvol.id)+"-state:"+str(failedvol.status)+","
                 self.logger.debug(buf)
-        self.print_euvolume_list(origlist)
+        self.show_volumes(origlist)
         return retlist
 
     @printinfo
@@ -960,7 +1211,7 @@ disable_root: false"""
             except:
                 self.logger.debug(get_traceback())
 
-        self.print_euvolume_list(monitor)
+        self.show_volumes(monitor)
         while monitor and (elapsed < timeout):
             elapsed = int(time.time()-start)
             for vol in monitor:
@@ -996,10 +1247,10 @@ disable_root: false"""
                             good.append(monitor.pop(monitor.index(vol)))
             self.logger.debug('Waiting for '+str(len(monitor))+ " remaining Volumes. Sleeping for poll_interval: "
                        +str(poll_interval)+" seconds ...")
-            self.print_euvolume_list(euvolumes)
+            self.show_volumes(euvolumes)
             time.sleep(poll_interval)
         self.logger.debug('Done with monitor volumes after '+str(elapsed)+"/"+str(timeout)+"...")
-        self.print_euvolume_list(euvolumes)
+        self.show_volumes(euvolumes)
         if monitor:
             for vol in monitor:
                 failmsg +=  str(vol.id)+" -TIMED OUT current state/attached_state:'" \
@@ -1009,63 +1260,94 @@ disable_root: false"""
             failed.extend(monitor)
         #finally raise an exception if any failures were detected al    long the way...
         if failmsg:
-            self.print_euvolume_list(failed)
+            self.show_volumes(failed)
             raise Exception(failmsg)
         return good
 
-    def print_euvolume_list(self, euvolumelist=None):
+    def show_volumes(self, euvolumelist=None, printme=True):
         """
-
-        :param euvolumelist: list of euvolume
+        Creates and displays a table of volumes with summary information
+        :param euvolumelist: list of euvolumes to be included in the table, if not provided
+                             all volumes available to this account will be fetched and displayed
+        :param printme: boolean flag, if True table will be displayed with self.debug, else
+                        the PrettyTable obj will be returned
+        :returns: None if printme is True, else will return the PrettyTable obj
         """
         buf=""
         euvolumes = []
         if not euvolumelist:
             euvolumelist = self.get_volumes()
         if not euvolumelist:
-            self.logger.debug('No volumes to print')
+            self.logger.info('No volumes to print')
             return
         for volume in euvolumelist:
             if not isinstance(volume, EuVolume):
-                self.logger.debug("object not of type EuVolume. Found type:"+str(type(volume)))
                 volume = EuVolume.make_euvol_from_vol(volume=volume, tester=self)
+            else:
+                try:
+                    volume.update()
+                except EC2ResponseError as ER:
+                    if ER.status == 400 and ER.error_code == 'InvalidVolume.NotFound':
+                        volume.status = 'deleted'
             euvolumes.append(volume)
         if not euvolumes:
             return
-        volume = euvolumes.pop()
-        buf = volume.printself()
+        first = euvolumes.pop(0)
+        maintable = first.printself(printme=False)
+        maintable.hrules = 1
         for volume in euvolumes:
-            buf += volume.printself(title=False)
-        self.logger.debug("\n"+str(buf)+"\n")
-        
-    def print_eusnapshot_list(self,eusnapshots=None):
-        """
+            pt = volume.printself(printme=False)
+            if pt._rows:
+                maintable.add_row(pt._rows[0])
+        if printme:
+            self.logger.info("\n"+str(maintable)+"\n")
+        else:
+            return str(maintable)
 
-        :param eusnapshots: list of eusnapshots
+
+
+    def show_snapshots(self, eusnapshots=None, printme=True):
+        """
+        Creates and displays a table showing snapshot summary information
+        :param eusnapshots: list of eusnapshots, if None all snapshots available to this user
+                            will be shown
+        :param printme: boolean, if True the table will be printed with self.debug, if False the
+                        PrettyTable obj will be returned.
+        :returns: None if printme is True and/or no snapshots are available,
+                  else will return PrettyTable obj
         """
         buf=""
-        print_list = []
+        plist = []
         if not eusnapshots:
             eusnapshots = self.get_snapshots()
         if not eusnapshots:
-            self.logger.debug('No snapshots to print')
-            return
+            self.logger.info('No snapshots to print')
+            return None
         for snapshot in eusnapshots:
             if not isinstance(snapshot, EuSnapshot):
-                self.logger.debug("object not of type EuSnapshot. Found type:"+str(type(snapshot)))
                 snapshot = EuSnapshot.make_eusnap_from_snap(snapshot=snapshot, tester=self)
-            print_list.append(snapshot)
-        snapshot = print_list.pop()
-        buf = snapshot.printself()
-        for snapshot in print_list:
-            buf += snapshot.printself(title=False)
-        self.logger.debug("\n"+str(buf)+"\n")
+            else:
+                snapshot.update()
+            plist.append(snapshot)
+        first = plist.pop(0)
+        maintable = first.printself(printme=False)
+        maintable.hrules = 1
+        for snap in plist:
+            pt = snap.printself(printme=False)
+            if pt._rows:
+                maintable.add_row(pt._rows[0])
+        if printme:
+            self.logger.info("\n"+str(maintable)+"\n")
+            return None
+        else:
+            return str(maintable)
+
 
     def wait_for_volume(self, volume, status="available"):
         def get_volume_state():
             volume.update()
             return volume.status
-        self.wait_for_result(get_volume_state, status)
+        wait_for_result(get_volume_state, status)
 
     def delete_volume(self, volume, poll_interval=10, timeout=180):
         """
@@ -1692,7 +1974,7 @@ disable_root: false"""
         snapshots = copy.copy(retlist)
         snapshots.extend(failed)
         #Print the results in a formated table
-        self.print_eusnapshot_list(snapshots)
+        self.show_snapshots(snapshots)
         #Check for failure and failure criteria and return 
         self.test_resources['snapshots'].extend(snapshots)
         if failed and eof:
@@ -2903,7 +3185,15 @@ disable_root: false"""
 
 
     @printinfo 
-    def monitor_euinstances_to_running(self,instances, poll_interval=10, timeout=480):
+    def monitor_euinstances_to_running(self, instances, poll_interval=10, timeout=480):
+        """
+        Monitor a list of instances to running state
+        :param instances:
+        :param poll_interval:
+        :param timeout:
+        :return: list of instanecs which successfully transitioned to running state
+        :raise Exception:
+        """
         if not isinstance(instances, types.ListType):
             instances = [instances]
         self.logger.debug("("+str(len(instances))+") Monitor_instances_to_running starting...")
@@ -2991,15 +3281,15 @@ disable_root: false"""
         try:
             if not src_group and not src_addr:
                 #Use the local test machine's addr
-                if not self.ec2_source_ip:
+                if not self.local_machine_source_ip:
                     #Try to get the outgoing addr used to connect to this instance
                     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,socket.IPPROTO_UDP)
                     s.connect((instance.ip_address,1))
                     #set the tester's global source_ip, assuming it can re-used (at least until another method sets it to None again)
-                    self.ec2_source_ip = s.getsockname()[0]
-                if self.ec2_source_ip == "0.0.0.0":
-                    raise Exception('Test machine source ip detected:'+str(self.ec2_source_ip)+', tester may need ec2_source_ip set manually')
-                src_addr = self.ec2_source_ip
+                    self.local_machine_source_ip = s.getsockname()[0]
+                if self.local_machine_source_ip == "0.0.0.0":
+                    raise Exception('Test machine source ip detected:'+str(self.local_machine_source_ip)+', tester may need ec2_source_ip set manually')
+                src_addr = self.local_machine_source_ip
             if src_addr:
                 self.logger.debug('Using src_addr:'+str(src_addr))
             elif src_group:
@@ -3170,10 +3460,11 @@ disable_root: false"""
         :return list of instances
         """
         self.logger.debug('(' + str(len(instance_list)) + ") monitor_instances_to_state: '" + str(state) + "' starting....")
-        monitor = copy.copy(instance_list)
-        for instance in monitor:
+        monitor = []
+        for instance in instance_list:
             if not isinstance(instance, EuInstance) and not isinstance(instance, WinInstance):
-                instance = self.convert_instance_to_euisntance(instance, auto_connect=False)
+                instance = self.convert_instance_to_euinstance(instance, auto_connect=False)
+            monitor.append(instance)
         good = []
         failed = []
         elapsed = 0
@@ -3384,7 +3675,7 @@ disable_root: false"""
             if keypair is not None or password is not None:
                 try:
                     euinstance_list.append(
-                        self.convert_instance_to_euisntance(instance,
+                        self.convert_instance_to_euinstance(instance,
                                                             keypair=keypair,
                                                             username = username,
                                                             password=password,
@@ -3400,10 +3691,17 @@ disable_root: false"""
         reservation.instances = euinstance_list
         return reservation
 
-    def convert_instance_to_euisntance(self, instance, keypair=None,
+    def convert_instance_to_euinstance(self, instance, keypair=None,
                                        username=None, password=None,
                                        reservation=None, auto_connect=True,
                                        timeout=120):
+        if isinstance(instance, basestring):
+            ins = self.get_instances(idstring=instance)
+            if ins:
+                instance = ins[0]
+            else:
+                self.logger.error('Could not find instance by id: ' + str(instance))
+                return None
         if instance.platform == 'windows':
             username = username or 'Administrator'
             instance = WinInstance.make_euinstance_from_instance(
@@ -3435,7 +3733,7 @@ disable_root: false"""
 
 
 
-    def get_console_output(self, instance):
+    def get_console_output(self, instance, debug=True):
         """
         Retrieve console output from an instance
 
@@ -3446,8 +3744,9 @@ disable_root: false"""
         self.logger.debug("Attempting to get console output from: " + str(instance))
         if isinstance(instance, Instance):
             instance = instance.id
-        output = self.get_console_output(instance_id=instance)
-        self.logger.debug(output.output)
+        output = super(EC2ops, self).get_console_output(instance_id=instance)
+        if debug:
+            self.logger.debug(output.output)
         return output
 
 
@@ -3478,8 +3777,8 @@ disable_root: false"""
  
     @printinfo
     def get_instances(self,
-                      state=None,
                       idstring=None,
+                      state=None,
                       reservation=None,
                       rootdevtype=None,
                       zone=None,
@@ -3574,7 +3873,7 @@ disable_root: false"""
                         euinstances.append(instance)
                     else:
                         euinstances.append(
-                            self.convert_instance_to_euisntance(instance,
+                            self.convert_instance_to_euinstance(instance,
                                                                 username=username,
                                                                 password=password,
                                                                 keypair=keypair ))
@@ -3659,39 +3958,88 @@ disable_root: false"""
 
         return aggregate_result
     
-    def stop_instances(self,reservation, timeout=480):
+    def stop_instances(self, instances, force=False, dry_run=False, monitor=True, timeout=480):
         """
         Stop all instances in a reservation
 
-        :param reservation: boto.ec2.reservation object
+        :param instances: boto.ec2.reservation object
         :raise: Exception when instance does not reach stopped state
         """
-        instance_list = reservation
-        if isinstance(reservation, Reservation):
-            instance_list = reservation.instances
-        for instance in instance_list:
-            self.logger.debug( "Sending stop for " + str(instance) )
-            instance.stop()
-        if self.wait_for_reservation(reservation, state="stopped", timeout=timeout) is False:
-            return False
-        return True
+        instance_ids = []
+        instance_objs = []
+        if not instances:
+            raise ValueError('stop_instances, bad value for instances: "{0}"'.format(instances))
+        if isinstance(instances, Reservation):
+            instance_ids = instances.instances
+            for id in instance_ids:
+                instance_obj =  self.get_instances(idstring=id)
+                if not instance_obj:
+                        raise ValueError('Instance not found by id:' + str(id))
+                instance_objs.append(instance_obj)
+        else:
+            if not isinstance(instances, list):
+                instance_list = [instances]
+            else:
+                instance_list = instances
+            for instance in instance_list:
+                if not isinstance(instance, Instance):
+                    instance_obj =  self.get_instances(idstring=instance)
+                    if not instance_obj:
+                            raise ValueError('Instance not found by id:' + str(instance))
+                    instance_objs.append(instance_obj[0])
+                    instance_ids.append(instance)
+                else:
+                    instance_ids.append(instance.id)
+                    instance_objs.append(instance_obj)
+
+        self.logger.debug('Sending stop for instances:"{0}"'.format(", ".join(instance_list)))
+        ret =super(EC2ops, self).stop_instances(instance_ids=instance_ids, force=force,
+                                                dry_run=dry_run)
+        if monitor:
+            self.monitor_euinstances_to_state(instance_list=instance_objs, state='stopped',
+                                              timeout=timeout)
+        return ret
     
-    def start_instances(self, reservation, timeout=480):
+    def start_instances(self, instances, dry_run=False, monitor=True, timeout=480):
         """
         Start all instances in a reservation
 
         :param reservation: boto.ec2.reservation object or list of instances
         :raise: Exception when instance does not reach running state
         """
-        instance_list = reservation
-        if isinstance(reservation, Reservation):
-            instance_list = reservation.instances
-        for instance in instance_list:
-            self.logger.debug( "Sending start for " + str(instance) )
-            instance.start()
-        if self.wait_for_reservation(reservation, state="running", timeout=timeout) is False:
-            return False
-        return True
+        instance_ids = []
+        instance_objs = []
+        if not instances:
+            raise ValueError('start_instances, bad value for instances: "{0}"'.format(instances))
+        if isinstance(instances, Reservation):
+            instance_ids = instances.instances
+            for id in instance_ids:
+                instance_obj =  self.get_instances(idstring=id)
+                if not instance_obj:
+                        raise ValueError('Instance not found by id:' + str(id))
+                instance_objs.append(instance_obj)
+        else:
+            if not isinstance(instances, list):
+                instance_list = [instances]
+            else:
+                instance_list = instances
+            for instance in instance_list:
+                if not isinstance(instance, Instance):
+                    instance_obj =  self.get_instances(idstring=instance)
+                    if not instance_obj:
+                            raise ValueError('Instance not found by id:' + str(instance))
+                    instance_objs.append(instance_obj[0])
+                    instance_ids.append(instance)
+                else:
+                    instance_ids.append(instance.id)
+                    instance_objs.append(instance_obj)
+
+        self.logger.debug('Sending start for instances:"{0}"'.format(", ".join(instance_list)))
+        ret = super(EC2ops, self).start_instances(instance_ids=instance_ids, dry_run=dry_run)
+        if monitor:
+            self.monitor_euinstances_to_state(instance_list=instance_objs, state='running',
+                                              timeout=timeout)
+        return ret
 
     def start_bundle_instance_task( self,
                                     instance,
@@ -4021,7 +4369,7 @@ disable_root: false"""
                 return state
             else:
                 raise Exception("More than one image returned for: " + image_id)
-        self.wait_for_result(get_emi_state, "available", timeout=timeout,poll_wait=20)
+        wait_for_result(get_emi_state, "available", timeout=timeout,poll_wait=20)
         return image_id
 
     def get_all_conversion_tasks(self, taskid=None):
@@ -4431,7 +4779,6 @@ disable_root: false"""
 
 
     def get_vm_type_list_from_zone(self, zone):
-        self.logger.debug('Looking up zone:' + str(zone))
         euzone = self.get_euzones(zone)[0]
         return euzone.vm_types
 
@@ -4575,6 +4922,29 @@ disable_root: false"""
         else:
             return main_pt
 
+    def show_tags(self, tags, printmethod=None, printme=True):
+        if not isinstance(tags, TagSet) and not isinstance(tags, dict):
+            if hasattr(tags, 'tags'):
+                tags = tags.tags
+            else:
+                raise ValueError('unknown tags object of type "{0}" passed to show_tags'
+                                 .format(type(tags)))
+        name_header = markup("TAG NAME")
+        value_header = markup("TAG VALUE")
+        pt = PrettyTable([name_header, value_header])
+        pt.padding_width = 0
+        pt.align = 'l'
+        pt.hrules = 1
+        pt.max_width[name_header] = 20
+        pt.max_width[value_header] = 80
+        for tag in tags:
+            pt.add_row([str(tag), str(tags.get(tag, None))])
+        if printme:
+            printmethod = printmethod or self.logger.info
+            printmethod( "\n" + str(pt) + "\n")
+        else:
+            return pt
+
     def show_addresses(self, addresses=None, verbose=True, printme=True):
         """
         Print table to debug output showing all addresses available to
@@ -4643,7 +5013,7 @@ disable_root: false"""
                     instance = self.get_instances(idstring=instance)[0]
                 except IndexError: pass
             if isinstance(instance, Instance):
-                instance = self.convert_instance_to_euisntance(instance=instance,
+                instance = self.convert_instance_to_euinstance(instance=instance,
                                                                auto_connect=False)
             else:
                 raise ValueError('Unknown type for instance: "{0}:{1}"'
@@ -4702,15 +5072,14 @@ disable_root: false"""
             for instance in instances:
                 if instance:
                     instance_res = getattr(instance, 'reservation', None)
-                    euinstance_list.append(self.convert_instance_to_euisntance(
+                    euinstance_list.append(self.convert_instance_to_euinstance(
                         instance, reservation=instance_res, auto_connect=False))
         if not euinstance_list:
             self.logger.debug('No instances to print')
             return
         for instance in euinstance_list:
             if not isinstance(instance,EuInstance) and not isinstance(instance, WinInstance):
-                self.logger.debug("print instance list passed non-EuInstnace type")
-                instance = self.convert_instance_to_euisntance(instance, auto_connect=False)
+                instance = self.convert_instance_to_euinstance(instance, auto_connect=False)
             plist.append(instance)
         first = plist.pop(0)
         # Build upon a table created from a euinstance class obj

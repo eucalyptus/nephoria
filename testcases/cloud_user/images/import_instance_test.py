@@ -442,7 +442,7 @@ class ImportInstanceTests(EutesterTestCase):
             if params.has_key('group'):
                 group = params['group']
                 self.debug('Checking task for group:' + str(group))
-                ins = self.tester.convert_instance_to_euisntance(task.instance,
+                ins = self.tester.convert_instance_to_euinstance(task.instance,
                                                                  auto_connect=False)
                 groups = self.tester.get_instance_security_groups(ins)
                 sec_group = groups[0]

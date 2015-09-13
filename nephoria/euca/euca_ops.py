@@ -641,7 +641,7 @@ class Eucaops(Eutester):
         if not snaps:
             return
         self.debug('Attempting to clean the following snapshots:')
-        self.ec2.print_eusnapshot_list(snaps)
+        self.ec2.show_snapshots(snaps)
         if clean_images:
             for snap in snaps:
                 for image in self.test_resources['images']:
@@ -692,7 +692,7 @@ class Eucaops(Eutester):
                     self.debug('Ignoring caught Exception: \n' + str(tb))
         try:
             self.debug('Attempting to clean up the following volumes:')
-            self.ec2.print_euvolume_list(euvolumes)
+            self.ec2.show_volumes(euvolumes)
         except: pass
         self.debug('Clean_up_volumes: Detaching any attached volumes to be deleted...')
         for vol in euvolumes:
@@ -725,7 +725,7 @@ class Eucaops(Eutester):
         if detaching:
             self.ec2.monitor_euvolumes_to_status(detaching, status='available', attached_status=None,timeout=timeout)
         self.debug('clean_up_volumes: Deleteing volumes now...')
-        self.ec2.print_euvolume_list(euvolumes)
+        self.ec2.show_volumes(euvolumes)
         if euvolumes:
             self.ec2.delete_volumes(euvolumes, timeout=timeout)
 

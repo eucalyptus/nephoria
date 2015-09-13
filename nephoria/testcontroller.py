@@ -6,7 +6,7 @@ from cloud_utils.log_utils import get_traceback
 from cloud_utils.system_utils.machine import Machine
 from nephoria.contextmanger import ContextManager
 from nephoria.usercontext import UserContext
-from nephoria.testcase_utils import TimerSeconds, TimeoutError
+from nephoria.testcase_utils import TimerSeconds, TimeoutError, wait_for_result
 
 class SystemConnectionFailure(Exception):
     pass
@@ -100,7 +100,7 @@ class TestController(object):
         return self._sysadmin
 
     @property
-    def cloudadmin(self):
+    def admin(self):
         if not self._cloudadmin:
             conn_info = self._cloud_admin_connection_info
             if (conn_info.get('credpath') or
@@ -113,13 +113,13 @@ class TestController(object):
         return self._cloudadmin
 
     @property
-    def clouduser(self):
+    def user(self):
         if not self._test_user:
             self._test_user = self.create_user_using_cloudadmin(**self._test_user_connection_info)
         return self._test_user
 
-    @clouduser.setter
-    def clouduser(self, user):
+    @user.setter
+    def user(self, user):
         if user is None:
             self._test_user = None
         if isinstance(user, UserContext):
@@ -172,20 +172,20 @@ class TestController(object):
                                context_mgr=self.contextmanager,
                                log_level=log_level)
 
-        info = self.cloudadmin.iam.create_account(account_name=aws_account_name,
+        info = self.admin.iam.create_account(account_name=aws_account_name,
                                                   ignore_existing=True)
         if info:
-            user = self.cloudadmin.iam.create_user(user_name=aws_user_name,
+            user = self.admin.iam.create_user(user_name=aws_user_name,
                                                     delegate_account=info.get('account_name'),
                                                     path=path)
             info.update(user)
         else:
             raise RuntimeError('Failed to create and/or fetch Account:"{0}", for User:"{1}"'
                                .format(aws_account_name, aws_user_name))
-        ak = self.cloudadmin.iam.get_aws_access_key(user_name=info.get('user_name'),
+        ak = self.admin.iam.get_aws_access_key(user_name=info.get('user_name'),
                                                     delegate_account=info.get('account_name'))
         if not ak:
-            ak = self.cloudadmin.iam.create_access_key(user_name=info.get('user_name'),
+            ak = self.admin.iam.create_access_key(user_name=info.get('user_name'),
                                                        delegate_account=info.get('account_name'))
         try:
             info['access_key_id'] = ak['access_key_id']
@@ -194,7 +194,7 @@ class TestController(object):
                        .format(aws_user_name, aws_account_name))
             self.logger.error('{0}\n{1}'.format(get_traceback(), err_msg))
             raise RuntimeError(err_msg)
-        if self.cloudadmin.iam.get_all_signing_certs(user_name=info.get('user_name'),
+        if self.admin.iam.get_all_signing_certs(user_name=info.get('user_name'),
                                                      delegate_account=info.get('account_name')):
             certs = True
         else:
@@ -208,6 +208,9 @@ class TestController(object):
                             service_connection=self.sysadmin,
                             context_mgr=self.contextmanager,
                             log_level=log_level)
+
+    def wait_for_result(self, *args, **kwargs):
+        return wait_for_result(*args, **kwargs)
 
 
 

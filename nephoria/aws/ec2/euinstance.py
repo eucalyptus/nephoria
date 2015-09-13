@@ -50,6 +50,7 @@ from boto.ec2.networkinterface import NetworkInterface
 from cloud_utils.log_utils import eulogger, printinfo, markup
 from nephoria.aws.ec2.euvolume import EuVolume
 from nephoria.euca.taggedresource import TaggedResource
+from nephoria.testcase_utils import wait_for_result
 from cloud_utils.net_utils.sshconnection import SshConnection, CommandExitCodeException, \
     CommandTimeoutException
 from cloud_utils.system_utils.machine import Machine
@@ -511,26 +512,29 @@ class EuInstance(Instance, TaggedResource, Machine):
             if self.ssh is not None:
                 self.ssh.close()
             self.ssh = None
-            while (elapsed < timeout):
+            while not self.ssh and (elapsed < timeout):
                 attempts += 1
                 try:
                     self.update()
+                    if self.state != 'running':
+                        self.error('connect_to_instance: instance not in running state. State:{0}'
+                                   .format(self.state))
+                        break
                     self.reset_ssh_connection(timeout=connect_timeout)
                     self.logger.debug('Try some sys...')
                     self.sys("")
                     self.logger.info("SSH Connection Succeeded")
+                    break
                 except Exception, se:
+                    elapsed = int(time.time() - start)
                     traceback = get_traceback()
                     self.logger.warn('Caught exception attempting to reconnect '
                                'ssh: {0}'.format(se))
-                    elapsed = int(time.time() - start)
                     self.logger.debug('connect_to_instance: Attempts:' +
                                str(attempts) + ', elapsed:' + str(elapsed) +
                                '/' + str(timeout))
                     time.sleep(5)
                     pass
-                else:
-                    break
             elapsed = int(time.time() - start)
             if self.ssh is None:
                 if traceback:
@@ -553,6 +557,10 @@ class EuInstance(Instance, TaggedResource, Machine):
         # - iptables info
         # - route info
         # - instance xml
+        self.logger.debug(markup('Dumping Connection debug info for Instance:"{0}, pub:{1}, '
+                                      'priv:{2}"'
+                                      .format(self.id, self.ip_address, self.private_ip_address),
+                   markups=[1, 4, 95]))
         try:
             # Show local ARP info...
             arp_out = "\nLocal ARP cache for instance ip: " \
@@ -563,10 +571,53 @@ class EuInstance(Instance, TaggedResource, Machine):
             self.logger.debug(arp_out)
         except Exception as AE:
             self.logger.debug('Failed to get arp info:' + str(AE))
+        self.get_cloud_init_info_from_console()
         try:
-            self.tester.get_console_output(self)
+            node = None
+            node = self.tester.service_manager.get_all_node_controllers(instance_id=self.id)[0]
+            node.sys('ip addr list')
+        except Exception as NE:
+            self.logger.debug('Was unable to gather debug for the node hosting this VM, err: {0}'
+                       .format(NE))
+            pass
+        try:
+            nodes = self.tester.service_manager.get_all_node_controllers()
+            if node and (node in nodes):
+                nodes.remove(node)
+            self.logger.debug('Ip addrs for node:"{0}" which is hosting:"{1}"...'
+                       .format(node.hostname, self.id))
+            for node in nodes:
+                try:
+                    self.logger.debug('Node "NOT" hosting instance:"{0}"...'.format(self.id))
+                    node.sys('ip addr list')
+                except:
+                    pass
+        except Exception as IPL:
+            self.logger.debug('Failed gathering ip addr list debug info from all nodes, err: "{0}"'
+                       .format(IPL))
+            pass
+        self.logger.debug(markup('DONE Dumping Connection debug info for Instance:"{0}"'
+                                      .format(self.id), markups=[1, 4, 95]))
+
+    def get_cloud_init_info_from_console(self):
+        ret_buf = ""
+        try:
+            c_output = self.tester.get_console_output(self, debug=False)
+            if c_output:
+                output = c_output.output
+                ci_lines = []
+                if not isinstance(output, list):
+                    output = str(output).splitlines()
+                for line in output:
+                    if re.search('ci-info|cloud-init|WARNING|ERROR|CRITICAL', line):
+                        ci_lines.append(line)
+                for x in ci_lines:
+                    self.logger.debug("Console ci-info '{0}':".format(x))
+                    ret_buf += x + "\n"
         except Exception as CE:
-            self.logger.debug('Failed to get console output:' + str(CE))
+            self.logger.error('{0}Failed to get console output:{1}'
+                              .format(get_traceback(), str(CE)))
+        return ret_buf
 
     def has_sudo(self):
         try:
@@ -577,15 +628,6 @@ class EuInstance(Instance, TaggedResource, Machine):
             self.logger.debug('Could not find sudo on remote machine:' +
                        str(self.ip_address))
         return False
-
-    def debug(self, msg, traceback=1, method=None, frame=False):
-        '''
-        Used to print debug, defaults to print() but over ridden by
-        self.logger.debugmethod if not None
-        msg - mandatory -string, message to be printed
-        '''
-        if (self.verbose is True):
-            self.logger.debugmethod(msg)
 
     def sys(self, cmd, verbose=True, code=None, try_non_root_exec=None,
             enable_debug=False, timeout=120):
@@ -922,7 +964,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                            "\nError caught in try_to_write_to_disk")
                 return False
 
-        self.tester.wait_for_result(try_to_write_to_disk, True)
+        wait_for_result(try_to_write_to_disk, True)
         self.logger.debug('Success attaching volume:' + str(euvolume.id) + ' to instance:' + self.id +
                    ', cloud dev:' + str(euvolume.attach_data.device) + ', attached dev:' +
                    str(attached_dev))
@@ -1361,7 +1403,7 @@ class EuInstance(Instance, TaggedResource, Machine):
 
         self.logger.debug('Attempting to reboot instance:' + str(self.id) +
                    ', check attached volume state first')
-        uptime = self.tester.wait_for_result(get_safe_uptime, None, oper=operator.ne)
+        uptime = wait_for_result(get_safe_uptime, None, oper=operator.ne)
         elapsed = 0
         start = time.time()
         if checkvolstatus:
@@ -1383,7 +1425,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 self.connect_to_instance(timeout=timeout)
                 # Wait for the system to provide a valid response for uptime,
                 # early connections may not
-                newuptime = self.tester.wait_for_result(get_safe_uptime, None, oper=operator.ne)
+                newuptime = wait_for_result(get_safe_uptime, None, oper=operator.ne)
             except:
                 pass
 

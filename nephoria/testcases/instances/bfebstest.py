@@ -141,7 +141,7 @@ class BFEBSBasics(InstanceBasics):
             # check that the volume 2 can be detached after instance re-start
             self.detachVolumeByPath(instance, self.test_volume_2_path)
             if self.keypair.name == instance.key_name:
-                instance = self.tester.ec2.convert_instance_to_euisntance(instance, keypair=self.keypair)
+                instance = self.tester.ec2.convert_instance_to_euinstance(instance, keypair=self.keypair)
                 instance.sys("uname -r", code=0)
             else:
                 self.assertTrue(self.tester.ping(instance.ip_address))

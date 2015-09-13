@@ -1,3 +1,4 @@
+import inspect
 import operator
 import signal
 import time
@@ -68,6 +69,15 @@ def wait_for_result(callback,
         :return: result upon success
         :raise: TimeoutFunctionException when instance does not enter proper state
         """
+    if not debug_method:
+        try:
+            # Naughty/lazy way to log results using the caller's logger interface
+            caller = inspect.currentframe().f_back.f_locals['self']
+            logger = getattr(caller, 'logger', None)
+            if logger:
+                debug_method = logger.debug
+        except Exception as E:
+            pass
     debug = debug_method
     if not debug:
         def debug(msg):

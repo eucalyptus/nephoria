@@ -1365,7 +1365,7 @@ class Block_Device_Mapping_Tests(EutesterTestCase):
                                   + " no longer in stopped state, elapsed:" + str(elapsed) + "\n"
                         self.debug(err)
                         errmsg += err
-                    self.tester.print_euvolume_list(instance.attached_vols)
+                    self.tester.show_volumes(instance.attached_vols)
                 time.sleep(10)
             self.status('Attempt to detach volume which was attached after running instance while in stopped state...')
             instance.detach_euvolume(self.base_test_volume,timeout=180)
