@@ -3201,7 +3201,9 @@ disable_root: false"""
         self.logger.debug("("+str(len(instances))+") Monitor_instances_to_running starting...")
         ip_err = ""
         #Wait for instances to go to running state...
-        self.monitor_euinstances_to_state(instances, failstates=['stopped', 'terminated','shutting-down'],timeout=timeout)
+        self.monitor_euinstances_to_state(instances,
+                                          failstates=['stopped', 'terminated','shutting-down'],
+                                          timeout=timeout)
         #Wait for instances in list to get valid ips, check for duplicates, etc...
         try:
             self.wait_for_valid_ip(instances, timeout=timeout)
@@ -3214,7 +3216,8 @@ disable_root: false"""
         good = []
         elapsed = 0
         start = time.time()
-        self.logger.debug("Instances in running state and wait_for_valid_ip complete, attempting connections...")
+        self.logger.debug("Instances in running state and wait_for_valid_ip complete, "
+                          "attempting connections...")
         while waiting and (elapsed < timeout):
             self.logger.debug("Checking "+str(len(waiting))+" instance ssh connections...")
             elapsed = int(time.time()-start)
@@ -3224,31 +3227,47 @@ disable_root: false"""
                     try:
                         if isinstance(instance, WinInstance):
                             #First try checking the RDP and WINRM ports for access...
-                            self.logger.debug('Do Security group rules allow winrm from this test machine:'+
-                                       str(self.does_instance_sec_group_allow(instance, protocol='tcp', port=instance.winrm_port)))
-                            self.logger.debug('Do Security group rules allow winrm from this test machine:'+
-                                       str(self.does_instance_sec_group_allow(instance, protocol='tcp', port=instance.rdp_port)))
+                            self.logger.debug(
+                                'Do Security group rules allow winrm from this test machine:' +
+                                 str(self.does_instance_sec_group_allow(instance,
+                                                                        protocol='tcp',
+                                                                        port=instance.winrm_port)))
+                            self.logger.debug(
+                                'Do Security group rules allow winrm from this test machine:' +
+                                str(self.does_instance_sec_group_allow(instance,
+                                                                       protocol='tcp',
+                                                                       port=instance.rdp_port)))
                             instance.poll_for_ports_status(timeout=1)
                             instance.connect_to_instance(timeout=15)
                             self.logger.debug("Connected to instance:"+str(instance.id))
                             good.append(instance)
                         else:
-                            #First try ping
-                            self.logger.debug('Do Security group rules allow ping from this test machine:'+
-                                       str(self.does_instance_sec_group_allow(instance, protocol='icmp', port=0)))
+                            #  First try ping
+                            self.logger.debug(
+                                'Do Security group rules allow ping from this test machine:' +
+                                 str(self.does_instance_sec_group_allow(instance,
+                                                                        protocol='icmp',
+                                                                        port=0)))
                             ping(instance.ip_address, 2)
-                            #now try to connect ssh or winrm
+                            #  now try to connect ssh or winrm
                             allow = "None"
                             try:
-                                allow=str(self.does_instance_sec_group_allow(instance, protocol='tcp', port=22))
+                                allow=str(self.does_instance_sec_group_allow(instance,
+                                                                             protocol='tcp',
+                                                                             port=22))
                             except:
                                 pass
-                            self.logger.debug('Do Security group rules allow ssh from this test machine:'+str(allow))
+                            self.logger.debug('Do Security group rules allow ssh from this '
+                                              'test machine:' + str(allow))
                             instance.connect_to_instance(timeout=15)
                             self.logger.debug("Connected to instance:"+str(instance.id))
                             good.append(instance)
                     except :
-                        self.logger.debug(get_traceback())
+                        elapsed = int(time.time()-start)
+                        err = ("instance {0} auto-connect. Time remaining before timeout:'{1}'. "
+                               "ERROR:\n{2}".format(instance.id, (timeout-elapsed),
+                                                    get_traceback()))
+                        self.logger.warn(err)
                         pass
                 else:
                     good.append(instance)
@@ -3258,14 +3277,17 @@ disable_root: false"""
             elapsed = int(time.time()-start)
             if waiting and (elapsed < timeout):
                 time.sleep(poll_interval)
+            else:
+                break
                 
         if waiting:
             buf = "Following Errors occurred while waiting for instances:\n"
             buf += 'Errors while waiting for valid ip:'+ ip_err + "\n"
-            buf += "Timed out waiting:" + str(elapsed) + " to connect to the following instances:\n"
+            buf += "Timed out waiting:'" + str(elapsed) + "/" + str(timeout) + \
+                   "' to connect to the following instances:\n"
             for instance in waiting:
                 buf += str(instance.id)+":"+str(instance.ip_address)+","
-            raise Exception(buf)
+            raise RuntimeError(buf)
         self.show_instances(good)
         return good
 
