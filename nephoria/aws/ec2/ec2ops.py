@@ -55,9 +55,11 @@ from boto.exception import EC2ResponseError
 from boto.resultset import ResultSet
 from boto.ec2.securitygroup import SecurityGroup, IPPermissions
 from boto.ec2.address import Address
-from boto.vpc.subnet import Subnet as BotoSubnet
 from boto.ec2.tag import TagSet
+from boto.ec2.zone import Zone
+from boto.vpc.subnet import Subnet as BotoSubnet
 from boto.vpc import VPCConnection, VPC
+
 
 from nephoria.testconnection import TestConnection
 from nephoria.testcase_utils import wait_for_result
@@ -3253,7 +3255,8 @@ disable_root: false"""
             for instance in good:
                 if instance in waiting:
                     waiting.remove(instance)
-            if waiting:
+            elapsed = int(time.time()-start)
+            if waiting and (elapsed < timeout):
                 time.sleep(poll_interval)
                 
         if waiting:
@@ -3924,7 +3927,12 @@ disable_root: false"""
                 reservation = self.get_all_instances('verbose')
             #first send terminate for all instances
             for res in reservation:
-                if isinstance(res, Reservation):
+                if isinstance(res, basestring) and str(res).startswith('i'):
+                    instance = self.get_instances(idstring=res)
+                    if not instance:
+                        raise ValueError('Instance not found by id:' + str(res))
+                    instance_list += instance
+                elif isinstance(res, Reservation):
                     instance_list.extend(res.instances)
                 elif isinstance(res, Instance):
                     instance_list.append(res)
@@ -3975,7 +3983,7 @@ disable_root: false"""
                 instance_obj =  self.get_instances(idstring=id)
                 if not instance_obj:
                         raise ValueError('Instance not found by id:' + str(id))
-                instance_objs.append(instance_obj)
+                instance_objs.append(instance_obj[0])
         else:
             if not isinstance(instances, list):
                 instance_list = [instances]
@@ -4017,7 +4025,7 @@ disable_root: false"""
                 instance_obj =  self.get_instances(idstring=id)
                 if not instance_obj:
                         raise ValueError('Instance not found by id:' + str(id))
-                instance_objs.append(instance_obj)
+                instance_objs.append(instance_obj[0])
         else:
             if not isinstance(instances, list):
                 instance_list = [instances]
@@ -4412,7 +4420,7 @@ disable_root: false"""
                              to append to base timeout
         :param base_timeout: base timeout in seconds
         :param interval: seconds between polling tasks
-        :param exit_on_failure: Will stop monitoring and raise an exception
+        :param exit_on_failure: Will  monitoring and raise an exception
                                 upon first found failure. Otherwise will
                                 continue monitoring remaining tasks in list
                                 and raise the error when all tasks are
@@ -4767,11 +4775,14 @@ disable_root: false"""
 
     def get_euzones(self, zones=None):
         ret_list = []
-
+        get_zones = []
         if zones is not None and not isinstance(zones, types.ListType):
-            get_zones = [zones]
-        else:
-            get_zones = zones
+            zones = [zones]
+        for zone in zones:
+            if zone:
+                if isinstance(zone, Zone):
+                    zone = zone.name
+                get_zones.append(zone)
         myzones = self.get_all_zones(zones=get_zones)
         for zone in myzones:
             ret_list.append(EuZone.make_euzone_from_zone(zone, self))
@@ -5266,20 +5277,35 @@ disable_root: false"""
         else:
             return main_pt
 
-    def show_vm_types(self,zone=None, debugmethod=None):
+    def show_vm_types(self, zone=None, debugmethod=None, printme=True):
         debugmethod = debugmethod or self.logger.info
-        buf = "\n"
+        mainpt=PrettyTable([markup('VM TYPES PER ZONE:', [1, 4, 94])])
+
+        mainpt.align = 'l'
+        mainpt.padding_width = 0
+
+
         if zone:
             zones = [zone]
         else:
             zones = self.get_all_zones()
         for zone in zones:
-            buf += "------------------------( " + str(zone) + " )--------------------------------------------\n"
+            buf = "{0}: {1}\n".format(markup('ZONE', [1, 4, 94]), markup(zone))
+
+            pt = PrettyTable([markup('NAME', [1, 4]).ljust(20), markup('CPU', [1, 4]).ljust(7),
+                              markup('DISK', [1, 4]).ljust(10), markup('RAM', [1, 4]).ljust(10),
+                              markup('FREE', [1, 4]).ljust(10)])
+            pt.align = 'l'
+            # pt.hrules = 1
             for vm in self.get_vm_type_list_from_zone(zone):
-                vminfo = self.get_all_attributes(vm, verbose=False)
-                buf +=  "---------------------------------"
-                buf += self.get_all_attributes(vm, verbose=False)
-        debugmethod(buf)
+                pt.add_row([markup(vm.name), vm.cpu, vm.disk, vm.ram,
+                            "{0}/{1}".format(vm.free, vm.max)])
+            buf += str(pt)
+            mainpt.add_row([buf])
+        if printme:
+            debugmethod("\n{0}\n".format(mainpt))
+        else:
+            return mainpt
 
     def show_security_groups(self, groups=None, verbose=True, printme=True):
         ret_buf = ""

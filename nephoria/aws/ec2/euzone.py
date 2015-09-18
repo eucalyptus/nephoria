@@ -48,6 +48,10 @@ class Vm_Type():
         self.ram = ram
         self.disk = disk
 
+    def __repr__(self):
+        return "{0}:{1}".format(self.__class__.__name__, self.name)
+
+
 class EuZone(Zone):
     def __init__(self, connection=None):
         connection = connection

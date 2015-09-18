@@ -514,11 +514,16 @@ class EuInstance(Instance, TaggedResource, Machine):
             self.ssh = None
             while not self.ssh and (elapsed < timeout):
                 attempts += 1
+                elapsed = int(time.time() - start)
                 try:
                     self.update()
                     if self.state != 'running':
-                        self.error('connect_to_instance: instance not in running state. State:{0}'
-                                   .format(self.state))
+                        try:
+                            self.logger.error('connect_to_instance: instance not in running state. '
+                                              'State:{0}'
+                                              .format(self.state))
+                        except:
+                            pass
                         break
                     self.reset_ssh_connection(timeout=connect_timeout)
                     self.logger.debug('Try some sys...')
@@ -538,8 +543,9 @@ class EuInstance(Instance, TaggedResource, Machine):
             elapsed = int(time.time() - start)
             if self.ssh is None:
                 if traceback:
-                    self.logger.error('Last Exception caught during connect attempt:\n{0}'
-                                   .format(traceback))
+                    self.logger.error('Failed SSH Connection after elapsed:{0}.\n'
+                                      'Exception caught during final connect attempt:\n{1}'
+                                      .format(elapsed, traceback))
                 self.get_connection_debug()
                 raise RuntimeError(str(self.id) +
                                    ":Failed establishing ssh connection to "
