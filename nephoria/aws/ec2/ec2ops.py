@@ -3196,6 +3196,7 @@ disable_root: false"""
         :return: list of instanecs which successfully transitioned to running state
         :raise Exception:
         """
+        timeout = int(timeout)
         if not isinstance(instances, types.ListType):
             instances = [instances]
         self.logger.debug("("+str(len(instances))+") Monitor_instances_to_running starting...")
@@ -3265,7 +3266,7 @@ disable_root: false"""
                     except :
                         elapsed = int(time.time()-start)
                         err = ("instance {0} auto-connect. Time remaining before timeout:'{1}'. "
-                               "ERROR:\n{2}".format(instance.id, (timeout-elapsed),
+                               "ERROR:\n{2}".format(instance.id, (int(timeout)-int(elapsed)),
                                                     get_traceback()))
                         self.logger.warn(err)
                         pass
