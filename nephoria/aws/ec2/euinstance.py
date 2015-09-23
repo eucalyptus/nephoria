@@ -282,31 +282,30 @@ class EuInstance(Instance, TaggedResource, Machine):
         reservation_id = None
         if self.reservation:
             reservation_id = self.reservation.id
+            owner_id = self.reservation.owner_id
+        else:
+            owner_id = "???"
         # Create a multi line field for instance's run info
         idlist = [markup("{0} {1}".format('ID:', self.id), markups=[1, 4, 94]),
-                  "{0} {1}".format(markup('VMTYPE:'), self.instance_type),
+                  "{0} {1}".format(markup('TYPE:'), self.instance_type),
                   "{0} {1}".format(markup('RES:'), reservation_id),
-                  markup("KEYPAIR:"), "{0}".format(self.key_name)]
+                  "{0}".format(markup("ACCOUNT ID:")), owner_id]
         id_string, idlen = multi_line(idlist)
         try:
             emi = self.tester.get_emi(self.image_id)
-            emi_name = str(emi.name[0:22]) + ".."
+            emi_name = str(emi.name[0:18]) + ".."
         except:
             emi_name = ""
         # Create a multi line field for the instance's image info
         virt_type = 'PV'
         if self.virtualization_type == 'hvm':
             virt_type = 'HVM'
-        if self.reservation:
-            owner_id = self.reservation.owner_id
-        else:
-            owner_id = "???"
         emi_string, emilen = multi_line(
             [markup("{0} {1}".format('EMI:', self.image_id)),
              "{0} {1}".format(markup('OS:'), self.platform or 'linux'),
              "{0} {1}".format(markup('VIRT:'), virt_type),
-             "({0})".format(emi_name),
-             "OWNER_ID: {0}".format(owner_id)])
+             "{0}".format(markup('IMAGE NAME:')),
+             emi_name])
 
         # Create a multi line field for the instance's state info
         if self.age:
@@ -378,7 +377,9 @@ class EuInstance(Instance, TaggedResource, Machine):
                        str(self.ip_address).center(pubip_col[1])])
         # To squeeze a potentially long keyname under the network summary table, get the length
         # and format this column to allow for wrapping a keyname under the table...
-        netbuf = netpt.get_string()
+        # netbuf = netpt.get_string()
+        netbuf = "{0}: {1}\n".format(markup("KEYPAIR"), self.key_name)
+        netbuf +=  "\n".join(netpt.get_string().splitlines()[0:-1])
         # Create the row in the main table...
         pt.add_row([id_string, emi_string, state_string, netbuf])
         if printme:

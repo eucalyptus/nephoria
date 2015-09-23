@@ -183,6 +183,10 @@ class IAMops(TestConnection, IAMConnection):
         :param path: str user path
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
         """
+        if not user_name:
+            # Assuming this could be part of a test, allow it but warn...
+            self.logger.warning('create_user(). Passed unsupported user_name:"{0}"'
+                                .format(user_name))
         params = {'UserName': user_name,
                   'Path': path }
         if delegate_account:
