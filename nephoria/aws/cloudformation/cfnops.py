@@ -82,7 +82,7 @@ class CFNops(TestConnection, CloudFormationConnection):
                              boto_debug=0):
         cfn_region = RegionInfo()
         if region:
-            self.debug("Check region: " + str(region))
+            self.logger.debug("Check region: " + str(region))
             try:
                 if not endpoint:
                     cfn_region.endpoint = "cloudformation.{0}.amazonaws.com".format(region)
@@ -105,15 +105,20 @@ class CFNops(TestConnection, CloudFormationConnection):
                                     'port' : port,
                                     'path' : path,
                                     'region' : cfn_region}
-            self.debug("Attempting to create cloudformation connection to " + self.get_cfn_ip() + ':' + str(port) + path)
-            self.connection = boto.connect_cloudformation(**cfn_connection_args)
+            self.logger.debug("Attempting to create cloudformation connection to " + self.get_cfn_ip() + ':' + str(port) + path)
+            self = boto.connect_cloudformation(**cfn_connection_args)
         except Exception, e:
-            self.critical("Was unable to create cloudformation connection because of exception: " + str(e))
+            self.logger.critical("Was unable to create cloudformation connection because of exception: " + str(e))
 
-    def create_stack(self, stack_name, template_body, template_url=None, parameters=None):
-        self.info("Creating stack: {0}".format(stack_name))
-        self.connection.create_stack(stack_name, template_body, template_url=template_url, parameters=parameters)
+    def create_stack(self, stack_name, template_body, template_url=None, parameters=None,
+                     *args, **kwargs):
+        self.logger.info("Creating stack: {0}".format(stack_name))
+        super(CFNops, self).create_stack(stack_name, template_body, template_url=template_url,
+                                         parameters=parameters, *args, **kwargs)
+    create_stack.__doc__ = CloudFormationConnection.create_stack.__doc__
 
-    def delete_stack(self, stack_name):
-        self.info("Deleting stack: {0}".format(stack_name))
-        self.connection.delete_stack(stack_name)
+    def delete_stack(self, stack_name, *args, **kwargs):
+        self.logger.info("Deleting stack: {0}".format(stack_name))
+        super(CFNops, self).delete_stack(stack_name, *args, **kwargs)
+
+    delete_stack.__doc__ = CloudFormationConnection.delete_stack.__doc__

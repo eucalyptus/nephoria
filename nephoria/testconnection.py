@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-from logging import INFO, DEBUG
+from logging import INFO, DEBUG, NOTSET
 from boto import set_stream_logger, regioninfo
 from boto import __version__ as boto_version
 from cloud_utils.log_utils.eulogger import Eulogger
@@ -69,7 +69,7 @@ class TestConnection(object):
         self.service_path = path
         self.service_region = self._get_region_info(host=host, endpoint=endpoint,
                                                     region_name=region)
-        self.boto_debug = boto_debug
+        self._boto_debug = boto_debug
         if validate_certs is None:
             validate_certs = True
             if re.search('2.6', boto_version):
@@ -136,6 +136,18 @@ class TestConnection(object):
                     return url
         return self._service_url
 
+    @property
+    def boto_debug(self):
+        if hasattr(self, 'debug'):
+            return self.debug
+        else:
+            return self._boto_debug
+
+    @boto_debug.setter
+    def boto_debug(self, level):
+        self._boto_debug = level
+        self.debug = level
+
     def _get_region_info(self, host=None, endpoint=None, region_name=None):
         if (host or endpoint or region_name):
             region = regioninfo.RegionInfo()
@@ -180,4 +192,12 @@ class TestConnection(object):
         for key, value in self._connection_kwargs.iteritems():
             debug_buf += "{0}{1}{2}\n".format(str(key).ljust(30), " -> ", value)
         self.logger.debug(debug_buf)
+
+    def enable_boto_debug(self, level=DEBUG, format_string=None):
+        self.boto_debug=2
+        set_stream_logger('boto', level=level, format_string=None)
+
+    def disable_boto_debug(self, level=NOTSET):
+        self.boto_debug=0
+        set_stream_logger('boto', level=level)
 

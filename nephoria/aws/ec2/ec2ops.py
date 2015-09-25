@@ -412,83 +412,19 @@ disable_root: false"""
             return True
 
     @printinfo
-    def authorize_group_by_name(self,
-                                group_name="default",
-                                port=22,
-                                end_port=None,
-                                protocol="tcp",
-                                cidr_ip="0.0.0.0/0",
-                                src_security_group=None,
-                                src_security_group_name=None,
-                                src_security_group_owner_id=None,
-                                force_args=False):
-        """
-        Authorize the group with group_name
-
-        :param group_name: Name of the group to authorize, default="default"
-        :param port: Port to open, default=22
-        :param end_port: End of port range to open, defaults to 'port' arg.
-        :param protocol: Protocol to authorize, default=tcp
-        :param cidr_ip: CIDR subnet to authorize, default="0.0.0.0/0" everything
-        :param src_security_group_name: Grant access to 'group' from src_security_group_name, default=None
-        :return:
-
-        """
-        if not force_args:
-            if src_security_group or src_security_group_name:
-                cidr_ip=None
-                port=None
-                protocol=None
-            if src_security_group:
-                src_security_group_owner_id= src_security_group_owner_id or src_security_group.owner_id
-                src_security_group_name = src_security_group_name or src_security_group.name
-
-            if src_security_group_name and not src_security_group_owner_id:
-                    group = self.get_security_group(name=src_security_group_name)
-                    src_security_group_owner_id = group.owner_id
-            if end_port is None:
-                end_port = port
-
-        old_api_version = self.APIVersion
-        try:
-            #self.APIVersion = "2009-10-31"
-            if src_security_group_name:
-                self.logger.debug( "Attempting authorization of: {0}, from group:{1},"
-                            " on port range: {2} to {3}, proto:{4}"
-                            .format(group_name, src_security_group, port,
-                                    end_port, protocol))
-            else:
-                self.logger.debug( "Attempting authorization of:{0}, on port "
-                            "range: {1} to {2}, proto:{3} from {4}"
-                            .format(group_name, port, end_port,
-                                    protocol, cidr_ip))
-            self.authorize_security_group_deprecated(group_name,
-                                                         ip_protocol=protocol,
-                                                         from_port=port,
-                                                         to_port=end_port,
-                                                         cidr_ip=cidr_ip,
-                                                         src_security_group_name=src_security_group_name,
-                                                         src_security_group_owner_id=src_security_group_owner_id)
-            return True
-        except self.ResponseError, e:
-            if e.code == 'InvalidPermission.Duplicate':
-                self.logger.debug( 'Security Group: %s already authorized' % group_name )
-            else:
-                raise
-        finally:
-            self.APIVersion = old_api_version
-
-
     def authorize_group(self,
-                        group,
-                        port=22,
+                        group=None,
+                        group_name=None,
+                        group_id=None,
+                        port=None,
                         end_port=None,
-                        protocol="tcp",
+                        protocol=None,
                         cidr_ip="0.0.0.0/0",
                         src_security_group=None,
+                        src_security_group_id=None,
                         src_security_group_name=None,
-                        src_security_group_owner_id=None,
-                        force_args=False):
+                        src_security_group_owner_id=None):
+
         """
         Authorize the boto.group object
 
@@ -502,15 +438,44 @@ disable_root: false"""
         :return: True on success
         :raise: Exception if operation fails
         """
-        return self.authorize_group_by_name(group.name,
-                                            port=port,
-                                            end_port=end_port,
-                                            protocol=protocol,
-                                            cidr_ip=cidr_ip,
-                                            src_security_group=src_security_group,
-                                            src_security_group_name=src_security_group_name,
-                                            src_security_group_owner_id=src_security_group_owner_id,
-                                            force_args=force_args)
+        if isinstance(group, SecurityGroup):
+            group_name = group.name
+            group_id = group.id
+
+        if not group_id:
+            if isinstance(group, basestring):
+                if re.match('^sg-\w{8}\s*$', group):
+                    group_id = group
+                else:
+                    group_name = group
+            if group_name and not group_id:
+                group = self.get_security_group(name=group_name)
+                group_name = group.name
+                group_id = group.id
+            else:
+                raise ValueError('Authorize group. Must provide security group name, id.')
+        end_port=end_port or port
+        if src_security_group:
+            src_security_group_name = src_security_group.name
+            src_security_group_id = src_security_group.id
+            src_security_group_owner_id = src_security_group.owner_id
+        if not src_security_group_id:
+            if src_security_group_name or src_security_group_owner_id:
+                if not (src_security_group_owner_id and src_security_group_name):
+                    raise ValueError('Must provide both src group name, and src group owner id in '
+                                     'request, name:{0}, ownerid:{1}'
+                                     .format(src_security_group_name, src_security_group_owner_id))
+
+        return self.authorize_security_group(group_id=group_id,
+                                             src_security_group_name=src_security_group_name,
+                                             src_security_group_owner_id=src_security_group_owner_id,
+                                             src_security_group_group_id=src_security_group_id,
+                                             ip_protocol=protocol,
+                                             from_port=port,
+                                             to_port=end_port,
+                                             cidr_ip=cidr_ip,
+                                             group_name=None,
+                                             )
 
     def revoke_all_rules(self, group):
 
@@ -2648,17 +2613,24 @@ disable_root: false"""
         """
         try:
             self.logger.debug("Allocating an address")
-            address = self.allocate_address(domain=domain)
+            address = super(EC2ops, self).allocate_address(domain=domain)
         except Exception, e:
             tb = get_traceback()
             err_msg = 'Unable to allocate address'
-            self.critical(str(err_msg))
+            self.logger.critical(str(err_msg))
             raise Exception(str(tb) + "\n" + str(err_msg))
         self.logger.debug("Allocated " + str(address))
         return address
 
-    def associate_address(self,instance, address, refresh_ssh=True, timeout=75):
+    def associate_address(self,instance, address, refresh_ssh=True, network_interface_id=None,
+                          private_ip_address=None, allow_reassociation=False, timeout=75):
         """
+        instance_id=instance_id,
+                public_ip=self.public_ip,
+                allocation_id=self.allocation_id,
+                network_interface_id=network_interface_id,
+                private_ip_address=private_ip_address,
+                allow_reassociation=allow_reassociation,
         Associate an address object with an instance
 
         :param instance: instance object to associate ip with
@@ -2666,13 +2638,32 @@ disable_root: false"""
         :param timeout: Time in seconds to wait for operation to complete
         :raise: Exception in case of association failure
         """
-        ip =  str(address.public_ip)
+        if isinstance(instance, basestring):
+            instance = self.get_instances(idstring=instance)[0]
+        if isinstance(instance, Instance):
+            instance_id = instance.id
+        else:
+            raise ValueError('associate_address(). Unknown type for instance:"{0}/{1}'
+                             .format(instance, type(instance)))
+        if isinstance(address, basestring):
+            # Try to get the address, dont fail here as an unallocated addr is a valid test
+            address = self.get_all_addresses(addresses=address)
+            if address:
+                address = address[0]
+        ip =  getattr(address, 'public_ip', address)
+        allocation_id = getattr(address, 'allocation_id', None)
         old_ip = str(instance.ip_address)
         self.logger.debug("Attemtping to associate " + str(ip) + " with " + str(instance.id))
         try:
-            address.associate(instance.id)
+            super(EC2ops, self).associate_address(instance_id=instance_id,
+                                                  public_ip=ip,
+                                                  allocation_id=allocation_id,
+                                                  network_interface_id=network_interface_id,
+                                                  private_ip_address=private_ip_address,
+                                                  allow_reassociation=allow_reassociation)
         except Exception, e:
-            self.critical("Unable to associate address "+str(ip)+" with instance:"+str(instance.id)+"\n")
+            self.logger.critical("{0}\nUnable to associate address: {1} with instance: {2}"
+                                 .format(get_traceback(), ip, instance.id))
             raise e
         
         start = time.time()
@@ -2693,13 +2684,13 @@ disable_root: false"""
             if elapsed > timeout:
                 raise Exception('Address ' + str(address) + ' did not associate with instance after:'+str(elapsed)+" seconds")
             self.logger.debug('Instance {0} has IP {1} attached instead of {2}'.format(instance.id, instance.ip_address, address.public_ip) )
-            self.sleep(5)
+            time.sleep(5)
             instance.update()
             elapsed = int(time.time()-start)
             self.logger.debug("Associated IP successfully old_ip:"+str(old_ip)+' new_ip:'+str(instance.ip_address))
         if refresh_ssh:
             if isinstance(instance, EuInstance) or isinstance(instance, WinInstance):
-                self.sleep(5)
+                time.sleep(5)
                 instance.update()
                 self.logger.debug('Refreshing EuInstance:'+str(instance.id)+' ssh connection to associated addr:'+str(instance.ip_address))
                 instance.connect_to_instance()
@@ -2947,14 +2938,14 @@ disable_root: false"""
             self.wait_for_reservation(reservation,timeout=timeout)
         except Exception, e:
             self.logger.debug(get_traceback())
-            self.critical("An instance did not enter proper running state in " + str(reservation) )
-            self.critical("Terminatng instances in " + str(reservation))
+            self.logger.critical("An instance did not enter proper running state in " + str(reservation) )
+            self.logger.critical("Terminatng instances in " + str(reservation))
             self.terminate_instances(reservation)
             raise Exception("Instances in " + str(reservation) + " did not enter proper state")
         
         for instance in reservation.instances:
             if instance.state != "running":
-                self.critical("Instance " + instance.id + " now in " + instance.state  + " state  in zone: "  + instance.placement )
+                self.logger.critical("Instance " + instance.id + " now in " + instance.state  + " state  in zone: "  + instance.placement )
             else:
                 self.logger.debug( "Instance " + instance.id + " now in " + instance.state  + " state  in zone: "  + instance.placement )
             #    
@@ -2966,7 +2957,7 @@ disable_root: false"""
                 self.logger.debug(str(instance) + " got Public IP: " + str(instance.ip_address)  + " Private IP: " +
                            str(instance.private_ip_address) + " Public DNS Name: " + str(instance.public_dns_name) +
                            " Private DNS Name: " + str(instance.private_dns_name))
-                self.critical("Instance " + instance.id + " has he same public and private IPs of " + str(instance.ip_address))
+                self.logger.critical("Instance " + instance.id + " has he same public and private IPs of " + str(instance.ip_address))
             else:
                 self.logger.debug(str(instance) + " got Public IP: " + str(instance.ip_address)  + " Private IP: " +
                            str(instance.private_ip_address) + " Public DNS Name: " + str(instance.public_dns_name) +
@@ -3095,7 +3086,7 @@ disable_root: false"""
                                     group = self.get_security_group(name=group)
                                     group = group.id
                                 except:
-                                    self.critical('Run Image, Unable to find security group '
+                                    self.logger.critical('Run Image, Unable to find security group '
                                                   'for: "{0}"'.format(group))
                                     raise
                         elif isinstance(group, SecurityGroup):
@@ -3115,7 +3106,7 @@ disable_root: false"""
                                      ' NetworkInterfaceSpecification which contains type'
                                      ' NetworkInterface eni objs')
                 if group or subnet_id:
-                    self.critical('WARNING: group and subnet_id args will be ignored when'
+                    self.logger.critical('WARNING: group and subnet_id args will be ignored when'
                                   'providing network_interfaces. The ENIs provided should'
                                   'contain this info')
                 secgroups = None
@@ -3258,7 +3249,47 @@ disable_root: false"""
                 self.terminate_instances(reservation=reservation)
             raise E
     
-    
+
+    def create_eni(self, subnet_id=None, zone=None, private_addressing=False, secgroups=None):
+        #  Attempts to create an ENI only if the ip request does not match the default
+            # behavior of the subnet running these instances.
+        subnet = None
+        if subnet_id:
+            # No network_interfaces were provided, check to see if this subnet already
+            # maps a public ip by default or if a new eni should be created to
+            # request one...
+            subnets = self.get_all_subnets(subnet_id)
+            if subnets:
+                subnet = subnets[0]
+            else:
+                raise ValueError('Subnet: "{0}" not found during create_eni'
+                                 .format(subnet_id))
+        else:
+            subnets = self.get_default_subnets(zone=zone)
+            if subnets:
+                subnet = subnets[0]
+        if not subnet:
+            raise ValueError('Subnet not found (Either not provided, '
+                             'found and/or default not found)')
+        subnet_id = subnet.id
+        # mapPublicIpOnLaunch may be unicode true/false...
+        if not isinstance(subnet.mapPublicIpOnLaunch, bool):
+            if str(subnet.mapPublicIpOnLaunch).upper().strip() == 'TRUE':
+                subnet.mapPublicIpOnLaunch = True
+            else:
+                subnet.mapPublicIpOnLaunch = False
+        # Default subnets or subnets whos attributes have been modified to
+        # provide a public ip should automatically provide an ENI and public ip
+        # association, skip if this is true...
+        eni = NetworkInterfaceSpecification(device_index=0, subnet_id=subnet_id,
+                                            groups=secgroups,
+                                            delete_on_termination=True,
+                                            description='nephoria_auto_assigned',
+                                            associate_public_ip_address=(not private_addressing))
+        return NetworkInterfaceCollection(eni)
+
+
+
     def wait_for_instances_block_dev_mapping(self,
                                              instances,
                                              poll_interval=1,
@@ -4821,7 +4852,7 @@ disable_root: false"""
             self.cancel_conversion_tasks(tasks)
         except Exception as CE:
                 tb = get_traceback()
-                self.critical('Failed to cancel some tasks:' + str(CE))
+                self.logger.critical('Failed to cancel some tasks:' + str(CE))
 
         for task in tasks:
             self.logger.debug('Attempting to delete all resources associated '
@@ -5165,7 +5196,7 @@ disable_root: false"""
                 pt.add_row([public_ip, account_name, region, instance_id])
         except Exception, e:
             tb = get_traceback()
-            self.critical( str(tb) + "\n ERROR in show_all_addresses_verbose:" + str(e))
+            self.logger.critical( str(tb) + "\n ERROR in show_all_addresses_verbose:" + str(e))
         if not printme:
             return pt
         self.logger.info("\n" + str(pt) + "\n")
