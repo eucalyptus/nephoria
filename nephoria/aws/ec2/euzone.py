@@ -54,12 +54,12 @@ class Vm_Type():
 
 class EuZone(Zone):
     def __init__(self, connection=None):
-        connection = connection
+        super(EuZone, self).__init__(connection=connection)
         vm_types = []
         if hasattr(connection, 'logger'):
-            self.logger = connection.logger
+            self.log = connection.log
         else:
-            self.logger = eulogger.Eulogger(str(self))
+            self.log = eulogger.Eulogger(str(self))
 
     def __repr__(self):
         return "{0}:{1}".format(self.__class__.__name__, self.name)
@@ -73,7 +73,7 @@ class EuZone(Zone):
         return newzone
 
     def debug(self,msg):
-        self.tester.logger.debug(msg)
+        self.tester.log.debug(msg)
 
     def update(self):
         super(EuZone, self).update()

@@ -41,7 +41,8 @@ Necessary to work on:
 ##################################################################################################
 #                       Sample test and output:                                                  #
 ##################################################################################################
-See README.md for test output.
+See README.md for more info
+
 """
 
 import unittest
@@ -381,6 +382,8 @@ class EutesterTestCase(unittest.TestCase):
     def setup_parser(self,
                      testname=None,
                      description=None,
+                     clc=True,
+                     clc_pass=True,
                      emi=True,
                      zone=True,
                      vmtype=True,
@@ -405,6 +408,9 @@ class EutesterTestCase(unittest.TestCase):
         add pre-defined command line arguments, help strings and default values. This will then
         be available by the end script as an alternative to recreating these items on a per
         script bassis.
+        :type clc: boolean
+        :param clc: Flag to present the CLC command line argument/option for providing the
+                    address to a machine hosting the CLC services for this testcase
 
         :type testname: string
         :param testname: Name used for argparse (help menu, etc.)
@@ -491,6 +497,14 @@ class EutesterTestCase(unittest.TestCase):
         # create parser
         parser = argparse.ArgumentParser(prog=testname, description=description)
         # add some typical defaults:
+        if clc:
+            parser.add_argument('--clc',
+                                help="Address of Machine hosting CLC services",
+                                default=None)
+        if clc_pass:
+            parser.add_argument('--clc-passord',
+                                help="Password of Machine hosting CLC services",
+                                default=None)
         if emi:
             parser.add_argument('--emi',
                                 help="pre-installed emi id which to execute these tests against",
@@ -600,11 +614,11 @@ class EutesterTestCase(unittest.TestCase):
                     name = self.name
             else:
                 name = 'EutesterTestCase'
-        self.logger = Eulogger(identifier=str(name), stdout_level=log_level, logfile=logfile,
+        self.log = Eulogger(identifier=str(name), stdout_level=log_level, logfile=logfile,
                                logfile_level='debug')
-        self.debugmethod = self.logger.debug
+        self.debugmethod = self.log.debug
         if not self.has_arg('logger'):
-            self.add_arg('logger', self.logger)
+            self.add_arg('logger', self.log)
         if not self.has_arg('debug_method'):
             self.add_arg('debug_method', self.debug)
 

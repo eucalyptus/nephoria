@@ -146,7 +146,7 @@ class ConfigureImagingService(EutesterTestCase):
             try:
                 r.raise_for_status()
             except HTTPError as HE:
-                self.tester.logger.log.warn('URL:' + str(url) +
+                self.tester.log.warn('URL:' + str(url) +
                                             ', Attempt:' +
                                             str(attempt) +
                                             "/" + str(retry) +
@@ -241,7 +241,7 @@ class ConfigureImagingService(EutesterTestCase):
         #Set the imaging service log server host
         if self.args.log_server:
             log_server = self.args.log_server
-            self.logger.log.warn('Not configuring rsyslog on server, assume '
+            self.log.warn('Not configuring rsyslog on server, assume '
                                  'it is already configured')
         else:
             log_server = self.clc.hostname

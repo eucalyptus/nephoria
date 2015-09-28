@@ -87,12 +87,12 @@ class IAMops(TestConnection, IAMConnection):
         params = {'AccountName': account_name}
         try:
             res = self.get_response_items('CreateAccount', params, item_marker='account')
-            self.logger.debug("Created account: " + account_name)
+            self.log.debug("Created account: " + account_name)
         except BotoServerError as BE:
             if not (BE.status == 409 and ignore_existing):
                 raise
             res = self.get_account(account_name=account_name)
-            self.logger.debug("create_account(). Account already exists: " + account_name)
+            self.log.debug("create_account(). Account already exists: " + account_name)
         self.test_resources["iam_accounts"].append(account_name)
         return res
     
@@ -103,7 +103,7 @@ class IAMops(TestConnection, IAMConnection):
         :param account_name: str name of account to delete
         :param recursive:
         """
-        self.logger.debug("Deleting account: " + account_name)
+        self.log.debug("Deleting account: " + account_name)
         params = {
             'AccountName': account_name,
             'Recursive': recursive
@@ -127,7 +127,7 @@ class IAMops(TestConnection, IAMConnection):
             if not account_name:
                 account_name = account_id
                 account_id = None
-        self.logger.debug('Attempting to fetch all accounts matching- account_id:' +
+        self.log.debug('Attempting to fetch all accounts matching- account_id:' +
                           str(account_id) + ' account_name:' + str(account_name))
         response = self.get_response_items('ListAccounts', {}, item_marker='accounts',
                                             list_marker='Accounts')
@@ -185,7 +185,7 @@ class IAMops(TestConnection, IAMConnection):
         """
         if not user_name:
             # Assuming this could be part of a test, allow it but warn...
-            self.logger.warning('create_user(). Passed unsupported user_name:"{0}"'
+            self.log.warning('create_user(). Passed unsupported user_name:"{0}"'
                                 .format(user_name))
         params = {'UserName': user_name,
                   'Path': path }
@@ -193,12 +193,12 @@ class IAMops(TestConnection, IAMConnection):
             params['DelegateAccount'] = delegate_account
         try:
             res = self.get_response_items('CreateUser', params, item_marker='user')
-            self.logger.debug("Created user: " + user_name)
+            self.log.debug("Created user: " + user_name)
         except BotoServerError as BE:
             if not (BE.status == 409 and ignore_existing):
                 raise
             res = self.get_user(user_name=user_name, delegate_account=delegate_account)
-            self.logger.debug("create_user(). User already exists: " + user_name)
+            self.log.debug("create_user(). User already exists: " + user_name)
         return res
 
 
@@ -218,7 +218,7 @@ class IAMops(TestConnection, IAMConnection):
         :param user_name: str name of user
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
         """
-        self.logger.debug("Deleting user " + user_name)
+        self.log.debug("Deleting user " + user_name)
         params = {'UserName': user_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
@@ -236,7 +236,7 @@ class IAMops(TestConnection, IAMConnection):
         :param search: use regex search (any occurrence) rather than match (exact same strings must occur)
         :return:
         """
-        self.logger.debug('Attempting to fetch all access matching- user_id:' +
+        self.log.debug('Attempting to fetch all access matching- user_id:' +
                           str(user_id) + ' user_name:' + str(user_name) + " acct_name:" +
                           str(delegate_account))
         retlist = []
@@ -277,7 +277,7 @@ class IAMops(TestConnection, IAMConnection):
         for account in list:
             pt.add_row([account['account_name'], account['account_id']])
         if print_table:
-            self.logger.info("\n" + str(pt) + "\n")
+            self.log.info("\n" + str(pt) + "\n")
         else:
             return pt
 
@@ -303,7 +303,7 @@ class IAMops(TestConnection, IAMConnection):
         for group in list:
             pt.add_row([group['account_name'], group['group_name'], group['group_id']])
         if print_table:
-            self.logger.info("\n" + str(pt) + "\n")
+            self.log.info("\n" + str(pt) + "\n")
         else:
             return pt
 
@@ -329,7 +329,7 @@ class IAMops(TestConnection, IAMConnection):
             pt.add_row([user['account_name'], user['user_name'],
                         user['user_id'], user['account_id']])
         if print_table:
-            self.logger.info("\n" + str(pt) + "\n")
+            self.log.info("\n" + str(pt) + "\n")
         else:
             return pt
 
@@ -448,7 +448,7 @@ class IAMops(TestConnection, IAMConnection):
         except BotoServerError, BE:
             err = 'Error fetching policy for params:\n{0}: '.format(params, BE)
             if BE.status == 403 and ignore_admin_err and str(user_name).strip() == 'admin':
-                self.logger.debug('IGNORING: '+ err)
+                self.log.debug('IGNORING: '+ err)
             else:
                 self.critical(err)
                 raise
@@ -489,9 +489,9 @@ class IAMops(TestConnection, IAMConnection):
             except BotoServerError, BE:
                 err_msg = 'Error fetching policy for params:\n{0}: "{1}"'.format(params, BE)
                 if BE.status == 403 and ignore_admin_err and str(p_name).strip() == 'admin':
-                    self.logger.debug('IGNORING:' + str(err_msg))
+                    self.log.debug('IGNORING:' + str(err_msg))
                 else:
-                    self.logger.critical(err_msg)
+                    self.log.critical(err_msg)
                     raise
             if doc is not None and not re_meth(doc, policy['policy_document']):
                 continue
@@ -526,7 +526,7 @@ class IAMops(TestConnection, IAMConnection):
                 pretty_json = (json.dumps(p_json, indent=2) or "") + "\n"
                 main_pt.add_row([pretty_json])
         if print_table:
-            self.logger.info("\n" + str(main_pt) + "\n")
+            self.log.info("\n" + str(main_pt) + "\n")
         else:
             return main_pt
 
@@ -543,7 +543,7 @@ class IAMops(TestConnection, IAMConnection):
         if delegate_account is None:
             account_id=self.get_account_id()
             delegate_account= self.get_all_accounts(account_id=account_id)[0]['account_name']
-        self.logger.debug('Fetching user summary for: user_name:' + str(user_name) +
+        self.log.debug('Fetching user summary for: user_name:' + str(user_name) +
                    " account:" + str(delegate_account) + " account_id:" + str(account_id))
         title = 'USER SUMMARY: user:{0}, account:{1}'.format(user_name, delegate_account)
         pt = PrettyTable([title])
@@ -561,7 +561,7 @@ class IAMops(TestConnection, IAMConnection):
         new_pt._rows = pol_pt._rows
         pt.add_row([new_pt])
         if print_table:
-            self.logger.info("\n" + str(pt) + "\n")
+            self.log.info("\n" + str(pt) + "\n")
         else:
             return pt
 
@@ -575,7 +575,7 @@ class IAMops(TestConnection, IAMConnection):
         :param policy_json: Policy text
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
         """
-        self.logger.debug("Attaching the following policy to " + user_name + ":" + policy_json)
+        self.log.debug("Attaching the following policy to " + user_name + ":" + policy_json)
         params = {'UserName': user_name,
                   'PolicyName': policy_name,
                   'PolicyDocument': policy_json}
@@ -592,7 +592,7 @@ class IAMops(TestConnection, IAMConnection):
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
-        self.logger.debug("Detaching the following policy from " + user_name + ":" + policy_name)
+        self.log.debug("Detaching the following policy from " + user_name + ":" + policy_name)
         params = {'UserName': user_name,
                   'PolicyName': policy_name}
         if delegate_account:
@@ -643,7 +643,7 @@ class IAMops(TestConnection, IAMConnection):
         :param search: specify whether to use match or search when filtering the returned list
         :return:
         """
-        self.logger.debug('Attempting to fetch all groups matching- group_id:' + str(group_id) +
+        self.log.debug('Attempting to fetch all groups matching- group_id:' + str(group_id) +
                    ' group_name:' + str(group_name) + " acct_name:" + str(delegate_account))
         retlist = []
         params = {}
@@ -753,7 +753,7 @@ class IAMops(TestConnection, IAMConnection):
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
-        self.logger.debug("Attempting to create group: " + group_name)
+        self.log.debug("Attempting to create group: " + group_name)
         params = {'GroupName': group_name,
                   'Path': path}
         if delegate_account:
@@ -767,7 +767,7 @@ class IAMops(TestConnection, IAMConnection):
         :param group_name: name of group to delete
         :param delegate_account:
         """
-        self.logger.debug("Deleting group " + group_name)
+        self.log.debug("Deleting group " + group_name)
         params = {'GroupName': group_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
@@ -782,7 +782,7 @@ class IAMops(TestConnection, IAMConnection):
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
-        self.logger.debug("Adding user "  +  user_name + " to group " + group_name)
+        self.log.debug("Adding user "  +  user_name + " to group " + group_name)
         params = {'GroupName': group_name,
                   'UserName': user_name}
         if delegate_account:
@@ -798,7 +798,7 @@ class IAMops(TestConnection, IAMConnection):
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
-        self.logger.debug("Removing user "  +  user_name + " to group " + group_name)
+        self.log.debug("Removing user "  +  user_name + " to group " + group_name)
         params = {'GroupName': group_name,
                   'UserName': user_name}
         if delegate_account:
@@ -815,7 +815,7 @@ class IAMops(TestConnection, IAMConnection):
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
-        self.logger.debug("Attaching the following policy to " + group_name + ":" + policy_json)
+        self.log.debug("Attaching the following policy to " + group_name + ":" + policy_json)
         params = {'GroupName': group_name,
                   'PolicyName': policy_name,
                   'PolicyDocument': policy_json}
@@ -832,7 +832,7 @@ class IAMops(TestConnection, IAMConnection):
         :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
-        self.logger.debug("Detaching the following policy from " + group_name + ":" + policy_name)
+        self.log.debug("Detaching the following policy from " + group_name + ":" + policy_name)
         params = {'GroupName': group_name,
                   'PolicyName': policy_name}
         if delegate_account:
@@ -849,7 +849,7 @@ class IAMops(TestConnection, IAMConnection):
         :return: A tuple of access key and and secret key with keys: 'access_key_id' and
                 'secret_access_key'
         """
-        self.logger.debug("Creating access key for " + user_name )
+        self.log.debug("Creating access key for " + user_name )
         params = {'UserName': user_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
@@ -899,7 +899,7 @@ class IAMops(TestConnection, IAMConnection):
             certid = cert.get('certificate_id')
             if certid:
                 if verbose:
-                    self.logger.debug('Deleting signing cert: "{0}"'.format(cert))
+                    self.log.debug('Deleting signing cert: "{0}"'.format(cert))
                 self.delete_signing_cert(certid, user_name=user_name,
                                          delegate_account=delegate_account)
             else:
@@ -933,17 +933,17 @@ class IAMops(TestConnection, IAMConnection):
         '''
         if not certpath:
             raise ValueError('No ec2 certpath provided or set for eutester obj')
-        self.logger.debug('Verifying cert: "{0}"...'.format(certpath))
+        self.log.debug('Verifying cert: "{0}"...'.format(certpath))
         body = str("\n".join(machine.sys('cat {0}'.format(certpath), verbose=False)) ).strip()
         certs = []
         if body:
             certs = self.get_all_signing_certs()
         for cert in certs:
             if str(cert.get('certificate_body')).strip() == body:
-                self.logger.debug('verified certificate with id "{0}" is still valid'
+                self.log.debug('verified certificate with id "{0}" is still valid'
                            .format(cert.get('certificate_id')))
                 return cert.get('certificate_id')
-        self.logger.debug('Cert: "{0}" is NOT active'.format(certpath or body))
+        self.log.debug('Cert: "{0}" is NOT active'.format(certpath or body))
         return None
 
     def find_active_cert_and_key_in_dir(self, machine, dir="", recursive=True):
@@ -969,7 +969,7 @@ class IAMops(TestConnection, IAMConnection):
                 dir = os.path.dirname(f)
                 keypath = self.get_key_for_cert(certpath=f, keydir=dir, machine=machine)
                 if keypath:
-                    self.logger.debug('Found existing active cert and key on clc: {0}, {1}'
+                    self.log.debug('Found existing active cert and key on clc: {0}, {1}'
                                       .format(f, keypath))
                     return {'certpath':f, 'keypath':keypath}
         return ret_dict
@@ -984,7 +984,7 @@ class IAMops(TestConnection, IAMConnection):
         :param recursive: boolean, if set will attempt to search recursively from the dir provided
         :returns string representing the path to the key found or None if not found.
         '''
-        self.logger.debug('Looking for key to go with cert...')
+        self.log.debug('Looking for key to go with cert...')
         if keydir and not keydir.endswith("/"):
             keydir += "/"
         if recursive:
@@ -1005,7 +1005,7 @@ class IAMops(TestConnection, IAMConnection):
             if keymodmd5:
                 keymodmd5 = str(keymodmd5[0]).strip()
             if keymodmd5 == certmodmd5:
-                self.logger.debug('Found key {0} for cert {1}'.format(kf, certpath))
+                self.log.debug('Found key {0} for cert {1}'.format(kf, certpath))
                 return kf
         return None
 
@@ -1030,40 +1030,40 @@ class IAMops(TestConnection, IAMConnection):
 
 
     def upload_server_cert(self, cert_name, cert_body, private_key):
-        self.logger.debug("uploading server certificate: " + cert_name)
+        self.log.debug("uploading server certificate: " + cert_name)
         self.upload_server_cert(cert_name=cert_name, cert_body=cert_body,
                                            private_key=private_key)
         if cert_name not in str(self.get_server_certificate(cert_name)):
             raise Exception("certificate " + cert_name + " not uploaded")
 
     def update_server_cert(self, cert_name, new_cert_name=None, new_path=None):
-        self.logger.debug("updating server certificate: " + cert_name)
+        self.log.debug("updating server certificate: " + cert_name)
         super(IAMops, self).update_server_cert(cert_name=cert_name, new_cert_name=new_cert_name,
                                                new_path=new_path)
         if (new_cert_name and new_path) not in str(self.get_server_certificate(new_cert_name)):
             raise Exception("certificate " + cert_name + " not updated.")
 
     def get_server_cert(self, cert_name):
-        self.logger.debug("getting server certificate: " + cert_name)
+        self.log.debug("getting server certificate: " + cert_name)
         cert = super(IAMops, self).get_server_certificate(cert_name=cert_name)
-        self.logger.debug(cert)
+        self.log.debug(cert)
         return cert
 
     def delete_server_cert(self, cert_name):
-        self.logger.debug("deleting server certificate: " + cert_name)
+        self.log.debug("deleting server certificate: " + cert_name)
         super(IAMops, self).delete_server_cert(cert_name)
         if (cert_name) in str(self.get_all_server_certs()):
             raise Exception("certificate " + cert_name + " not deleted.")
 
     def list_server_certs(self, path_prefix='/', marker=None, max_items=None):
-        self.logger.debug("listing server certificates")
+        self.log.debug("listing server certificates")
         certs = super(IAMops, self).list_server_certs(path_prefix=path_prefix,
                                                       marker=marker, max_items=max_items)
-        self.logger.debug(certs)
+        self.log.debug(certs)
         return certs
 
     def create_login_profile(self, user_name, password, delegate_account=None):
-        self.logger.debug("Creating login profile for: " + user_name + " with password: " + password)
+        self.log.debug("Creating login profile for: " + user_name + " with password: " + password)
         params = {'UserName': user_name,
                   'Password': password}
         if delegate_account:

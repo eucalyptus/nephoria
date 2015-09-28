@@ -1,3 +1,140 @@
+## Getting to know the testcase class...
+Example using ipython (python CLI/shell):
+
+#Sample commands to get started:
+from nephoria.testcase_utils.eutestcase import EutesterTestCase
+test = EutesterTestCase()
+test.args
+test.setup_parser()
+test.get_args()
+
+
+# Output from the console...
+
+In [10]: from nephoria.testcase_utils.eutestcase import EutesterTestCase
+
+In [11]: test = EutesterTestCase()
+setuptestname:None
+setup_debugmethod:
+testcasename:None
+log_level:None
+logfile:None
+logfile_level:debug
+Starting setup_debugmethod, name:eutestcase
+After populating... setup_debugmethod: testcasename:Nonelog_level:debuglogfile:Nonelogfile_level:debug
+[2015-09-25 08:19:57,441][DEBUG][eutestcase]: (setuptestcase:362): <pre>
+[2015-09-25 08:19:57,445][DEBUG][eutestcase]: (show_self:1388):
+-------------------------------------------------------------------------
+TESTCASE INFO:
+----------
+NAME:                     --->:  eutestcase
+TEST LIST:                --->:  []
+CONFIG FILES:             --->:  []
+-------------------------------------------------------------------------
+[2015-09-25 08:19:57,448][DEBUG][eutestcase]: (show_args:1406):
+-------------------------------------------------------------------------
+TEST ARGS:                       VALUE:
+----------                      ------
+debug_method              --->:  <bound method EutesterTestCase.debug of <nephoria.testcase_utils.eutestcase.EutesterTestCase testMethod=eutestcase>>
+logger                    --->:  <cloud_utils.log_utils.eulogger.Eulogger object at 0x10a7a97d0>
+-------------------------------------------------------------------------
+
+In [13]: test.setup_parser()
+Out[13]: ArgumentParser(prog='eutestcase', usage=None, description='Test Case Default Option Parser
+Description', version=None, formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+
+In [14]: test.get_args()
+setup_debugmethod:
+testcasename:None
+log_level:None
+logfile:None
+logfile_level:None
+Starting setup_debugmethod, name:eutestcase
+After populating... setup_debugmethod: testcasename:Nonelog_level:debuglogfile:Nonelogfile_level:debug
+[2015-09-25 08:20:24,609][DEBUG][eutestcase]: (show_self:1388):
+-------------------------------------------------------------------------
+TESTCASE INFO:
+----------
+NAME:                     --->:  eutestcase
+TEST LIST:                --->:  []
+CONFIG FILES:             --->:  []
+-------------------------------------------------------------------------
+[2015-09-25 08:20:24,612][DEBUG][eutestcase]: (show_args:1406):
+-------------------------------------------------------------------------
+TEST ARGS:                       VALUE:
+----------                      ------
+args                      --->:  Namespace(clc=None, config=None, config_file=None, configblocks=[], configfile=None, configsections=['MEMO', 'globals', 'eutestcase'], cred_path=None, credpath=None, emi=None, html_anchors=False, ignoreblocks=[], instance_password=None, instance_user='root', keypair=None, log_level='debug', logfile=None, logfile_level='debug', password=None, region=None, tests=[], use_color=False, user_data=None, vmtype='c1.medium', zone=None)
+clc                       --->:  None
+config                    --->:  None
+config_file               --->:  None
+configblocks              --->:  []
+configfile                --->:  None
+configsections            --->:  ['MEMO', 'globals', 'eutestcase']
+cred_path                 --->:  None
+credpath                  --->:  None
+debug_method              --->:  <bound method EutesterTestCase.debug of <nephoria.testcase_utils.eutestcase.EutesterTestCase testMethod=eutestcase>>
+emi                       --->:  None
+html_anchors              --->:  False
+ignoreblocks              --->:  []
+instance_password         --->:  None
+instance_user             --->:  root
+keypair                   --->:  None
+log_level                 --->:  debug
+logfile                   --->:  None
+logfile_level             --->:  debug
+logger                    --->:  <cloud_utils.log_utils.eulogger.Eulogger object at 0x10a7b2210>
+password                  --->:  None
+region                    --->:  None
+tests                     --->:  []
+use_color                 --->:  False
+user_data                 --->:  None
+vmtype                    --->:  c1.medium
+zone                      --->:  None
+-------------------------------------------------------------------------
+Out[14]: Namespace(args=Namespace(clc=None, config=None, config_file=None, configblocks=[], configfile=None, configsections=['MEMO', 'globals', 'eutestcase'], cred_path=None, credpath=None, emi=None, html_anchors=False, ignoreblocks=[], instance_password=None, instance_user='root', keypair=None, log_level='debug', logfile=None, logfile_level='debug', password=None, region=None, tests=[], use_color=False, user_data=None, vmtype='c1.medium', zone=None), clc=None, config=None, config_file=None, configblocks=[], configfile=None, configsections=['MEMO', 'globals', 'eutestcase'], cred_path=None, credpath=None, debug_method=<bound method EutesterTestCase.debug of <nephoria.testcase_utils.eutestcase.EutesterTestCase testMethod=eutestcase>>, emi=None, html_anchors=False, ignoreblocks=[], instance_password=None, instance_user='root', keypair=None, log_level='debug', logfile=None, logfile_level='debug', logger=<cloud_utils.log_utils.eulogger.Eulogger object at 0x10a7b2210>, password=None, region=None, tests=[], use_color=False, user_data=None, vmtype='c1.medium', zone=None)
+
+In [15]: test.
+Display all 116 possibilities? (y or n)
+test.addCleanup                        test.assertNotIsInstance               test.fail                              test.populate_testunit_with_args
+test.addTypeEqualityFunc               test.assertNotRegexpMatches            test.failIf                            test.print_test_list_results
+test.add_arg                           test.assertRaises                      test.failIfAlmostEqual                 test.print_test_list_short_stats
+test.args                              test.assertRaisesRegexp                test.failIfEqual                       test.print_test_unit_startmsg
+test.assertAlmostEqual                 test.assertRegexpMatches               test.failUnless                        test.print_testunit_method_arg_values
+test.assertAlmostEquals                test.assertSequenceEqual               test.failUnlessAlmostEqual             test.resultdefault
+test.assertDictContainsSubset          test.assertSetEqual                    test.failUnlessEqual                   test.resulterr
+test.assertDictEqual                   test.assertTrue                        test.failUnlessRaises                  test.resultfail
+test.assertEqual                       test.assertTupleEqual                  test.failureException                  test.run
+test.assertEquals                      test.assert_                           test.format_line_for_color             test.run_method_by_name
+test.assertFalse                       test.clean_method                      test.get_arg                           test.run_test_case_list
+test.assertGreater                     test.color                             test.get_args                          test.run_test_list_by_name
+test.assertGreaterEqual                test.compile_all_args                  test.get_default_userhome_config       test.setUp
+test.assertIn                          test.configfiles                       test.get_meth_arg_names                test.setUpClass
+test.assertIs                          test.countTestCases                    test.get_method_fcode                  test.set_arg
+test.assertIsInstance                  test.create_testunit_by_name           test.get_pretty_args                   test.setup_debugmethod
+test.assertIsNone                      test.create_testunit_from_method       test.get_testunit_method_arg_dict      test.setup_parser
+test.assertIsNot                       test.curframe                          test.getline                           test.setuptestcase
+test.assertIsNotNone                   test.debug                             test.has_arg                           test.shortDescription
+test.assertItemsEqual                  test.debugmethod                       test.id                                test.show_args
+test.assertLess                        test.defaultTestResult                 test.list                              test.show_self
+test.assertLessEqual                   test.default_config                    test.log                               test.skipTest
+test.assertListEqual                   test.disable_color                     test.log_level                         test.startmsg
+test.assertMultiLineEqual              test.doCleanups                        test.logfile                           test.status
+test.assertNotAlmostEqual              test.do_with_args                      test.logfile_level                     test.tearDown
+test.assertNotAlmostEquals             test.enable_color                      test.longMessage                       test.tearDownClass
+test.assertNotEqual                    test.endfailure                        test.maxDiff                           test.testlist
+test.assertNotEquals                   test.endsuccess                        test.name                              test.use_color
+test.assertNotIn                       test.errormsg                          test.parser                            test.use_default_file
+
+
+In [17]: test.args.
+test.args.args               test.args.configfile         test.args.emi                test.args.keypair            test.args.password           test.args.vmtype
+test.args.clc                test.args.configsections     test.args.html_anchors       test.args.log_level          test.args.region             test.args.zone
+test.args.config             test.args.cred_path          test.args.ignoreblocks       test.args.logfile            test.args.tests
+test.args.config_file        test.args.credpath           test.args.instance_password  test.args.logfile_level      test.args.use_color
+test.args.configblocks       test.args.debug_method       test.args.instance_user      test.args.logger             test.args.user_data
+
+
+
 ## Sample test 'sample_testsuite.py' and it's output.
 
 

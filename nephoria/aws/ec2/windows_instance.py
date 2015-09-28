@@ -435,8 +435,8 @@ class WinInstance(Instance, TaggedResource):
         newins.winrm_protocol = winrm_protocol
         newins.debugmethod = debugmethod
         if newins.debugmethod is None:
-            newins.logger = eulogger.Eulogger(identifier= str(instance.id))
-            newins.debugmethod= newins.logger.debug
+            newins.log = eulogger.Eulogger(identifier= str(instance.id))
+            newins.debugmethod= newins.log.debug
 
         if (keypair is not None):
             if isinstance(keypair,types.StringTypes):

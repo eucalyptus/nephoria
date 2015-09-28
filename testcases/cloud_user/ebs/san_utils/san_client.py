@@ -53,8 +53,8 @@ class San_Client():
             self.username = username
             self.password = password
             self.connection = self.connect()
-            self.logger = Eulogger(identifier= 'SAN-'+str(host))
-            self.debug= self.logger.log.debug
+            self.log = Eulogger(identifier= 'SAN-'+str(host))
+            self.debug= self.log.log.debug
 
     @classmethod
     def get_san_client_by_type(cls, host, username, password, santype):

@@ -123,7 +123,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         newins.attached_vols = []
         newins.scsidevs = []
         newins.ops = None
-        newins.logger = None
+        newins.log = None
         newins.ssh = None
         newins.laststate = None
         newins.laststatetime = None
@@ -135,8 +135,8 @@ class EuInstance(Instance, TaggedResource, Machine):
         newins.tester = tester
         newins.debugmethod = debugmethod
         if newins.debugmethod is None:
-            newins.logger = eulogger.Eulogger(identifier=str(instance.id))
-            newins.debugmethod = newins.logger.debug
+            newins.log = eulogger.Eulogger(identifier=str(instance.id))
+            newins.debugmethod = newins.log.debug
 
         if (keypair is not None):
             if isinstance(keypair, types.StringTypes):
@@ -216,13 +216,13 @@ class EuInstance(Instance, TaggedResource, Machine):
                 if validate:
                     raise
                 tb = self.tester.get_traceback()
-                self.logger.debug('Failed to update instance. Attempt:{0}/{1}'
+                self.log.debug('Failed to update instance. Attempt:{0}/{1}'
                            .format(x, retries))
         if not ret:
             failmsg = 'Failed to update instance. Instance may no longer ' \
                       'be present on system"{0}"'.format(self.id)
-            self.logger.debug('{0}\n{1}'.format(tb, failmsg))
-            self.logger.debug('{0} setting fake state to:"{1}"'.format(self.id,
+            self.log.debug('{0}\n{1}'.format(tb, failmsg))
+            self.log.debug('{0} setting fake state to:"{1}"'.format(self.id,
                                                                 err_state))
             state = InstanceState(name=err_state, code=err_code)
             self._state = state
@@ -383,7 +383,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         # Create the row in the main table...
         pt.add_row([id_string, emi_string, state_string, netbuf])
         if printme:
-            printmethod = printmethod or self.logger.debug
+            printmethod = printmethod or self.log.debug
             printmethod("\n" + str(pt) + "\n")
         return pt
 
@@ -424,7 +424,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                                                          printme=False))
         main_pt.add_row([mainbuf])
         if printme:
-            printmethod = printmethod or self.logger.info
+            printmethod = printmethod or self.log.info
             printmethod("\n" + str(main_pt) + "\n")
         return main_pt
 
@@ -460,18 +460,18 @@ class EuInstance(Instance, TaggedResource, Machine):
                 enipt.add_row([(str(pt))])
                 buf += str(enipt)
         if printme:
-            self.logger.info(buf)
+            self.log.info(buf)
         else:
             return buf
 
     def reset_ssh_connection(self, timeout=None):
         timeout = timeout or self.timeout
-        self.logger.debug('reset_ssh_connection for:' + str(self.id))
+        self.log.debug('reset_ssh_connection for:' + str(self.id))
         if ((self.keypath is not None) or
                 ((self.username is not None) and (self.password is not None))):
             if self.ssh is not None:
                 self.ssh.close()
-            self.logger.debug('Connecting ssh ' + str(self.id))
+            self.log.debug('Connecting ssh ' + str(self.id))
             self.ssh = SshConnection(self.ip_address,
                                      keypair=self.keypair,
                                      keypath=self.keypath,
@@ -479,10 +479,10 @@ class EuInstance(Instance, TaggedResource, Machine):
                                      username=self.username,
                                      timeout=timeout,
                                      retry=self.retry,
-                                     logger=self.logger,
+                                     logger=self.log,
                                      verbose=self.verbose)
         else:
-            self.logger.debug("keypath or username/password need to be populated "
+            self.log.debug("keypath or username/password need to be populated "
                        "for ssh connection")
 
     def get_reservation(self):
@@ -491,7 +491,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             res = self.tester.get_reservation_for_instance(self)
         except Exception, e:
             self.update()
-            self.logger.debug('Could not get reservation for instance in state:' +
+            self.log.debug('Could not get reservation for instance in state:' +
                        str(self.state) + ", err:" + str(e))
         return res
 
@@ -503,7 +503,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         param timeout: optional. Overall time in seconds to wait for all connections
                        before failure
         '''
-        self.logger.info("Attempting to reconnect_to_instance:" + self.id)
+        self.log.info("Attempting to reconnect_to_instance:" + self.id)
         traceback = None
         attempts = 0
         if ((self.keypath is not None) or
@@ -520,23 +520,23 @@ class EuInstance(Instance, TaggedResource, Machine):
                     self.update()
                     if self.state != 'running':
                         try:
-                            self.logger.error('connect_to_instance: instance not in running state. '
+                            self.log.error('connect_to_instance: instance not in running state. '
                                               'State:{0}'
                                               .format(self.state))
                         except:
                             pass
                         break
                     self.reset_ssh_connection(timeout=connect_timeout)
-                    self.logger.debug('Try some sys...')
+                    self.log.debug('Try some sys...')
                     self.sys("")
-                    self.logger.info("SSH Connection Succeeded")
+                    self.log.info("SSH Connection Succeeded")
                     break
                 except Exception, se:
                     elapsed = int(time.time() - start)
                     traceback = get_traceback()
-                    self.logger.warn('Caught exception attempting to reconnect '
+                    self.log.warn('Caught exception attempting to reconnect '
                                'ssh: {0}'.format(se))
-                    self.logger.debug('connect_to_instance: Attempts:' +
+                    self.log.debug('connect_to_instance: Attempts:' +
                                str(attempts) + ', elapsed:' + str(elapsed) +
                                '/' + str(timeout))
                     time.sleep(5)
@@ -544,7 +544,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             elapsed = int(time.time() - start)
             if self.ssh is None:
                 if traceback:
-                    self.logger.error('Failed SSH Connection after elapsed:{0}.\n'
+                    self.log.error('Failed SSH Connection after elapsed:{0}.\n'
                                       'Exception caught during final connect attempt:\n{1}'
                                       .format(elapsed, traceback))
                 self.get_connection_debug()
@@ -554,7 +554,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                                    "/" + str(timeout))
             self.set_rootfs_device()
         else:
-            self.logger.debug("keypath or username/password need to be populated "
+            self.log.debug("keypath or username/password need to be populated "
                        "for ssh connection")
 
     def get_connection_debug(self):
@@ -564,7 +564,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         # - iptables info
         # - route info
         # - instance xml
-        self.logger.debug(markup('Dumping Connection debug info for Instance:"{0}, pub:{1}, '
+        self.log.debug(markup('Dumping Connection debug info for Instance:"{0}, pub:{1}, '
                                       'priv:{2}"'
                                       .format(self.id, self.ip_address, self.private_ip_address),
                    markups=[1, 4, 95]))
@@ -575,35 +575,35 @@ class EuInstance(Instance, TaggedResource, Machine):
             arp_fd = os.popen('arp ' + str(self.ip_address))
             for line in arp_fd:
                 arp_out += line
-            self.logger.debug(arp_out)
+            self.log.debug(arp_out)
         except Exception as AE:
-            self.logger.debug('Failed to get arp info:' + str(AE))
+            self.log.debug('Failed to get arp info:' + str(AE))
         self.get_cloud_init_info_from_console()
         try:
             node = None
             node = self.tester.service_manager.get_all_node_controllers(instance_id=self.id)[0]
             node.sys('ip addr list')
         except Exception as NE:
-            self.logger.debug('Was unable to gather debug for the node hosting this VM, err: {0}'
+            self.log.debug('Was unable to gather debug for the node hosting this VM, err: {0}'
                        .format(NE))
             pass
         try:
             nodes = self.tester.service_manager.get_all_node_controllers()
             if node and (node in nodes):
                 nodes.remove(node)
-            self.logger.debug('Ip addrs for node:"{0}" which is hosting:"{1}"...'
+            self.log.debug('Ip addrs for node:"{0}" which is hosting:"{1}"...'
                        .format(node.hostname, self.id))
             for node in nodes:
                 try:
-                    self.logger.debug('Node "NOT" hosting instance:"{0}"...'.format(self.id))
+                    self.log.debug('Node "NOT" hosting instance:"{0}"...'.format(self.id))
                     node.sys('ip addr list')
                 except:
                     pass
         except Exception as IPL:
-            self.logger.debug('Failed gathering ip addr list debug info from all nodes, err: "{0}"'
+            self.log.debug('Failed gathering ip addr list debug info from all nodes, err: "{0}"'
                        .format(IPL))
             pass
-        self.logger.debug(markup('DONE Dumping Connection debug info for Instance:"{0}"'
+        self.log.debug(markup('DONE Dumping Connection debug info for Instance:"{0}"'
                                       .format(self.id), markups=[1, 4, 95]))
 
     def get_cloud_init_info_from_console(self):
@@ -619,10 +619,10 @@ class EuInstance(Instance, TaggedResource, Machine):
                     if re.search('ci-info|cloud-init|WARNING|ERROR|CRITICAL', line):
                         ci_lines.append(line)
                 for x in ci_lines:
-                    self.logger.debug("Console ci-info '{0}':".format(x))
+                    self.log.debug("Console ci-info '{0}':".format(x))
                     ret_buf += x + "\n"
         except Exception as CE:
-            self.logger.error('{0}Failed to get console output:{1}'
+            self.log.error('{0}Failed to get console output:{1}'
                               .format(get_traceback(), str(CE)))
         return ret_buf
 
@@ -632,7 +632,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             self.ssh.sys('which sudo', code=0)
             return True
         except CommandExitCodeException, se:
-            self.logger.debug('Could not find sudo on remote machine:' +
+            self.log.debug('Could not find sudo on remote machine:' +
                        str(self.ip_address))
         return False
 
@@ -684,7 +684,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         output = out['output']
         if code is not None:
             if out['status'] != code:
-                self.logger.debug(output)
+                self.log.debug(output)
                 raise CommandExitCodeException(
                     'Cmd:' + str(cmd) + ' failed with status code:' +
                     str(out['status']) + ", output:" + str(output))
@@ -732,7 +732,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         output = out['output']
         if code is not None:
             if out['status'] != code:
-                self.logger.debug(output)
+                self.log.debug(output)
                 raise CommandExitCodeException(
                     'Cmd:' + str(cmd) + ' failed with status code:' +
                     str(out['status']) + ", output:" + str(output))
@@ -910,7 +910,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         if not isinstance(euvolume, EuVolume):
             raise Exception("Volume needs to be of type euvolume, try attach_volume() instead?")
 
-        self.logger.debug("Attempting to attach volume:" + str(euvolume.id) + " to instance:" +
+        self.log.debug("Attempting to attach volume:" + str(euvolume.id) + " to instance:" +
                    str(self.id) + " to dev:" + str(dev))
         # grab a snapshot of our devices before attach for comparison purposes
         dev_list_before = self.get_dev_dir()
@@ -929,19 +929,19 @@ class EuInstance(Instance, TaggedResource, Machine):
             # Find device this volume is using on guest...
             euvolume.guestdev = None
             while (not euvolume.guestdev and elapsed < timeout):
-                self.logger.debug("Checking for volume attachment on guest, elapsed time(" +
+                self.log.debug("Checking for volume attachment on guest, elapsed time(" +
                            str(elapsed) + ")")
                 dev_list_after = self.get_dev_dir()
-                self.logger.debug("dev_list_after:" + " ".join(dev_list_after))
+                self.log.debug("dev_list_after:" + " ".join(dev_list_after))
                 diff = list(set(dev_list_after) - set(dev_list_before))
                 if len(diff) > 0:
                     devlist = str(diff[0]).split('/')
                     attached_dev = '/dev/' + devlist[len(devlist) - 1]
                     euvolume.guestdev = attached_dev.strip()
-                    self.logger.debug(
+                    self.log.debug(
                         "Volume:" + str(euvolume.id) + " guest device:" + str(euvolume.guestdev))
                     self.attached_vols.append(euvolume)
-                    self.logger.debug(euvolume.id + " Requested dev:" +
+                    self.log.debug(euvolume.id + " Requested dev:" +
                                str(euvolume.attach_data.device) +
                                ", attached to guest device:" + str(euvolume.guestdev))
                     break
@@ -949,14 +949,14 @@ class EuInstance(Instance, TaggedResource, Machine):
                 time.sleep(2)
             if not euvolume.guestdev or not attached_dev:
                 raise Exception('Device not found on guest after ' + str(elapsed) + ' seconds')
-            self.logger.debug(str(euvolume.id) + "Found attached to guest at dev:" +
+            self.log.debug(str(euvolume.id) + "Found attached to guest at dev:" +
                        str(euvolume.guestdev) + ', after elapsed:' + str(elapsed))
         else:
-            self.logger.debug('Failed to attach volume:' + str(euvolume.id) + ' to instance:' + self.id)
+            self.log.debug('Failed to attach volume:' + str(euvolume.id) + ' to instance:' + self.id)
             raise Exception('Failed to attach volume:' + str(euvolume.id) +
                             ' to instance:' + self.id)
         if (attached_dev is None):
-            self.logger.debug("List after\n" + " ".join(dev_list_after))
+            self.log.debug("List after\n" + " ".join(dev_list_after))
             raise Exception('Volume:' + str(euvolume.id) + ' attached, but not found on guest' +
                             str(self.id) + ' after ' + str(elapsed) + ' seconds?')
 
@@ -967,12 +967,12 @@ class EuInstance(Instance, TaggedResource, Machine):
                 self.vol_write_random_data_get_md5(euvolume, overwrite=overwrite)
                 return True
             except:
-                self.logger.debug("\n" + str(self.tester.get_traceback()) +
+                self.log.debug("\n" + str(self.tester.get_traceback()) +
                            "\nError caught in try_to_write_to_disk")
                 return False
 
         wait_for_result(try_to_write_to_disk, True)
-        self.logger.debug('Success attaching volume:' + str(euvolume.id) + ' to instance:' + self.id +
+        self.log.debug('Success attaching volume:' + str(euvolume.id) + ' to instance:' + self.id +
                    ', cloud dev:' + str(euvolume.attach_data.device) + ', attached dev:' +
                    str(attached_dev))
         return attached_dev
@@ -993,7 +993,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 dev = vol.guestdev
                 if (self.tester.detach_volume(euvolume, timeout=timeout)):
                     if waitfordev:
-                        self.logger.debug("Wait for device:" + str(dev) + " to be removed on guest...")
+                        self.log.debug("Wait for device:" + str(dev) + " to be removed on guest...")
                         while (elapsed < timeout):
                             try:
                                 # check to see if device is still present on guest
@@ -1004,10 +1004,10 @@ class EuInstance(Instance, TaggedResource, Machine):
                                 return True
                             time.sleep(10)
                             elapsed = int(time.time() - start)
-                            self.logger.debug("Waiting for device '" + str(dev) +
+                            self.log.debug("Waiting for device '" + str(dev) +
                                        "' on guest to be removed. Elapsed:" + str(elapsed))
                         # one last check, in case dev has changed.
-                        self.logger.debug("Device " + str(dev) + " still present on " + str(self.id) +
+                        self.log.debug("Device " + str(dev) + " still present on " + str(self.id) +
                                    " checking sync state...")
                         if self.get_dev_md5(dev, euvolume.md5len) == euvolume.md5:
                             raise Exception("Volume(" + str(vol.id) + ") detached, but device(" +
@@ -1015,7 +1015,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                         else:
                             # assume the cloud has successfully released the device,
                             # guest may have not
-                            self.logger.debug(str(self.id) + 'previously attached device for vol(' +
+                            self.log.debug(str(self.id) + 'previously attached device for vol(' +
                                        str(euvolume.id) + ') no longer matches md5')
                             return True
                     else:
@@ -1100,7 +1100,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         if verify_vols:
             # Check that local obj's attached volume state matches cloud's, mainly to alert
             # to errors in test script...
-            self.logger.debug('Checking euinstance attached volumes states are in sync with clouds')
+            self.log.debug('Checking euinstance attached volumes states are in sync with clouds')
             for vol in self.attached_vols:
                 try:
                     self.verify_attached_vol_cloud_status(vol)
@@ -1114,7 +1114,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             all_vols = self.tester.get_volumes(attached_instance=self.id)
             for device in self.block_device_mapping:
                 dev_map = self.block_device_mapping[device]
-                self.logger.debug(str(self.id) + ", has volume:" + str(dev_map.volume_id) +
+                self.log.debug(str(self.id) + ", has volume:" + str(dev_map.volume_id) +
                            " mapped at device:" + str(device))
                 for volume in all_vols:
                     if volume.id == dev_map.volume_id:
@@ -1132,12 +1132,12 @@ class EuInstance(Instance, TaggedResource, Machine):
                     if vol.delete_on_termination:
                         vol_status = 'deleted'
                         fail_fast_status = 'available'
-                    self.logger.debug('volume:' + str(vol.id) + "/" + str(vol.status) +
+                    self.log.debug('volume:' + str(vol.id) + "/" + str(vol.status) +
                                ", from BDM, D.O.T.:" + str(vol.delete_on_termination) +
                                ", waiting on status:" + str(vol_status) + ", elapsed:" +
                                str(elapsed) + "/" + str(volto))
                 else:
-                    self.logger.debug('volume:' + str(vol.id) + "/" + str(vol.status) +
+                    self.log.debug('volume:' + str(vol.id) + "/" + str(vol.status) +
                                ", was attached, waiting on status:" +
                                str(vol_status) + ", elapsed:" + str(elapsed) + "/" + str(volto))
                 vol.expected_status = vol_status
@@ -1147,14 +1147,14 @@ class EuInstance(Instance, TaggedResource, Machine):
                 if vol.status == vol_status or \
                         (not self.tester.get_volume(volume_id=vol.id, eof=False) and
                          vol_status == 'deleted'):
-                    self.logger.debug(str(self.id) + ' terminated, ' + str(vol.id) +
+                    self.log.debug(str(self.id) + ' terminated, ' + str(vol.id) +
                                "/" + str(vol.status) + ": volume entered expected state:" +
                                str(vol_status))
                     all_vols.remove(vol)
                     if vol in self.attached_vols:
                         self.attached_vols.remove(vol)
                 if vol.status == fail_fast_status and elapsed >= 30:
-                    self.logger.debug('Incorrect status for volume:' + str(vol.id) + ', status:' +
+                    self.log.debug('Incorrect status for volume:' + str(vol.id) + ', status:' +
                                str(vol.status))
                     all_vols.remove(vol)
                     err_buff += "\n" + str(self.id) + ":" + str(vol.id) + \
@@ -1216,7 +1216,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                     in_use_cloud += str(vol.id) + ", "
                     continue
             if inuse is False:
-                self.logger.debug("Instance:" + str(self.id) + " returning available cloud scsi dev:" +
+                self.log.debug("Instance:" + str(self.id) + " returning available cloud scsi dev:" +
                            str(dev))
                 return str(dev)
             else:
@@ -1274,7 +1274,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         dd_res_for_id = self.dd_monitor(ddcmd=ddcmd, timeout=timeout, sync=False)
         if length is not None:
             len_remaining = length - int(dd_res_for_id['dd_bytes'])
-            self.logger.debug('length remaining to write after adding volumeid:' + str(len_remaining))
+            self.log.debug('length remaining to write after adding volumeid:' + str(len_remaining))
             if len_remaining <= 0:
                 self.sys('sync')
                 return dd_res_for_id
@@ -1334,10 +1334,10 @@ class EuInstance(Instance, TaggedResource, Machine):
             self.random_fill_volume(euvolume, srcdev=srcdev, length=length)
             # length = dd_dict['dd_bytes']
         else:
-            self.logger.debug("Volume has existing data, skipping random data fill")
+            self.log.debug("Volume has existing data, skipping random data fill")
         # Calculate checksum of euvolume attached device for given length
         md5 = self.md5_attached_euvolume(euvolume, timepergig=timepergig, length=length)
-        self.logger.debug("Filled Volume:" + euvolume.id + " dev:" + voldev + " md5:" + md5)
+        self.log.debug("Filled Volume:" + euvolume.id + " dev:" + voldev + " md5:" + md5)
         euvolume.md5 = md5
         euvolume.md5len = length
         return md5
@@ -1361,7 +1361,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             voldev = euvolume.guestdev
             timeout = euvolume.size * timepergig
             md5 = self.get_dev_md5(voldev, length, timeout)
-            self.logger.debug("Got MD5 for Volume:" + euvolume.id + " dev:" + voldev + " md5:" + md5)
+            self.log.debug("Got MD5 for Volume:" + euvolume.id + " dev:" + voldev + " md5:" + md5)
             if updatevol:
                 euvolume.md5 = md5
                 euvolume.md5len = length
@@ -1408,7 +1408,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 pass
             return uptime
 
-        self.logger.debug('Attempting to reboot instance:' + str(self.id) +
+        self.log.debug('Attempting to reboot instance:' + str(self.id) +
                    ', check attached volume state first')
         uptime = wait_for_result(get_safe_uptime, None, oper=operator.ne)
         elapsed = 0
@@ -1418,10 +1418,10 @@ class EuInstance(Instance, TaggedResource, Machine):
             bad_vols = self.get_unsynced_volumes()
             if bad_vols != []:
                 for bv in bad_vols:
-                    self.logger.debug(str(self.id) + 'Unsynced volume found:' + str(bv.id))
+                    self.log.debug(str(self.id) + 'Unsynced volume found:' + str(bv.id))
                 raise Exception(str(self.id) + "Could not reboot using checkvolstatus flag due to "
                                                "unsync'd volumes")
-        self.logger.debug('Rebooting now...')
+        self.log.debug('Rebooting now...')
         self.reboot()
         time.sleep(waitconnect)
         timeout = timeout - int(time.time() - start)
@@ -1445,12 +1445,12 @@ class EuInstance(Instance, TaggedResource, Machine):
                 if elapsed > timeout:
                     raise Exception(err_msg)
                 else:
-                    self.logger.debug(err_msg)
+                    self.log.debug(err_msg)
                     pause_time = 10 - (time.time() - retry_start)
                     if pause_time > 0:
                         time.sleep(int(pause_time))
             else:
-                self.logger.debug("Instance uptime indicates a reboot. Orig:" + str(uptime) +
+                self.log.debug("Instance uptime indicates a reboot. Orig:" + str(uptime) +
                            ", New:" + str(newuptime) + ", elapsed:" + str(elapsed))
                 break
         if checkvolstatus:
@@ -1459,7 +1459,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 for vol in badvols:
                     msg = msg + "\nVolume:" + vol.id + " Local Dev:" + vol.guestdev
                 raise Exception("Missing volumes post reboot:" + str(msg) + "\n")
-        self.logger.debug(self.id + " reboot_instance_and_verify Success")
+        self.log.debug(self.id + " reboot_instance_and_verify Success")
 
     def get_uptime(self, retries=10, interval=10):
         start = time.time()
@@ -1469,9 +1469,9 @@ class EuInstance(Instance, TaggedResource, Machine):
                 return uptime
                 break
             except Exception, E:
-                self.logger.debug('Error getting uptime attempt:{0}/{1}, err:{2}'
+                self.log.debug('Error getting uptime attempt:{0}/{1}, err:{2}'
                            .format(x, retries, E))
-                self.logger.debug('Waiting {0} seconds before checking uptime...'
+                self.log.debug('Waiting {0} seconds before checking uptime...'
                            .format(interval))
                 time.sleep(interval)
         raise RuntimeError('{0}: Could not get uptime from instance after '
@@ -1559,15 +1559,15 @@ class EuInstance(Instance, TaggedResource, Machine):
             vol_list.extend(euvol_list)
         else:
             vol_list = self.attached_vols
-        self.logger.debug("Checking for volumes whos state is not in sync with our instance's "
+        self.log.debug("Checking for volumes whos state is not in sync with our instance's "
                    "test state...")
         for vol in vol_list:
             # First see if the cloud believes this volume is still attached.
             try:
-                self.logger.debug("Checking volume:" + str(vol.id))
+                self.log.debug("Checking volume:" + str(vol.id))
                 if (vol.attach_data.instance_id == self.id):  # Verify the cloud status is
                     # Still attached to this instance
-                    self.logger.debug("Cloud beleives volume:" + str(vol.id) + " is attached to:" +
+                    self.log.debug("Cloud beleives volume:" + str(vol.id) + " is attached to:" +
                                str(self.id) + ", check for guest dev...")
                     found = False
                     elapsed = 0
@@ -1582,7 +1582,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                             # handle virtio and non virtio cases differently (KVM case needs
                             # improvement here).
                             if self.virtio_blk or check_md5:
-                                self.logger.debug('Checking any new devs for md5:' + str(vol.md5))
+                                self.log.debug('Checking any new devs for md5:' + str(vol.md5))
                                 # Do some detective work to see what device name the previously
                                 # attached volume is using
                                 devlist = self.get_dev_dir()
@@ -1592,21 +1592,21 @@ class EuInstance(Instance, TaggedResource, Machine):
                                     # If we've already checked the md5 on this dev no need
                                     # to re-check it.
                                     if vdev not in checked_vdevs:
-                                        self.logger.debug('Checking ' + str(vdev) +
+                                        self.log.debug('Checking ' + str(vdev) +
                                                    " for match against euvolume:" + str(vol.id))
                                         md5 = self.get_dev_md5(vdev, vol.md5len)
-                                        self.logger.debug('comparing ' + str(md5) + ' vs ' + str(vol.md5))
+                                        self.log.debug('comparing ' + str(md5) + ' vs ' + str(vol.md5))
                                         if md5 == vol.md5:
-                                            self.logger.debug('Found match at dev:' + str(vdev))
+                                            self.log.debug('Found match at dev:' + str(vdev))
                                             found = True
                                             if (vol.guestdev != vdev):
-                                                self.logger.debug(
+                                                self.log.debug(
                                                     "(" + str(vol.id) + ")Found dev match. "
                                                     "Guest dev changed! Updating from "
                                                     "previous:'" + str(vol.guestdev) +
                                                     "' to:'" + str(vdev) + "'")
                                             else:
-                                                self.logger.debug("(" + str(vol.id) +
+                                                self.log.debug("(" + str(vol.id) +
                                                            ")Found dev match. Previous "
                                                            "dev:'" + str(vol.guestdev) +
                                                            "', Current dev:'" + str(vdev) + "'")
@@ -1618,7 +1618,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                             else:
                                 # Not using virtio_blk assume the device will be the same
                                 self.assertFilePresent(vol.guestdev.strip())
-                                self.logger.debug("(" + str(vol.id) +
+                                self.log.debug("(" + str(vol.id) +
                                            ")Found local/volume match dev:" +
                                            vol.guestdev.strip())
                                 found = True
@@ -1626,20 +1626,20 @@ class EuInstance(Instance, TaggedResource, Machine):
                             pass
                         if found:
                             break
-                        self.logger.debug('Local device for volume:' + str(vol.id) +
+                        self.log.debug('Local device for volume:' + str(vol.id) +
                                    ' not found. Sleeping and checking again...')
                         time.sleep(10)
                         elapsed = int(time.time() - start)
                     if not found:
                         bad_list.append(vol)
-                        self.logger.debug("(" + str(vol.id) + ")volume.guestdev:" + str(vol.guestdev) +
+                        self.log.debug("(" + str(vol.id) + ")volume.guestdev:" + str(vol.guestdev) +
                                    ", dev not found on guest? Elapsed:" + str(elapsed))
                 else:
-                    self.logger.debug("(" + str(vol.id) + ")Error, Volume.attach_data.instance_id:(" +
+                    self.log.debug("(" + str(vol.id) + ")Error, Volume.attach_data.instance_id:(" +
                                str(vol.attach_data.instance_id) + ") != (" + str(self.id) + ")")
                     bad_list.append(vol)
             except Exception, e:
-                self.logger.debug("Volume:" + str(vol.id) + " is no longer attached to this "
+                self.log.debug("Volume:" + str(vol.id) + " is no longer attached to this "
                            "instance:" + str(self.id) + ", error:" + str(e))
                 bad_list.append(vol)
                 pass
@@ -1653,19 +1653,19 @@ class EuInstance(Instance, TaggedResource, Machine):
         md5len = md5len or euvolume.md5len
         for vdev in self.get_dev_dir():
             vdev = '/dev/' + str(vdev).replace('/dev/', '')
-            self.logger.debug('Checking ' + str(vdev) + " for a matching block device")
+            self.log.debug('Checking ' + str(vdev) + " for a matching block device")
             block_md5 = self.get_dev_md5(vdev, md5len)
-            self.logger.debug('comparing dev' + str(vdev) + ': ' + str(block_md5) + ' vs vol:' + str(md5))
+            self.log.debug('comparing dev' + str(vdev) + ': ' + str(block_md5) + ' vs vol:' + str(md5))
             if block_md5 == md5:
-                self.logger.debug('Found match at dev:' + str(vdev))
+                self.log.debug('Found match at dev:' + str(vdev))
                 if (euvolume):
                     if (euvolume.guestdev != vdev):
-                        self.logger.debug("(" + str(euvolume.id) +
+                        self.log.debug("(" + str(euvolume.id) +
                                    ")Found dev match. Guest dev changed! "
                                    "Updating from previous:'" + str(euvolume.guestdev) +
                                    "' to:'" + str(vdev) + "'")
                     else:
-                        self.logger.debug("(" + str(euvolume.id) + ")Found dev match. Previous dev:'" +
+                        self.log.debug("(" + str(euvolume.id) + ")Found dev match. Previous dev:'" +
                                    str(euvolume.guestdev) + "', Current dev:'" + str(vdev) + "'")
                     euvolume.guestdev = vdev
                 guestdev = vdev
@@ -1684,10 +1684,10 @@ class EuInstance(Instance, TaggedResource, Machine):
         try:
             euvolume = self.tester.get_volume(volume_id=euvolume.id)
         except Exception, e:
-            self.logger.debug("Error in verify_attached_vol_status, try running init_volume_list first")
+            self.log.debug("Error in verify_attached_vol_status, try running init_volume_list first")
             raise Exception("Failed to get volume in get_attached_vol_cloud_status, err:" + str(e))
         if euvolume.attach_data.instance_id != self.id:
-            self.logger.debug("Error in verify_attached_vol_status, try running init_volume_list first")
+            self.log.debug("Error in verify_attached_vol_status, try running init_volume_list first")
             raise Exception("(" + str(self.id) + ")Cloud status for vol(" + str(euvolume.id) +
                             " = not attached to this instance ")
 
@@ -1727,7 +1727,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                     (self.root_device_type == 'ebs' and self.bdm_root_vol.id != vol.id):
                 for avol in self.attached_vols:
                     if avol.id == vol.id:
-                        self.logger.debug("Volume" + vol.id + " found attached")
+                        self.log.debug("Volume" + vol.id + " found attached")
                         found = True
                         break
                 if not found:
@@ -1755,7 +1755,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         state -optional-the expected state to signify success, default is stopped
         failstate -optional-a state transition that indicates failure, default is terminated
         '''
-        self.logger.debug(self.id + " Attempting to stop instance...")
+        self.log.debug(self.id + " Attempting to stop instance...")
         start = time.time()
         elapsed = 0
         self.stop()
@@ -1769,7 +1769,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                                 " while stopping")
             elapsed = int(time.time() - start)
             if elapsed % 10 == 0:
-                self.logger.debug(str(self.id) + " wait for stop, in state:" + str(self.state) +
+                self.log.debug(str(self.id) + " wait for stop, in state:" + str(self.state) +
                            ",time remaining:" + str(elapsed) + "/" + str(timeout))
         if self.state != state:
             raise Exception(self.id + " state: " + str(self.state) + " expected:" + str(state) +
@@ -1781,7 +1781,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                     raise Exception(str(self.id) + ', Volume ' + str(volume.id) + ':' +
                                     str(volume.status) +
                                     ' state did not remain in-use during stop')
-        self.logger.debug(self.id + " stop_instance_and_verify Success")
+        self.log.debug(self.id + " stop_instance_and_verify Success")
 
     def start_instance_and_verify(self, timeout=300, state='running', failstates=['terminated'],
                                   failfasttime=30, connect=True, checkvolstatus=True):
@@ -1794,7 +1794,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                  once the expected state has been reached
         checkvolstatus - optional -boolean to be used to check volume status post start up
         '''
-        self.logger.debug(self.id + " Attempting to start instance...")
+        self.log.debug(self.id + " Attempting to start instance...")
         if checkvolstatus:
             for volume in self.attached_vols:
                 volume.update
@@ -1803,7 +1803,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                         raise Exception(str(self.id) + ', Volume ' + str(volume.id) + ':' +
                                         str(volume.status) +
                                         ' state did not remain in-use during stop')
-        self.logger.debug("\n" + str(self.id) + ": Printing Instance 'attached_vol' list:\n")
+        self.log.debug("\n" + str(self.id) + ": Printing Instance 'attached_vol' list:\n")
         self.tester.show_volumes(self.attached_vols)
         msg = ""
         start = time.time()
@@ -1817,7 +1817,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         while (elapsed < timeout):
             elapsed = int(time.time() - start)
             self.update()
-            self.logger.debug(str(self.id) + " wait for start, in state:" + str(self.state) +
+            self.log.debug(str(self.id) + " wait for start, in state:" + str(self.state) +
                        ",time remaining:" + str(elapsed) + "/" + str(timeout))
             if self.state == state:
                 break
@@ -1831,7 +1831,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             raise Exception(
                 self.id + " not in " + str(state) + " state after elapsed:" + str(elapsed))
         else:
-            self.logger.debug(self.id + " went to state:" + str(state))
+            self.log.debug(self.id + " went to state:" + str(state))
             if connect:
                 self.connect_to_instance(timeout=timeout)
             if checkvolstatus:
@@ -1840,7 +1840,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                     for vol in badvols:
                         msg = msg + "\nVolume:" + vol.id + " Local Dev:" + vol.guestdev
                     raise Exception("Missing volumes post reboot:" + str(msg) + "\n")
-        self.logger.debug(self.id + " start_instance_and_verify Success")
+        self.log.debug(self.id + " start_instance_and_verify Success")
 
     def mount_attached_volume(self,
                               volume,
@@ -1898,7 +1898,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         try:
             mount_dir = self.sys('mount | grep ' + str(guestdev), code=0)[0].split()[2]
         except Exception, e:
-            self.logger.debug('Mount point for ' + str(guestdev) + 'not found:' + str(e))
+            self.log.debug('Mount point for ' + str(guestdev) + 'not found:' + str(e))
             return mount_dir
         return mount_dir
 
@@ -1938,13 +1938,13 @@ class EuInstance(Instance, TaggedResource, Machine):
         ephemeral_dev = self.get_ephemeral_dev()
         block_size = self.get_blockdev_size_in_bytes(ephemeral_dev)
         gbs = block_size / gb
-        self.logger.debug("Ephemeral check: ephem_dev:{0}, bytes: {1}, gbs:{2}, vmtype size:{3}"
+        self.log.debug("Ephemeral check: ephem_dev:{0}, bytes: {1}, gbs:{2}, vmtype size:{3}"
                    .format(ephemeral_dev, block_size, gbs, size))
         if gbs != size:
             raise Exception("Ephemeral check failed. {0} Blocksize:{1} gb ({2} bytes) != vmtype "
                             "size:{3} gb".format(ephemeral_dev, gbs, block_size, size))
         else:
-            self.logger.debug('check_ephemeral_against_vmtype, passed')
+            self.log.debug('check_ephemeral_against_vmtype, passed')
         return ephemeral_dev
 
     def get_memtotal_in_mb(self):
@@ -1953,7 +1953,7 @@ class EuInstance(Instance, TaggedResource, Machine):
 
     def check_ram_against_vmtype(self, pad=32):
         total_ram = self.get_memtotal_in_mb()
-        self.logger.debug("Ram check: vm_ram: {0}mb vs memtotal: {1}mb. Diff:{2}mb, pad:{3}mb"
+        self.log.debug("Ram check: vm_ram: {0}mb vs memtotal: {1}mb. Diff:{2}mb, pad:{3}mb"
                    .format(self.vmtype_info.ram,
                            total_ram,
                            (self.vmtype_info.ram - total_ram),
@@ -1963,7 +1963,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                             " vs memtotal:" + str(total_ram) +
                             ". Diff is greater than allowed pad:" + str(pad) + "mb")
         else:
-            self.logger.debug('check_ram_against_vmtype, passed')
+            self.log.debug('check_ram_against_vmtype, passed')
 
     def get_guest_dev_for_block_device_map_device(self, md5, md5len, map_device):
         '''
@@ -1974,14 +1974,14 @@ class EuInstance(Instance, TaggedResource, Machine):
         in the volume for later test use.
         returns the guest device if found.
         '''
-        self.logger.debug('Attempting to find block device for mapped device name:' + str(map_device) +
+        self.log.debug('Attempting to find block device for mapped device name:' + str(map_device) +
                    ', md5:' + str(md5) +
                    ', md5len:' + str(md5len))
         dbg_buf = "\nInstance 'attached_vol' list:\n"
         for vol in self.attached_vols:
             dbg_buf += "Volume:" + str(vol.id) + ", md5:" + str(vol.md5) + ", md5len" + \
                        str(vol.md5len) + "\n"
-        self.logger.debug(dbg_buf)
+        self.log.debug(dbg_buf)
         mapped_device = self.block_device_mapping.get(map_device)
         volume_id = mapped_device.volume_id
         volume = self.tester.get_volume(volume_id=volume_id)
@@ -1994,7 +1994,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             raise Exception('dev:' + str(map_device) + ', vol:' + str(volume_id) +
                             ' - Could not find a device matching md5:' +
                             str(md5) + ", len:" + str(md5len))
-        self.logger.debug('Recording volume:' + str(volume.id) +
+        self.log.debug('Recording volume:' + str(volume.id) +
                    ' md5 info in volume, and adding to attached list')
         if not local_dev:
             raise Exception('Could not find mapped device:' + str(map_device) +
@@ -2051,12 +2051,12 @@ class EuInstance(Instance, TaggedResource, Machine):
                 else:
                     dev_name_prefix = 'ebs'
                 for meta_dev in meta_devices:
-                    self.logger.debug('looking for device:{0}, dev_name_prefix:{1}, meta dev:{2}'
+                    self.log.debug('looking for device:{0}, dev_name_prefix:{1}, meta dev:{2}'
                                .format(device, dev_name_prefix, meta_dev))
                     if str(meta_dev).startswith(dev_name_prefix):
                         if os.path.basename(meta_devices.get(meta_dev)) == \
                                 os.path.basename(device):
-                            self.logger.debug('Found meta data match for block device:' + str(device) +
+                            self.log.debug('Found meta data match for block device:' + str(device) +
                                        " for meta name: " + str(meta_dev))
                             meta_devices.pop(meta_dev)
                             found = True

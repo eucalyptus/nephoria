@@ -40,7 +40,7 @@ class TestController(object):
         :param context_mgr:
         :param timeout:
         """
-        self.logger = Eulogger("TESTER:{0}".format(hostname), stdout_level=log_level)
+        self.log = Eulogger("TESTER:{0}".format(hostname), stdout_level=log_level)
         self._sysadmin = None
         self._cloudadmin = None
         self._test_user = None
@@ -94,7 +94,7 @@ class TestController(object):
 
                 self._sysadmin = SystemConnection(**self._system_connection_info)
             except Exception as TE:
-                self.logger.error('{0}\nCould not create sysadmin interface, timed out: "{1}"'
+                self.log.error('{0}\nCould not create sysadmin interface, timed out: "{1}"'
                                   .format(get_traceback(), TE))
                 raise TE
         return self._sysadmin
@@ -138,8 +138,8 @@ class TestController(object):
                                      machine=None, service_connection=None, path='/',
                                      log_level=None):
         if log_level is None:
-            log_level = self.logger.stdout_level or 'DEBUG'
-        self.logger.debug('Attempting to create user with params: account:{0}, name:{1}'
+            log_level = self.log.stdout_level or 'DEBUG'
+        self.log.debug('Attempting to create user with params: account:{0}, name:{1}'
                           'access_key:{2}, secret_key:{3}, credpath:{4}, eucarc:{5}'
                           ', machine:{6}, service_connection:{7}, path:{8}, loglevel:{9}'
                           .format(aws_account_name, aws_user_name, aws_access_key, aws_secret_key,
@@ -192,14 +192,14 @@ class TestController(object):
         except KeyError:
             err_msg = ('Failed to fetch access key for USER:"{0}", ACCOUNT:"{1}"'
                        .format(aws_user_name, aws_account_name))
-            self.logger.error('{0}\n{1}'.format(get_traceback(), err_msg))
+            self.log.error('{0}\n{1}'.format(get_traceback(), err_msg))
             raise RuntimeError(err_msg)
         if self.admin.iam.get_all_signing_certs(user_name=info.get('user_name'),
                                                      delegate_account=info.get('account_name')):
             certs = True
         else:
             certs = False
-        return  UserContext(aws_access_key=info.get('access_key_id'),
+        user =  UserContext(aws_access_key=info.get('access_key_id'),
                             aws_secret_key=info.get('secret_access_key'),
                             aws_account_name=info.get('account_name'),
                             aws_user_name=info.get('user_name'),
@@ -208,6 +208,9 @@ class TestController(object):
                             service_connection=self.sysadmin,
                             context_mgr=self.contextmanager,
                             log_level=log_level)
+        user._user_info = self.admin.iam.get_user_info(user_name=user.user_name,
+                                                       delegate_account=user.account_id)
+        return user
 
     def wait_for_result(self, *args, **kwargs):
         return wait_for_result(*args, **kwargs)

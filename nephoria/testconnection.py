@@ -29,26 +29,27 @@ class TestConnection(object):
         if self.EUCARC_URL_NAME is None:
             raise NotImplementedError('EUCARC_URL_NAME not set for this class:"{0}"'
                                       .format(self.__class__.__name__))
-        self.test_resources = test_resources or {}
         self.service_host = None
         self.service_port = None
         self.service_path = None
         self._original_connection = None
         self.context_mgr = context_mgr
+        self.test_resources = test_resources or {}
         if boto_debug:
             set_stream_logger('boto')
         if log_level is None:
             log_level = DEBUG
         if not logger:
+            context = ""
             if user_context:
                 try:
                     context = "({0}:{1})".format(user_context.account_name, user_context.user_name)
                 except:
-                    context = ""
+                    pass
             logger = Eulogger("{0}{1}".format(self.__class__.__name__, context),
                               stdout_level=log_level)
-        self.logger = logger
-        self.logger.set_stdout_loglevel(log_level)
+        self.log = logger
+        self.log.set_stdout_loglevel(log_level)
         if not eucarc and credpath:
             eucarc = Eucarc(filepath=credpath)
         self.eucarc = eucarc
@@ -104,7 +105,7 @@ class TestConnection(object):
         if self.context_mgr:
             current_context = self.context_mgr.get_connection_context(ops=self)
             if current_context:
-                self.logger.debug('"{0}":connection, Got a different connection context:"{1}"'
+                self.log.debug('"{0}":connection, Got a different connection context:"{1}"'
                                   .format(self, current_context))
                 return current_context
         return super(TestConnection, self).get_http_connection(*self._connection)
@@ -113,7 +114,7 @@ class TestConnection(object):
         if self.context_mgr:
             current_context = self.context_mgr.get_current_ops_context(ops=self)
             if current_context:
-                self.logger.debug('"{0}": get_http_connection, Got a different ops context:"{1}"'
+                self.log.debug('"{0}": get_http_connection, Got a different ops context:"{1}"'
                                   .format(self, current_context))
                 return current_context.get_http_connection(*current_context._connection)
         return super(TestConnection, self).get_http_connection(*args, **kwargs)
@@ -153,7 +154,7 @@ class TestConnection(object):
             region = regioninfo.RegionInfo()
             if region_name:
                 region.name = region_name
-                self.logger.debug("Check region: " + str(region))
+                self.log.debug("Check region: " + str(region))
                 try:
                     if not endpoint:
                         endpoint_url = AWSRegionData[region_name]
@@ -191,7 +192,7 @@ class TestConnection(object):
         debug_buf = 'Current "{0}" connection kwargs for\n'.format(self.__class__.__name__)
         for key, value in self._connection_kwargs.iteritems():
             debug_buf += "{0}{1}{2}\n".format(str(key).ljust(30), " -> ", value)
-        self.logger.debug(debug_buf)
+        self.log.debug(debug_buf)
 
     def enable_boto_debug(self, level=DEBUG, format_string=None):
         self.boto_debug=2
