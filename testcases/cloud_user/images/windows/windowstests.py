@@ -203,7 +203,7 @@ class WindowsTests(EutesterTestCase):
                 if keys != []:
                     self.keypair = keys[0]
                 else:
-                    self.keypair = keypair = self.tester.add_keypair('windows_test_key-' + str(time.time()))
+                    self.keypair = keypair = self.tester.create_keypair_and_localcert('windows_test_key-' + str(time.time()))
             else:
                 return
         except Exception, ke:
@@ -496,7 +496,7 @@ class WindowsTests(EutesterTestCase):
     def get_local_key_for_instance(self,instance,keypath=None, exten=".pem"):
         self.debug("Looking for local keys for instance:"+str(instance.id))
         keypath = keypath or self.instance_keypath
-        keys = self.tester.get_all_current_local_keys(path=keypath, exten=exten)
+        keys = self.tester.get_all_current_local_keys(path=keypath, extension=exten)
         for key in keys:
             if key.name == instance.key_name:
                 self.debug("Found key:"+str(key.name))

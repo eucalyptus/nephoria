@@ -29,11 +29,9 @@ def id_generator(size=6, chars=None):
     chars = chars or (string.ascii_uppercase + string.ascii_lowercase  + string.digits)
     return ''.join(random.choice(chars) for x in range(size))
 
+class CleanTestResourcesException(Exception):
+    def __init__(self, value):
+        self.value = value
 
-
-
-
-
-    
-
-
+    def __str__(self):
+        return repr(self.value)

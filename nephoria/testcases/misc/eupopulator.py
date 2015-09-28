@@ -161,7 +161,7 @@ class EuPopulator(object):
         prefix = self.config.get("keypairs", "prefix")
         
         for i in xrange(key_count):
-            self.tester.add_keypair(prefix + str(i))
+            self.tester.create_keypair_and_localcert(prefix + str(i))
         
     def security_groups(self):
         print "Creating security_groups"

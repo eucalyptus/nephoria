@@ -91,7 +91,7 @@ class Ebs_Persistance_Tests(EutesterTestCase):
             if keys:
                 self.keypair = keys[0]
             else:
-                self.keypair = keypair = self.tester.add_keypair('qa214volumechurn'+str(time.time()))
+                self.keypair = keypair = self.tester.create_keypair_and_localcert('qa214volumechurn'+str(time.time()))
         except Exception, ke:
             raise Exception("Failed to find/create a keypair, error:" + str(ke))
 

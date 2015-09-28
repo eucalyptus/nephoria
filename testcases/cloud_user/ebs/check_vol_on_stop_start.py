@@ -38,7 +38,7 @@ class Check_vol_on_stop_start(EutesterTestCase):
         def get_keypair(self,keypair=None):
             self.keypair = None
             if keypair:
-                self.keypair=self.tester.add_keypair(keypair)
+                self.keypair=self.tester.create_keypair_and_localcert(keypair)
         
     
             

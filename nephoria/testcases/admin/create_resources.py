@@ -98,7 +98,7 @@ class ResourceGeneration(EutesterTestCase):
                 resource_tester.iam.show_whoami()
             except:pass
             zone = random.choice(resource_tester.ec2.get_zones())
-            keypair = resource_tester.ec2.add_keypair(resource_tester.id_generator())
+            keypair = resource_tester.ec2.create_keypair_and_localcert(resource_tester.id_generator())
             group = resource_tester.ec2.add_group(resource_tester.id_generator())
             resource_tester.ec2.authorize_group_by_name(group_name=group.name)
             resource_tester.ec2.authorize_group_by_name(group_name=group.name, port=-1, protocol="icmp")

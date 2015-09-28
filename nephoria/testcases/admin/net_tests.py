@@ -182,7 +182,7 @@ class Net_Tests(EutesterTestCase):
             if keys:
                 self.keypair = keys[0]
             else:
-                self.keypair = self.tester.ec2.add_keypair(str(self.name) + "_key_" + str(time.time()))
+                self.keypair = self.tester.ec2.create_keypair_and_localcert(str(self.name) + "_key_" + str(time.time()))
         except Exception, ke:
             raise Exception("Failed to find/create a keypair, error:" + str(ke))
 

@@ -38,7 +38,7 @@ class LoadGenerator(unittest.TestCase):
         """
         for i in xrange(count):
             key_name = "key-generator-" + str(i)
-            keypair = self.tester.add_keypair()
+            keypair = self.tester.create_keypair_and_localcert()
             self.tester.delete_keypair(keypair)
      
     def GenerateVolumes(self, count=10):

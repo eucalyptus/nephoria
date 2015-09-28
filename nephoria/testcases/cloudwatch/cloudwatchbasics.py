@@ -30,7 +30,7 @@ class CloudWatchBasics(EutesterTestCase):
         self.start_time = str(int(time.time()))
         self.zone = self.tester.ec2.get_zones()
         self.namespace = 'Namespace-' + self.start_time
-        self.keypair = self.tester.ec2.add_keypair()
+        self.keypair = self.tester.ec2.create_keypair_and_localcert()
         self.group = self.tester.ec2.add_group()
         ### Setup AutoScaling
         self.setUpAutoscaling()

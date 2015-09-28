@@ -61,7 +61,7 @@ class Qa_214_volume_churn(EutesterTestCase):
             if keys != []:
                 self.keypair = keys[0]
             else:
-                self.keypair = keypair = self.tester.add_keypair('qa214volumechurn')
+                self.keypair = keypair = self.tester.create_keypair_and_localcert('qa214volumechurn')
         except Exception, ke:
             raise Exception("Failed to find/create a keypair, error:" + str(ke))
        

@@ -61,7 +61,7 @@ class LoadBalancing(EutesterTestCase):
         self.tester.ec2.authorize_group_by_name(group_name=self.group.name )
         self.tester.ec2.authorize_group_by_name(group_name=self.group.name, port=-1, protocol="icmp" )
         ### Generate a keypair for the instance
-        self.keypair = self.tester.ec2.add_keypair( "keypair-" + str(int(time.time())))
+        self.keypair = self.tester.ec2.create_keypair_and_localcert( "keypair-" + str(int(time.time())))
         self.keypath = '%s/%s.pem' % (os.curdir, self.keypair.name)
         ### Get an image
         self.image = self.args.emi

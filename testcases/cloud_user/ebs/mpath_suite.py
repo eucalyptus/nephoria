@@ -172,7 +172,7 @@ class Mpath_Suite(EutesterTestCase):
             if keys:
                 self.keypair = keys[0]
             else:
-                self.keypair = self.tester.add_keypair('mpathtestinstancekey'+str(time.time()))
+                self.keypair = self.tester.create_keypair_and_localcert('mpathtestinstancekey'+str(time.time()))
         except Exception, ke:
             raise Exception("Failed to find/create a keypair, error:" + str(ke))
 

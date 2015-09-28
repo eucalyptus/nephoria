@@ -61,7 +61,7 @@ from boto.vpc.subnet import Subnet as BotoSubnet
 from boto.vpc import VPCConnection, VPC
 from boto.ec2.networkinterface import NetworkInterfaceSpecification, NetworkInterfaceCollection
 
-
+from nephoria import CleanTestResourcesException
 from nephoria.testconnection import TestConnection
 from nephoria.testcase_utils import wait_for_result
 from cloud_utils.net_utils import sshconnection, ping, is_address_in_network
@@ -177,7 +177,7 @@ disable_root: false"""
         self.test_resources["launch-configurations"]=[]
         self.test_resources["conversion-tasks"]=[]
 
-    def create_tags(self, resource_ids, tags):
+    def create_tags(self, resource_ids, tags, *args, **kwargs):
         """
         Add tags to the given resource
 
@@ -186,9 +186,9 @@ disable_root: false"""
         """
         self.log.debug("Adding the following tags:" + str(tags))
         self.log.debug("To Resources: " + str(resource_ids))
-        self.create_tags(resource_ids=resource_ids, tags=tags)
+        super(EC2ops, self).create_tags(resource_ids=resource_ids, tags=tags, *args, **kwargs)
 
-    def delete_tags(self, resource_ids, tags):
+    def delete_tags(self, resource_ids, tags, *args, **kwargs):
         """
         Add tags to the given resource
 
@@ -197,23 +197,23 @@ disable_root: false"""
         """
         self.log.debug("Deleting the following tags:" + str(tags))
         self.log.debug("From Resources: " + str(resource_ids))
-        self.delete_tags(resource_ids=resource_ids, tags=tags)
+        super(EC2ops, self).delete_tags(resource_ids=resource_ids, tags=tags, *args, **kwargs)
 
-    def add_keypair(self, key_name=None):
+    def create_keypair_and_localcert(self, key_name=None, key_dir=None, extension='.pem'):
         """
         Add a keypair with name key_name unless it already exists
 
-        :param key_name:      The name of the keypair to add and download.
+        :param key_name: The name of the keypair to add and download.
+        :param extension: The File extension used when creating the local cert/file.
         """
+        key_dir = key_dir or self.key_dir
         if key_name is None:
             key_name = "keypair-" + str(int(time.time())) 
         self.log.debug("Looking up keypair " + key_name)
-        key = []
         try:
-            key = self.get_all_key_pairs(keynames=[key_name])
+            key = self.get_key_pair(key_name)
         except EC2ResponseError:
             pass
-        
         if not key:
             self.log.debug('Creating keypair: %s' % key_name)
             # Create an SSH key to use when logging into instances.
@@ -222,72 +222,94 @@ disable_root: false"""
             # generated and returned and needs to be stored locally.
             # The save method will also chmod the file to protect
             # your private key.
-            key.save(self.key_dir)
+            key.save(key_dir)
             #Add the fingerprint header to file
-            keyfile = open(self.key_dir + key.name + '.pem', 'r')
+            keyfile = open(key_dir + key.name + '.pem', 'r')
             data = keyfile.read()
             keyfile.close()
-            keyfile = open(self.key_dir+key.name+'.pem', 'w')
+            keyfile = open(key_dir + key.name + '.pem', 'w')
             keyfile.write('KEYPAIR ' + str(key.name) + ' '+str(key.fingerprint)+"\n")
             keyfile.write(data)
             keyfile.close()
             self.test_resources["keypairs"].append(key)
             return key
         else:
-            self.log.warn("Key " + key_name + " already exists")
+            if self.get_all_current_local_keys(key_name=key_name,
+                                               path=key_dir,
+                                               extension=extension):
+                self.log.info('Existing EC2 key {0} and local cert found at: "{1}"'
+                              .format(key_name,
+                                      os.path.join(key_dir, "{0}{1}".format(key_name, extension))))
+                return key
+            else:
+                self.log.warn('Key {0} already exists, but cert not found at:"{1}"'
+                              .format(key_name,
+                                      os.path.join(key_dir, "{0}{1}".format(key_name, extension))))
+                return None
+
             
             
             
     def verify_local_keypath(self, keyname, path=None, exten=".pem"):
         """
-        Convenience function to verify if a given ssh key 'keyname' exists on the local server at 'path'
+        Convenience function to verify if a given ssh key 'keyname' exists on the local
+        server at 'path'
 
         :returns: the keypath if the key is found.
-        >>> instance= self.get_instances(state='running')[0]
+        >>> instance = self.get_instances(state='running')[0]
         >>> keypath = self.get_local_keypath(instance.key_name)
         """
         if path is None:
             path = os.getcwd()
-        keypath = path + "/" + keyname + exten
+        keypath = os.path.join(path, "{0}{1}".format(keyname, exten))
         try:
             os.stat(keypath)
             self.log.debug("Found key at path:"+str(keypath))
         except:
-            raise Exception("key not found at the provided path:"+str(keypath))
+            raise IOError("File not found at the provided key path:" + str(keypath))
         return keypath
     
     
     @printinfo
-    def get_all_current_local_keys(self, path=None, exten=".pem"):
+    def get_all_current_local_keys(self, key_name=None, path=None, extension=".pem"):
         """
-        Convenience function to provide a list of all keys in the local dir at 'path' that exist on the server to help
+        Convenience function to provide a list of all keys in the local dir at 'path' that exist
+        on the server to help
         avoid producing additional keys in test dev.
 
         :param path: Filesystem path to search in
-        :param exten: extension of private key file
+        :param extension: extension of private key file
         :return: list of key names
         """
         keylist = []
-        keys = self.get_all_key_pairs()
+        if key_name:
+            # this will error out here if key_name is not found on the cloud
+            keys = self.get_key_pair(key_name)
+            if keys:
+                keys = [keys]
+        else:
+            keys = self.get_all_key_pairs()
         keyfile = None
         for k in keys:
-            self.log.debug('Checking local path:' + str(path) + " for keyfile: " + str(k.name) + str(exten))
+            self.log.debug('Checking local path: {0} for keyfile: {1}{2}'
+                           .format(path, k.name, extension))
             try:
                 #will raise exception if keypath is not found
-                keypath = self.verify_local_keypath(k.name, path, exten)
+                keypath = self.verify_local_keypath(k.name, path, extension)
                 if not keypath:
                     continue
-                keyfile = open(keypath,'r')
+                keyfile = open(keypath, 'r')
                 for line in keyfile.readlines():
                     if re.search('KEYPAIR',line):
                         fingerprint = line.split()[2]
                         break
                 keyfile.close()
                 if fingerprint == k.fingerprint:
-                    self.log.debug('Found file with matching finger print for key:'+k.name)
+                    self.log.debug('Found file with matching finger print for key:' + k.name)
                     keylist.append(k)
-            except: 
-                self.log.debug('Did not find local match for key:'+str(k.name))
+            except Exception as KE:
+                self.log.debug('Did not find local match for key:"{0}". Err:{1}'
+                               .format(k.name, KE))
             finally:
                 if keyfile and not keyfile.closed:
                     keyfile.close()
@@ -588,9 +610,13 @@ disable_root: false"""
             return main_pt
 
     def get_supported_platforms(self):
+        attr = None
         try:
             attr = self.describe_account_attributes(attribute_names='supported-platforms')
         except Exception as E:
+            self.log.warning('{0}\n{1}'
+                             .format(markup('Could not describe account attributes', [1, 31]),
+                                     get_traceback()))
             try:
                 prop = self.property_manager.get_property_by_string('one.cluster.networkmode')
                 if prop and prop.value:
@@ -599,7 +625,7 @@ disable_root: false"""
                 try:
                     err = "{0}\nFailed to get 'supported-platforms' fromcloud, err:'{1}'"\
                           .format(self.get_traceback(),str(E))
-                    self.log.info(markup(err, markups=[1, 31]))
+                    self.log.warning(markup(err, markups=[1, 31]))
                 except:
                     pass
         if attr:
@@ -3123,12 +3149,13 @@ disable_root: false"""
                     # No network_interfaces were provided, check to see if this subnet already
                     # maps a public ip by default or if a new eni should be created to
                     # request one...
-                    subnets = self.get_all_subnets(subnet_id)
-                    if subnets:
-                        subnet = subnets[0]
-                    else:
-                        raise ValueError('Subnet: "{0}" not found during run_image'
-                                         .format(subnet_id))
+                    if not isinstance(subnet, BotoSubnet):
+                        subnets = self.get_all_subnets(subnet_id)
+                        if subnets:
+                            subnet = subnets[0]
+                        else:
+                            raise ValueError('Subnet: "{0}" not found during run_image'
+                                             .format(subnet_id))
                 else:
                     subnets = self.get_default_subnets(zone=zone)
                     if subnets:
@@ -3950,10 +3977,8 @@ disable_root: false"""
         :return: boto.ec2.keypair object
         :raise: Exception on failure to find keypair
         """
-        try:
-            return self.get_all_key_pairs([name])[0]
-        except IndexError, e:
-            raise Exception("Keypair: " + name + " not found")
+        return self.get_key_pair(name)
+
         
     def get_zones(self):
         """
@@ -5570,6 +5595,174 @@ disable_root: false"""
         else:
             return main_pt
 
+    def cleanup_test_instances(self):
+        failmsg = ""
+        failcount = 0
+        remove_list = []
+        # To speed up termination, send terminate to all instances
+        # before sending them to the monitor methods
+        for res in self.test_resources.get('reservations', []):
+            try:
+                if isinstance(res, Instance):
+                    res.terminate()
+                if isinstance(res, Reservation):
+                    for ins in res.instances:
+                        ins.terminate()
+            except:
+                traceback.print_exc()
+                self.log.debug('Ignoring error in instance cleanup '
+                               'during termination')
+        # Now monitor to terminated state...
+        for res in self.test_resources.get('reservations', []):
+            try:
+                self.terminate_instances(res)
+                remove_list.append(res)
+            except Exception, e:
+                tb = get_traceback()
+                failcount += 1
+                failmsg += str(tb) + "\nError#:"+ str(failcount)+ ":" + str(e)+"\n"
+        for res in remove_list:
+            self.test_resources["reservations"].remove(res)
+        if failcount:
+            raise CleanTestResourcesException("Failed to clean up all test Instances:\n{0}"
+                                              .format(failmsg))
+
+    def cleanup_addresses(self, ips=None):
+        """
+        :param ips: optional list of ip addresses, else will attempt to delete from test_resources[]
+
+        """
+        addresses = ips or self.test_resources.get('addresses', [])
+        if not addresses:
+            return
+        self.log.debug('Attempting to release to the cloud the following IP addresses:')
+        while addresses:
+            self.release_address(addresses.pop())
+
+    def cleanup_test_snapshots(self,snaps=None, clean_images=False, add_time_per_snap=10,
+                               wait_for_valid_state=120, base_timeout=180):
+        """
+        :param snaps: optional list of snapshots, else will attempt to delete from test_resources[]
+        :param clean_images: Boolean, if set will attempt to delete registered images referencing the snapshots first.
+                             Images referencing the snapshot may prevent snapshot deletion to protect the image.
+        :param add_time_per_snap:  int number of seconds to append to base_timeout per snapshot
+        :param wait_for_valid_state: int seconds to wait for snapshot(s) to enter a 'deletable' state
+        :param base_timeout: base timeout to use before giving up, and failing operation.
+        """
+        snaps = snaps or self.test_resources.get('snapshots', [])
+        if not snaps:
+            return
+        self.log.debug('Attempting to clean the following snapshots:')
+        self.show_snapshots(snaps)
+        if clean_images:
+            for snap in snaps:
+                for image in self.test_resources.get('images', []):
+                    for dev in image.block_device_mapping:
+                        if image.block_device_mapping[dev].snapshot_id == snap.id:
+                            self.ec2.delete_image(image)
+        if snaps:
+            return self.delete_snapshots(snaps,
+                                         base_timeout=base_timeout,
+                                         add_time_per_snap=add_time_per_snap,
+                                         wait_for_valid_state=wait_for_valid_state)
+
+    def clean_up_test_volumes(self, volumes=None, min_timeout=180, timeout_per_vol=30):
+        """
+        Definition: cleanup helper method intended to clean up volumes created
+        within a test, after the test has ran.
+
+        :param volumes: optional list of volumes to delete from system, otherwise will use
+                        test_resources['volumes']
+        """
+        euvolumes = []
+        detaching = []
+        not_exist = []
+        volumes = volumes or self.test_resources.get('volumes', [])
+        if not volumes:
+            self.log.debug('clean_up_test_volumes, no volumes passed to delete')
+            return
+        self.log.debug('clean_up_test_volumes starting\nVolumes to be deleted:{0}'
+                       .format(",".join(str(x) for x in volumes)))
+        for vol in volumes:
+            try:
+                vol = self.get_volume(volume_id=vol.id)
+            except:
+                self.log.debug("\n{0}:\n{1}\nCould not retrieve volume:{2}, may no longer exist?"
+                               .format(markup('Ignoring the following caught Exception', [1, 91]),
+                               get_traceback(),
+                               vol.id))
+                if vol in self.test_resources['volumes']:
+                    self.test_resources['volumes'].remove(vol)
+                vol = None
+            if vol:
+                try:
+                    vol.update()
+                    if not isinstance(vol, EuVolume):
+                        vol = EuVolume.make_euvol_from_vol(vol, self)
+                    euvolumes.append(vol)
+                except:
+                    self.log.debug('Ignoring caught Exception:\n{0}'.format(get_traceback()))
+        try:
+            self.log.debug('Attempting to clean up the following volumes:')
+            self.show_volumes(euvolumes)
+        except: pass
+        self.log.debug('Clean_up_volumes: Detaching any attached volumes to be deleted...')
+        for vol in euvolumes:
+            try:
+                vol.update()
+                if vol.status == 'in-use':
+                    if vol.attach_data and (vol.attach_data.status != 'detaching' or
+                                                    vol.attach_data.status != 'detached'):
+                        try:
+                            self.log.debug('{0} Sending detach. Status:{1}, attach_data.status:{2}'
+                                           .format(vol.id, vol.status, vol.attach_data.status))
+                            vol.detach()
+                        except EC2ResponseError, be:
+                            if 'Volume does not exist' in be.error_message:
+                                not_exist.append(vol)
+                                self.log.debug(str(vol.id) + ', volume no longer exists')
+                            else:
+                                raise be
+                    detaching.append(vol)
+            except:
+                self.log.warning(get_traceback())
+        #  If the volume was found to no longer exist on the system, remove it from
+        #  further monitoring...
+        for vol in not_exist:
+            if vol in detaching:
+                detaching.remove(vol)
+            if vol in euvolumes:
+                euvolumes.remove(vol)
+        self.test_resources['volumes'] = euvolumes
+        timeout = min_timeout + (len(volumes) * timeout_per_vol)
+        #If detaching wait for detaching to transition to detached...
+        if detaching:
+            self.monitor_euvolumes_to_status(detaching, status='available',
+                                             attached_status=None,timeout=timeout)
+        self.log.debug('clean_up_volumes: Deleteing volumes now...')
+        self.show_volumes(euvolumes)
+        if euvolumes:
+            self.delete_volumes(euvolumes, timeout=timeout)
+
+    def get_current_resources(self, verbose=False):
+        """
+        Return a dictionary with all known resources the system has.
+        Optional pass the verbose=True flag to print this info to the logs
+        Included resources are: addresses, images, instances, key_pairs, security_groups,
+        snapshots, volumes, zones
+        """
+        current_artifacts = dict()
+        current_artifacts["addresses"] = self.get_all_addresses()
+        current_artifacts["images"] = self.get_all_images()
+        current_artifacts["instances"] = self.get_all_instances()
+        current_artifacts["key_pairs"] = self.get_all_key_pairs()
+        current_artifacts["security_groups"] = self.get_all_security_groups()
+        current_artifacts["snapshots"] = self.get_all_snapshots()
+        current_artifacts["volumes"] = self.get_all_volumes()
+        current_artifacts["zones"] = self.get_all_zones()
+        if verbose:
+            self.log.debug("Current resources in the system:\n{0}".format(current_artifacts))
+        return current_artifacts
 
 
 class VolumeStateException(Exception):

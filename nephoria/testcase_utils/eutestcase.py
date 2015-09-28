@@ -384,6 +384,7 @@ class EutesterTestCase(unittest.TestCase):
                      description=None,
                      clc=True,
                      clc_pass=True,
+                     freeze=True,
                      emi=True,
                      zone=True,
                      vmtype=True,
@@ -408,9 +409,18 @@ class EutesterTestCase(unittest.TestCase):
         add pre-defined command line arguments, help strings and default values. This will then
         be available by the end script as an alternative to recreating these items on a per
         script bassis.
+
         :type clc: boolean
         :param clc: Flag to present the CLC command line argument/option for providing the
                     address to a machine hosting the CLC services for this testcase
+
+        :type clc_pass: boolean
+        :param clc: Flag to present the CLC command line argument/option for providing the
+                    address to a machine hosting the CLC services for this testcase
+
+        :type freeze: boolean
+        :param freeze: Flag to present the freeze options. Allows a test to exit without running
+                       the default clean method(s).
 
         :type testname: string
         :param testname: Name used for argparse (help menu, etc.)
@@ -502,9 +512,13 @@ class EutesterTestCase(unittest.TestCase):
                                 help="Address of Machine hosting CLC services",
                                 default=None)
         if clc_pass:
-            parser.add_argument('--clc-passord',
+            parser.add_argument('--clc-password', dest='clc_password',
                                 help="Password of Machine hosting CLC services",
                                 default=None)
+        if freeze:
+            parser.add_argument('--freeze-on-exit', dest='freeze_on_exit', action='store_true',
+                                help="Freeze test without running clean methods at exit",
+                                default=False)
         if emi:
             parser.add_argument('--emi',
                                 help="pre-installed emi id which to execute these tests against",

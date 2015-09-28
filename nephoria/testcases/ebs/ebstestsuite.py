@@ -153,7 +153,7 @@ class EbsTestSuite(EutesterTestCase):
                     if keys:
                         self.keypair = keys[0]
                     else:
-                        self.keypair = keypair = self.tester.ec2.add_keypair('ebs_test_key-' + str(time.time()))
+                        self.keypair = keypair = self.tester.ec2.create_keypair_and_localcert('ebs_test_key-' + str(time.time()))
             except Exception, ke:
                 raise Exception("Failed to find/create a keypair, error:" + str(ke))
         print "###########################################################"

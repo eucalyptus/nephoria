@@ -175,7 +175,7 @@ class Block_Device_Mapping_Tests(EutesterTestCase):
                 if keys:
                     self.keypair = keys[0]
                 else:
-                    self.keypair = self.tester.add_keypair('blockdevmaptestkey'+str(time.time()))
+                    self.keypair = self.tester.create_keypair_and_localcert('blockdevmaptestkey'+str(time.time()))
             except Exception, ke:
                 raise Exception("Failed to find/create a keypair, error:" + str(ke))
 
