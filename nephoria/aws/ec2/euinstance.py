@@ -465,7 +465,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             return buf
 
     def reset_ssh_connection(self, timeout=None):
-        timeout = timeout or self.timeout
+        timeout = int(timeout or self.timeout or 0)
         self.log.debug('reset_ssh_connection for:' + str(self.id))
         if ((self.keypath is not None) or
                 ((self.username is not None) and (self.password is not None))):
@@ -478,6 +478,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                                      password=self.password,
                                      username=self.username,
                                      timeout=timeout,
+                                     banner_timeout=timeout,
                                      retry=self.retry,
                                      logger=self.log,
                                      verbose=self.verbose)
@@ -495,7 +496,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                        str(self.state) + ", err:" + str(e))
         return res
 
-    def connect_to_instance(self, connect_timeout=30, timeout=120):
+    def connect_to_instance(self, connect_timeout=15, timeout=120):
         '''
         Attempts to connect to an instance via ssh.
         param connect_timeout: optional. SshConnection timeout in seconds  used per connection
@@ -506,6 +507,8 @@ class EuInstance(Instance, TaggedResource, Machine):
         self.log.info("Attempting to reconnect_to_instance:" + self.id)
         traceback = None
         attempts = 0
+        connect_timeout = int(connect_timeout or 0)
+        timeout = int(timeout or 0)
         if ((self.keypath is not None) or
                 ((self.username is not None) and (self.password is not None))):
             start = time.time()
@@ -513,7 +516,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             if self.ssh is not None:
                 self.ssh.close()
             self.ssh = None
-            while not self.ssh and (elapsed < timeout):
+            while not self.ssh and (elapsed <= timeout):
                 attempts += 1
                 elapsed = int(time.time() - start)
                 try:

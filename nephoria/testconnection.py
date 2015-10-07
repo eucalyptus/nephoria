@@ -4,7 +4,9 @@ from logging import INFO, DEBUG, NOTSET
 from boto import set_stream_logger, regioninfo
 from boto import __version__ as boto_version
 from cloud_utils.log_utils.eulogger import Eulogger
+from cloud_utils.log_utils import markup, get_traceback
 from cloud_utils.file_utils.eucarc import Eucarc
+from nephoria import CleanTestResourcesException
 import re
 from urlparse import urlparse
 
@@ -25,7 +27,8 @@ class TestConnection(object):
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, endpoint=None, region=None,
                  boto_debug=0, path=None, validate_certs=None, test_resources=None,
-                 logger=None, log_level=None, user_context=None, APIVersion=None):
+                 logger=None, log_level=None, user_context=None, APIVersion=None,
+                 verbose_requests=None):
         if self.EUCARC_URL_NAME is None:
             raise NotImplementedError('EUCARC_URL_NAME not set for this class:"{0}"'
                                       .format(self.__class__.__name__))
@@ -34,6 +37,7 @@ class TestConnection(object):
         self.service_path = None
         self._original_connection = None
         self.context_mgr = context_mgr
+        self.test_resources_clean_methods = {}
         self.test_resources = test_resources or {}
         if boto_debug:
             set_stream_logger('boto')
@@ -53,6 +57,7 @@ class TestConnection(object):
         if not eucarc and credpath:
             eucarc = Eucarc(filepath=credpath)
         self.eucarc = eucarc
+        self._try_verbose = verbose_requests
         self._is_secure = is_secure
         if aws_secret_access_key:
             self.eucarc.aws_access_key = aws_secret_access_key
@@ -149,6 +154,25 @@ class TestConnection(object):
         self._boto_debug = level
         self.debug = level
 
+    @property
+    def _use_verbose_requests(self):
+        if self._try_verbose is None:
+            self._try_verbose = False
+            if self.eucarc:
+                account = getattr(self.eucarc, 'aws_account_name', None)
+                user = getattr(self.eucarc, 'aws_user_name', None)
+                if account == 'eucalyptus' and user == 'admin':
+                    self._try_verbose = True
+        return self._try_verbose
+
+    @_use_verbose_requests.setter
+    def _use_verbose_requests(self, value):
+        if value is None or isinstance(value, bool):
+            self._try_verbose = value
+            return
+        raise ValueError('Only bool or None type supported for "_use_verbose_requests". '
+                         'Got: "{0}/{1}"'.format(value, type(value)))
+
     def _get_region_info(self, host=None, endpoint=None, region_name=None):
         if (host or endpoint or region_name):
             region = regioninfo.RegionInfo()
@@ -201,4 +225,33 @@ class TestConnection(object):
     def disable_boto_debug(self, level=NOTSET):
         self.boto_debug=0
         set_stream_logger('boto', level=level)
+
+    def setup_resource_trackers(self):
+        raise NotImplementedError('ERROR: {0} has not implemented resource tracking method. '
+                                  '"test_resources" and "test_resources_clean_methods" should be '
+                                  'setup here.'
+                                  .format(self.__class__.__name__))
+
+    def clean_all_test_resources(self):
+        fault_buf = ""
+        for resource_name, resource_list in self.test_resources.iteritems():
+            clean_method = self.test_resources_clean_methods.get(resource_name, None)
+            if clean_method:
+                try:
+                    try:
+                        clean_method_name = clean_method.__func__.__name__
+                    except:
+                        clean_method_name = str(clean_method)
+                    self.log.debug('Attempting to clean test resources of type:"{0}", '
+                                   'method:"{1}", artifacts:"{2}"'
+                                   .format(resource_name, clean_method_name, resource_list))
+                    clean_method(resource_list)
+                except Exception as E:
+                    fault_buf += "{0}\n{1}\n".format(get_traceback(),
+                                                     markup('Error while attempting to remove '
+                                                            'test resource type:"{0}", '
+                                                            'error:"{1}"'
+                                                            .format(resource_name, E)))
+        if fault_buf:
+            raise CleanTestResourcesException(fault_buf)
 

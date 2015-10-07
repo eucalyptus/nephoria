@@ -49,6 +49,7 @@ from boto.ec2.image import Image
 from boto.ec2.instance import Reservation, Instance
 from boto.ec2.keypair import KeyPair
 from boto.ec2.blockdevicemapping import BlockDeviceMapping, BlockDeviceType
+from boto.ec2.group import Group as BotoGroup
 from boto.ec2.volume import Volume
 from boto.ec2.bundleinstance import BundleInstanceTask
 from boto.exception import EC2ResponseError
@@ -58,7 +59,7 @@ from boto.ec2.address import Address
 from boto.ec2.tag import TagSet
 from boto.ec2.zone import Zone
 from boto.vpc.subnet import Subnet as BotoSubnet
-from boto.vpc import VPCConnection, VPC
+from boto.vpc import VPCConnection, VPC, Subnet
 from boto.ec2.networkinterface import NetworkInterfaceSpecification, NetworkInterfaceCollection
 
 from nephoria import CleanTestResourcesException
@@ -158,24 +159,63 @@ disable_root: false"""
         except:
             self.show_connection_kwargs()
             raise
-        self.setup_ec2_resource_trackers()
+        self.setup_resource_trackers()
         self._zone_cache = []
         self._vpc_supported = None
 
-    def setup_ec2_resource_trackers(self):
+    def setup_resource_trackers(self):
         """
         Setup keys in the test_resources hash in order to track artifacts created
+        Populate test_resources_clean_methods with resourece type to clean method mappings.
+        Note: Some items may have dependencies on other when deleting/removing. Order the list
+        in the same order resources should be deleted. 
         """
-        self.test_resources["reservations"] = []
-        self.test_resources["volumes"] = []
-        self.test_resources["snapshots"] = []
-        self.test_resources["keypairs"] = []
-        self.test_resources["security-groups"] = []
-        self.test_resources["images"] = []
-        self.test_resources["addresses"]=[]
-        self.test_resources["auto-scaling-groups"]=[]
-        self.test_resources["launch-configurations"]=[]
-        self.test_resources["conversion-tasks"]=[]
+        self.test_resources_clean_methods["instances"] = self.cleanup_test_instances
+        self.test_resources_clean_methods["volumes"] = self.clean_up_test_volumes
+        self.test_resources_clean_methods["snapshots"] = self.cleanup_test_snapshots
+        self.test_resources_clean_methods["keypairs"] = self.delete_ec2_resources
+        self.test_resources_clean_methods["security_groups"] = self.delete_ec2_resources
+        self.test_resources_clean_methods["images"] = self.delete_ec2_resources
+        self.test_resources_clean_methods["addresses"] = self.cleanup_addresses
+        self.test_resources_clean_methods["conversion_tasks"] = \
+            self.cleanup_conversion_task_resources
+        for resource_type in self.test_resources_clean_methods.keys():
+            self.test_resources[resource_type] = []
+
+    def delete_ec2_resources(self, resources):
+        failcount = 0
+        failmsg = ""
+        resource_type = "unknown"
+        resources = resources or []
+        if not isinstance(resources, list):
+            resources = [resources]
+        if resources:
+            resource_type = type(resources[0])
+        for item in resources:
+            try:
+                ### SWITCH statement for particulars of removing a certain type of resources
+                self.log.debug("Deleting " + str(item))
+                if isinstance(item, Image):
+                    item.deregister()
+                elif isinstance(item, Reservation):
+                    continue
+                else:
+                    try:
+                        if not isinstance(item, str):
+                            item.delete()
+                    except EC2ResponseError as ec2re:
+                        if ec2re.status == 400:
+                            self.log.debug('Resource not found assuming it is'
+                                       ' already deleted, resource:'
+                                       + str(item))
+            except Exception, e:
+                tb = get_traceback()
+                failcount += 1
+                failmsg += str(tb) + "\nUnable to delete item: " + str(item) + "\n" + str(e)+"\n"
+        if failmsg:
+            raise CleanTestResourcesException('Errors attempting to clean up "{0}" resources:\n{1}'
+                                              .format(resource_type, failmsg))
+
 
     def create_tags(self, resource_ids, tags, *args, **kwargs):
         """
@@ -665,7 +705,7 @@ disable_root: false"""
     get_all_vpcs.__doc__ = "{0}".format(VPCConnection.get_all_vpcs.__doc__)
 
     def get_vpc(self, vpc_id, verbose=True):
-        vpcs = self.get_all_vpcs(subnet_ids=[vpc_id], verbose=verbose) or []
+        vpcs = self.get_all_vpcs(vpc_ids=[vpc_id], verbose=verbose) or []
         for vpc in vpcs:
             if vpc.id == vpc_id:
                 return vpc
@@ -699,8 +739,10 @@ disable_root: false"""
         else:
             return main_pt
 
-    def show_vpcs(self, vpcs=None, printmethod=None, show_tags=True, verbose=True, printme=True):
+    def show_vpcs(self, vpcs=None, printmethod=None, show_tags=True, verbose=None, printme=True):
         ret_buf = markup('--------------VPC LIST--------------', markups=[1, 94])
+        if verbose is None:
+            verbose = self._use_verbose_requests
         if not vpcs:
             vpcs = self.get_all_vpcs(verbose=verbose)
         for vpc in vpcs:
@@ -711,9 +753,10 @@ disable_root: false"""
         else:
             return ret_buf
 
-    def get_all_subnets(self, subnet_ids=None, filters=None, dry_run=False, verbose=True):
+    def get_all_subnets(self, subnet_ids=None, filters=None, dry_run=False, verbose=None):
         ret_list = []
-
+        if verbose is None:
+            verbose = self._use_verbose_requests
         if verbose:
             if subnet_ids:
                 if not isinstance(subnet_ids, list):
@@ -735,7 +778,9 @@ disable_root: false"""
 
     get_all_subnets.__doc__ = "{0}".format(VPCConnection.get_all_subnets.__doc__)
 
-    def get_subnet(self, subnet_id, verbose=True):
+    def get_subnet(self, subnet_id, verbose=None):
+        if verbose is None:
+            verbose = self._use_verbose_requests
         subnets = self.get_all_subnets(subnet_ids=[subnet_id], verbose=verbose) or []
         for subnet in subnets:
             if subnet.id == subnet_id:
@@ -2652,80 +2697,86 @@ disable_root: false"""
         self.log.debug("Allocated " + str(address))
         return address
 
-    def associate_address(self,instance, address, refresh_ssh=True, network_interface_id=None,
-                          private_ip_address=None, allow_reassociation=False, timeout=75):
-        """
-        instance_id=instance_id,
-                public_ip=self.public_ip,
-                allocation_id=self.allocation_id,
-                network_interface_id=network_interface_id,
-                private_ip_address=private_ip_address,
-                allow_reassociation=allow_reassociation,
-        Associate an address object with an instance
+    def associate_address(self, instance_id=None, public_ip=None,
+                          allocation_id=None, network_interface_id=None,
+                          private_ip_address=None, allow_reassociation=False,
+                          dry_run=False, timeout=75, refresh_ssh=True):
 
-        :param instance: instance object to associate ip with
-        :param address: address to associate to instance
-        :param timeout: Time in seconds to wait for operation to complete
-        :raise: Exception in case of association failure
-        """
-        if isinstance(instance, basestring):
-            instance = self.get_instances(idstring=instance)[0]
-        if isinstance(instance, Instance):
-            instance_id = instance.id
+        address = None
+        instance = None
+        if isinstance(instance_id, basestring):
+            instance = self.get_instances(idstring=instance_id)[0]
+        elif isinstance(instance_id, Instance):
+            instance = instance_id
+            instance_id = instance_id.id
         else:
             raise ValueError('associate_address(). Unknown type for instance:"{0}/{1}'
-                             .format(instance, type(instance)))
-        if isinstance(address, basestring):
-            # Try to get the address, dont fail here as an unallocated addr is a valid test
-            address = self.get_all_addresses(addresses=address)
-            if address:
-                address = address[0]
-        ip =  getattr(address, 'public_ip', address)
+                             .format(instance_id, type(instance_id)))
+
+        if isinstance(public_ip, Address):
+            address = public_ip
+            public_ip =  getattr(public_ip, 'public_ip', public_ip)
+        elif isinstance(public_ip, basestring):
+            address = self.get_all_addresses(addresses=[public_ip])[0]
+
         allocation_id = getattr(address, 'allocation_id', None)
         old_ip = str(instance.ip_address)
-        self.log.debug("Attemtping to associate " + str(ip) + " with " + str(instance.id))
+        self.log.debug("Attemtping to associate {0} with {1}".format(public_ip, instance_id))
+        self.show_addresses(addresses=address)
         try:
             super(EC2ops, self).associate_address(instance_id=instance_id,
-                                                  public_ip=ip,
+                                                  public_ip=public_ip,
                                                   allocation_id=allocation_id,
                                                   network_interface_id=network_interface_id,
                                                   private_ip_address=private_ip_address,
                                                   allow_reassociation=allow_reassociation)
         except Exception, e:
             self.log.critical("{0}\nUnable to associate address: {1} with instance: {2}"
-                                 .format(get_traceback(), ip, instance.id))
+                                 .format(get_traceback(), public_ip, instance.id))
             raise e
-        
+
         start = time.time()
         elapsed = 0
-        address = self.get_all_addresses(addresses=[ip])[0]
         ### Ensure address object holds correct instance value
         while not address.instance_id:
             if elapsed > timeout:
-                raise Exception('Address ' + str(ip) + ' never associated with instance')
-            self.log.debug('Address {0} not attached to {1} but rather {2}'.format(str(address), instance.id, address.instance_id))
-            self.sleep(5)
-            address = self.get_all_addresses(addresses=[ip])[0]
+                raise Exception('Address:"{0}" never associated with instance: "{1}"'
+                                .format(public_ip, instance_id))
+            self.log.debug('Address {0} not attached to {1}. Attached to:"{2}"'
+                           .format(str(address), instance.id, address.instance_id))
+            self.log.debug('Sleeping for 5 seconds before re-checking association...')
+            time.sleep(5)
+            address = self.get_all_addresses(addresses=[public_ip])[0]
             elapsed = int(time.time()-start)
 
         poll_count = 15
         ### Ensure instance gets correct address
-        while instance.ip_address not in address.public_ip:
+        while str(instance.ip_address) not in str(address.public_ip):
             if elapsed > timeout:
-                raise Exception('Address ' + str(address) + ' did not associate with instance after:'+str(elapsed)+" seconds")
-            self.log.debug('Instance {0} has IP {1} attached instead of {2}'.format(instance.id, instance.ip_address, address.public_ip) )
+                raise Exception('Address:"{0}" did not associate with instance:{1} after: {2} '
+                                'seconds'.format(public_ip, instance_id, elapsed))
+            self.log.debug('Instance {0} has IP {1} attached instead of {2}'
+                           .format(instance.id, instance.ip_address, address.public_ip) )
             time.sleep(5)
             instance.update()
             elapsed = int(time.time()-start)
-            self.log.debug("Associated IP successfully old_ip:"+str(old_ip)+' new_ip:'+str(instance.ip_address))
+            self.log.debug('Associated IP successfully old_ip: "{0}", new_ip: "{1}"'
+                           .format(old_ip, instance.ip_address))
+        self.log.debug('Address: {0} associated with instance:{1}.'
+                       .format(address.public_ip, instance.ip_address))
         if refresh_ssh:
             if isinstance(instance, EuInstance) or isinstance(instance, WinInstance):
                 time.sleep(5)
                 instance.update()
-                self.log.debug('Refreshing EuInstance:'+str(instance.id)+' ssh connection to associated addr:'+str(instance.ip_address))
+                self.log.debug('Refreshing EuInstance: {0} ssh connection to associated addr: {1}'
+                               .format(instance.id, instance.ip_address))
                 instance.connect_to_instance()
             else:
-                self.log.debug('WARNING: associate_address called with refresh_ssh set to true, but instance is not EuInstance type:'+str(instance.id))
+                self.log.debug('WARNING: associate_address called with refresh_ssh set to '
+                               'true, but instance is not EuInstance type:'+str(instance.id))
+        self.log.debug('Associate address:{0} instance:{1} success'.format(public_ip, instance_id))
+        self.show_addresses(addresses=address)
+
 
     def disassociate_address_from_instance(self, instance, timeout=75):
         """
@@ -2739,7 +2790,7 @@ disable_root: false"""
                    str(instance.ip_address) + " instance:" + str(instance))
         ip=str(instance.ip_address)
         address = self.get_all_addresses(addresses=[instance.ip_address])[0]
-        
+        self.show_addresses(address)
         
         start = time.time()
         elapsed = 0
@@ -2771,6 +2822,8 @@ disable_root: false"""
             self.sleep(5)
             elapsed = int(time.time()-start)
             address = self.get_all_addresses(addresses=[address.public_ip])[0]
+        address.update()
+        self.show_addresses(address)
         self.log.debug("Disassociated IP successfully")
 
     def release_address(self, address):
@@ -2958,7 +3011,7 @@ disable_root: false"""
         reservation = image.run(key_name=keypair,security_groups=[group],instance_type=type, placement=zone,
                                 min_count=min, max_count=max, user_data=user_data, addressing_type=addressing_type,
                                 monitoring_enabled=enabled)
-        self.test_resources["reservations"].append(reservation)
+        self.test_resources["instances"].append(reservation)
         
         if (len(reservation.instances) < min) or (len(reservation.instances) > max):
             fail = "Reservation:"+str(reservation.id)+" returned "+str(len(reservation.instances))+\
@@ -3090,10 +3143,12 @@ disable_root: false"""
                 image = self.get_emi(emi=str(image))
             if image is None:
                 raise Exception("emi is None. run_instance could not auto find an emi?")
-            if not user_data:
+            if user_data is None:
                 user_data = self.enable_root_user_data
+            if isinstance(subnet_id, Subnet):
+                subnet_ = subnet_id.id
             if private_addressing is True:
-                if not self.vpc_supported():
+                if not self.vpc_supported:
                     addressing_type = "private"
                 auto_connect = False
             #In the case a keypair object was passed instead of the keypair name
@@ -3218,7 +3273,7 @@ disable_root: false"""
             except:
                 self.connection.debuglevel = orig_boto_debug_level
                 raise
-            self.test_resources["reservations"].append(reservation)
+            self.test_resources["instances"].extend(reservation.instances)
 
             if (len(reservation.instances) < min) or (len(reservation.instances) > max):
                 fail = "Reservation:" + str(reservation.id) + " returned " + \
@@ -3274,8 +3329,8 @@ disable_root: false"""
             return instances
         except Exception as E:
             trace = get_traceback()
-            self.log.debug('{0}\n!!! Run_instance failed, terminating reservation. Error: {1}'
-                       .format(E, trace))
+            self.log.error('{0}\n!!! Run_instance failed, terminating reservation. Error: {1}'
+                           .format(trace, E))
             if reservation and clean_on_fail:
                 self.terminate_instances(reservation=reservation)
             raise E
@@ -3537,16 +3592,50 @@ disable_root: false"""
             if s:
                 s.close()
 
-    def get_security_group(self, id=None, name=None):
-        #Adding this as both a convienence to the user to separate euare groups from security groups
-        #Not sure if botos filter on group names and ids is reliable?
-        if not id and not name:
-            raise Exception('get_security_group needs either a name or an id')
-        groups = self.get_all_security_groups(groupnames=[name], group_ids=id)
+    def get_security_group(self, name=None, id=None, verbose=None):
+        """
+         Adding this as both a convienence to the user to separate euare groups
+         from security groups
+        """
+        # To allow easy updating of a group (since group.update() is not implemented at this time),
+        # handle SecurityGroup arg type for either kwargs...
+        if verbose is None:
+            verbose = self._use_verbose_requests
+        if not name and not id:
+                raise ValueError('get_security_group needs either a name or an id')
+        if verbose:
+            names = ['verbose']
+        else:
+            names = []
+        group_id = None
+        group_name = None
+        for group in [name, id]:
+            if not group:
+                continue
+            ids = None
+            if isinstance(group, SecurityGroup) or isinstance(id, BotoGroup):
+                group_id = group.id
+                group_name = group.name
+            elif re.match('^sg-\w{8}$',str(group).strip()):
+                group_id = group
+            elif isinstance(group, basestring):
+                group_name = group
+            else:
+                raise ValueError('Could not find or format group arg for revoke. group:"{0}:{1}"'
+                                 .format(group, type(group)))
+            if group_id:
+                break
+
+        if group_id:
+            ids = [group_id]
+        if group_name:
+            names.append(group_name)
+        groups = self.get_all_security_groups(groupnames=names, group_ids=ids)
         for group in groups:
-            if not id or (id and group.id == id):
-                if not name or (name and group.name == name):
-                    self.log.debug('Found matching security group for name:'+str(name)+' and id:'+str(id))
+            if not group_id or (group_id and group.id == group_id):
+                if not group_name or (group_name and group.name == group_name):
+                    self.log.debug('Found matching security group for name:' + str(name) +
+                                   ' and id:' + str(id))
                     return group
         self.log.debug('No matching security group found for name:'+str(name)+' and id:'+str(id))
         return None
@@ -3746,8 +3835,8 @@ disable_root: false"""
                         failmsg += str(e)+"\n"
                         
             #remove good instances from list to monitor
-            for instance in monitor:
-                if (instance in good) or (instance in failed):
+            for instance in good + failed:
+                if instance in monitor:
                     monitor.remove(instance)
                     
             if monitor:
@@ -3945,14 +4034,14 @@ disable_root: false"""
                 timeout=timeout)
         if 'instances' in self.test_resources:
             for x in xrange(0, len(self.test_resources['instances'])):
-                ins = self.test_resources['instances'][x] == instance.id
+                ins = self.test_resources['instances'][x]
                 if ins.id == instance.id:
                      self.test_resources['instances'][x] = instance
         return instance
 
 
 
-    def get_console_output(self, instance, debug=True):
+    def get_console_output(self, instance, dry_run=False, debug=True):
         """
         Retrieve console output from an instance
 
@@ -3963,23 +4052,11 @@ disable_root: false"""
         self.log.debug("Attempting to get console output from: " + str(instance))
         if isinstance(instance, Instance):
             instance = instance.id
-        output = super(EC2ops, self).get_console_output(instance_id=instance)
+        output = super(EC2ops, self).get_console_output(instance_id=instance, dry_run=dry_run)
         if debug:
             self.log.debug(output.output)
         return output
 
-
-    def get_keypair(self, name):
-        """
-        Retrieve a boto.ec2.keypair object by its name
-
-        :param name:  Name of keypair on the cloud
-        :return: boto.ec2.keypair object
-        :raise: Exception on failure to find keypair
-        """
-        return self.get_key_pair(name)
-
-        
     def get_zones(self):
         """
         Return a list of availability zone names.
@@ -4005,7 +4082,7 @@ disable_root: false"""
                       ramdisk=None,
                       kernel=None,
                       image_id=None,
-                      verbose=True,
+                      verbose=None,
                       filters=None):
         """
         Return a list of instances matching the filters provided.
@@ -4025,6 +4102,8 @@ disable_root: false"""
         :return: list of instances
         """
         ilist = []
+        if verbose is None:
+            verbose = self._use_verbose_requests
         if idstring:
             if isinstance(idstring, list):
                 instance_ids = idstring
@@ -4101,24 +4180,24 @@ disable_root: false"""
             pass
     
     
-    def get_all_attributes(self, obj, verbose=True):
+    def get_all_attributes(self, obj, debug=True):
         """
         Get a formatted list of all the key pair values pertaining to the object 'obj'
 
         :param obj: Object to extract information from
-        :param verbose: Print key value pairs
+        :param debug: Print key value pairs
         :return: Buffer of key value pairs
         """
         buf=""
         alist = sorted(obj.__dict__)
         for item in alist:
-            if verbose:
+            if debug:
                 print str(item)+" = "+str(obj.__dict__[item])
             buf += str(item)+" = "+str(obj.__dict__[item])+"\n"
         return buf
     
 
-    def terminate_instances(self, reservation=None, dry_run=False, timeout=480):
+    def terminate_instances(self, reservation=None, dry_run=False, verbose=None, timeout=480):
         """
         Terminate instances in the system
 
@@ -4129,6 +4208,8 @@ disable_root: false"""
         aggregate_result = False
         instance_list = []
         monitor_list = []
+        if verbose is None:
+            verbose = self._use_verbose_requests
         if reservation and not isinstance(reservation, types.ListType):
             if isinstance(reservation, Reservation):
                 instance_list = reservation.instances or []
@@ -4138,7 +4219,10 @@ disable_root: false"""
                 raise Exception('Unknown type:' + str(type(reservation)) + ', for reservation passed to terminate_instances')
         else:
             if reservation is None:
-                reservation = self.get_all_instances('verbose')
+                if verbose:
+                    reservation = self.get_all_instances('verbose')
+                else:
+                    reservation = self.get_all_instances()
             #first send terminate for all instances
             for res in reservation:
                 if isinstance(res, basestring) and str(res).startswith('i'):
@@ -4541,10 +4625,8 @@ disable_root: false"""
         image_id = getattr(rs, 'imageId', None)
         return image_id
 
-
-
-    def create_image(self, instance, name, description=None, no_reboot=False, block_device_mapping=None, dry_run=False,
-                     timeout=600):
+    def create_image(self, instance_id, name, description=None, no_reboot=False,
+                     block_device_mapping=None, dry_run=False, timeout=600):
         """
         :type instance_id: string
         :param instance_id: the ID of the instance to image.
@@ -4575,12 +4657,12 @@ disable_root: false"""
 
         :raise Exception: On not reaching the correct state or when more than one image is returned
         """
-        if isinstance(instance, Instance):
-            instance_id = instance.id
-        else:
-            instance_id = instance
-        image_id = self.create_image(instance_id, name=name,description=description,no_reboot=no_reboot,
-                                     block_device_mapping=block_device_mapping, dry_run=dry_run)
+        if isinstance(instance_id, Instance):
+            instance_id = instance_id.id
+        image_id = super(EC2ops, self).create_image(instance_id, name=name,
+                                                    description=description,no_reboot=no_reboot,
+                                                    block_device_mapping=block_device_mapping,
+                                                    dry_run=dry_run)
         def get_emi_state():
             images = self.get_all_images(image_ids=[image_id])
             if len(images) == 0:
@@ -4678,7 +4760,7 @@ disable_root: false"""
                         self.test_resources['volumes'].append(vol)
                 found = False
                 if task.instanceid:
-                    for resins in self.test_resources['reservations']:
+                    for resins in self.test_resources['instances']:
                         if resins.id == task.instanceid:
                             found = True
                             break
@@ -4689,8 +4771,8 @@ disable_root: false"""
                         ins = self.get_instances(idstring=task.instanceid)
                         if ins:
                             ins = ins[0]
-                            if not ins in self.test_resources['reservations']:
-                                self.test_resources['reservations'].append(ins)
+                            if not ins in self.test_resources['instances']:
+                                self.test_resources['instances'].append(ins)
                 #notfound flag is set if task is not found during update()
                 if task.notfound:
                     err_msg = 'Task "{0}" not found after elapsed:"{1}"'\
@@ -4873,7 +4955,7 @@ disable_root: false"""
 
 
     def cleanup_conversion_task_resources(self, tasks=None):
-        tasks = tasks or self.test_resources['conversion_tasks']
+        tasks = tasks or self.test_resources.get('conversion_tasks', [])
         if not isinstance(tasks, types.ListType):
             tasks = [tasks]
         error_msg = ""
@@ -5071,9 +5153,9 @@ disable_root: false"""
         for zone in zones:
             buf += "------------------------( " + str(zone) + " )--------------------------------------------\n"
             for vm in self.get_vm_type_list_from_zone(zone):
-                vminfo = self.get_all_attributes(vm, verbose=False)
+                vminfo = self.get_all_attributes(vm, debug=False)
                 buf +=  "---------------------------------"
-                buf += self.get_all_attributes(vm, verbose=False)
+                buf += self.get_all_attributes(vm, debug=False)
         debugmethod(buf)
 
     def monitor_instances(self, instance_ids):
@@ -5170,7 +5252,7 @@ disable_root: false"""
         else:
             return pt
 
-    def show_addresses(self, addresses=None, verbose=True, printme=True):
+    def show_addresses(self, addresses=None, verbose=None, printme=True):
         """
         Print table to debug output showing all addresses available to
         cloud admin using verbose filter
@@ -5179,31 +5261,32 @@ disable_root: false"""
         pt = PrettyTable([markup('PUBLIC IP'), markup('ACCOUNT NAME'),
                           markup('REGION'), markup('ADDRESS INFO')])
         pt.align = 'l'
-        show_addresses = []
+        ad_list = []
+        if verbose is None:
+            verbose = self._use_verbose_requests
         if verbose:
             get_addresses = ['verbose']
         else:
-            get_addresses = []
+            get_addresses = None
         try:
-            if addresses:
+            if not addresses:
+                ad_list = self.get_all_addresses(addresses=get_addresses)
+            else:
                 if not isinstance(addresses, list):
                     addresses = [addresses]
                 for address in addresses:
                     if isinstance(addresses, basestring):
                         get_addresses.append(address)
                     elif isinstance(address, Address):
-                        show_addresses.append(address.public_ip)
+                        ad_list.append(address)
                     else:
                         raise ValueError('Show_addresses(). Got unknown address type: {0}:{1}'
                                          .format(address, type(address)))
                 if get_addresses:
-                    ad_list = self.get_all_addresses(addresses=get_addresses)
+                    ad_list += self.get_all_addresses(addresses=get_addresses)
                 if not ad_list:
                     raise ValueError('Addresses not found for: "{0}"'
                                      .format(",".join(addresses)))
-            else:
-                get_addresses = get_addresses or None
-                ad_list = self.get_all_addresses(addresses=get_addresses)
             for ad in ad_list:
                 instance_id = ad.instance_id
                 public_ip = ad.public_ip
@@ -5211,7 +5294,7 @@ disable_root: false"""
                 if ad.region:
                     region = ad.region.name
                 account_name = ""
-                match = re.findall('\(arn:*.*\)', ad.instance_id)
+                match = re.findall('\(arn:*.*\)', str(instance_id))
                 if match:
                     try:
                         match = match[0]
@@ -5522,7 +5605,7 @@ disable_root: false"""
         else:
             return mainpt
 
-    def show_security_groups(self, groups=None, verbose=True, printme=True):
+    def show_security_groups(self, groups=None, printme=True):
         ret_buf = ""
         groups = groups or self.get_all_security_groups()
         for group in groups:
@@ -5595,13 +5678,17 @@ disable_root: false"""
         else:
             return main_pt
 
-    def cleanup_test_instances(self):
+    def cleanup_test_instances(self, resourcelist=None):
         failmsg = ""
         failcount = 0
         remove_list = []
         # To speed up termination, send terminate to all instances
         # before sending them to the monitor methods
-        for res in self.test_resources.get('reservations', []):
+        if resourcelist is None:
+            resourcelist = self.test_resources.get('instances', [])
+        if not isinstance(resourcelist, list):
+            resourcelist = [resourcelist]
+        for res in resourcelist:
             try:
                 if isinstance(res, Instance):
                     res.terminate()
@@ -5613,7 +5700,7 @@ disable_root: false"""
                 self.log.debug('Ignoring error in instance cleanup '
                                'during termination')
         # Now monitor to terminated state...
-        for res in self.test_resources.get('reservations', []):
+        for res in self.test_resources.get('instances', []):
             try:
                 self.terminate_instances(res)
                 remove_list.append(res)
@@ -5622,7 +5709,7 @@ disable_root: false"""
                 failcount += 1
                 failmsg += str(tb) + "\nError#:"+ str(failcount)+ ":" + str(e)+"\n"
         for res in remove_list:
-            self.test_resources["reservations"].remove(res)
+            self.test_resources["instances"].remove(res)
         if failcount:
             raise CleanTestResourcesException("Failed to clean up all test Instances:\n{0}"
                                               .format(failmsg))
