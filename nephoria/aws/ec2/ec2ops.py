@@ -438,9 +438,9 @@ disable_root: false"""
             self.log.debug( 'Creating Security Group: %s' % group_name)
             # Create a security group to control access to instance via SSH.
             if not description:
-                description = group_name
+                description = group_named
             group = self.create_security_group(group_name, description)
-            self.test_resources["security-groups"].append(group)
+            self.test_resources["security_groups"].append(group)
         return self.get_security_group(name=group_name)
 
     def delete_group(self, group):
@@ -4238,11 +4238,14 @@ disable_root: false"""
                     instance_list.append(res)
                 else:
                     raise Exception('Need type instance or reservation in terminate_instances. type:' + str(type(res)))
-
+        ids = []
         for instance in instance_list:
-            self.log.debug( "Sending terminate for " + str(instance))
+            ids.append(instance.id)
+        self.log.debug('Sending terminate for "{0}"'
+                       .format(", ".join(str(x.id) for x in instance_list)))
+        super(EC2ops, self).terminate_instances(instance_ids=ids, dry_run=dry_run)
+        for instance in instance_list:
             try:
-               super(EC2ops, self).terminate_instances([instance.id], dry_run=dry_run)
                instance.update()
                if instance.state != 'terminated':
                     monitor_list.append(instance)
