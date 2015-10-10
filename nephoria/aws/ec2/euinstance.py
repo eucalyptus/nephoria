@@ -378,7 +378,8 @@ class EuInstance(Instance, TaggedResource, Machine):
         # To squeeze a potentially long keyname under the network summary table, get the length
         # and format this column to allow for wrapping a keyname under the table...
         # netbuf = netpt.get_string()
-        netbuf = "{0}: {1}\n".format(markup("KEYPAIR"), self.key_name)
+        netbuf = "{0}:{1}\t{2}:{3}\n".format(markup("NODE"), self.tags.get('euca:node', "???"),
+                                             markup("KEYPAIR"), self.key_name)
         netbuf +=  "\n".join(netpt.get_string().splitlines()[0:-1])
         # Create the row in the main table...
         pt.add_row([id_string, emi_string, state_string, netbuf])

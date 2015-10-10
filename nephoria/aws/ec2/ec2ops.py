@@ -438,7 +438,7 @@ disable_root: false"""
             self.log.debug( 'Creating Security Group: %s' % group_name)
             # Create a security group to control access to instance via SSH.
             if not description:
-                description = group_named
+                description = group_name
             group = self.create_security_group(group_name, description)
             self.test_resources["security_groups"].append(group)
         return self.get_security_group(name=group_name)
@@ -454,7 +454,7 @@ disable_root: false"""
         self.log.debug( "Sending delete for security group: " + name )
         group.delete()
         if self.check_group(name):
-            self.fail("Group still found after attempt to delete it")
+            self.log.error("Group still found after attempt to delete it")
             return False
         return True
 
@@ -466,11 +466,15 @@ disable_root: false"""
         :return: bool whether operation succeeded
         """
         self.log.debug( "Looking up group " + group_name )
+        if self._use_verbose_requests:
+            group_names = ['verbose']
+        else:
+            group_names = []
+        group_names.append(group_name)
         try:
-            group = self.get_all_security_groups(groupnames=[group_name])
+            group = self.get_all_security_groups(groupnames=group_names)
         except EC2ResponseError:
             return False
-        
         if not group:
             return False
         else:
@@ -859,10 +863,13 @@ disable_root: false"""
         else:
             return main_pt
 
-    def show_subnets(self, subnets=None, printmethod=None, show_tags=True, printme=True):
+    def show_subnets(self, subnets=None, printmethod=None, verbose=None,
+                     show_tags=True, printme=True):
         ret_buf = markup('--------------SUBNET LIST--------------', markups=[1,4,94])
+        if verbose is None:
+            verbose = self._use_verbose_requests
         if not subnets:
-            subnets = self.get_all_subnets()
+            subnets = self.get_all_subnets(verbose=verbose)
         for subnet in subnets:
             subnet_pt = self.show_subnet(subnet, show_tags=show_tags, printme=False)
             if subnet_pt:
@@ -5077,14 +5084,17 @@ disable_root: false"""
     def get_euzones(self, zones=None):
         ret_list = []
         get_zones = []
-        if zones is not None and not isinstance(zones, types.ListType):
-            zones = [zones]
-        for zone in zones:
-            if zone:
-                if isinstance(zone, Zone):
-                    zone = zone.name
-                get_zones.append(zone)
-        myzones = self.get_all_zones(zones=get_zones)
+        if zones is not None:
+            if not isinstance(zones, types.ListType):
+                zones = [zones]
+            for zone in zones:
+                if zone:
+                    if isinstance(zone, Zone):
+                        zone = zone.name
+                    get_zones.append(zone)
+            myzones = self.get_all_zones(zones=get_zones)
+        else:
+            myzones = self.get_all_zones()
         for zone in myzones:
             ret_list.append(EuZone.make_euzone_from_zone(zone, self))
         return ret_list
