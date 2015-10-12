@@ -2831,7 +2831,7 @@ disable_root: false"""
             self.sleep(5)
             elapsed = int(time.time()-start)
             address = self.get_all_addresses(addresses=[address.public_ip])[0]
-        address.update()
+        address = self.get_all_addresses(address.public_ip)
         self.show_addresses(address)
         self.log.debug("Disassociated IP successfully")
 

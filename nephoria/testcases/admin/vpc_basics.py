@@ -207,6 +207,8 @@ class VpcBasics(EutesterTestCase):
         return ret_groups
 
     def get_test_addresses(self, count=1):
+        raise NotImplementedError('do this')
+        """
         existing = self._addresses
         if existing:
             addrs = []
@@ -215,6 +217,7 @@ class VpcBasics(EutesterTestCase):
             existing = self.user.ec2.get_all_addresses(addresses=addrs)
         for addr in existing:
             if addr
+        """
 
 
     @printinfo

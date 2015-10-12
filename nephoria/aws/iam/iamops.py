@@ -140,7 +140,7 @@ class IAMops(TestConnection, IAMConnection):
                     continue
             if account_id is not None:
                 if not search:
-                    user_name = "^{0}$".format(user_name.strip())
+                    account_id = "^{0}$".format(account_id  .strip())
                 if not re_meth(account['account_id'], account_id):
                     continue
             retlist.append(account)
