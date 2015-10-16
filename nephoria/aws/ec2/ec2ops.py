@@ -691,7 +691,7 @@ disable_root: false"""
         return self._vpc_supported
 
     def get_default_vpcs(self):
-        vpc_ids = self.get_default_vpc_attribute()
+        vpc_ids = self.get_default_vpc_attribute() or None
         if vpc_ids:
             return self.get_all_vpcs(vpc_ids=vpc_ids)
         return []

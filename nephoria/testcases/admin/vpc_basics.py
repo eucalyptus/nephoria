@@ -22,7 +22,7 @@ SCTP = 132
 class VpcBasics(EutesterTestCase):
     DEFAULT_RULES =  [('tcp', 22, 22, '0.0.0.0/0'), ('icmp', -1, -1, '0.0.0.0/0')]
 
-    def __init__(self, **kwargs):
+    def __init__(self, test_controller=None, **kwargs):
         self.setuptestcase()
         self.setup_parser()
         default_account_name = "test{0}".format(self.__class__.__name__)[0:20].lower()
@@ -39,11 +39,11 @@ class VpcBasics(EutesterTestCase):
             print 'Setting kwarg:'+str(kw)+" to "+str(kwargs[kw])
             self.set_arg(kw ,kwargs[kw])
         self.show_args()
-        self.tc = TestController(hostname=self.args.clc,
-                                 password=self.args.clc_password,
-                                 clouduser_account=self.args.account,
-                                 clouduser_name=self.args.user,
-                                 log_level=self.args.log_level)
+        self.tc = test_controller or TestController(hostname=self.args.clc,
+                                                    password=self.args.clc_password,
+                                                    clouduser_account=self.args.account,
+                                                    clouduser_name=self.args.user,
+                                                    log_level=self.args.log_level)
         self.test_id = randint(0, 100000)
         self.id = str(self.__class__.__name__)
         self.test_name = self.__class__.__name__

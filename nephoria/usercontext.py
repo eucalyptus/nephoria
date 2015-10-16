@@ -66,7 +66,7 @@ class UserContext(AutoCreds):
                                           aws_user_name=aws_user_name,
                                           credpath=credpath, string=string,
                                           machine=machine, keysdir=keysdir,
-                                          logger=logger, loglevel=log_level,
+                                          logger=logger, log_level=log_level,
                                           existing_certs=existing_certs,
                                           service_connection=service_connection,
                                           auto_create=False)
