@@ -5417,7 +5417,11 @@ disable_root: false"""
             if not count % 5:
                 # Add a header every 5th row to make the tables easier to read
                 maintable.add_row(new_header)
-            pt = instance.printself(printme=False)
+            try:
+                pt = instance.printself(printme=False)
+            except Exception as PE:
+                self.log.error('{0}\nFailed in instance.printself, type:{1}'.format(get_traceback(), type(instance)))
+                raise PE
             if pt._rows:
                 maintable.add_row(pt._rows[1])
             # Adjust the table's column widths to allow the largest entries

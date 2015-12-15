@@ -54,13 +54,16 @@ class TestConnection(object):
                               stdout_level=log_level)
         self.log = logger
         self.log.set_stdout_loglevel(log_level)
-        if not eucarc and credpath:
-            eucarc = Eucarc(filepath=credpath)
+        if not eucarc:
+            if credpath:
+                eucarc = Eucarc(filepath=credpath)
+            else:
+                eucarc = Eucarc()
         self.eucarc = eucarc
         self._try_verbose = verbose_requests
         self._is_secure = is_secure
         if aws_secret_access_key:
-            self.eucarc.aws_access_key = aws_secret_access_key
+            self.eucarc.aws_secret_key = aws_secret_access_key
         if aws_access_key_id:
             self.eucarc.aws_access_key = aws_access_key_id
         self._service_url = service_url

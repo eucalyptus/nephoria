@@ -42,7 +42,7 @@ from nephoria.testconnection import TestConnection
 
 
 class ASops(TestConnection, AutoScaleConnection):
-    EUCARC_URL_NAME = 'autoscaling_url'
+    EUCARC_URL_NAME = 'auto_scaling_url'
     AWS_REGION_SERVICE_PREFIX = 'autoscaling'
     def __init__(self, eucarc=None, credpath=None, context_mgr=None,
                  aws_access_key_id=None, aws_secret_access_key=None,

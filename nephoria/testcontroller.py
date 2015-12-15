@@ -132,7 +132,7 @@ class TestController(object):
         self._cloudadmin = None
         self._test_user = None
 
-    def create_user_using_cloudadmin(self, aws_account_name=None, aws_user_name=None,
+    def create_user_using_cloudadmin(self, aws_account_name=None, aws_user_name='admin',
                                      aws_access_key=None, aws_secret_key=None,
                                      credpath=None, eucarc=None,
                                      machine=None, service_connection=None, path='/',

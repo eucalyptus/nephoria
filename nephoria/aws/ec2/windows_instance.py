@@ -55,9 +55,10 @@ import time
 import copy
 import types
 import operator
+from prettytable import PrettyTable, ALL
 from boto.ec2.instance import Instance
 from nephoria.aws.ec2.euvolume import EuVolume
-from cloud_utils.log_utils import eulogger, get_line
+from cloud_utils.log_utils import eulogger, get_line, markup
 from nephoria.euca.taggedresource import TaggedResource
 from boto.ec2.instance import InstanceState
 from datetime import datetime
@@ -485,6 +486,13 @@ class WinInstance(Instance, TaggedResource):
             newins.connect_to_instance(timeout=timeout)
         return newins
 
+    @property
+    def age(self):
+        launchtime = self.tester.get_datetime_from_resource_string(self.launch_time)
+        # return the elapsed time in seconds
+        return (time.mktime(datetime.utcnow().utctimetuple()) -
+                time.mktime(launchtime.utctimetuple()))
+
     def update(self, validate=False, dry_run=False,
                err_state='terminated', err_code=-1):
         ret = None
@@ -545,63 +553,148 @@ class WinInstance(Instance, TaggedResource):
             buf += str(key).ljust(longest_key) + " -----> :" + str(dict[key]) + "\n"
         printmethod(buf)
 
-    def printself(self,title=True, footer=True, printmethod=None):
-        instid = 11
-        emi = 13
-        resid = 11
-        laststate =10
-        privaddr = 10
-        age = 13
-        vmtype = 12
-        rootvol = 13
-        cluster = 25
-        pubip = 16
+    def printself(self, title=True, footer=True, printmethod=None, printme=True):
 
+        def state_markup(state):
+            # Markup instance state...
+            if state == 'running':
+                return markup(state, markups=[1, 92])
+            if state == 'terminated':
+                return markup(state, markups=[1, 97])
+            if state == 'shutting-down':
+                return markup(state, markups=[1, 95])
+            if state == 'pending':
+                return markup(state, markups=[1, 93])
+            if state == 'stopped':
+                return markup(state, markups=[1, 91])
+            else:
+                return markup(state, markups=[1, 91])
+
+        def multi_line(lines):
+            # Utility method for creating multi line table entries...
+            buf = ""
+            maxlen = 0
+            for line in lines:
+                if len(line) + 2 > maxlen:
+                    maxlen = len(line) + 2
+            for line in lines:
+                buf += str(line).ljust(maxlen) + "\n"
+            buf = buf.rstrip()
+            return (buf, maxlen)
+
+        bdmvol = self.root_device_type
         if self.bdm_root_vol:
-            bdmvol = self.bdm_root_vol.id
-        else:
-            bdmvol = None
+            bdmvol += ":" + self.bdm_root_vol.id
         reservation_id = None
         if self.reservation:
             reservation_id = self.reservation.id
-        header = ""
-        buf = ""
-        if title:
-            header = str('INST_ID').center(instid) +'|' + \
-                     str('EMI').center(emi) + '|' +  \
-                     str('RES_ID').center(resid) + '|' +  \
-                     str('LASTSTATE').center(laststate) + '|' +  \
-                     str('PRIV_ADDR').center(privaddr) + '|' +  \
-                     str('AGE@STATUS').center(age) + '|' +  \
-                     str('VMTYPE').center(vmtype) + '|' +  \
-                     str('ROOT_VOL').center(rootvol) + '|' +  \
-                     str('CLUSTER').center(cluster) + '|' +  \
-                     str('PUB_IP').center(pubip) + '|' +  \
-                     str('PRIV_IP')
-        summary = str(self.id).center(instid) + '|' + \
-                  str(self.image_id).center(emi) + '|' +  \
-                  str(reservation_id).center(resid) + '|' +  \
-                  str(self.laststate).center(laststate) + '|' +  \
-                  str(self.private_addressing).center(privaddr) + '|' + \
-                  str(self.age_at_state).center(age) + '|' +  \
-                  str(self.instance_type).center(vmtype) + '|' +  \
-                  str(bdmvol).center(rootvol) + '|' +  \
-                  str(self.placement).center(cluster) + '|' + \
-                  str(self.ip_address).center(pubip) + '|' + \
-                  str(self.private_ip_address).rstrip()
+            owner_id = self.reservation.owner_id
+        else:
+            owner_id = "???"
+        # Create a multi line field for instance's run info
+        idlist = [markup("{0} {1}".format('ID:', self.id), markups=[1, 4, 94]),
+                  "{0} {1}".format(markup('TYPE:'), self.instance_type),
+                  "{0} {1}".format(markup('RES:'), reservation_id),
+                  "{0}".format(markup("ACCOUNT ID:")), owner_id]
+        id_string, idlen = multi_line(idlist)
+        try:
+            emi = self.tester.get_emi(self.image_id)
+            emi_name = str(emi.name[0:18]) + ".."
+        except:
+            emi_name = ""
+        # Create a multi line field for the instance's image info
+        virt_type = 'PV'
+        if self.virtualization_type == 'hvm':
+            virt_type = 'HVM'
+        emi_string, emilen = multi_line(
+            [markup("{0} {1}".format('EMI:', self.image_id)),
+             "{0} {1}".format(markup('OS:'), self.platform or 'linux'),
+             "{0} {1}".format(markup('VIRT:'), virt_type),
+             "{0}".format(markup('IMAGE NAME:')),
+             emi_name])
 
-        length = len(header)
-        if len(summary) > length:
-            length = len(summary)
-        line = get_line(length)
-        if title:
-            buf = line + header + line
-        buf += summary
-        if footer:
-            buf += line
-        if printmethod:
-            printmethod(buf)
-        return buf
+        # Create a multi line field for the instance's state info
+        if self.age:
+            age = int(self.age)
+        state_string, state_len = multi_line(["STATE: " + state_markup(self.laststate),
+                                              "{0} {1}".format(markup('AGE:'), age),
+                                              "{0} {1}".format(markup("ZONE:"), self.placement),
+                                              markup('ROOTDEV:'), bdmvol])
+        # Create the primary table called pt...
+        netinfo = 'INSTANCE NETWORK INFO:'
+        idheader = 'INSTANCE ID'
+        imageheader = 'INSTANCE IMAGE'
+        stateheader = 'INSTANCE STATE'
+        pt = PrettyTable([idheader, imageheader, stateheader, netinfo])
+        pt.align[netinfo] = 'l'
+        pt.valign[netinfo] = 'm'
+        pt.align[idheader] = 'l'
+        pt.align[imageheader] = 'l'
+        pt.align[stateheader] = 'l'
+        pt.max_width[idheader] = idlen
+        pt.max_width[imageheader] = emilen
+        pt.max_width[stateheader] = state_len
+        pt.padding_width = 0
+        pt.hrules = ALL
+        # PrettyTable headers do not work with ascii markups, so make a sudo header
+        new_header = []
+        for field in pt._field_names:
+            new_header.append(markup(field, markups=[1, 4]))
+        pt.add_row(new_header)
+        pt.header = False
+        # Create a subtable 'netpt' to summarize and format the networking portion...
+        # Set the maxwidth of each column so the tables line up when showing multiple instances
+        vpc_col = ('VPC', 4)
+        subnet_col = ('SUBNET', 6)
+        if self.vpc_id:
+            vpc_col = ('VPC', 12)
+            subnet_col = ('SUBNET', 15)
+        secgrp_col = ('SEC GRPS', 11)
+        privaddr_col = ('P', 1)
+        privip_col = ('PRIV IP', 15)
+        pubip_col = ('PUB IP', 15)
+        net_cols = [vpc_col, subnet_col, secgrp_col, privaddr_col, privip_col, pubip_col]
+        # Get the Max width of the main tables network summary column...
+        # Start with 2 to account for beginning and end column borders
+        netinfo_width = 2
+        netinfo_header = []
+        for col in net_cols:
+            netinfo_width += col[1] + 1
+            netinfo_header.append(col[0])
+        pt.max_width[netinfo] = netinfo_width
+        netpt = PrettyTable([vpc_col[0], subnet_col[0], secgrp_col[0], privaddr_col[0],
+                             privip_col[0], pubip_col[0]])
+        netpt.padding_width = 0
+        netpt.vrules = ALL
+        for col in net_cols:
+            netpt.max_width[col[0]] = col[1]
+        sec_grps = []
+        for grp in self.groups:
+            sec_grps.append(str(grp.id))
+        sec_grps = ",".join(sec_grps)
+        private_addressing = "N"
+        if self.private_addressing:
+            private_addressing = "Y"
+        netpt.add_row([str(self.vpc_id).center(vpc_col[1]),
+                       str(self.subnet_id).center(subnet_col[1]),
+                       str(sec_grps).center(secgrp_col[1]),
+                       str(private_addressing).center(privaddr_col[1]),
+                       str(self.private_ip_address).center(privip_col[1]),
+                       str(self.ip_address).center(pubip_col[1])])
+        # To squeeze a potentially long keyname under the network summary table, get the length
+        # and format this column to allow for wrapping a keyname under the table...
+        # netbuf = netpt.get_string()
+        netbuf = "{0}:{1} {2}:{3}\n".format(markup("NODE"),
+                                            self.tags.get('euca:node', "???").ljust(16),
+                                            markup("KEYPAIR"), self.key_name)
+        netbuf +=  "\n".join(netpt.get_string().splitlines()[0:-1])
+        # Create the row in the main table...
+        pt.add_row([id_string, emi_string, state_string, netbuf])
+        if printme:
+            printmethod = printmethod or self.log.debug
+            printmethod("\n" + str(pt) + "\n")
+        return pt
+
 
 
     def get_password(self,

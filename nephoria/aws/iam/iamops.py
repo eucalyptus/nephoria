@@ -193,7 +193,7 @@ class IAMops(TestConnection, IAMConnection):
             params['DelegateAccount'] = delegate_account
         try:
             res = self.get_response_items('CreateUser', params, item_marker='user')
-            self.log.debug("Created user: " + user_name)
+            self.log.debug('Created user:"{0}"'.format(user_name))
         except BotoServerError as BE:
             if not (BE.status == 409 and ignore_existing):
                 raise
