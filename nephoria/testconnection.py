@@ -23,7 +23,7 @@ class TestConnection(object):
     EUCARC_URL_NAME = None
     AWS_REGION_SERVICE_PREFIX = None
 
-    def __init__(self, eucarc=None, credpath=None, service_url=None, context_mgr=None,
+    def __init__(self, eucarc=None, credpath=None, service_url=None,
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, endpoint=None, region=None,
                  boto_debug=0, path=None, validate_certs=None, test_resources=None,
@@ -36,7 +36,6 @@ class TestConnection(object):
         self.service_port = None
         self.service_path = None
         self._original_connection = None
-        self.context_mgr = context_mgr
         self.test_resources_clean_methods = {}
         self.test_resources = test_resources or {}
         if boto_debug:
@@ -104,28 +103,6 @@ class TestConnection(object):
         if required:
             raise ValueError('Required Connection parameters were None: "{0}"'
                              .format(", ".join(required)))
-
-    # Experiment to allow setting context for all boto objects created despite the
-    # connection they possess. '_connection' is used by the underlying boto connection class(s)
-    # to retrieve the http connection from pool or create a new one.
-    @property
-    def connection(self):
-        if self.context_mgr:
-            current_context = self.context_mgr.get_connection_context(ops=self)
-            if current_context:
-                self.log.debug('"{0}":connection, Got a different connection context:"{1}"'
-                                  .format(self, current_context))
-                return current_context
-        return super(TestConnection, self).get_http_connection(*self._connection)
-
-    def get_http_connection(self, *args, **kwargs):
-        if self.context_mgr:
-            current_context = self.context_mgr.get_current_ops_context(ops=self)
-            if current_context:
-                self.log.debug('"{0}": get_http_connection, Got a different ops context:"{1}"'
-                                  .format(self, current_context))
-                return current_context.get_http_connection(*current_context._connection)
-        return super(TestConnection, self).get_http_connection(*args, **kwargs)
 
     @property
     def service_url(self):
@@ -216,6 +193,7 @@ class TestConnection(object):
 
 
     def show_connection_kwargs(self):
+        print self._connection_kwargs
         debug_buf = 'Current "{0}" connection kwargs for\n'.format(self.__class__.__name__)
         for key, value in self._connection_kwargs.iteritems():
             debug_buf += "{0}{1}{2}\n".format(str(key).ljust(30), " -> ", value)

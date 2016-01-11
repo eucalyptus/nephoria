@@ -119,13 +119,13 @@ EC2RegionData = {
     'ap-southeast-1': 'ec2.ap-southeast-1.amazonaws.com'}
 
 
-class EC2ops(TestConnection, VPCConnection):
+class EC2ops(TestConnection):
 
     enable_root_user_data = """#cloud-config
 disable_root: false"""
     AWS_REGION_SERVICE_PREFIX = 'ec2'
     EUCARC_URL_NAME = 'ec2_url'
-    def __init__(self, eucarc=None, credpath=None, context_mgr=None,
+    def __init__(self, eucarc=None, credpath=None,
                  aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=False, port=None, host=None, region=None, endpoint=None,
                  boto_debug=0, path=None, APIVersion=None, validate_certs=None,
@@ -135,7 +135,6 @@ disable_root: false"""
         TestConnection.__init__(self,
                                 eucarc=eucarc,
                                 credpath=credpath,
-                                context_mgr=context_mgr,
                                 test_resources=test_resources,
                                 logger=logger,
                                 aws_access_key_id=aws_access_key_id,
@@ -155,7 +154,7 @@ disable_root: false"""
             self.show_connection_kwargs()
         # Init connection...
         try:
-            VPCConnection.__init__(self, **self._connection_kwargs)
+            self.connection = VPCConnection(**self._connection_kwargs)
         except:
             self.show_connection_kwargs()
             raise
@@ -226,9 +225,9 @@ disable_root: false"""
         """
         self.log.debug("Adding the following tags:" + str(tags))
         self.log.debug("To Resources: " + str(resource_ids))
-        super(EC2ops, self).create_tags(resource_ids=resource_ids, tags=tags, *args, **kwargs)
+        self.connection.create_tags(resource_ids=resource_ids, tags=tags, *args, **kwargs)
 
-    def delete_tags(self, resource_ids, tags, *args, **kwargs):
+    def delete_tags(self, resource_ids, tags):
         """
         Add tags to the given resource
 
@@ -237,7 +236,7 @@ disable_root: false"""
         """
         self.log.debug("Deleting the following tags:" + str(tags))
         self.log.debug("From Resources: " + str(resource_ids))
-        super(EC2ops, self).delete_tags(resource_ids=resource_ids, tags=tags, *args, **kwargs)
+        self.connection.delete_tags(resource_ids=resource_ids, tags=tags)
 
     def create_keypair_and_localcert(self, key_name=None, key_dir=None, extension='.pem'):
         """
@@ -251,13 +250,13 @@ disable_root: false"""
             key_name = "keypair-" + str(int(time.time())) 
         self.log.debug("Looking up keypair " + key_name)
         try:
-            key = self.get_key_pair(key_name)
+            key = self.connection.get_key_pair(key_name)
         except EC2ResponseError:
             pass
         if not key:
             self.log.debug('Creating keypair: %s' % key_name)
             # Create an SSH key to use when logging into instances.
-            key = self.create_key_pair(key_name)
+            key = self.connection.create_key_pair(key_name)
             # AWS will store the public key but the private key is
             # generated and returned and needs to be stored locally.
             # The save method will also chmod the file to protect
@@ -289,7 +288,7 @@ disable_root: false"""
 
             
     def get_keypair(self, key_name=None, key_dir=None, extension='.pem'):
-        return self.create_keypair_and_localcert(key_name=key_name, key_dir=key_dir,
+        return self.connection.create_keypair_and_localcert(key_name=key_name, key_dir=key_dir,
                                                  extension=extension)
             
     def verify_local_keypath(self, keyname, path=None, exten=".pem"):
@@ -298,8 +297,6 @@ disable_root: false"""
         server at 'path'
 
         :returns: the keypath if the key is found.
-        >>> instance = self.get_instances(state='running')[0]
-        >>> keypath = self.get_local_keypath(instance.key_name)
         """
         if path is None:
             path = os.getcwd()
@@ -326,11 +323,11 @@ disable_root: false"""
         keylist = []
         if key_name:
             # this will error out here if key_name is not found on the cloud
-            keys = self.get_key_pair(key_name)
+            keys = self.connection.get_key_pair(key_name)
             if keys:
                 keys = [keys]
         else:
-            keys = self.get_all_key_pairs()
+            keys = self.connection.get_all_key_pairs()
         keyfile = None
         for k in keys:
             self.log.debug('Checking local path: {0} for keyfile: {1}{2}'
@@ -369,7 +366,7 @@ disable_root: false"""
         self.log.debug(  "Sending delete for keypair: " + name)
         keypair.delete()
         try:
-            keypair = self.get_all_key_pairs(keynames=[name])
+            keypair = self.connection.get_all_key_pairs(keynames=[name])
         except EC2ResponseError:
             keypair = []
             
@@ -406,7 +403,7 @@ disable_root: false"""
             private_key_path = str(self.verify_local_keypath(key.name, dir, exten))
         if not private_key_path:
             raise Exception('get_windows_instance_password, keypath not found?')
-        encrypted_string = self.get_password_data(instance.id)
+        encrypted_string = self.connection.get_password_data(instance.id)
         if encoded:
             string_to_decrypt = base64.b64decode(encrypted_string)
         else:
@@ -432,14 +429,14 @@ disable_root: false"""
                 self.fail(  "Group " + group_name + " already exists")
             else:
                 self.log.debug(  "Group " + group_name + " already exists")
-                group = self.get_all_security_groups(group_name)[0]
+                group = self.connection.get_all_security_groups(group_name)[0]
             return self.get_security_group(name=group_name)
         else:
             self.log.debug( 'Creating Security Group: %s' % group_name)
             # Create a security group to control access to instance via SSH.
             if not description:
                 description = group_name
-            group = self.create_security_group(group_name, description)
+            group = self.connection.create_security_group(group_name, description)
             self.test_resources["security_groups"].append(group)
         return self.get_security_group(name=group_name)
 
@@ -472,7 +469,7 @@ disable_root: false"""
             group_names = []
         group_names.append(group_name)
         try:
-            group = self.get_all_security_groups(groupnames=group_names)
+            group = self.connection.get_all_security_groups(groupnames=group_names)
         except EC2ResponseError:
             return False
         if not group:
@@ -632,16 +629,16 @@ disable_root: false"""
                         " on port " + str(port) + " " + str(protocol) )
         else:
             self.log.debug( "Attempting revoke of " + group_name + " on port " + str(port) + " " + str(protocol) )
-        self.revoke_security_group(group_name,
-                                       ip_protocol=protocol,
-                                       from_port=port,
-                                       to_port=port,
-                                       cidr_ip=cidr_ip,
-                                       src_security_group_name=src_security_group_name,
-                                       src_security_group_owner_id=src_security_group_owner_id)
+        self.connection.revoke_security_group(group_name,
+                                              ip_protocol=protocol,
+                                              from_port=port,
+                                              to_port=port,
+                                              cidr_ip=cidr_ip,
+                                              src_security_group_name=src_security_group_name,
+                                              src_security_group_owner_id=src_security_group_owner_id)
 
     def show_account_attributes(self, attribute_names=None, printmethod=None, printme=True):
-        attrs = self.describe_account_attributes(attribute_names=attribute_names)
+        attrs = self.connection.describe_account_attributes(attribute_names=attribute_names)
 
         main_pt = PrettyTable([markup('ACCOUNT ATTRIBUTES')])
         pt = PrettyTable([markup('NAME'), markup('VALUE')])
@@ -658,7 +655,7 @@ disable_root: false"""
     def get_supported_platforms(self):
         attr = None
         try:
-            attr = self.describe_account_attributes(attribute_names='supported-platforms')
+            attr = self.connection.describe_account_attributes(attribute_names='supported-platforms')
         except Exception as E:
             self.log.warning('{0}\n{1}'
                              .format(markup('Could not describe account attributes', [1, 31]),
@@ -706,7 +703,7 @@ disable_root: false"""
                     vpc_ids.append('verbose')
             else:
                 vpc_ids = ['verbose']
-         return super(EC2ops, self).get_all_vpcs(vpc_ids=vpc_ids, filters=filters, dry_run=dry_run)
+         return self.connection.get_all_vpcs(vpc_ids=vpc_ids, filters=filters, dry_run=dry_run)
 
     get_all_vpcs.__doc__ = "{0}".format(VPCConnection.get_all_vpcs.__doc__)
 
@@ -772,8 +769,8 @@ disable_root: false"""
                     subnet_ids.append('verbose')
             else:
                 subnet_ids = ['verbose']
-        subnets = super(EC2ops, self).get_all_subnets(subnet_ids=subnet_ids, filters=filters,
-                                                      dry_run=dry_run)
+        subnets = self.connection.get_all_subnets(subnet_ids=subnet_ids, filters=filters,
+                                                  dry_run=dry_run)
         for subnet in subnets:
             euca_sub = EucaSubnet()
             euca_sub.__dict__ = dict(euca_sub.__dict__.items() + subnet.__dict__.items())
@@ -880,25 +877,6 @@ disable_root: false"""
         else:
             return ret_buf
 
-    def get_backend_vpc_gateways(self):
-        propname = 'cloud.network.network_configuration'
-        prop = self.property_manager.get_property_by_string(propname)
-        if not prop:
-            raise ValueError('get_backend_vpc_gateways: Property not found: {0}'.format(propname))
-        value = json.loads(prop.value)
-        try:
-            midocfg = value['Mido']
-            # Note these property is expected to change to a list in the near future but
-            # the format is not yet known...
-            gwhost = midocfg['GatewayHost']
-            if gwhost:
-                return [str(gwhost)]
-            else:
-                return None
-        except KeyError:
-            self.log.info('get_backend_vpc_gateways: VPC cloud config not found in '
-                             'network_configuration')
-        return None
 
     def terminate_single_instance(self, instance, timeout=300 ):
         """
@@ -911,7 +889,7 @@ disable_root: false"""
         instance.terminate()
         return self.wait_for_instance(instance, state='terminated', timeout=timeout)
 
-    def wait_for_instance(self,instance, state="running", poll_count = None, timeout=480):
+    def wait_for_instance(self,    instance, state="running", poll_count = None, timeout=480):
         """
         Wait for the instance to enter the state
 
@@ -984,7 +962,9 @@ disable_root: false"""
         :param timepergig: Time to wait per gigabyte size of volume, used when timeout is set to 0
         :return:
         """
-        return self.create_volumes(zone, size=size, count=1, mincount=1, eof=eof, snapshot=snapshot, timeout=timeout, poll_interval=poll_interval,timepergig=timepergig)[0]
+        return self.create_volumes(zone, size=size, count=1, mincount=1, eof=eof,
+                                   snapshot=snapshot, timeout=timeout,
+                                   poll_interval=poll_interval, timepergig=timepergig)[0]
 
 
 
@@ -1445,7 +1425,7 @@ disable_root: false"""
             return True
 
         if volume.status != 'deleted':
-            self.fail(str(volume) + " left in " +  volume.status + ',elapsed:'+str(elapsed))
+            self.log.error(str(volume) + " left in " +  volume.status + ',elapsed:'+str(elapsed))
             return False
         return True
     
@@ -1565,7 +1545,8 @@ disable_root: false"""
                         raise VolumeStateException(failmsg)
             self.log.debug( str(volume) + ", state:" + volume.status+', attached status:'+str(attach_status) +
                         ", elapsed:"+str(elapsed)+'/'+str(timeout))
-            self.sleep(pause)
+            if elapsed < timeout:
+                time.sleep(pause)
             elapsed = int(time.time()-start)
 
     def detach_volume(self, volume, pause = 10, timeout=60):
@@ -1598,7 +1579,8 @@ disable_root: false"""
                 attach_data_status = None
             self.log.debug( str(volume) + " state:" + volume.status + ", attached_data:"+
                         str(attach_data_status)+", pause:"+str(pause)+", instance:"+str(instance_id)+", elapsed:"+str(elapsed))
-            self.sleep(pause)
+            if elapsed < timeout:
+                time.sleep(pause)
             elapsed = int(time.time() - start)
         raise Exception(str(volume.id)+':DETACH FAILED - Volume status remained at:'+
                         str(volume.status)+', attach_data_status:'+str(attach_data_status)+", instance: "+str(instance_id))
@@ -2071,7 +2053,8 @@ disable_root: false"""
         snapshot_list = []
         if snapid:
             snapshot_list.append(snapid)
-        ec2_snaps =  self.get_all_snapshots(snapshot_ids=snapshot_list, filters=filters, owner=owner_id)
+        ec2_snaps =  self.connection.get_all_snapshots(snapshot_ids=snapshot_list, filters=filters,
+                                                       owner=owner_id)
         for snap in ec2_snaps:
             if snap not in snapshots:
                 snapshots.append(snap)
@@ -2200,8 +2183,7 @@ disable_root: false"""
             for snapshot in waiting_list:
                 try:
                     snapshot.update()
-                    get_snapshot = self.get_all_snapshots(
-                        snapshot_ids=[snapshot.id])
+                    get_snapshot = self.connection.get_all_snapshots(snapshot_ids=[snapshot.id])
                 except EC2ResponseError as ec2re:
                     self.log.debug("Snapshot not found, assuming "
                                            "it's already deleted:" +
@@ -2367,7 +2349,7 @@ disable_root: false"""
                                                       block_device_map=bdmdev,
                                                       root_device_name=root_device_name,
                                                       **custom_params)
-        self.test_resources["images"].append(self.get_all_images([image_id])[0])
+        self.test_resources["images"].append(self.connection.get_all_images([image_id])[0])
         return image_id
 
     def delete_image(self, image, timeout=60):
@@ -2378,7 +2360,7 @@ disable_root: false"""
         :param image: boto image object to deregister
         :param delete: boolean, if True will attempt to deregister until removed/deleted, default:False
         """
-        return self.deregister_image( image )
+        return self.deregister_image(image)
 
     def deregister_image(self, image):
         """
@@ -2389,7 +2371,7 @@ disable_root: false"""
         gotimage = image
         self.log.debug("Deregistering image: " + str(image))
         try:
-            gotimage = self.get_all_images(image_ids=[image.id])[0]
+            gotimage = self.connection.get_all_images(image_ids=[image.id])[0]
         except IndexError, ie:
             raise Exception("deregister_image:" + str(image.id) + ", No image found in get_all_images.Error: ")
         except Exception, e:
@@ -2401,7 +2383,7 @@ disable_root: false"""
         try:
             # make sure the image was removed (should throw an exception),if not make sure it is in the deregistered state
             # if it is still associated with a running instance'
-            gotimage = self.get_all_images(image_ids=[image.id])[0]
+            gotimage = self.connection.get_all_images(image_ids=[image.id])[0]
             # this will not be executed if image was removed
             if( gotimage.state != 'deregistered') :
                 raise Exception('deregister_image: Error attempting to deregister image:' + str(image.id)  + '\n')
@@ -2483,7 +2465,7 @@ disable_root: false"""
         if name is None:
              emi = "mi-"
 
-        images = self.get_all_images(filters=filters)
+        images = self.connection.get_all_images(filters=filters)
         self.log.debug("Got " + str(len(images)) + " total images " + str(emi) + ", now filtering..." )
         for image in images:
             if (re.search(emi, image.id) is None) and (re.search(emi, image.name) is None):
@@ -2621,11 +2603,11 @@ disable_root: false"""
         :return: list of boto.ec2.address objects
         """
         self.log.debug("get_all_allocated_addresses...")
-        account_id = account_id or self.get_account_id()
+        account_id = account_id or self.connection.get_account_id()
         ret = []
         if account_id:
             account_id = str(account_id)
-            addrs = self.get_all_addresses()
+            addrs = self.connection.get_all_addresses()
             for addr in addrs:
                 if addr.instance_id and re.search(account_id, str(addr.instance_id)):
                     ret.append(addr)
@@ -2639,14 +2621,14 @@ disable_root: false"""
         """
         self.log.debug("get_available_addresses...")
         ret = []
-        addrs = self.get_all_addresses()
+        addrs = self.connection.get_all_addresses()
         for addr in addrs:
             if addr.instance_id and re.search(r"(available|nobody)", addr.instance_id):
                 ret.append(addr)
         return ret
 
 
-    def show_all_addresses_verbose(self, display=True):
+    def show_all_addresses_verbose(self, iam_connection=None, display=True):
         """
         Print table to debug output showing all addresses available to cloud admin using verbose filter
         """
@@ -2659,7 +2641,7 @@ disable_root: false"""
                  " | " + str("ACCOUNT NAME").ljust(account_width) + " | " + str("REGION") + "\n"
         longest = len(header)
         try:
-            ad_list = self.get_all_addresses(addresses='verbose')
+            ad_list = self.connection.get_all_addresses(addresses='verbose')
             for ad in ad_list:
                 account_name = ""
                 adline = ""
@@ -2668,7 +2650,7 @@ disable_root: false"""
                     try:
                         match = match[0]
                         account_id = match.split(':')[4]
-                        account_name = self.get_all_accounts(account_id=account_id)[0]['account_name']
+                        account_name = self.connection.get_all_accounts(account_id=account_id)[0]['account_name']
                     except:pass
                 if ad.region:
                     region = ad.region.name
@@ -2697,7 +2679,7 @@ disable_root: false"""
         """
         try:
             self.log.debug("Allocating an address")
-            address = super(EC2ops, self).allocate_address(domain=domain)
+            address = self.connection.allocate_address(domain=domain)
         except Exception, e:
             tb = get_traceback()
             err_msg = 'Unable to allocate address'
@@ -2726,19 +2708,19 @@ disable_root: false"""
             address = public_ip
             public_ip =  getattr(public_ip, 'public_ip', public_ip)
         elif isinstance(public_ip, basestring):
-            address = self.get_all_addresses(addresses=[public_ip])[0]
+            address = self.connection.get_all_addresses(addresses=[public_ip])[0]
 
         allocation_id = getattr(address, 'allocation_id', None)
         old_ip = str(instance.ip_address)
         self.log.debug("Attemtping to associate {0} with {1}".format(public_ip, instance_id))
         self.show_addresses(addresses=address)
         try:
-            super(EC2ops, self).associate_address(instance_id=instance_id,
-                                                  public_ip=public_ip,
-                                                  allocation_id=allocation_id,
-                                                  network_interface_id=network_interface_id,
-                                                  private_ip_address=private_ip_address,
-                                                  allow_reassociation=allow_reassociation)
+            self.connection.associate_address(instance_id=instance_id,
+                                              public_ip=public_ip,
+                                              allocation_id=allocation_id,
+                                              network_interface_id=network_interface_id,
+                                              private_ip_address=private_ip_address,
+                                              allow_reassociation=allow_reassociation)
         except Exception, e:
             self.log.critical("{0}\nUnable to associate address: {1} with instance: {2}"
                                  .format(get_traceback(), public_ip, instance.id))
@@ -2755,7 +2737,7 @@ disable_root: false"""
                            .format(str(address), instance.id, address.instance_id))
             self.log.debug('Sleeping for 5 seconds before re-checking association...')
             time.sleep(5)
-            address = self.get_all_addresses(addresses=[public_ip])[0]
+            address = self.connection.get_all_addresses(addresses=[public_ip])[0]
             elapsed = int(time.time()-start)
 
         poll_count = 15
@@ -2798,20 +2780,20 @@ disable_root: false"""
         self.log.debug("disassociate_address_from_instance: instance.ip_address:" +
                    str(instance.ip_address) + " instance:" + str(instance))
         ip=str(instance.ip_address)
-        address = self.get_all_addresses(addresses=[instance.ip_address])[0]
+        address = self.connection.get_all_addresses(addresses=[instance.ip_address])[0]
         self.show_addresses(address)
         
         start = time.time()
         elapsed = 0
       
-        address = self.get_all_addresses(addresses=[address.public_ip])[0]
+        address = self.connection.get_all_addresses(addresses=[address.public_ip])[0]
         ### Ensure address object hold correct instance value
         while address.instance_id and not re.match(instance.id, str(address.instance_id)):
             self.log.debug('Address {0} not attached to Instance "{1}" but rather Instance "{2}" after {3} seconds'.format(str(address), instance.id, address.instance_id, str(elapsed)) )
             if elapsed > timeout:
                 raise Exception('Address ' + str(address) + ' never associated with instance after '+str(elapsed)+' seconds')
-            address = self.get_all_addresses(addresses=[address.public_ip])[0]
-            self.sleep(5)
+            address = self.connection.get_all_addresses(addresses=[address.public_ip])[0]
+            time.sleep(5)
             elapsed = int(time.time()-start)
             
         
@@ -2828,7 +2810,7 @@ disable_root: false"""
             if elapsed > timeout:
                 raise Exception('Address ' + str(address) + ' never disassociated with instance after '+str(elapsed)+' seconds')
             instance.update()
-            self.sleep(5)
+            time.sleep(5)
             elapsed = int(time.time()-start)
             address = self.get_all_addresses(addresses=[address.public_ip])[0]
         address = self.get_all_addresses(address.public_ip)
@@ -2889,7 +2871,7 @@ disable_root: false"""
         retlist = []
         if (attached_instance is not None) or (attached_dev is not None):
             status='in-use'
-        volumes = self.get_all_volumes(filters=filters)
+        volumes = self.connection.get_all_volumes(filters=filters)
         for volume in volumes:
             if not hasattr(volume,'md5'):
                 volume = EuVolume.make_euvol_from_vol(volume, tester=self)
@@ -3266,7 +3248,7 @@ disable_root: false"""
             orig_boto_debug_level = getattr(self.connection, 'debuglevel', None)
             try:
                 self.connection.debuglevel = boto_debug_level
-                reservation = self.run_instances(image_id = image.id,
+                reservation = self.connection.run_instances(image_id = image.id,
                                                      key_name=keypair,
                                                      security_group_ids=secgroups,
                                                      instance_type=type,
@@ -3639,7 +3621,7 @@ disable_root: false"""
             ids = [group_id]
         if group_name:
             names.append(group_name)
-        groups = self.get_all_security_groups(groupnames=names, group_ids=ids)
+        groups = self.connection.get_all_security_groups(groupnames=names, group_ids=ids)
         for group in groups:
             if not group_id or (group_id and group.id == group_id):
                 if not group_name or (group_name and group.name == group_name):
@@ -3734,7 +3716,7 @@ disable_root: false"""
                 res = self.get_reservation_for_instance(instance)
             groups = res.groups
         for group in groups:
-            secgroups.extend(self.get_all_security_groups(
+            secgroups.extend(self.connection.get_all_security_groups(
                 groupnames=[str(group.name)]))
         return secgroups
     
@@ -3746,10 +3728,10 @@ disable_root: false"""
         :return: :raise:
         """
         if hasattr(self, 'get_all_reservations'):
-            res = self.get_all_reservations(instance_ids=instance.id)
+            res = self.connection.get_all_reservations(instance_ids=instance.id)
             if res and isinstance(res, types.ListType):
                 return res[0]
-        for res in self.get_all_instances():
+        for res in self.connection.get_all_instances():
             for inst in res.instances:
                 if inst.id == instance.id:
                     if hasattr(instance,'reservation'):
@@ -3929,7 +3911,7 @@ disable_root: false"""
         publist = {}
         privlist = {}
         self.log.debug('Check_system_for_dup_ip starting...')
-        reslist = self.get_all_instances()
+        reslist = self.connection.get_all_instances()
         for res in reslist:
             self.log.debug("Checking reservation: "+str(res.id))
             for instance in res.instances:
@@ -4002,7 +3984,8 @@ disable_root: false"""
                     self.log.debug(get_traceback())
                     euinstance_list.append(instance)
                     self.get_console_output(instance)
-                    self.fail("Unable to create Euinstance from " + str(instance)+": "+str(e))
+                    raise RuntimeError("Unable to create Euinstance from " + str(instance) +
+                                       ": " + str(e))
             else:
                 euinstance_list.append(instance)
         reservation.instances = euinstance_list
@@ -4061,7 +4044,7 @@ disable_root: false"""
         self.log.debug("Attempting to get console output from: " + str(instance))
         if isinstance(instance, Instance):
             instance = instance.id
-        output = super(EC2ops, self).get_console_output(instance_id=instance, dry_run=dry_run)
+        output = self.connection.get_console_output(instance_id=instance, dry_run=dry_run)
         if debug:
             self.log.debug(output.output)
         return output
@@ -4072,7 +4055,7 @@ disable_root: false"""
 
         :return: list of zone names
         """
-        zone_objects = self.get_all_zones()
+        zone_objects = self.connection.get_all_zones()
         zone_names = []
         for zone in zone_objects:
             zone_names.append(zone.name)
@@ -4125,7 +4108,7 @@ disable_root: false"""
                 idstring = 'verbose'
             instance_ids = idstring
         
-        reservations = self.get_all_instances(instance_ids=instance_ids, filters=filters)
+        reservations = self.connection.get_all_instances(instance_ids=instance_ids, filters=filters)
         for res in reservations:
             if ( reservation is None ) or (re.search(str(reservation), str(res.id))):
                 for i in res.instances:
@@ -4229,9 +4212,9 @@ disable_root: false"""
         else:
             if reservation is None:
                 if verbose:
-                    reservation = self.get_all_instances('verbose')
+                    reservation = self.connection.get_all_instances('verbose')
                 else:
-                    reservation = self.get_all_instances()
+                    reservation = self.connection.get_all_instances()
             #first send terminate for all instances
             for res in reservation:
                 if isinstance(res, basestring) and str(res).startswith('i'):
@@ -4250,7 +4233,7 @@ disable_root: false"""
             ids.append(instance.id)
         self.log.debug('Sending terminate for "{0}"'
                        .format(", ".join(str(x.id) for x in instance_list)))
-        super(EC2ops, self).terminate_instances(instance_ids=ids, dry_run=dry_run)
+        self.connection.terminate_instances(instance_ids=ids, dry_run=dry_run)
         for instance in instance_list:
             try:
                instance.update()
@@ -4285,6 +4268,7 @@ disable_root: false"""
         """
         instance_ids = []
         instance_objs = []
+        instance_list = []
         if not instances:
             raise ValueError('stop_instances, bad value for instances: "{0}"'.format(instances))
         if isinstance(instances, Reservation):
@@ -4311,8 +4295,7 @@ disable_root: false"""
                     instance_objs.append(instance_obj)
 
         self.log.debug('Sending stop for instances:"{0}"'.format(", ".join(instance_list)))
-        ret =super(EC2ops, self).stop_instances(instance_ids=instance_ids, force=force,
-                                                dry_run=dry_run)
+        ret = self.stop_instances(instances=instance_ids, force=force, dry_run=dry_run)
         if monitor:
             self.monitor_euinstances_to_state(instance_list=instance_objs, state='stopped',
                                               timeout=timeout)
@@ -4327,6 +4310,7 @@ disable_root: false"""
         """
         instance_ids = []
         instance_objs = []
+        instance_list = []
         if not instances:
             raise ValueError('start_instances, bad value for instances: "{0}"'.format(instances))
         if isinstance(instances, Reservation):
@@ -4350,10 +4334,10 @@ disable_root: false"""
                     instance_ids.append(instance)
                 else:
                     instance_ids.append(instance.id)
-                    instance_objs.append(instance_obj)
+                    instance_objs.append(instance)
 
         self.log.debug('Sending start for instances:"{0}"'.format(", ".join(instance_list)))
-        ret = super(EC2ops, self).start_instances(instance_ids=instance_ids, dry_run=dry_run)
+        ret = self.start_instances(instances=instance_ids, dry_run=dry_run)
         if monitor:
             self.monitor_euinstances_to_state(instance_list=instance_objs, state='running',
                                               timeout=timeout)
@@ -4386,7 +4370,8 @@ disable_root: false"""
                            + str(id_count)
         prefix = prefix or 'bundleof-' + str(instance.id)
         s3_upload_policy = self.generate_default_s3_upload_policy(bucket_name,prefix)
-        bundle_task = self.bundle_instance(instance.id, bucket_name, prefix, s3_upload_policy)
+        bundle_task = self.connection.bundle_instance(instance.id, bucket_name, prefix,
+                                                      s3_upload_policy)
         self.print_bundle_task(bundle_task)
         return bundle_task
 
@@ -4481,7 +4466,7 @@ disable_root: false"""
 
 
     def get_bundle_task_by_id(self,bundle_task_id):
-        bundles = self.get_all_bundle_tasks(bundle_ids=[bundle_task_id])
+        bundles = self.connection.get_all_bundle_tasks(bundle_ids=[bundle_task_id])
         if bundles:
             return bundles[0]
 
@@ -4632,8 +4617,8 @@ disable_root: false"""
             params['SriovNetSupport'] = sriov_net_support
 
 
-        rs = self.get_object('RegisterImage', params,
-                                 ResultSet, verb='POST')
+        rs = self.connection.get_object('RegisterImage', params,
+                                         ResultSet, verb='POST')
         image_id = getattr(rs, 'imageId', None)
         return image_id
 
@@ -4671,12 +4656,12 @@ disable_root: false"""
         """
         if isinstance(instance_id, Instance):
             instance_id = instance_id.id
-        image_id = super(EC2ops, self).create_image(instance_id, name=name,
-                                                    description=description,no_reboot=no_reboot,
-                                                    block_device_mapping=block_device_mapping,
-                                                    dry_run=dry_run)
+        image_id = self.connection.create_image(instance_id, name=name,
+                                                description=description,no_reboot=no_reboot,
+                                                block_device_mapping=block_device_mapping,
+                                                dry_run=dry_run)
         def get_emi_state():
-            images = self.get_all_images(image_ids=[image_id])
+            images = self.connection.get_all_images(image_ids=[image_id])
             if len(images) == 0:
                 raise Exception("Image not found after sending create image request: " + image_id)
             elif len(images) == 1:
@@ -4692,18 +4677,18 @@ disable_root: false"""
         params = {}
         if taskid:
             params['ConversionTaskId'] = str(taskid)
-        return self.get_list('DescribeConversionTasks',
-                                  params,
-                                  [('item', ConversionTask),
-                                   ('euca:item', ConversionTask)],
-                                  verb='POST')
+        return self.connection.get_list('DescribeConversionTasks',
+                                        params,
+                                        [('item', ConversionTask),
+                                         ('euca:item', ConversionTask)],
+                                        verb='POST')
 
     def get_conversion_task(self, taskid):
         params = {'ConversionTaskId':str(taskid)}
-        task = self.get_object('DescribeConversionTasks',
-                                   params,
-                                   ConversionTask,
-                                   verb='POST')
+        task = self.connection.get_object('DescribeConversionTasks',
+                                           params,
+                                           ConversionTask,
+                                           verb='POST')
         if not task:
             raise EC2ResourceNotFoundException('"{0}". Conversion task not found'
                                             .format(taskid))
@@ -5078,7 +5063,7 @@ disable_root: false"""
 
 
     def sign_policy(self, policy):
-        my_hmac = hmac.new(self.aws_secret_access_key, policy, digestmod=hashlib.sha1)
+        my_hmac = hmac.new(self.connection.aws_secret_access_key, policy, digestmod=hashlib.sha1)
         return base64.b64encode(my_hmac.digest())
 
     def get_euzones(self, zones=None):
@@ -5092,9 +5077,9 @@ disable_root: false"""
                     if isinstance(zone, Zone):
                         zone = zone.name
                     get_zones.append(zone)
-            myzones = self.get_all_zones(zones=get_zones)
+            myzones = self.connection.get_all_zones(zones=get_zones)
         else:
-            myzones = self.get_all_zones()
+            myzones = self.connection.get_all_zones()
         for zone in myzones:
             ret_list.append(EuZone.make_euzone_from_zone(zone, self))
         return ret_list
@@ -5164,7 +5149,7 @@ disable_root: false"""
         if zone:
             zones = [zone]
         else:
-            zones = self.get_all_zones()
+            zones = self.connection.get_all_zones()
         for zone in zones:
             buf += "------------------------( " + str(zone) + " )--------------------------------------------\n"
             for vm in self.get_vm_type_list_from_zone(zone):
@@ -5285,7 +5270,7 @@ disable_root: false"""
             get_addresses = None
         try:
             if not addresses:
-                ad_list = self.get_all_addresses(addresses=get_addresses)
+                ad_list = self.connection.get_all_addresses(addresses=get_addresses)
             else:
                 if not isinstance(addresses, list):
                     addresses = [addresses]
@@ -5298,7 +5283,7 @@ disable_root: false"""
                         raise ValueError('Show_addresses(). Got unknown address type: {0}:{1}'
                                          .format(address, type(address)))
                 if get_addresses:
-                    ad_list += self.get_all_addresses(addresses=get_addresses)
+                    ad_list += self.connection.get_all_addresses(addresses=get_addresses)
                 if not ad_list:
                     raise ValueError('Addresses not found for: "{0}"'
                                      .format(",".join(addresses)))
@@ -5314,7 +5299,7 @@ disable_root: false"""
                     try:
                         match = match[0]
                         account_id = match.split(':')[4]
-                        account_name = self.get_all_accounts(account_id=account_id)[0]['account_name']
+                        account_name = self.connection.get_all_accounts(account_id=account_id)[0]['account_name']
                         if account_name:
                             account_name = markup(account_name)
                             instance_id = markup(instance_id)
@@ -5626,7 +5611,7 @@ disable_root: false"""
 
     def show_security_groups(self, groups=None, printme=True):
         ret_buf = ""
-        groups = groups or self.get_all_security_groups()
+        groups = groups or self.connection.get_all_security_groups()
         for group in groups:
             ret_buf += "\n" + str(self.show_security_group(group, printme=False))
         if printme:
@@ -5683,7 +5668,7 @@ disable_root: false"""
             return pt
 
     def show_account_attributes(self, attribute_names=None, printmethod=None, printme=True):
-        attrs = self.describe_account_attributes(attribute_names=attribute_names)
+        attrs = self.connection.describe_account_attributes(attribute_names=attribute_names)
 
         main_pt = PrettyTable([markup('ACCOUNT ATTRIBUTES')])
         pt = PrettyTable([markup('NAME'), markup('VALUE')])
