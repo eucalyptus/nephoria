@@ -3,6 +3,7 @@
 from logging import INFO, DEBUG, NOTSET
 from boto import set_stream_logger, regioninfo
 from boto import __version__ as boto_version
+from boto.regioninfo import RegionInfo
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import markup, get_traceback
 from cloud_utils.file_utils.eucarc import Eucarc
@@ -22,6 +23,7 @@ AWSRegionData = {
 class TestConnection(object):
     EUCARC_URL_NAME = None
     AWS_REGION_SERVICE_PREFIX = None
+    CONNECTION_CLASS = None
 
     def __init__(self, eucarc=None, credpath=None, service_url=None,
                  aws_access_key_id=None, aws_secret_access_key=None,
@@ -29,8 +31,12 @@ class TestConnection(object):
                  boto_debug=0, path=None, validate_certs=None, test_resources=None,
                  logger=None, log_level=None, user_context=None, APIVersion=None,
                  verbose_requests=None):
+
         if self.EUCARC_URL_NAME is None:
             raise NotImplementedError('EUCARC_URL_NAME not set for this class:"{0}"'
+                                      .format(self.__class__.__name__))
+        if self.CONNECTION_CLASS is None:
+            raise NotImplementedError('Connection Class has not been defined for this class:"{0}"'
                                       .format(self.__class__.__name__))
         self.service_host = None
         self.service_port = None
@@ -103,6 +109,27 @@ class TestConnection(object):
         if required:
             raise ValueError('Required Connection parameters were None: "{0}"'
                              .format(", ".join(required)))
+        #### Init connection...
+        if self.boto_debug:
+            self.show_connection_kwargs()
+        try:
+            # Remove any kwargs that are not applicable to this connection class
+            # For example 'region' may not be applicable to services such as 'IAM'
+            connection_keys = self._connection_kwargs.keys()
+            for ckey in connection_keys:
+                if ckey not in self.CONNECTION_CLASS.__init__.__func__.__code__.co_varnames:
+                    self.log.debug('Arg "0" not found in "{1}.init()", removing kwarg '
+                                   'connection args.'.format(ckey, self.CONNECTION_CLASS.__name__))
+                    self._connection_kwargs.__delitem__(ckey)
+            self.connection = self.CONNECTION_CLASS(**self._connection_kwargs)
+        except:
+            self.show_connection_kwargs()
+            raise
+        # Remaining setup...
+        self.setup()
+
+    def setup(self):
+        self.setup_resource_trackers()
 
     @property
     def service_url(self):
@@ -179,7 +206,6 @@ class TestConnection(object):
                     region.endpoint = host
             return region
         return None
-
 
     def _clean_connection_kwargs(self):
         classes = self.__class__.__bases__

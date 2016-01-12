@@ -31,6 +31,7 @@
 # Author: vic.iglesias@eucalyptus.com
 
 from boto.s3.bucket import Bucket
+from boto.s3.prefix import Prefix
 
 import os
 import hashlib
@@ -56,54 +57,29 @@ class S3opsException(Exception):
         print self.msg
 
 
-class S3ops(TestConnection, S3Connection):
+class S3ops(TestConnection):
     s3_groups = {
              "all_users":"http://acs.amazonaws.com/groups/global/AllUsers",
              "authenticated_users":"http://acs.amazonaws.com/groups/global/AuthenticatedUsers",
              "log_delivery":"http://acs.amazonaws.com/groups/s3/LogDelivery"
              }
     EUCARC_URL_NAME = 's3_url'
-    def __init__(self, eucarc=None, credpath=None, context_mgr=None,
-                 aws_access_key_id=None, aws_secret_access_key=None,
-                 is_secure=False, port=None, host=None, region=None, endpoint=None,
-                 boto_debug=0, path=None, APIVersion=None, validate_certs=None,
-                 test_resources=None, logger=None, log_level=None, user_context=None,):
+    CONNECTION_CLASS = S3Connection
 
-        # Init test connection first to sort out base parameters...
-        TestConnection.__init__(self,
-                                eucarc=eucarc,
-                                credpath=credpath,
-                                context_mgr=context_mgr,
-                                test_resources=test_resources,
-                                logger=logger,
-                                aws_access_key_id=aws_access_key_id,
-                                aws_secret_access_key=aws_secret_access_key,
-                                is_secure=is_secure,
-                                port=port,
-                                host=host,
-                                APIVersion=APIVersion,
-                                validate_certs=validate_certs,
-                                boto_debug=boto_debug,
-                                path=path,
-                                log_level=log_level,
-                                user_context=user_context)
-        self._connection_kwargs['validate_certs'] = validate_certs
-        if self.boto_debug:
-            self.show_connection_kwargs()
-        # Init IAM connection...
-        try:
-            S3Connection.__init__(self, **self._connection_kwargs)
-        except:
-            self.show_connection_kwargs()
-            raise
-        self.setup_s3_resource_trackers()
+    def setup(self):
+        self.connection.calling_format = OrdinaryCallingFormat()
+        super(S3ops, self).setup()
 
-    def setup_s3_resource_trackers(self):
+    def setup_resource_trackers(self):
         """
         Setup keys in the test_resources hash in order to track artifacts created
         """
-        self.test_resources["keys"] = []
-        self.test_resources["buckets"] = []
+        #todo add/define clean methods here...
+        self.test_resources_clean_methods["keys"] = None
+        self.test_resources_clean_methods["buckets"] = None
+
+        for resource_name in self.test_resources_clean_methods.iterkeys():
+            self.test_resources[resource_name] = []
 
     def get_bucket(self, bucket_name):
         """
@@ -191,7 +167,7 @@ class S3ops(TestConnection, S3Connection):
         # exists locally until we actually store data in it.
         key = bucket.new_key(key_name)
         if key == None:
-            self.fail( "Unable to create key " + key_name  )
+            raise RuntimeError( "Unable to create key " + key_name  )
         if path_to_file is None:
             if contents is None:
                 contents = os.urandom(1024)
@@ -211,7 +187,7 @@ class S3ops(TestConnection, S3Connection):
         bucket = self.get_bucket_by_name(bucket_name)
         keys = bucket.get_all_keys(prefix=prefix)
         if len(keys) < 1:
-            self.fail("Unable to find any keys with prefix " + prefix + " in " + str(bucket) )
+            self.log.warn("Unable to find any keys with prefix " + prefix + " in " + str(bucket) )
         if len(keys) == 2:
             return keys[0]
         return keys
@@ -243,7 +219,7 @@ class S3ops(TestConnection, S3Connection):
             key_list = bucket.list()        
             self.debug(  "Starting loop" )
             for k in key_list:
-                if isinstance(k, boto.s3.prefix.Prefix):
+                if isinstance(k, Prefix):
                     self.debug(  "Skipping prefix" )
                     continue
                 self.debug(  "Deleting key: " + k.name )

@@ -4,7 +4,6 @@ from cloud_admin.systemconnection import SystemConnection
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import get_traceback
 from cloud_utils.system_utils.machine import Machine
-from nephoria.contextmanger import ContextManager
 from nephoria.usercontext import UserContext
 from nephoria.testcase_utils import TimerSeconds, TimeoutError, wait_for_result
 
@@ -19,7 +18,7 @@ class TestController(object):
                  clouduser_account='nephotest', clouduser_name='admin', clouduser_credpath=None,
                  clouduser_accesskey=None, clouduser_secretkey=None,
                  cloudadmin_credpath=None, cloudadmin_accesskey=None, cloudadmin_secretkey=None,
-                 context_mgr=None, timeout=10, log_level='DEBUG',
+                 timeout=10, log_level='DEBUG',
                  cred_depot_hostname=None, cred_depot_username='root', cred_depot_password=None):
 
         """
@@ -37,7 +36,6 @@ class TestController(object):
         :param cloudadmin_credpath:
         :param cloudadmin_accesskey:
         :param cloudadmin_secretkey:
-        :param context_mgr:
         :param timeout:
         """
         self.log = Eulogger("TESTER:{0}".format(hostname), stdout_level=log_level)
@@ -78,8 +76,6 @@ class TestController(object):
                                             'username': cred_depot_username,
                                             'password': cred_depot_password or password,
                                             'log_level': log_level}
-        self.contextmanager = context_mgr or ContextManager()
-
 
     @property
     def cred_depot(self):
@@ -156,7 +152,6 @@ class TestController(object):
                 eucarc.account_name = aws_account_name
             return UserContext(eucarc=eucarc,
                                service_connection=service_connection,
-                               context_mgr=self.contextmanager,
                                log_level=log_level)
         if aws_access_key and aws_secret_key:
             return UserContext(aws_access_key=aws_access_key,
@@ -164,12 +159,10 @@ class TestController(object):
                                aws_account_name=aws_account_name,
                                aws_user_name=aws_user_name,
                                service_connection=service_connection,
-                               context_mgr=self.contextmanager,
                                log_level=log_level)
         if credpath:
             return UserContext(credpath=credpath,
                                machine=machine,
-                               context_mgr=self.contextmanager,
                                log_level=log_level)
 
         info = self.admin.iam.create_account(account_name=aws_account_name,
@@ -206,7 +199,6 @@ class TestController(object):
                             existing_certs=certs,
                             machine=self.sysadmin.clc_machine,
                             service_connection=self.sysadmin,
-                            context_mgr=self.contextmanager,
                             log_level=log_level)
         user._user_info = self.admin.iam.get_user_info(user_name=user.user_name,
                                                        delegate_account=user.account_id)

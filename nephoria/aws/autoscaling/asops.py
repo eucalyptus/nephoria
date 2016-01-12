@@ -41,91 +41,13 @@ from boto.ec2.regioninfo import RegionInfo
 from nephoria.testconnection import TestConnection
 
 
-class ASops(TestConnection, AutoScaleConnection):
+class ASops(TestConnection):
     EUCARC_URL_NAME = 'auto_scaling_url'
     AWS_REGION_SERVICE_PREFIX = 'autoscaling'
-    def __init__(self, eucarc=None, credpath=None, context_mgr=None,
-                 aws_access_key_id=None, aws_secret_access_key=None,
-                 is_secure=False, port=None, host=None, region=None, endpoint=None,
-                 boto_debug=0, path=None, APIVersion=None, validate_certs=None,
-                 test_resources=None, logger=None, log_level=None, user_context=None,):
+    CONNECTION_CLASS = AutoScaleConnection
 
-        # Init test connection first to sort out base parameters...
-        TestConnection.__init__(self,
-                                eucarc=eucarc,
-                                credpath=credpath,
-                                context_mgr=context_mgr,
-                                test_resources=test_resources,
-                                logger=logger,
-                                aws_access_key_id=aws_access_key_id,
-                                aws_secret_access_key=aws_secret_access_key,
-                                is_secure=is_secure,
-                                port=port,
-                                host=host,
-                                APIVersion=APIVersion,
-                                validate_certs=validate_certs,
-                                boto_debug=boto_debug,
-                                path=path,
-                                log_level=log_level,
-                                user_context=user_context)
-        if self.boto_debug:
-            self.show_connection_kwargs()
-        # Init IAM connection...
-        try:
-            AutoScaleConnection.__init__(self, **self._connection_kwargs)
-        except:
-            self.show_connection_kwargs()
-            raise
-
-    def setup_as_connection(self, endpoint=None, aws_access_key_id=None, aws_secret_access_key=None, is_secure=True,
-                            host=None, region=None, path="/", port=443, boto_debug=0):
-        """
-        :param endpoint:
-        :param aws_access_key_id:
-        :param aws_secret_access_key:
-        :param is_secure:
-        :param host:
-        :param region:
-        :param path:
-        :param port:
-        :param boto_debug:
-        :raise:
-        """
-        as_region = RegionInfo()
-        if region:
-            self.debug("Check region: " + str(region))
-            try:
-                if not endpoint:
-                    as_region.endpoint = ASRegionData[region]
-                else:
-                    as_region.endpoint = endpoint
-            except KeyError:
-                raise Exception('Unknown region: %s' % region)
-        else:
-            as_region.name = 'eucalyptus'
-            if not host:
-                if endpoint:
-                    as_region.endpoint = endpoint
-                else:
-                    as_region.endpoint = self.get_as_ip()
-        connection_args = {'aws_access_key_id': aws_access_key_id,
-                           'aws_secret_access_key': aws_secret_access_key,
-                           'is_secure': is_secure,
-                           'debug': boto_debug,
-                           'port': port,
-                           'path': path,
-                           'region': as_region}
-
-        if re.search('2.6', boto.__version__):
-            connection_args['validate_certs'] = False
-        try:
-            as_connection_args = copy.copy(connection_args)
-            as_connection_args['path'] = path
-            as_connection_args['region'] = as_region
-            self.connection = boto.ec2.autoscale.AutoScaleConnection(**as_connection_args)
-        except Exception, e:
-            self.critical("Was unable to create auto scale connection because of exception: " + str(e))
-
+    def setup(self):
+        super(self, ASops).setup()
         #Source ip on local test machine used to reach instances
         self.as_source_ip = None
 

@@ -125,42 +125,14 @@ class EC2ops(TestConnection):
 disable_root: false"""
     AWS_REGION_SERVICE_PREFIX = 'ec2'
     EUCARC_URL_NAME = 'ec2_url'
-    def __init__(self, eucarc=None, credpath=None,
-                 aws_access_key_id=None, aws_secret_access_key=None,
-                 is_secure=False, port=None, host=None, region=None, endpoint=None,
-                 boto_debug=0, path=None, APIVersion=None, validate_certs=None,
-                 test_resources=None, logger=None, log_level=None, user_context=None,):
+    CONNECTION_CLASS = VPCConnection
 
-        # Init test connection first to sort out base parameters...
-        TestConnection.__init__(self,
-                                eucarc=eucarc,
-                                credpath=credpath,
-                                test_resources=test_resources,
-                                logger=logger,
-                                aws_access_key_id=aws_access_key_id,
-                                aws_secret_access_key=aws_secret_access_key,
-                                is_secure=is_secure,
-                                port=port,
-                                host=host,
-                                APIVersion=APIVersion,
-                                validate_certs=validate_certs,
-                                boto_debug=boto_debug,
-                                path=path,
-                                log_level=log_level,
-                                user_context=user_context)
+    def setup(self):
         self.key_dir = "./"
         self.local_machine_source_ip = None  # Source ip on local test machine used to reach VMs
-        if self.boto_debug:
-            self.show_connection_kwargs()
-        # Init connection...
-        try:
-            self.connection = VPCConnection(**self._connection_kwargs)
-        except:
-            self.show_connection_kwargs()
-            raise
-        self.setup_resource_trackers()
         self._zone_cache = []
         self._vpc_supported = None
+        super(EC2ops, self).setup()
 
     def setup_resource_trackers(self):
         """
