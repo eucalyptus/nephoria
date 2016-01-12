@@ -80,45 +80,10 @@ EbsMetricsArray     = [
                       {'name':'VolumeConsumedReadWriteOps','unit':'Count'}
                       ]
 
-class CWops(TestConnection, CloudWatchConnection):
+class CWops(TestConnection):
     AWS_REGION_SERVICE_PREFIX = 'monitoring'
     EUCARC_URL_NAME = 'cloudwatch_url'
-    @printinfo
-    def __init__(self, eucarc=None, credpath=None, context_mgr=None,
-                 aws_access_key_id=None, aws_secret_access_key=None,
-                 is_secure=False, port=None, host=None, region=None, endpoint=None,
-                 boto_debug=0, path=None, APIVersion=None, validate_certs=None,
-                 test_resources=None, logger=None, log_level=None, user_context=None,):
-
-        # Init test connection first to sort out base parameters...
-        TestConnection.__init__(self,
-                                eucarc=eucarc,
-                                credpath=credpath,
-                                context_mgr=context_mgr,
-                                test_resources=test_resources,
-                                logger=logger,
-                                aws_access_key_id=aws_access_key_id,
-                                aws_secret_access_key=aws_secret_access_key,
-                                is_secure=is_secure,
-                                port=port,
-                                host=host,
-                                APIVersion=APIVersion,
-                                validate_certs=validate_certs,
-                                boto_debug=boto_debug,
-                                path=path,
-                                log_level=log_level,
-                                user_context=user_context)
-        if self.boto_debug:
-            self.show_connection_kwargs()
-        # Init IAM connection...
-        try:
-            CloudWatchConnection.__init__(self, **self._connection_kwargs)
-        except:
-            self.show_connection_kwargs()
-            raise
-        self.test_resources = {}
-        self.setup_cw_resource_trackers()
-
+    CONNECTION_CLASS = CloudWatchConnection
 
     def get_cw_connection_args(self, endpoint=None, aws_access_key_id=None,
                                aws_secret_access_key=None, is_secure=True,
@@ -168,7 +133,8 @@ class CWops(TestConnection, CloudWatchConnection):
         cw_connection_args['region'] = cw_region
         return cw_connection_args
 
-    def setup_cw_resource_trackers(self):
+
+    def setup_resource_trackers(self):
         '''
         Setup keys in the test_resources hash in order to track artifacts created
         '''

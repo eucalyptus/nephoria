@@ -44,47 +44,17 @@ from boto.ec2.elb.healthcheck import HealthCheck
 from os.path import join
 
 
-class ELBops(TestConnection, ELBConnection):
+class ELBops(TestConnection):
     AWS_REGION_SERVICE_PREFIX = 'elasticloadbalancing'
     EUCARC_URL_NAME = 'elb_url'
-    def __init__(self, eucarc=None, credpath=None, context_mgr=None,
-                 aws_access_key_id=None, aws_secret_access_key=None,
-                 is_secure=False, port=None, host=None, region=None, endpoint=None,
-                 boto_debug=0, path=None, APIVersion=None, validate_certs=None,
-                 test_resources=None, logger=None, log_level=None, user_context=None,):
+    CONNECTION_CLASS = ELBConnection
 
-        # Init test connection first to sort out base parameters...
-        TestConnection.__init__(self,
-                                eucarc=eucarc,
-                                credpath=credpath,
-                                context_mgr=context_mgr,
-                                test_resources=test_resources,
-                                logger=logger,
-                                aws_access_key_id=aws_access_key_id,
-                                aws_secret_access_key=aws_secret_access_key,
-                                is_secure=is_secure,
-                                port=port,
-                                host=host,
-                                APIVersion=APIVersion,
-                                validate_certs=validate_certs,
-                                boto_debug=boto_debug,
-                                path=path,
-                                log_level=log_level,
-                                user_context=user_context)
-        if self.boto_debug:
-            self.show_connection_kwargs()
-        # Init IAM connection...
-        try:
-            ELBConnection.__init__(self, **self._connection_kwargs)
-        except:
-            self.show_connection_kwargs()
-            raise
-
-    def setup_elb_resource_trackers(self):
+    def setup_resource_trackers(self):
         """
         Setup keys in the test_resources hash in order to track artifacts created
         """
         self.test_resources["load_balancers"] = []
+        self.test_resources_clean_methods["load_balanceers"] = self.cleanup_load_balancers
 
     def create_listener(self, load_balancer_port=80, protocol="HTTP", instance_port=80, load_balancer=None):
         self.log.debug(

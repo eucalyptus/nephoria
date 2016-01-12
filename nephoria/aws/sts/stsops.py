@@ -27,81 +27,12 @@ from nephoria.testconnection import TestConnection
 import boto
 from boto.ec2.regioninfo import RegionInfo
 from boto.sts import STSConnection
-EC2RegionData = {
-    'us-east-1': 'ec2.us-east-1.amazonaws.com',
-    'us-west-1': 'ec2.us-west-1.amazonaws.com',
-    'eu-west-1': 'ec2.eu-west-1.amazonaws.com',
-    'ap-northeast-1': 'ec2.ap-northeast-1.amazonaws.com',
-    'ap-southeast-1': 'ec2.ap-southeast-1.amazonaws.com'}
 
 
-class STSops(TestConnection, STSConnection):
+class STSops(TestConnection):
     AWS_REGION_SERVICE_PREFIX = 'ec2'
     EUCARC_URL_NAME = 'sts_url'
-    def __init__(self, eucarc=None, credpath=None, context_mgr=None,
-                 aws_access_key_id=None, aws_secret_access_key=None,
-                 is_secure=False, port=None, host=None, region=None, endpoint=None,
-                 boto_debug=0, path=None, APIVersion=None, validate_certs=None,
-                 test_resources=None, logger=None, log_level=None, user_context=None,):
-
-        # Init test connection first to sort out base parameters...
-        TestConnection.__init__(self,
-                                eucarc=eucarc,
-                                credpath=credpath,
-                                context_mgr=context_mgr,
-                                test_resources=test_resources,
-                                logger=logger,
-                                aws_access_key_id=aws_access_key_id,
-                                aws_secret_access_key=aws_secret_access_key,
-                                is_secure=is_secure,
-                                port=port,
-                                host=host,
-                                APIVersion=APIVersion,
-                                validate_certs=validate_certs,
-                                boto_debug=boto_debug,
-                                path=path,
-                                log_level=log_level,
-                                user_context=user_context)
-        if self.boto_debug:
-            self.show_connection_kwargs()
-        # Init IAM connection...
-        try:
-            STSConnection.__init__(self, **self._connection_kwargs)
-        except:
-            self.show_connection_kwargs()
-            raise
-
-    def setup_sts_connection(self, endpoint=None, region=None, aws_access_key_id=None, aws_secret_access_key=None,
-                             path="/", port=443, is_secure=True, boto_debug=0):
-        sts_region = RegionInfo()
-        if region:
-            self.debug("Check region: " + str(region))
-            try:
-                if not endpoint:
-                    sts_region.endpoint = EC2RegionData[region]
-                else:
-                    sts_region.endpoint = endpoint
-            except KeyError:
-                raise Exception('Unknown region: %s' % region)
-        else:
-            sts_region.name = 'eucalyptus'
-            if endpoint:
-                sts_region.endpoint = endpoint
-            else:
-                sts_region.endpoint = self.get_sts_ip()
-
-        try:
-            sts_connection_args = {'aws_access_key_id': aws_access_key_id,
-                                   'aws_secret_access_key': aws_secret_access_key,
-                                   'is_secure': is_secure,
-                                   'debug': boto_debug,
-                                   'port': port,
-                                   'path': path,
-                                   'region': sts_region}
-            self.debug("Attempting to create STS connection to " + sts_region.endpoint + ':' + str(port) + path)
-            self.connection = boto.connect_sts(**sts_connection_args)
-        except Exception, e:
-            self.critical("Was unable to create STS connection because of exception: " + str(e))
+    CONNECTION_CLASS = STSConnection
 
     def get_session_token( self, duration=None ):
         """

@@ -56,7 +56,7 @@ class UserContext(AutoCreds):
                  ASops.__name__: 'autoscaling'}
 
     def __init__(self,  aws_access_key=None, aws_secret_key=None, aws_account_name=None,
-                 aws_user_name=None, context_mgr=None, credpath=None, string=None,
+                 aws_user_name=None, credpath=None, string=None,
                  machine=None, keysdir=None, logger=None, service_connection=None,
                  eucarc=None, existing_certs=False, boto_debug=0, log_level=DEBUG):
 
@@ -74,7 +74,6 @@ class UserContext(AutoCreds):
         self._previous_context = None
         self._user_info = {}
 
-        self.context_mgr = context_mgr
         # Logging setup
         if not logger:
             logger = Eulogger(str(self), stdout_level=log_level)
@@ -91,7 +90,6 @@ class UserContext(AutoCreds):
             self.update_attrs_from_cloud_services()
         self._test_resources = {}
         self._connection_kwargs = {'eucarc': self, 
-                                   'context_mgr': self.context_mgr,
                                    'boto_debug': boto_debug,
                                    'user_context': self,
                                    'log_level': log_level}
@@ -101,7 +99,7 @@ class UserContext(AutoCreds):
     ##########################################################################################
     #   User/Account Properties, Attributes, Methods, etc..
     ##########################################################################################
-
+    """
     def __enter__(self):
         self._previous_context = self.context_mgr.current_user_context
         self.context_mgr.set_current_user_context(self)
@@ -109,6 +107,7 @@ class UserContext(AutoCreds):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.context_mgr.set_current_user_context(self._previous_context)
+    """
 
     def __repr__(self):
         account_name = ""

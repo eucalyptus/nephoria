@@ -36,88 +36,19 @@ from boto.ec2.regioninfo import RegionInfo
 from boto.cloudformation import CloudFormationConnection
 import time
 
-class CFNops(TestConnection, CloudFormationConnection):
-
+class CFNops(TestConnection):
+    AWS_REGION_SERVICE_PREFIX = 'cloudformation'
+    CONNECTION_CLASS = CloudFormationConnection
     EUCARC_URL_NAME = 'cloudformation_url'
-    def __init__(self, eucarc=None, credpath=None, context_mgr=None,
-                 aws_access_key_id=None, aws_secret_access_key=None,
-                 is_secure=False, port=None, host=None, region=None, endpoint=None,
-                 boto_debug=0, path=None, APIVersion=None, validate_certs=None,
-                 test_resources=None, logger=None, log_level=None, user_context=None,):
-
-        # Init test connection first to sort out base parameters...
-        TestConnection.__init__(self,
-                                eucarc=eucarc,
-                                credpath=credpath,
-                                context_mgr=context_mgr,
-                                test_resources=test_resources,
-                                logger=logger,
-                                aws_access_key_id=aws_access_key_id,
-                                aws_secret_access_key=aws_secret_access_key,
-                                is_secure=is_secure,
-                                port=port,
-                                host=host,
-                                APIVersion=APIVersion,
-                                validate_certs=validate_certs,
-                                boto_debug=boto_debug,
-                                path=path,
-                                log_level=log_level,
-                                user_context=user_context)
-        if self.boto_debug:
-            self.show_connection_kwargs()
-        # Init IAM connection...
-        try:
-            CloudFormationConnection.__init__(self, **self._connection_kwargs)
-        except:
-            self.show_connection_kwargs()
-            raise
-
-    def setup_cfn_connection(self,
-                             endpoint=None,
-                             path="/",
-                             port=443,
-                             region=None,
-                             aws_access_key_id=None,
-                             aws_secret_access_key=None,
-                             is_secure=True,
-                             boto_debug=0):
-        cfn_region = RegionInfo()
-        if region:
-            self.log.debug("Check region: " + str(region))
-            try:
-                if not endpoint:
-                    cfn_region.endpoint = "cloudformation.{0}.amazonaws.com".format(region)
-                else:
-                    cfn_region.endpoint = endpoint
-            except KeyError:
-                raise Exception( 'Unknown region: %s' % region)
-        else:
-            cfn_region.name = 'eucalyptus'
-            if endpoint:
-                cfn_region.endpoint = endpoint
-            else:
-                cfn_region.endpoint = self.get_cfn_ip()
-
-        try:
-            cfn_connection_args = { 'aws_access_key_id' : aws_access_key_id,
-                                    'aws_secret_access_key': aws_secret_access_key,
-                                    'is_secure': is_secure,
-                                    'debug':boto_debug,
-                                    'port' : port,
-                                    'path' : path,
-                                    'region' : cfn_region}
-            self.log.debug("Attempting to create cloudformation connection to " + self.get_cfn_ip() + ':' + str(port) + path)
-            self = boto.connect_cloudformation(**cfn_connection_args)
-        except Exception, e:
-            self.log.critical("Was unable to create cloudformation connection because of exception: " + str(e))
 
     def create_stack(self, stack_name, template_body, template_url=None, parameters=None,
                      *args, **kwargs):
         self.log.info("Creating stack: {0}".format(stack_name))
-        arn = super(CFNops, self).create_stack(stack_name, template_body, template_url=template_url,
-                                               parameters=parameters, *args, **kwargs)
+        arn = super(CFNops, self).connection.create_stack(stack_name, template_body,
+                                                          template_url=template_url,
+                                                          parameters=parameters, *args, **kwargs)
         for x in xrange(0, 5):
-            stacks = self.describe_stacks(arn)
+            stacks = self.connection.describe_stacks(arn)
             if stacks:
                 return stacks[0]
             time.sleep(2 * x)
@@ -126,6 +57,6 @@ class CFNops(TestConnection, CloudFormationConnection):
 
     def delete_stack(self, stack_name_or_id, *args, **kwargs):
         self.log.info("Deleting stack: {0}".format(stack_name_or_id))
-        return super(CFNops, self).delete_stack(stack_name_or_id, *args, **kwargs)
+        return super(CFNops, self).connection.delete_stack(stack_name_or_id, *args, **kwargs)
 
     delete_stack.__doc__ = CloudFormationConnection.delete_stack.__doc__

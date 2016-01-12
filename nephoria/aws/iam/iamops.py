@@ -40,42 +40,14 @@ from prettytable import PrettyTable
 from nephoria.testconnection import TestConnection
 
 
-class IAMops(TestConnection, IAMConnection):
+class IAMops(TestConnection):
     EUCARC_URL_NAME = 'iam_url'
-    def __init__(self, eucarc=None, credpath=None, context_mgr=None,
-                 aws_access_key_id=None, aws_secret_access_key=None,
-                 is_secure=False, port=None, host=None, region=None, endpoint=None,
-                 boto_debug=0, path=None, APIVersion=None, validate_certs=None,
-                 test_resources=None, logger=None, log_level=None, user_context=None,):
+    CONNECTION_CLASS = IAMConnection
 
-        # Init test connection first to sort out base parameters...
-        TestConnection.__init__(self,
-                                eucarc=eucarc,
-                                credpath=credpath,
-                                context_mgr=context_mgr,
-                                test_resources=test_resources,
-                                logger=logger,
-                                aws_access_key_id=aws_access_key_id,
-                                aws_secret_access_key=aws_secret_access_key,
-                                is_secure=is_secure,
-                                port=port,
-                                host=host,
-                                APIVersion=APIVersion,
-                                validate_certs=validate_certs,
-                                boto_debug=boto_debug,
-                                path=path,
-                                log_level=log_level,
-                                user_context=user_context)
-        if self.boto_debug:
-            self.show_connection_kwargs()
-        # Init IAM connection...
-        try:
-            IAMConnection.__init__(self, **self._connection_kwargs)
-        except:
-            self.show_connection_kwargs()
-            raise
+    def setup_resource_trackers(self):
+        ## add test resource trackers and cleanup methods...
         self.test_resources["iam_accounts"] = self.test_resources.get('iam_accounts', [])
-
+        self.test_resources_clean_methods["iam_accounts"] = None
 
     def create_account(self, account_name, ignore_existing=True):
         """
@@ -108,7 +80,7 @@ class IAMops(TestConnection, IAMConnection):
             'AccountName': account_name,
             'Recursive': recursive
         }
-        self.get_response('DeleteAccount', params)
+        self.connection.get_response('DeleteAccount', params)
 
     def get_all_accounts(self, account_id=None, account_name=None, search=False):
         """
@@ -222,7 +194,7 @@ class IAMops(TestConnection, IAMConnection):
         params = {'UserName': user_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.get_response('DeleteUser', params)
+        self.connection.get_response('DeleteUser', params)
 
     def get_users_from_account(self, path=None, user_name=None, user_id=None,
                                delegate_account=None, search=False):
@@ -437,7 +409,7 @@ class IAMops(TestConnection, IAMConnection):
         if delegate_account:
             params['DelegateAccount'] = delegate_account
         try:
-            response = self.get_response('ListUserPolicies', params,
+            response = self.connection.get_response('ListUserPolicies', params,
                                                     list_marker='PolicyNames')
             p_names = response['list_user_policies_response']['list_user_policies_result']\
                               ['policy_names']
@@ -450,7 +422,7 @@ class IAMops(TestConnection, IAMConnection):
             if BE.status == 403 and ignore_admin_err and str(user_name).strip() == 'admin':
                 self.log.debug('IGNORING: '+ err)
             else:
-                self.critical(err)
+                self.log.critical(err)
                 raise
         return retlist
 
@@ -482,10 +454,10 @@ class IAMops(TestConnection, IAMConnection):
             if delegate_account:
                 params['DelegateAccount'] = delegate_account
             try:
-                policy = self.get_response(
-                    'GetUserPolicy',
-                    params,
-                    verb='POST')['get_user_policy_response']['get_user_policy_result']
+                policy = self.connection.get_response(
+                            'GetUserPolicy',
+                            params,
+                            verb='POST')['get_user_policy_response']['get_user_policy_result']
             except BotoServerError, BE:
                 err_msg = 'Error fetching policy for params:\n{0}: "{1}"'.format(params, BE)
                 if BE.status == 403 and ignore_admin_err and str(p_name).strip() == 'admin':
@@ -541,7 +513,7 @@ class IAMops(TestConnection, IAMConnection):
         """
         user_name = user_name
         if delegate_account is None:
-            account_id=self.get_account_id()
+            account_id=self.eucarc.account_id
             delegate_account= self.get_all_accounts(account_id=account_id)[0]['account_name']
         self.log.debug('Fetching user summary for: user_name:' + str(user_name) +
                    " account:" + str(delegate_account) + " account_id:" + str(account_id))
@@ -581,7 +553,7 @@ class IAMops(TestConnection, IAMConnection):
                   'PolicyDocument': policy_json}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.get_response('PutUserPolicy', params, verb='POST')
+        self.connection.get_response('PutUserPolicy', params, verb='POST')
     
     def detach_policy_user(self, user_name, policy_name, delegate_account=None):
         """
@@ -597,7 +569,7 @@ class IAMops(TestConnection, IAMConnection):
                   'PolicyName': policy_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.get_response('DeleteUserPolicy', params, verb='POST')
+        self.connection.get_response('DeleteUserPolicy', params, verb='POST')
 
     def get_all_groups(self, account_name=None, account_id=None, path=None, group_name=None,
                        group_id=None, search=False ):
@@ -653,7 +625,7 @@ class IAMops(TestConnection, IAMConnection):
             re_meth = re.match
         if delegate_account:
             params['DelegateAccount'] = delegate_account         
-        response = self.get_response('ListGroups', params, list_marker='Groups')
+        response = self.connection.get_response('ListGroups', params, list_marker='Groups')
         for group in response['list_groups_response']['list_groups_result']['groups']:
             if path is not None and not re_meth(path, group['path']):
                 continue
@@ -676,7 +648,7 @@ class IAMops(TestConnection, IAMConnection):
         if delegate_account:
             params['DelegateAccount'] = delegate_account
         params['GroupName'] = group_name
-        response = self.get_response('GetGroup', params, list_marker='Users')
+        response = self.connection.get_response('GetGroup', params, list_marker='Users')
         for user in response['get_group_response']['get_group_result']['access']:
             ret_list.append(user)
         return ret_list
@@ -701,7 +673,7 @@ class IAMops(TestConnection, IAMConnection):
         params = {'GroupName': group_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        response = self.get_response('ListGroupPolicies',
+        response = self.connection.get_response('ListGroupPolicies',
                                                 params, list_marker='PolicyNames')
         for name in response['list_group_policies_response']['list_group_policies_result']\
                 ['policy_names']:
@@ -737,7 +709,7 @@ class IAMops(TestConnection, IAMConnection):
                       'PolicyName': p_name}
             if delegate_account:
                 params['DelegateAccount'] = delegate_account
-            policy = self.get_response('GetGroupPolicy', params, verb='POST')\
+            policy = self.connection.get_response('GetGroupPolicy', params, verb='POST')\
                 ['get_group_policy_response']['get_group_policy_result']
             if doc is not None and not re_meth(doc, policy['policy_document']):
                 continue
@@ -758,7 +730,7 @@ class IAMops(TestConnection, IAMConnection):
                   'Path': path}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.get_response('CreateGroup', params)
+        self.connection.get_response('CreateGroup', params)
     
     def delete_group(self, group_name, delegate_account=None):
         """
@@ -771,7 +743,7 @@ class IAMops(TestConnection, IAMConnection):
         params = {'GroupName': group_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.get_response('DeleteGroup', params)
+        self.connection.get_response('DeleteGroup', params)
     
     def add_user_to_group(self, group_name, user_name, delegate_account=None):
         """
@@ -787,7 +759,7 @@ class IAMops(TestConnection, IAMConnection):
                   'UserName': user_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.get_response('AddUserToGroup', params)
+        self.connection.get_response('AddUserToGroup', params)
     
     def remove_user_from_group(self, group_name, user_name, delegate_account=None):
         """
@@ -803,7 +775,7 @@ class IAMops(TestConnection, IAMConnection):
                   'UserName': user_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.get_response('RemoveUserFromGroup', params)
+        self.connection.get_response('RemoveUserFromGroup', params)
     
     def attach_policy_group(self, group_name, policy_name, policy_json, delegate_account=None):
         """
@@ -821,7 +793,7 @@ class IAMops(TestConnection, IAMConnection):
                   'PolicyDocument': policy_json}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.get_response('PutGroupPolicy', params, verb='POST')
+        self.connection.get_response('PutGroupPolicy', params, verb='POST')
     
     def detach_policy_group(self, group_name, policy_name, delegate_account=None):
         """
@@ -837,7 +809,7 @@ class IAMops(TestConnection, IAMConnection):
                   'PolicyName': policy_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        self.get_response('DeleteGroupPolicy', params, verb='POST')
+        self.connection.get_response('DeleteGroupPolicy', params, verb='POST')
     
     def create_access_key(self, user_name=None, delegate_account=None):
         """
@@ -853,7 +825,7 @@ class IAMops(TestConnection, IAMConnection):
         params = {'UserName': user_name}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        response = self.get_response('CreateAccessKey', params)
+        response = self.connection.get_response('CreateAccessKey', params)
         access_tuple = {}
         access_tuple['access_key_id'] = response['create_access_key_response']\
             ['create_access_key_result']['access_key']['access_key_id']
@@ -862,8 +834,8 @@ class IAMops(TestConnection, IAMConnection):
         return access_tuple
 
     def get_aws_access_key(self, user_name=None, delegate_account=None):
-        if not user_name and not delegate_account and self.aws_access_key_id:
-            aws_access_key = self.aws_access_key_id or self.get_access_key()
+        if not user_name and not delegate_account and self.connection.aws_access_key_id:
+            aws_access_key = self.connection.aws_access_key_id or self.eucarc.aws_access_key
             if aws_access_key:
                 return  aws_access_key
         params = {}
@@ -891,7 +863,7 @@ class IAMops(TestConnection, IAMConnection):
             params['UserName'] = user_name
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        return self.get_response('DeleteSigningCertificate', params)
+        return self.connection.get_response('DeleteSigningCertificate', params)
 
     def delete_all_signing_certs(self, user_name=None, delegate_account=None, verbose=False):
         for cert in self.get_all_signing_certs(user_name=user_name,
@@ -1033,31 +1005,33 @@ class IAMops(TestConnection, IAMConnection):
         self.log.debug("uploading server certificate: " + cert_name)
         self.upload_server_cert(cert_name=cert_name, cert_body=cert_body,
                                            private_key=private_key)
-        if cert_name not in str(self.get_server_certificate(cert_name)):
+        if cert_name not in str(self.connection.get_server_certificate(cert_name)):
             raise Exception("certificate " + cert_name + " not uploaded")
 
     def update_server_cert(self, cert_name, new_cert_name=None, new_path=None):
         self.log.debug("updating server certificate: " + cert_name)
-        super(IAMops, self).update_server_cert(cert_name=cert_name, new_cert_name=new_cert_name,
-                                               new_path=new_path)
-        if (new_cert_name and new_path) not in str(self.get_server_certificate(new_cert_name)):
+        self.connection.update_server_cert(cert_name=cert_name,
+                                                          new_cert_name=new_cert_name,
+                                                          new_path=new_path)
+        if (new_cert_name and new_path) not in \
+                str(self.connection.get_server_certificate(new_cert_name)):
             raise Exception("certificate " + cert_name + " not updated.")
 
     def get_server_cert(self, cert_name):
         self.log.debug("getting server certificate: " + cert_name)
-        cert = super(IAMops, self).get_server_certificate(cert_name=cert_name)
+        cert = self.connection.get_server_certificate(cert_name=cert_name)
         self.log.debug(cert)
         return cert
 
     def delete_server_cert(self, cert_name):
         self.log.debug("deleting server certificate: " + cert_name)
-        super(IAMops, self).delete_server_cert(cert_name)
-        if (cert_name) in str(self.get_all_server_certs()):
+        self.connection.delete_server_cert(cert_name)
+        if (cert_name) in str(self.connection.get_all_server_certs()):
             raise Exception("certificate " + cert_name + " not deleted.")
 
     def list_server_certs(self, path_prefix='/', marker=None, max_items=None):
         self.log.debug("listing server certificates")
-        certs = super(IAMops, self).list_server_certs(path_prefix=path_prefix,
+        certs = self.connection.list_server_certs(path_prefix=path_prefix,
                                                       marker=marker, max_items=max_items)
         self.log.debug(certs)
         return certs
@@ -1068,7 +1042,7 @@ class IAMops(TestConnection, IAMConnection):
                   'Password': password}
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        return self.get_response('CreateLoginProfile', params, verb='POST')
+        return self.connection.get_response('CreateLoginProfile', params, verb='POST')
 
     @staticmethod
     def _search_dict(dictionary, marker):
@@ -1086,7 +1060,7 @@ class IAMops(TestConnection, IAMConnection):
                                verb='POST', list_marker='Set'):
         if list_marker is None:
             list_marker = 'Set'
-        resp = self.get_response(action=action, params=params, path=path, parent=parent,
+        resp = self.connection.get_response(action=action, params=params, path=path, parent=parent,
                                  verb=verb, list_marker=list_marker)
         return IAMops._search_dict(resp, item_marker)
 
@@ -1096,8 +1070,8 @@ class IAMops(TestConnection, IAMConnection):
             params['UserName'] = user_name
         if delegate_account:
             params['DelegateAccount'] = delegate_account
-        return self.get_response_items(action='GetUser', params=params, item_marker='user',
-                                        list_marker='user')
+        return self.get_response_items(action='GetUser', params=params,
+                                                  item_marker='user', list_marker='user')
 
 
 class IAMResourceNotFoundException(Exception):
