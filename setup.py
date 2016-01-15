@@ -36,7 +36,6 @@ try:
 except ImportError:
     from distutils.core import setup
 import nephoria
-
 setup(name="nephoria",
       version=nephoria.__version__,
       description="Test Framework and utilities for AWS compatible clouds",

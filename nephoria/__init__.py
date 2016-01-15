@@ -1,7 +1,6 @@
 #!/usr/bin/python
 
 
-from cloud_utils import file_utils
 import testcase_utils
 import re
 import random
@@ -19,6 +18,7 @@ def grep(self, string, list):
     return filter(expr.search,list)
 
 def render_file_template(src, dest, **kwargs):
+    from cloud_utils import file_utils
     return file_utils.render_file_template(src, dest, **kwargs)
 
 def id_generator(size=6, chars=None):
