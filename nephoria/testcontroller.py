@@ -195,17 +195,17 @@ class TestController(object):
                                                   ignore_existing=True)
         if info:
             user = self.admin.iam.create_user(user_name=aws_user_name,
-                                                    delegate_account=info.get('account_name'),
-                                                    path=path)
+                                              delegate_account=info.get('account_name'),
+                                              path=path)
             info.update(user)
         else:
             raise RuntimeError('Failed to create and/or fetch Account:"{0}", for User:"{1}"'
                                .format(aws_account_name, aws_user_name))
         ak = self.admin.iam.get_aws_access_key(user_name=info.get('user_name'),
-                                                    delegate_account=info.get('account_name'))
+                                               delegate_account=info.get('account_name'))
         if not ak:
             ak = self.admin.iam.create_access_key(user_name=info.get('user_name'),
-                                                       delegate_account=info.get('account_name'))
+                                                  delegate_account=info.get('account_name'))
         try:
             info['access_key_id'] = ak['access_key_id']
         except KeyError:
@@ -214,7 +214,7 @@ class TestController(object):
             self.log.error('{0}\n{1}'.format(get_traceback(), err_msg))
             raise RuntimeError(err_msg)
         if self.admin.iam.get_all_signing_certs(user_name=info.get('user_name'),
-                                                     delegate_account=info.get('account_name')):
+                                                delegate_account=info.get('account_name')):
             certs = True
         else:
             certs = False
