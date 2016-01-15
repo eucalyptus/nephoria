@@ -7,7 +7,7 @@ from nephoria.euca.euca_ops import Eucaops
 from nephoria.testcases.testcase_utils.eutestcase import EutesterTestCase
 
 
-class InstanceBasics(EutesterTestCase):
+class HelloWorld(EutesterTestCase):
     def __init__(self, extra_args=None):
         self.setuptestcase()
         self.setup_parser()
