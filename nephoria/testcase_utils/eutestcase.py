@@ -57,10 +57,45 @@ import types
 import traceback
 import random
 import string
+from collections import OrderedDict
+from decorator import decorator
+from functools import wraps
 from cloud_utils.log_utils.eulogger import Eulogger
+from cloud_utils.log_utils import markup, ForegroundColor, BackGroundColor, TextStyle
+from cloud_utils.log_utils import red, green, blue, yellow, cyan
 from nephoria.testcase_utils.euconfig import EuConfig
 import StringIO
 import copy
+
+
+def _get_method_args_kwargs(method):
+    args = []
+    kwargdict = OrderedDict()
+    spec = inspect.getargspec(method)
+    if spec.defaults:
+        kwarg_index = len(spec.args) - len(spec.defaults)
+        args = spec.args[0:kwarg_index]
+        kwargs = spec.args[kwarg_index:]
+        for value in spec.defaults:
+            kwargdict[kwargs.pop(0)] = value
+    else:
+        args = spec.args
+    return args, kwargdict
+
+def RegisterTestCase(description=None, category=[], test_type=None, testids=[], misc={}):
+    def wrapped(fn):
+        ars, kws = _get_method_args_kwargs(fn)
+        @wraps(fn)
+        def wrapped_f(*args, **kwargs):
+            return fn(*args, **kwargs)
+        wrapped_f.description = description or wrapped_f.__doc__
+        wrapped_f.category = category
+        wrapped_f.misc = misc
+        wrapped_f.test_type = test_type
+        wrapped_f
+        return wrapped_f
+    return wrapped
+
 
 
 class EutesterTestResult():
@@ -70,119 +105,6 @@ class EutesterTestResult():
     not_run = "not_run"
     passed = "passed"
     failed = "failed"
-
-
-class TestColor():
-    reset = '\033[0m'
-    # formats
-    formats = {'reset': '0',
-               'bold': '1',
-               'dim': '2',
-               'uline': '4',
-               'blink': '5',
-               'reverse': '7',
-               'hidden': '8'}
-    foregrounds = {'black': 30,
-                   'red': 31,
-                   'green': 32,
-                   'yellow': 33,
-                   'blue': 34,
-                   'magenta': 35,
-                   'cyan': 36,
-                   'white': 37,
-                   'setasdefault': 39}
-    backgrounds = {'black': 40,
-                   'red': 41,
-                   'green': 42,
-                   'yellow': 43,
-                   'blue': 44,
-                   'magenta': 45,
-                   'cyan': 46,
-                   'white': 47,
-                   'setasdefault': 49}
-    # list of canned color schemes, for now add em as you need 'em?
-    canned_colors = {'reset': '\033[0m',  # self.TestColor.get_color(fg=0)
-                     'whiteonblue': '\33[1;37;44m',  # get_color(fmt=bold, fg=37,bg=44)
-                     'whiteongreen': '\33[1;37;42m',
-                     'red': '\33[31m',  # TestColor.get_color(fg=31)
-                     'failred': '\033[101m',  # TestColor.get_color(fg=101)
-                     'blueongrey': '\33[1;34;47m',
-                     # TestColor.get_color(fmt=bold, fg=34, bg=47)#'\33[1;34;47m'
-                     'redongrey': '\33[1;31;47m',
-                     # TestColor.get_color(fmt=bold, fg=31, bg=47)#'\33[1;31;47m'
-                     'blinkwhiteonred': '\33[1;5;37;41m'}
-
-    @classmethod
-    def get_color(cls, fmt=0, fg='', bg=''):
-        '''
-        Description: Method to return ascii color codes to format terminal output.
-        Examples:
-                blinking_red_on_black = get_color('blink', 'red', 'blue')
-                bold_white_fg = get_color('bold', 'white, '')
-                green_fg = get_color('','green','')
-
-                print bold_white_fg+"This text is bold white"+TestColor.reset
-        :type fmt: color attribute
-        :param fmt: An integer or string that represents an ascii color attribute.
-                    see TestColor.formats
-
-        :type fg: ascii foreground attribute
-        :param fg: An integer or string that represents an ascii foreground color attribute.
-                   see TestColor.foregrounds
-
-        :type bg: ascii background attribute
-        :param bg: An integer or string that represents an ascii background color attribute.
-                   see TestColor.backgrounds
-        '''
-        fmts = ''
-        if not isinstance(fmt, types.ListType):
-            fmt = [fmt]
-        for f in fmt:
-            if isinstance(f, types.StringType):
-                f = TestColor.get_format_from_string(f)
-            if f:
-                fmts += str(f) + ';'
-        if bg:
-            if isinstance(bg, types.StringType):
-                bg = TestColor.get_bg_from_string(bg)
-            if bg:
-                bg = str(bg)
-        if fg:
-            if isinstance(fg, types.StringType):
-                fg = TestColor.get_fg_from_string(fg)
-            if fg:
-                fg = str(fg) + ';'
-
-        return '\033[' + str(fmts) + str(fg) + str(bg) + 'm'
-
-    @classmethod
-    def get_format_from_string(cls, format):
-        if format in TestColor.formats:
-            return TestColor.formats[format]
-        else:
-            return ''
-
-    @classmethod
-    def get_fg_from_string(cls, fg):
-        if fg in TestColor.foregrounds:
-            return TestColor.foregrounds[fg]
-        else:
-            return ''
-
-    @classmethod
-    def get_bg_from_string(cls, bg):
-        if bg in TestColor.backgrounds:
-            return TestColor.backgrounds[bg]
-        else:
-            return ''
-
-    @classmethod
-    def get_canned_color(cls, color):
-        try:
-            return TestColor.canned_colors[color]
-        except:
-            return ""
-
 
 class EutesterTestUnit():
     '''
@@ -252,32 +174,20 @@ class EutesterTestUnit():
         '''
         desc = "\nMETHOD:" + str(self.name) + ", TEST DESCRIPTION:\n"
         ret = []
-        add = False
         try:
             doc = str(self.method.__doc__)
-            if not doc or not re.search('Description:', doc):
+            if not doc:
                 try:
                     desc = desc + "\n".join(self.method.im_func.func_doc.title().splitlines())
                 except:
                     pass
                 return desc
-            has_end_marker = re.search('EndDescription', doc)
 
             for line in doc.splitlines():
                 line = line.lstrip().rstrip()
-                if re.search('^Description:', line.lstrip()):
-                    add = True
-                if not has_end_marker:
-                    if not re.search('\w', line):
-                        if add:
-                            break
-                        add = False
-                else:
-                    if re.search('^EndDescription'):
-                        add = False
-                        break
-                if add:
-                    ret.append(line)
+                if re.search('^\s+:', line):
+                    break
+                ret.append(line)
         except Exception, e:
             print('get_test_method_description: error' + str(e))
         if ret:
@@ -303,8 +213,7 @@ class EutesterTestUnit():
             self.result = EutesterTestResult.passed
             return ret
         except SkipTestException, se:
-            print TestColor.get_canned_color('failred') + \
-                  "TESTUNIT SKIPPED:" + str(self.name) + "\n" + str(se) + TestColor.reset
+            print red("TESTUNIT SKIPPED:" + str(self.name) + "\n" + str(se))
             self.error = str(se)
             self.result = EutesterTestResult.not_run
         except Exception, e:
@@ -318,7 +227,7 @@ class EutesterTestUnit():
             if self.kwargs.get('html_anchors', False):
                 buf += ' </font>'
                 print '<a name="' + str(self.error_anchor_id) + '"></a>'
-            print TestColor.get_canned_color('failred') + buf + TestColor.reset
+            print red(buf)
             self.error = str(e)
             self.result = EutesterTestResult.failed
             if eof:
@@ -330,12 +239,33 @@ class EutesterTestUnit():
 
 
 class EutesterTestCase(unittest.TestCase):
-    color = TestColor()
+    # List of dicts/kwargs to be used to fed to
+    # cli parser.add_argument() to build additional cli args.
+    _ADD_CLI_ARGS = []
+    # List of strings, to be matched against cli arguments to remove. This uses
+    # re.match() syntax to match the 'dest' value of the cli arguments
+    _REMOVE_CLI_ARGS_REGEX = []
 
     def __init__(self, name=None, debugmethod=None, log_level='debug', logfile=None,
                  logfile_level='debug'):
         self.setuptestcase(name=name, debugmethod=debugmethod, logfile=logfile,
                            logfile_level=logfile_level)
+        self.setup_parser()
+        remove_actions = []
+        for remove_cli_regex in self._REMOVE_CLI_ARGS_REGEX:
+            for action in self.parser._actions:
+                if re.search(str(remove_cli_regex), action.dest):
+                    remove_actions.append(action)
+        for action in remove_actions:
+            if action.option_strings:
+                self.parser._handle_conflict_resolve(None, [(action.option_strings[0], action)])
+            else:
+                action.container._remove_action(action)
+        for kwargs in self._ADD_CLI_ARGS:
+            self.parser.add_argument(**kwargs)
+        self.get_args()
+
+
 
     def setuptestcase(self,
                       name=None,
@@ -376,24 +306,21 @@ class EutesterTestCase(unittest.TestCase):
         self.show_self()
 
     def compile_all_args(self):
-        self.setup_parser()
+        if not self.parser:
+            self.setup_parser()
         self.get_args()
 
     def setup_parser(self,
                      testname=None,
                      description=None,
                      clc=True,
-                     clc_pass=True,
+                     password=True,
                      freeze=True,
                      emi=True,
                      zone=True,
                      vmtype=True,
                      keypair=True,
                      credpath=True,
-                     password=True,
-                     config=True,
-                     configblocks=True,
-                     ignoreblocks=True,
                      color=True,
                      testlist=True,
                      userdata=True,
@@ -411,10 +338,6 @@ class EutesterTestCase(unittest.TestCase):
         script bassis.
 
         :type clc: boolean
-        :param clc: Flag to present the CLC command line argument/option for providing the
-                    address to a machine hosting the CLC services for this testcase
-
-        :type clc_pass: boolean
         :param clc: Flag to present the CLC command line argument/option for providing the
                     address to a machine hosting the CLC services for this testcase
 
@@ -452,23 +375,6 @@ class EutesterTestCase(unittest.TestCase):
         :param password: Flag to present the password command line argument/option for
                          providing password used in establishing machine ssh sessions
 
-        :type config: boolean
-        :param config: Flag to present the config file command line argument/option for providing
-                       path to config file
-
-        :type configblocks: string list
-        :param configblocks: Flag to present the configblocks command line arg/option used to
-                             provide list of configuration blocks to read from
-                             Note: By default if a config file is provided the script will only
-                             look for blocks; 'globals', and the filename of the script being run.
-
-        :type ignoreblocks: string list
-        :param ignoreblocks: Flag to present the configblocks command line arg/option used to
-                             provide list of configuration blocks to ignore if present in
-                             configfile
-                             Note: By default if a config file is provided the script will look
-                             for blocks; 'globals', and the filename of the script being run
-
         :type testlist: string list
         :param testlist: Flag to present the testlist command line argument/option for providing
                          a list of testnames to run
@@ -486,8 +392,8 @@ class EutesterTestCase(unittest.TestCase):
                                   argument/option for providing a ssh password for instance
                                   login via the cli
 
-        :type use_color: flag
-        :param use_color: Flag to enable/disable use of ascci color codes in debug output.
+        :type color: flag
+        :param color: Flag to enable/disable use of ascci color codes in debug output.
 
         :param stdout_log_level: boolean flag to present the --log_leveel command line option to
                                 set stdout log level
@@ -511,10 +417,6 @@ class EutesterTestCase(unittest.TestCase):
             parser.add_argument('--clc',
                                 help="Address of Machine hosting CLC services",
                                 default=None)
-        if clc_pass:
-            parser.add_argument('--clc-password', dest='clc_password',
-                                help="Password of Machine hosting CLC services",
-                                default=None)
         if freeze:
             parser.add_argument('--freeze-on-exit', dest='freeze_on_exit', action='store_true',
                                 help="Freeze test without running clean methods at exit",
@@ -528,20 +430,7 @@ class EutesterTestCase(unittest.TestCase):
                                 help="path to credentials", default=None)
         if password:
             parser.add_argument('--password',
-                                help="password to use for machine root ssh access", default=None)
-        if config:
-            parser.add_argument('--config',
-                                help='path to config file', default=None)
-        if configblocks:
-            parser.add_argument('--configblocks', nargs='+',
-                                help="Config sections/blocks in config file to read in",
-                                default=[])
-        if ignoreblocks:
-            parser.add_argument('--ignoreblocks', nargs='+',
-                                help="Config blocks to ignore, ie:'globals', 'my_scripts_name', "
-                                     "etc..",
-
-                                default=[])
+                                help="Password to use for machine root ssh access", default=None)
         if testlist:
             parser.add_argument('--tests', nargs='+',
                                 help="test cases to be executed", default=[])
@@ -572,16 +461,16 @@ class EutesterTestCase(unittest.TestCase):
             parser.add_argument('--region',
                                 help="Use AWS region instead of Eucalyptus", default=None)
         if color:
-            parser.add_argument('--use_color', dest='use_color', action='store_true',
+            parser.add_argument('--use-color', dest='use_color', action='store_true',
                                 default=False)
         if stdout_log_level:
-            parser.add_argument('--log_level',
+            parser.add_argument('--log-level',
                                 help="log level for stdout logging", default='debug')
         if logfile:
             parser.add_argument('--logfile',
                                 help="file path to log to (in addtion to stdout", default=None)
         if logfile_level:
-            parser.add_argument('--logfile_level',
+            parser.add_argument('--logfile-level',
                                 help="log level for log file logging", default='debug')
         parser.add_argument('--html-anchors', dest='html_anchors', action='store_true',
                             help="Print HTML anchors for jumping through test results",
@@ -636,7 +525,7 @@ class EutesterTestCase(unittest.TestCase):
         if not self.has_arg('debug_method'):
             self.add_arg('debug_method', self.debug)
 
-    def debug(self, msg, traceback=1, color=None, linebyline=True):
+    def debug(self, msg, traceback=1, markups=[], linebyline=True):
         '''
         Description: Method for printing debug
         type msg: string
@@ -660,10 +549,6 @@ class EutesterTestCase(unittest.TestCase):
 
         colorprefix = ""
         colorreset = ""
-        # if a color was provide
-        if color and self.use_color:
-            colorprefix = TestColor.get_canned_color(color) or color
-            colorreset = str(TestColor.get_canned_color('reset'))
         msg = str(msg)
         curframe = inspect.currentframe(traceback)
         lineno = curframe.f_lineno
@@ -682,11 +567,11 @@ class EutesterTestCase(unittest.TestCase):
             cur_method = funcs[0].func_name if funcs else ""
         if linebyline:
             for line in msg.split("\n"):
-                self.debugmethod("(" + str(cur_method) + ":" + str(
-                    lineno) + "): " + colorprefix + line.strip() + colorreset)
+                self.debugmethod("({0}:{1}):{2}".format(cur_method, lineno,
+                                                        markup(line.strip(), markups=markups)))
         else:
-            self.debugmethod("(" + str(cur_method) + ":" + str(lineno) + "): " + colorprefix +
-                             str(msg) + colorreset)
+            self.debugmethod("({0}:{1}):{2}".format(cur_method, lineno,
+                                                    markup(msg, markups=markups)))
 
     def run_test_list_by_name(self, list, eof=None):
         unit_list = []
@@ -750,7 +635,7 @@ class EutesterTestCase(unittest.TestCase):
             self.populate_testunit_with_args(testunit)
         return testunit
 
-    def status(self, msg, traceback=2, b=1, a=0, testcolor=None):
+    def status(self, msg, traceback=2, b=1, a=0, markups=[]):
         '''
         Description: Convenience method to format debug output
 
@@ -767,9 +652,10 @@ class EutesterTestCase(unittest.TestCase):
         :type a: integer
         :param a:number of blank lines to print after msg
 
-        :type testcolor: TestColor color
-        :param testcolor: Optional TestColor ascii color scheme
+        :type markups: list
+        :param markups: Optional list of of ascii markup codes
         '''
+
         alines = ""
         blines = ""
         for x in xrange(0, b):
@@ -778,51 +664,43 @@ class EutesterTestCase(unittest.TestCase):
             alines = alines + "\n"
         line = "-------------------------------------------------------------------------"
         out = blines + line + "\n" + msg + "\n" + line + alines
-        self.debug(out, traceback=traceback, color=testcolor, linebyline=False)
+        self.debug(out, traceback=traceback, markups=markups, linebyline=False)
 
     def startmsg(self, msg=""):
-        self.status(msg, traceback=3, testcolor=TestColor.get_canned_color('whiteonblue'))
+        self.status(msg, traceback=3, markups=[ForegroundColor.WHITE, BackGroundColor.BG_BLUE])
 
     def endsuccess(self, msg=""):
         msg = "- UNIT ENDED - " + msg
-        self.status(msg, traceback=2, a=1, testcolor=TestColor.get_canned_color('whiteongreen'))
+        self.status(msg, traceback=2, a=1, markups=[ForegroundColor.WHITE,
+                                                    BackGroundColor.BG_GREEN])
+        return msg
 
     def errormsg(self, msg=""):
         msg = "- ERROR - " + msg
-        self.status(msg, traceback=2, a=1, testcolor=TestColor.get_canned_color('failred'))
+        self.status(msg, traceback=2, a=1, markups=[ForegroundColor.RED])
+        return msg
 
     def endfailure(self, msg=""):
-        msg = "- FAILED - " + msg
-        self.status(msg, traceback=2, a=1, testcolor=TestColor.get_canned_color('failred'))
-
-    def resultdefault(self, msg, printout=True, color='blueongrey'):
-        if printout:
-            self.debug(msg, traceback=2, color=TestColor.get_canned_color('blueongrey'),
-                       linebyline=False)
-        msg = self.format_line_for_color(msg, color)
+        msg = markup("- FAILED - " + msg, markups=[ForegroundColor.RED])
+        self.status(msg, traceback=2, a=1)
         return msg
 
-    def resultfail(self, msg, printout=True, color='redongrey'):
+    def resultdefault(self, msg, printout=True):
+        msg = markup(msg, markups=[ForegroundColor.BLUE, BackGroundColor.BG_WHITE])
         if printout:
-            self.debug(msg, traceback=2, color=TestColor.get_canned_color('redongrey'),
-                       linebyline=False)
-        msg = self.format_line_for_color(msg, color)
+            self.debug(msg, traceback=2, linebyline=False)
         return msg
 
-    def resulterr(self, msg, printout=True, color='failred'):
+    def resultfail(self, msg, printout=True):
+        msg = markup(msg, markups=[ForegroundColor.RED, BackGroundColor.BG_WHITE])
         if printout:
-            self.debug(msg, traceback=2, color=TestColor.get_canned_color(color), linebyline=False)
-        msg = self.format_line_for_color(msg, color)
+            self.debug(msg, traceback=2,linebyline=False)
         return msg
 
-    def format_line_for_color(self, msg, color):
-        if not self.use_color:
-            return msg
-        end = ""
-        if msg.endswith('\n'):
-            msg = msg.rstrip()
-            end = "\n"
-        msg = TestColor.get_canned_color(color) + str(msg) + TestColor.reset + end
+    def resulterr(self, msg, printout=True):
+        msg = red(msg)
+        if printout:
+            self.debug(msg, traceback=2, linebyline=False)
         return msg
 
     def get_pretty_args(self, testunit):

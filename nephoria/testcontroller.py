@@ -128,6 +128,32 @@ class TestController(object):
         self._cloudadmin = None
         self._test_user = None
 
+    def get_user_by_name(self, aws_account_name, aws_user_name,
+                         machine=None, service_connection=None, path='/',
+                         log_level=None):
+        """
+        Fetch an existing cloud user and convert into a usercontext object.
+        For checking basic existence of a cloud user, use the iam interface instead.
+        """
+        try:
+            user = self.admin.iam.get_user_info(user_name=aws_user_name,
+                                                delegate_account=aws_account_name)
+        except Exception:
+            self.log.error('Error fetching "account:{0}, user:{1}" has this user been created '
+                           'already?'.format(aws_account_name, aws_user_name))
+            raise
+        if user:
+            return self.create_user_using_cloudadmin(aws_account_name=aws_account_name,
+                                                     aws_user_name=aws_user_name,
+                                                     machine=machine,
+                                                     service_connection=service_connection,
+                                                     path=path, log_level=log_level)
+        else:
+            raise ValueError('User info not returned for "account:{0}, user:{1}"'
+                             .format(aws_account_name, aws_user_name))
+
+
+
     def create_user_using_cloudadmin(self, aws_account_name=None, aws_user_name='admin',
                                      aws_access_key=None, aws_secret_key=None,
                                      credpath=None, eucarc=None,
@@ -169,17 +195,17 @@ class TestController(object):
                                                   ignore_existing=True)
         if info:
             user = self.admin.iam.create_user(user_name=aws_user_name,
-                                                    delegate_account=info.get('account_name'),
-                                                    path=path)
+                                              delegate_account=info.get('account_name'),
+                                              path=path)
             info.update(user)
         else:
             raise RuntimeError('Failed to create and/or fetch Account:"{0}", for User:"{1}"'
                                .format(aws_account_name, aws_user_name))
         ak = self.admin.iam.get_aws_access_key(user_name=info.get('user_name'),
-                                                    delegate_account=info.get('account_name'))
+                                               delegate_account=info.get('account_name'))
         if not ak:
             ak = self.admin.iam.create_access_key(user_name=info.get('user_name'),
-                                                       delegate_account=info.get('account_name'))
+                                                  delegate_account=info.get('account_name'))
         try:
             info['access_key_id'] = ak['access_key_id']
         except KeyError:
@@ -188,7 +214,7 @@ class TestController(object):
             self.log.error('{0}\n{1}'.format(get_traceback(), err_msg))
             raise RuntimeError(err_msg)
         if self.admin.iam.get_all_signing_certs(user_name=info.get('user_name'),
-                                                     delegate_account=info.get('account_name')):
+                                                delegate_account=info.get('account_name')):
             certs = True
         else:
             certs = False
