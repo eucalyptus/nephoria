@@ -21,7 +21,7 @@ Multi-cluster portion...
 -attempt to create a volume of each snapshot, if multi 1 in each cluster
 -attempt to attach each volume to an instance verify md5s
 
-Properties tests:
+Properties nephoria_unit_tests:
 -create a volume of greater than prop size, should fail
 -create a 2nd volume attempting to exceed the max aggregate size, should fail
 
@@ -166,7 +166,7 @@ class EbsTestSuite(EutesterTestCase):
                 self.zonelist.append(tzone)
                 self.multicluster=True
         if not self.zonelist:
-            raise Exception("Could not discover an availability zone to perform tests in. Please specify zone")
+            raise Exception("Could not discover an availability zone to perform nephoria_unit_tests in. Please specify zone")
     
     def volumes_list_check(self, volumes):
         #helper method to validate volumes for use as a list
@@ -196,7 +196,7 @@ class EbsTestSuite(EutesterTestCase):
                     Intention of this test is to verify creation of volume(s) per zone given.
                     Upon successful creation the volumes will be appended to a volumes list
                     for the zone it was created in. 
-                    These volumes may be later used if in later ebstests suite tests. 
+                    These volumes may be later used if in later ebstests suite nephoria_unit_tests.
         """    
         zonelist = zonelist or self.zonelist
         if not zonelist:
@@ -871,7 +871,7 @@ class EbsTestSuite(EutesterTestCase):
                                                          poll_progress=poll_progress))
         #attempt to create volumes from snaps, attach and verify md5 in same zone it was created in
         testlist.append(self.create_testunit_from_method(self.create_snapshots_all_vols_in_zone))
-        #Attempt to create multiple consecutive volumes from a single snapshot, will attempt concurrent tests accross multiple zones if in multi zone test
+        #Attempt to create multiple consecutive volumes from a single snapshot, will attempt concurrent nephoria_unit_tests accross multiple zones if in multi zone test
         testlist.append(self.create_testunit_from_method(self.concurrent_consecutive_volumes_from_snap_verify_md5,
                                                          count=count, 
                                                          delay=delay, 
@@ -1000,7 +1000,7 @@ class EbsTestSuite(EutesterTestCase):
         
     def spin_restart(self, count=1000):
         '''
-        Churn test wrapping cloud service start/stop storage tests
+        Churn test wrapping cloud service start/stop storage nephoria_unit_tests
         '''
         for x in xrange(0,count):
             self.startmsg("test attempt("+str(x)+")")

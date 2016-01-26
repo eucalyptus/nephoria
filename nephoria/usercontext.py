@@ -99,15 +99,6 @@ class UserContext(AutoCreds):
     ##########################################################################################
     #   User/Account Properties, Attributes, Methods, etc..
     ##########################################################################################
-    """
-    def __enter__(self):
-        self._previous_context = self.context_mgr.current_user_context
-        self.context_mgr.set_current_user_context(self)
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.context_mgr.set_current_user_context(self._previous_context)
-    """
 
     def __repr__(self):
         account_name = ""

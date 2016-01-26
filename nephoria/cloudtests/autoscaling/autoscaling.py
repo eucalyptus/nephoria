@@ -187,7 +187,7 @@ class AutoScalingBasics(EutesterTestCase):
 
     def too_many_launch_configs_test(self):
         """
-        AWS enforces a 100 LC per account limit this tests what happens if we create more
+        AWS enforces a 100 LC per account limit this nephoria_unit_tests what happens if we create more
         """
         for i in range(101):
             self.launch_config_name = 'Test-Launch-Config-' + str(i + 1)
@@ -200,7 +200,7 @@ class AutoScalingBasics(EutesterTestCase):
 
     def too_many_policies_test(self):
         """
-        AWS enforces a 25 policy per account limit this tests what happens if we create more
+        AWS enforces a 25 policy per account limit this nephoria_unit_tests what happens if we create more
         """
         launch_config_name = 'LC-' + str(time.time())
         self.tester.autoscaling.create_launch_config(name=launch_config_name,
@@ -297,9 +297,9 @@ class AutoScalingBasics(EutesterTestCase):
 
 if __name__ == "__main__":
     testcase = AutoScalingBasics()
-    ### Use the list of tests passed from config/command line to determine what subset of tests to run
+    ### Use the list of nephoria_unit_tests passed from config/command line to determine what subset of nephoria_unit_tests to run
     ### or use a predefined list "AutoScalingGroupBasics", "LaunchConfigBasics", "AutoScalingInstanceBasics"
-    # list = testcase.args.tests or ["AutoScalingBasics"] ["clean_groups_and_configs"] too_many_launch_configs_test
+    # list = testcase.args.nephoria_unit_tests or ["AutoScalingBasics"] ["clean_groups_and_configs"] too_many_launch_configs_test
     # too_many_policies_test, change_launch_config, clear_all
     list = testcase.args.tests or ["AutoScalingBasics", "change_config"]
 

@@ -1824,7 +1824,7 @@ disable_root: false"""
                     raise e
                 else:
                     failed.append(snapshot)
-                    #Check to see if our min count of snapshots succeeded, we allow this for specific tests. 
+                    #Check to see if our min count of snapshots succeeded, we allow this for specific nephoria_unit_tests.
                     #If not clean up all snapshots from this system created from this operation
                     if (count - len(failed)) > mincount:
                         if delete_failed: 
@@ -4333,7 +4333,7 @@ disable_root: false"""
         """
 
         if not bucket_name:
-            # Count images already registered with this instance id for concurrent tests
+            # Count images already registered with this instance id for concurrent nephoria_unit_tests
             try:
                 id_count = len(self.get_images(location=instance.id))
             except:

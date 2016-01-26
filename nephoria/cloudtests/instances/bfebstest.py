@@ -36,7 +36,7 @@ class BFEBSBasics(InstanceBasics):
     def RegisterImage(self):
         '''Register a BFEBS snapshot'''
         if not self.imgurl:
-            raise Exception("No imgurl passed to run BFEBS tests")
+            raise Exception("No imgurl passed to run BFEBS nephoria_unit_tests")
         if not self.reservation:
             self.run_instance_params['image'] = self.tester.ec2.get_emi(root_device_type="instance-store",
                                                                     basic_image=True)
@@ -219,7 +219,7 @@ if __name__ == "__main__":
     testcase = BFEBSBasics()
     bfebstestsuite = testcase.do_with_args(BFEBSBasics)
 
-    ### Either use the list of tests passed from config/command line to determine what subset of tests to run
+    ### Either use the list of nephoria_unit_tests passed from config/command line to determine what subset of nephoria_unit_tests to run
     list = testcase.args.tests or ["RegisterImage",  "StopStart", "MultipleBFEBSInstances"]
     ### Convert test suite methods to EutesterUnitTest objects
     unit_list = []

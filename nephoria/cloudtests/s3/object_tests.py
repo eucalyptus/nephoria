@@ -1015,7 +1015,7 @@ class ObjectTestSuite(EutesterTestCase):
 if __name__ == "__main__":
 
     testcase = ObjectTestSuite()
-    ### Either use the list of tests passed from config/command line to determine what subset of tests to run
+    ### Either use the list of nephoria_unit_tests passed from config/command line to determine what subset of nephoria_unit_tests to run
     list = testcase.args.tests or ['test_object_basic_ops',
                                    ### 'test_object_byte_offset_read',
                                    'test_object_large_objects',

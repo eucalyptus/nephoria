@@ -152,7 +152,7 @@ class Net_Tests(EutesterTestCase):
         assert isinstance(self.tester, Eucaops)
         self.cc_last_checked = time.time()
 
-        ### Create local zone list to run tests in
+        ### Create local zone list to run nephoria_unit_tests in
         if self.args.zone:
             self.zones = str(self.args.zone).replace(',',' ')
             self.zones = self.zones.split()
@@ -431,7 +431,7 @@ class Net_Tests(EutesterTestCase):
             -Authorize security groups for inter group private ip access.
             -Iterate through each zone and attempt to ssh from an instance in group1 to an instance in group2 over their
                 private ips.
-            - Run same 2 tests from above by authorizing a SecurityGroup
+            - Run same 2 nephoria_unit_tests from above by authorizing a SecurityGroup
         '''
         def check_instance_connectivity():
             for zone in self.zones:
@@ -1227,7 +1227,7 @@ class Net_Tests(EutesterTestCase):
 if __name__ == "__main__":
     testcase = Net_Tests()
 
-    ### Use the list of tests passed from config/command line to determine what subset of tests to run
+    ### Use the list of nephoria_unit_tests passed from config/command line to determine what subset of nephoria_unit_tests to run
     ### or use a predefined list
 
     if testcase.args.tests:
