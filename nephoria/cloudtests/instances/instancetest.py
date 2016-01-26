@@ -3,7 +3,7 @@
 #
 # Description:  This script encompasses test cases/modules concerning instance specific behavior and
 #               features for Eucalyptus.  The test cases/modules that are executed can be 
-#               found in the script under the "tests" list.
+#               found in the script under the "nephoria_unit_tests" list.
 
 import os
 import re
@@ -22,7 +22,7 @@ class InstanceBasics(EutesterTestCase):
     def __init__( self, name="InstanceBasics", credpath=None, region=None, config_file=None, password=None, emi=None, zone=None,
                   user_data=None, instance_user=None, **kwargs):
         """
-        EC2 API tests focused on instance store instances
+        EC2 API nephoria_unit_tests focused on instance store instances
 
         :param credpath: Path to directory containing eucarc file
         :param region: EC2 Region to run testcase in
@@ -81,7 +81,7 @@ class InstanceBasics(EutesterTestCase):
         self.managed_network = True
 
         ### If I have access to the underlying infrastructure I can look
-        ### at the network mode and only run certain tests where it makes sense
+        ### at the network mode and only run certain nephoria_unit_tests where it makes sense
         if hasattr(self.tester, "service_manager"):
             cc = self.tester.get_component_machines("cc")[0]
             network_mode = cc.sys("cat " + self.tester.eucapath + "/etc/eucalyptus/eucalyptus.conf | grep MODE")[0]
@@ -98,15 +98,15 @@ class InstanceBasics(EutesterTestCase):
 
     def BasicInstanceChecks(self):
         """
-        This case was developed to run through a series of basic instance tests.
-             The tests are as follows:
+        This case was developed to run through a series of basic instance nephoria_unit_tests.
+             The nephoria_unit_tests are as follows:
                    - execute run_instances command
                    - make sure that public DNS name and private IP aren't the same
                        (This is for Managed/Managed-NOVLAN networking modes)
                    - test to see if instance is ping-able
                    - test to make sure that instance is accessible via ssh
                        (ssh into instance and run basic ls command)
-             If any of these tests fail, the test case will error out, logging the results.
+             If any of these nephoria_unit_tests fail, the test case will error out, logging the results.
         """
         reservation = self.tester.ec2.run_image(**self.run_instance_params)
         for instance in reservation.instances:
@@ -131,11 +131,11 @@ class InstanceBasics(EutesterTestCase):
         """
        This case was developed to test elastic IPs in Eucalyptus. This test case does
        not test instances that are launched using private-addressing option.
-       The test case executes the following tests:
+       The test case executes the following nephoria_unit_tests:
            - allocates an IP, associates the IP to the instance, then pings the instance.
            - disassociates the allocated IP, then pings the instance.
            - releases the allocated IP address
-       If any of the tests fail, the test case will error out, logging the results.
+       If any of the nephoria_unit_tests fail, the test case will error out, logging the results.
         """
         if not self.reservation:
             reservation = self.tester.ec2.run_image(**self.run_instance_params)
@@ -165,7 +165,7 @@ class InstanceBasics(EutesterTestCase):
         """
         This case was developed to test the maximum number of m1.small vm types a configured
         cloud can run.  The test runs the maximum number of m1.small vm types allowed, then
-        tests to see if all the instances reached a running state.  If there is a failure,
+        nephoria_unit_tests to see if all the instances reached a running state.  If there is a failure,
         the test case errors out; logging the results.
         """
         if self.reservation:
@@ -181,7 +181,7 @@ class InstanceBasics(EutesterTestCase):
         """
         This case was developed to test the maximum number of c1.xlarge vm types a configured
         cloud can run.  The test runs the maximum number of c1.xlarge vm types allowed, then
-        tests to see if all the instances reached a running state.  If there is a failure,
+        nephoria_unit_tests to see if all the instances reached a running state.  If there is a failure,
         the test case errors out; logging the results.
         """
         if self.reservation:
@@ -214,7 +214,7 @@ class InstanceBasics(EutesterTestCase):
            - any bad metadata that shouldn't be present.
         Missing nodes
          ['block-device-mapping/',  'ami-manifest-path']
-        If any of these tests fail, the test case will error out; logging the results.
+        If any of these nephoria_unit_tests fail, the test case will error out; logging the results.
         """
         if not self.reservation:
             reservation = self.tester.ec2.run_image(**self.run_instance_params)
@@ -267,14 +267,14 @@ class InstanceBasics(EutesterTestCase):
         This case was developed to test DNS resolution information for public/private DNS
         names and IP addresses.  The tested DNS resolution behavior is expected to follow
 
-        AWS EC2.  The following tests are ran using the associated meta-data attributes:
+        AWS EC2.  The following nephoria_unit_tests are ran using the associated meta-data attributes:
            - check to see if Eucalyptus Dynamic DNS is configured
            - nslookup on hostname; checks to see if it matches local-ipv4
            - nslookup on local-hostname; check to see if it matches local-ipv4
            - nslookup on local-ipv4; check to see if it matches local-hostname
            - nslookup on public-hostname; check to see if it matches local-ipv4
            - nslookup on public-ipv4; check to see if it matches public-host
-        If any of these tests fail, the test case will error out; logging the results.
+        If any of these nephoria_unit_tests fail, the test case will error out; logging the results.
         """
         if not self.reservation:
             reservation = self.tester.ec2.run_image(**self.run_instance_params)
@@ -325,14 +325,14 @@ class InstanceBasics(EutesterTestCase):
     def Reboot(self):
         """
         This case was developed to test IP connectivity and volume attachment after
-        instance reboot.  The following tests are done for this test case:
+        instance reboot.  The following nephoria_unit_tests are done for this test case:
                    - creates a 1 gig EBS volume, then attach volume
                    - reboot instance
                    - attempts to connect to instance via ssh
                    - checks to see if EBS volume is attached
                    - detaches volume
                    - deletes volume
-        If any of these tests fail, the test case will error out; logging the results.
+        If any of these nephoria_unit_tests fail, the test case will error out; logging the results.
         """
         if not self.reservation:
             reservation = self.tester.ec2.run_image(**self.run_instance_params)
@@ -358,7 +358,7 @@ class InstanceBasics(EutesterTestCase):
             - runs BasicInstanceChecks test case 5 times, 10 second apart.
             - While each test is running, run and terminate instances with a 10sec sleep in between.
             - When a test finishes, rerun BasicInstanceChecks test case.
-        If any of these tests fail, the test case will error out; logging the results.
+        If any of these nephoria_unit_tests fail, the test case will error out; logging the results.
         """
         if self.reservation:
             self.tester.ec2.terminate_instances(self.reservation)
@@ -399,11 +399,11 @@ class InstanceBasics(EutesterTestCase):
     def PrivateIPAddressing(self):
         """
         This case was developed to test instances that are launched with private-addressing
-        set to True.  The tests executed are as follows:
+        set to True.  The nephoria_unit_tests executed are as follows:
             - run an instance with private-addressing set to True
             - allocate/associate/disassociate/release an Elastic IP to that instance
             - check to see if the instance went back to private addressing
-        If any of these tests fail, the test case will error out; logging the results.
+        If any of these nephoria_unit_tests fail, the test case will error out; logging the results.
         """
         if self.reservation:
             for instance in self.reservation.instances:
@@ -486,7 +486,7 @@ if __name__ == "__main__":
     testcase.get_args()
     instancetestsuite = testcase.do_with_args(InstanceBasics)
 
-    ### Either use the list of tests passed from config/command line to determine what subset of tests to run
+    ### Either use the list of nephoria_unit_tests passed from config/command line to determine what subset of nephoria_unit_tests to run
     test_list = testcase.args.tests or ["BasicInstanceChecks", "DNSResolveCheck", "Reboot", "MetaData", "ElasticIps",
                                         "MultipleInstances", "LargestInstance", "PrivateIPAddressing", "Churn"]
     ### Convert test suite methods to EutesterUnitTest objects

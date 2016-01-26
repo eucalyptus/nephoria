@@ -4,7 +4,7 @@ import os
 import time
 import random
 from nephoria.euca.euca_ops import Eucaops
-from nephoria.testcases.testcase_utils.eutestcase import EutesterTestCase
+from nephoria.cloudtests.testcase_utils.eutestcase import EutesterTestCase
 
 
 class HelloWorld(EutesterTestCase):

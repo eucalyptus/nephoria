@@ -30,7 +30,7 @@
 #
 # Author: vic.iglesias@eucalyptus.com
 
-from nephoria.testcases.testcase_utils.eutestcase import EutesterTestCase
+from nephoria.cloudtests.testcase_utils.eutestcase import EutesterTestCase
 from multiprocessing import Process
 from multiprocessing import Queue
 import inspect

@@ -76,6 +76,19 @@ class TestController(object):
                                             'username': cred_depot_username,
                                             'password': cred_depot_password or password,
                                             'log_level': log_level}
+    def __repr__(self):
+        try:
+            myrepr = "{0}:{1}({2}:{3},{4}:{5})".format(
+                self.__class__.__name__,
+                self._system_connection_info.get('hostname', ""),
+                self._cloud_admin_connection_info.get('account_name', ""),
+                self._cloud_admin_connection_info.get('user_name', ""),
+                self._test_user_connection_info.get('aws_account_name', ""),
+                self._test_user_connection_info.get('aws_user_name', ""))
+            return myrepr
+        except Exception as E:
+            self.log.debug(E)
+            return str(self.__class__.__name__)
 
     @property
     def cred_depot(self):

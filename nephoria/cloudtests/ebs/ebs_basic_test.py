@@ -8,7 +8,7 @@
 ##########################
 #
 # [test_ebs_basic_test_suite]
-#       Full suite of ebs related tests
+#       Full suite of ebs related nephoria_unit_tests
 #        Test Summary: 
 #
 #        -create a volume (do this first)
@@ -30,7 +30,7 @@
 #        -'if' a bfebs instance was used, attempt to stop and detach volumes while in stopped state
 #        -terminate all instances used in this test, verify any attached volumes return to available state
 #        
-#        Properties tests:
+#        Properties nephoria_unit_tests:
 #        -create a volume of greater than prop size, should fail
 #        -create a 2nd volume attempting to exceed the max aggregate size, should fail
 #        

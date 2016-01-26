@@ -85,7 +85,7 @@ def too_lazy_to_run():
     This shows how to throw a 'SkipTestException' in the case a test detects it should not be
     run. Reasons for not running a test might be; the environment is not for this test, another
     test has failed and this test depends on an artifact created by that test as a dependency,
-    the code base is not of the correct version (ie the feature this tests is not present), etc..
+    the code base is not of the correct version (ie the feature this nephoria_unit_tests is not present), etc..
     """
     raise SkipTestException('Im too lazy to run right now')
 
@@ -124,7 +124,7 @@ test2 = testcase.create_testunit_from_method(too_lazy_to_run)
 
 ##################################################################################################
 # Create this testunit obj by passing a name of a method local to the testcase object.           #
-# Setting eof to True here will abort any remaining tests if this unit fails. This can also be   #
+# Setting eof to True here will abort any remaining nephoria_unit_tests if this unit fails. This can also be   #
 # set globally for all test units                                                                #
 # during run_test_case_list()                                                                    #
 ##################################################################################################

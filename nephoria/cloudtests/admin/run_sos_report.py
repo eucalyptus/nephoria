@@ -75,7 +75,7 @@ class SOSreport(EutesterTestCase):
 
 if __name__ == "__main__":
     testcase = SOSreport()
-    ### Use the list of tests passed from config/command line to determine what subset of tests to run
+    ### Use the list of nephoria_unit_tests passed from config/command line to determine what subset of nephoria_unit_tests to run
     ### or use a predefined list
     list = testcase.args.tests or ["RunAll"]
 

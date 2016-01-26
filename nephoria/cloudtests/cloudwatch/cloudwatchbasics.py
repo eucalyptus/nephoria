@@ -34,7 +34,7 @@ class CloudWatchBasics(EutesterTestCase):
         self.group = self.tester.ec2.add_group()
         ### Setup AutoScaling
         self.setUpAutoscaling()
-        ### Create Dimensions used in tests
+        ### Create Dimensions used in nephoria_unit_tests
         self.instanceDimension = newDimension('InstanceId', self.instanceid)
         self.volumeDimension = newDimension('VolumeId', self.volume.id)
         self.autoScalingDimension = newDimension('AutoScalingGroupName', self.auto_scaling_group_name)
@@ -395,15 +395,15 @@ class CloudWatchBasics(EutesterTestCase):
         pass
 
     def GetMetricStatisticsTest(self):
-        ### tests EBS metrics
+        ### nephoria_unit_tests EBS metrics
         self.GetMetricStatistics(self.tester.cloudwatch.get_ebs_metrics_array(),'AWS/EBS', self.volumeDimension )
-        ### tests instance metrics
+        ### nephoria_unit_tests instance metrics
         self.GetMetricStatistics(self.tester.cloudwatch.get_instance_metrics_array(),'AWS/EC2', self.instanceDimension )
         pass
 
 if __name__ == '__main__':
     testcase = CloudWatchBasics()
-    ### Use the list of tests passed from config/command line to determine what subset of tests to run
+    ### Use the list of nephoria_unit_tests passed from config/command line to determine what subset of nephoria_unit_tests to run
     ### or use a predefined list  'PutDataGetStats', 'ListMetricsTest', 'GetMetricStatisticsTest', 'MetricAlarmsTest', 'MonitorInstancesTest'
     test_list = testcase.args.tests or ['PutDataGetStats', 'ListMetricsTest', 'GetMetricStatisticsTest', 'MetricAlarmsTest', 'MonitorInstancesTest']
     ### Convert test suite methods to EutesterUnitTest objects

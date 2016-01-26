@@ -423,7 +423,7 @@ class EutesterTestCase(unittest.TestCase):
                                 default=False)
         if emi:
             parser.add_argument('--emi',
-                                help="pre-installed emi id which to execute these tests against",
+                                help="pre-installed emi id which to execute these nephoria_unit_tests against",
                                 default=None)
         if credpath:
             parser.add_argument('--credpath',
@@ -432,7 +432,7 @@ class EutesterTestCase(unittest.TestCase):
             parser.add_argument('--password',
                                 help="Password to use for machine root ssh access", default=None)
         if testlist:
-            parser.add_argument('--tests', nargs='+',
+            parser.add_argument('--nephoria_unit_tests', nargs='+',
                                 help="test cases to be executed", default=[])
         if keypair:
             parser.add_argument('--keypair',
@@ -776,7 +776,7 @@ class EutesterTestCase(unittest.TestCase):
         finally:
             elapsed = int(time.time() - start)
             msgout = "RUN TEST CASE LIST DONE:\n"
-            msgout += "Ran " + str(tests_ran) + "/" + str(test_count) + " tests in " + str(
+            msgout += "Ran " + str(tests_ran) + "/" + str(test_count) + " nephoria_unit_tests in " + str(
                 elapsed) + " seconds\n"
             if printresults:
                 try:
