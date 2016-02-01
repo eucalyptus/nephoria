@@ -37,10 +37,10 @@ import os
 import re
 import urllib
 from prettytable import PrettyTable
-from nephoria.testconnection import TestConnection
+from nephoria.baseops.botobaseops import BotoBaseOps
 
 
-class IAMops(TestConnection):
+class IAMops(BotoBaseOps):
     EUCARC_URL_NAME = 'iam_url'
     CONNECTION_CLASS = IAMConnection
 

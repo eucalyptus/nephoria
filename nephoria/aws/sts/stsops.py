@@ -23,14 +23,14 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from nephoria.testconnection import TestConnection
+from nephoria.baseops.botobaseops import BotoBaseOps
 import boto
 from boto.ec2.regioninfo import RegionInfo
 from boto.sts import STSConnection
 
 
-class STSops(TestConnection):
-    AWS_REGION_SERVICE_PREFIX = 'ec2'
+class STSops(BotoBaseOps):
+    SERVICE_PREFIX = 'ec2'
     EUCARC_URL_NAME = 'sts_url'
     CONNECTION_CLASS = STSConnection
 

@@ -37,15 +37,15 @@ from concurrent.futures import ThreadPoolExecutor
 import urllib2
 import cookielib
 import requests
-from nephoria.testconnection import TestConnection
+from nephoria.baseops.botobaseops import BotoBaseOps
 from boto.ec2.elb import ELBConnection
 from boto.ec2.elb.listener import Listener
 from boto.ec2.elb.healthcheck import HealthCheck
 from os.path import join
 
 
-class ELBops(TestConnection):
-    AWS_REGION_SERVICE_PREFIX = 'elasticloadbalancing'
+class ELBops(BotoBaseOps):
+    SERVICE_PREFIX = 'elasticloadbalancing'
     EUCARC_URL_NAME = 'elb_url'
     CONNECTION_CLASS = ELBConnection
 

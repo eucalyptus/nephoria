@@ -1,14 +1,10 @@
 #!/usr/bin/python
 
-from logging import INFO, DEBUG, NOTSET
-from boto import set_stream_logger, regioninfo
-from boto import __version__ as boto_version
-from boto.regioninfo import RegionInfo
+from logging import DEBUG, NOTSET
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import markup, get_traceback
 from cloud_utils.file_utils.eucarc import Eucarc
 from nephoria import CleanTestResourcesException
-import re
 from urlparse import urlparse
 
 
@@ -20,32 +16,42 @@ AWSRegionData = {
     'ap-northeast-1': 'ap-northeast-1.amazonaws.com',
     'ap-southeast-1': 'ap-southeast-1.amazonaws.com'}
 
-class TestConnection(object):
+class BaseOps(object):
+    # The key name this ops class uses to look up it's service url value (ie EC2_URL, S3_URL, etc)
     EUCARC_URL_NAME = None
-    AWS_REGION_SERVICE_PREFIX = None
+    # The service prefix used with the region (ie ec2, iam, s3, etc)
+    SERVICE_PREFIX = None
+    # The underlying class used to connect to the cloud (ie boto.VPCConnection)
     CONNECTION_CLASS = None
 
-    def __init__(self, eucarc=None, credpath=None, service_url=None,
-                 aws_access_key_id=None, aws_secret_access_key=None,
-                 is_secure=False, port=None, host=None, endpoint=None, region=None,
-                 boto_debug=0, path=None, validate_certs=None, test_resources=None,
-                 logger=None, log_level=None, user_context=None, APIVersion=None,
-                 verbose_requests=None):
+    def __init__(self, eucarc=None, credpath=None, service_url=None, aws_access_key_id=None,
+                 aws_secret_access_key=None, is_secure=False, port=None, host=None,
+                 region=None, connection_debug=0, path=None, validate_certs=True,
+                 test_resources=None, logger=None, log_level=None, user_context=None,
+                 session=None, api_version=None, verbose_requests=None):
 
         if self.EUCARC_URL_NAME is None:
             raise NotImplementedError('EUCARC_URL_NAME not set for this class:"{0}"'
                                       .format(self.__class__.__name__))
-        if self.CONNECTION_CLASS is None:
-            raise NotImplementedError('Connection Class has not been defined for this class:"{0}"'
+        if self.SERVICE_PREFIX is None:
+            raise NotImplementedError('Service Prefix has not been defined for this class:"{0}"'
                                       .format(self.__class__.__name__))
+        init_kwargs = locals()
+        init_kwargs.__delitem__('self')
+        self._session = session
+        self.connection = None
         self.service_host = None
         self.service_port = None
         self.service_path = None
-        self._original_connection = None
+        # Store info about created resources and how to clean/delete them for this ops connection
         self.test_resources_clean_methods = {}
         self.test_resources = test_resources or {}
-        if boto_debug:
-            set_stream_logger('boto')
+        # Store the user context for this connection if provided
+        self._user_context = user_context
+        if not region and self._user_context:
+            region = self._user_context.region
+        self.service_region = region
+        # Create the logger for this ops connection
         if log_level is None:
             log_level = DEBUG
         if not logger:
@@ -59,12 +65,14 @@ class TestConnection(object):
                               stdout_level=log_level)
         self.log = logger
         self.log.set_stdout_loglevel(log_level)
+        # Store the runtime configuration for this ops connection
         if not eucarc:
             if credpath:
                 eucarc = Eucarc(filepath=credpath)
             else:
                 eucarc = Eucarc()
         self.eucarc = eucarc
+        # Set the connection params...
         self._try_verbose = verbose_requests
         self._is_secure = is_secure
         if aws_secret_access_key:
@@ -81,36 +89,44 @@ class TestConnection(object):
         self.service_host = host
         self.service_port = port
         self.service_path = path
-        self.service_region = self._get_region_info(host=host, endpoint=endpoint,
-                                                    region_name=region)
-        self._boto_debug = boto_debug
-        if validate_certs is None:
-            validate_certs = True
-            if re.search('2.6', boto_version):
-                validate_certs = False
+        self.service_region = region
+        # Build out kwargs used to create service connection/client
+        # Pass all the args/kwargs provided at init to the create_connection_kwargs method for the
+        # ops class to use to build it's kwargs as needed.
+        self._connection_kwargs = self.create_connection_kwargs(**init_kwargs)
+        self.connect(verbose=connection_debug)
+        # Remaining setup...
+        self.setup()
 
-        self._connection_kwargs = {'aws_access_key_id': self.eucarc.aws_access_key,
-                                   'aws_secret_access_key': self.eucarc.aws_secret_key,
-                                   'is_secure': is_secure,
-                                   'port': self.service_port,
-                                   'host': self.service_host,
-                                   'debug': self.boto_debug,
-                                   'region': self.service_region,
-                                   'validate_certs': validate_certs,
-                                   'path': path}
+    def __repr__(self):
+        return "{0}:{1}:{2}".format(self.__class__.__name__, self.service_region,
+                                    self.SERVICE_PREFIX)
+
+    def connect(self, verbose=False,  connection_kwargs=None):
+        """
+        Verify the required params have been set, and connect the underlying connection class.
+
+        :param verbose: Dump debug output about the connection
+        :param connection_kwargs: options dict containing kwargs used when creating the
+                                  underlying connection
+        """
+        if self.CONNECTION_CLASS is None:
+            raise NotImplementedError('Connection Class has not been defined for this class:"{0}"'
+                                      .format(self.__class__.__name__))
+        if connection_kwargs:
+            self._connection_kwargs = connection_kwargs
+        # Remove and kwargs which are not part of the service connection class creation method
         self._clean_connection_kwargs()
-        if APIVersion:
-            self._connection_kwargs['api_version'] = APIVersion,
-        # Verify the required params have been set...
         required = []
         for key, value in self._connection_kwargs.iteritems():
             if value is None:
                 required.append(key)
         if required:
-            raise ValueError('Required Connection parameters were None: "{0}"'
-                             .format(", ".join(required)))
+            self.show_connection_kwargs(connection_kwargs=connection_kwargs)
+            raise ValueError('{0}: Required Connection parameters were None: "{1}"'
+                             .format(self.__class__.__name__, ", ".join(required)))
         #### Init connection...
-        if self.boto_debug:
+        if verbose:
             self.show_connection_kwargs()
         try:
             # Remove any kwargs that are not applicable to this connection class
@@ -125,11 +141,17 @@ class TestConnection(object):
         except:
             self.show_connection_kwargs()
             raise
-        # Remaining setup...
-        self.setup()
+
+    def create_connection_kwargs(self, **kwargs):
+        self._connection_kwargs = kwargs
+
 
     def setup(self):
         self.setup_resource_trackers()
+
+    @property
+    def service_name(self):
+        return self.SERVICE_PREFIX
 
     @property
     def service_url(self):
@@ -150,16 +172,18 @@ class TestConnection(object):
         return self._service_url
 
     @property
-    def boto_debug(self):
-        if hasattr(self, 'debug'):
-            return self.debug
-        else:
-            return self._boto_debug
+    def session(self):
+        return self._session
 
-    @boto_debug.setter
-    def boto_debug(self, level):
-        self._boto_debug = level
-        self.debug = level
+    @session.setter
+    def session(self, value):
+        self._session = value
+
+    def enable_connection_debug(self, level=DEBUG, format_string=None):
+        pass
+
+    def disable_connection_debug(self, level=NOTSET):
+        pass
 
     @property
     def _use_verbose_requests(self):
@@ -180,60 +204,38 @@ class TestConnection(object):
         raise ValueError('Only bool or None type supported for "_use_verbose_requests". '
                          'Got: "{0}/{1}"'.format(value, type(value)))
 
-    def _get_region_info(self, host=None, endpoint=None, region_name=None):
-        if (host or endpoint or region_name):
-            region = regioninfo.RegionInfo()
-            if region_name:
-                region.name = region_name
-                self.log.debug("Check region: " + str(region))
-                try:
-                    if not endpoint:
-                        endpoint_url = AWSRegionData[region_name]
-                        if self.AWS_REGION_SERVICE_PREFIX and \
-                                not(endpoint_url.startswith(self.AWS_REGION_SERVICE_PREFIX)):
-                            endpoint_url = "{0}.{1}".format(self.AWS_REGION_SERVICE_PREFIX,
-                                                            endpoint_url)
-                        region.endpoint = endpoint_url
-                    else:
-                        region.endpoint = endpoint
-                except KeyError:
-                    raise Exception('Unknown region: %s' % region)
-            else:
-                region.name = host or endpoint
-                if endpoint:
-                    region.endpoint = endpoint
-                elif host:
-                    region.endpoint = host
-            return region
-        return None
-
-    def _clean_connection_kwargs(self):
-        classes = self.__class__.__bases__
-        for connection_class in classes:
-            if connection_class != TestConnection:
-                varnames = connection_class.__init__.__func__.func_code.co_varnames
-                keys = self._connection_kwargs.keys()
-                for key in keys:
-                    if key not in varnames:
-                        del self._connection_kwargs[key]
+    def _clean_connection_kwargs(self, connection_kwargs=None, connection_method=None):
+        # Remove any kwargs from self_connection_kwargs that are not applicable
+        # to self.CONNECTION_CLASS
+        if connection_kwargs is None:
+            connection_kwargs = self._connection_kwargs or {}
+        if connection_method is None:
+            connection_method = self.CONNECTION_CLASS.__init__
+        varnames = connection_method.__func__.func_code.co_varnames
+        keys = connection_kwargs.keys()
+        for key in keys:
+            if key not in varnames:
+                del connection_kwargs[key]
+        return connection_kwargs
 
 
-    def show_connection_kwargs(self):
-        print self._connection_kwargs
+    def show_connection_kwargs(self, connection_kwargs=None):
+        if connection_kwargs is None:
+            connection_kwargs = self._connection_kwargs
+        print connection_kwargs
         debug_buf = 'Current "{0}" connection kwargs for\n'.format(self.__class__.__name__)
-        for key, value in self._connection_kwargs.iteritems():
+        for key, value in connection_kwargs.iteritems():
             debug_buf += "{0}{1}{2}\n".format(str(key).ljust(30), " -> ", value)
         self.log.debug(debug_buf)
 
-    def enable_boto_debug(self, level=DEBUG, format_string=None):
-        self.boto_debug=2
-        set_stream_logger('boto', level=level, format_string=None)
-
-    def disable_boto_debug(self, level=NOTSET):
-        self.boto_debug=0
-        set_stream_logger('boto', level=level)
 
     def setup_resource_trackers(self):
+        """
+        Allows each ops class to track resources created by this ops class, as well as the
+        method(s) to user per resource to type to clean/remove them.
+        For example an ec2_ops class may create 'instances' and later can register a 'terminate()'
+        method to delete these upon exit.
+        """
         raise NotImplementedError('ERROR: {0} has not implemented resource tracking method. '
                                   '"test_resources" and "test_resources_clean_methods" should be '
                                   'setup here.'
@@ -261,4 +263,5 @@ class TestConnection(object):
                                                             .format(resource_name, E)))
         if fault_buf:
             raise CleanTestResourcesException(fault_buf)
+
 
