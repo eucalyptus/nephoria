@@ -6,6 +6,8 @@ from cloud_utils.log_utils import get_traceback
 from cloud_utils.system_utils.machine import Machine
 from nephoria.usercontext import UserContext
 from nephoria.testcase_utils import TimerSeconds, TimeoutError, wait_for_result
+from boto3 import set_stream_logger
+
 
 class SystemConnectionFailure(Exception):
     pass
@@ -13,7 +15,7 @@ class SystemConnectionFailure(Exception):
 
 class TestController(object):
     def __init__(self,
-                 hostname=None, username='root', password=None,
+                 hostname=None, username='root', password=None, region=None,
                  proxy_hostname=None, proxy_password=None,
                  clouduser_account='nephotest', clouduser_name='admin', clouduser_credpath=None,
                  clouduser_accesskey=None, clouduser_secretkey=None,
@@ -39,11 +41,14 @@ class TestController(object):
         :param timeout:
         """
         self.log = Eulogger("TESTER:{0}".format(hostname), stdout_level=log_level)
+        self._region = region
         self._sysadmin = None
         self._cloudadmin = None
         self._test_user = None
         self._cred_depot = None
         self._default_timeout = timeout
+        self._cloud_admin_connection_info = {}
+        self._test_user_connection_info = {}
         self._system_connection_info = {'hostname': hostname,
                                         'username': username,
                                         'password': password,
@@ -64,6 +69,7 @@ class TestController(object):
                                              'credpath': cloudadmin_credpath,
                                              'access_key': cloudadmin_accesskey,
                                              'secret_key': cloudadmin_secretkey,
+                                             'region': self.region,
                                              'log_level': log_level}
 
         self._test_user_connection_info = {'aws_account_name': clouduser_account,
@@ -71,6 +77,7 @@ class TestController(object):
                                            'credpath': clouduser_credpath,
                                            'aws_access_key': clouduser_accesskey,
                                            'aws_secret_key': clouduser_secretkey,
+                                           'region': self.region,
                                            'log_level': log_level}
         self._cred_depot_connection_info = {'hostname': cred_depot_hostname,
                                             'username': cred_depot_username,
@@ -91,6 +98,32 @@ class TestController(object):
             return str(self.__class__.__name__)
 
     @property
+    def region(self):
+        if not self._region and self.sysadmin is not None:
+            try:
+                regions = self.sysadmin.ec2_connection.get_all_regions()
+                if not regions:
+                    self.log.warning('No Regions found?')
+                else:
+                    region = regions[0]
+                    name = region.name
+                    if name:
+                        name = str(name)
+                    self.region = name
+            except Exception as RE:
+                self.log.error('{0}.\nError while fetching region info:{0}'.format(get_traceback(),
+                                                                                   RE))
+        return self._region
+
+    @region.setter
+    def region(self, value):
+        if self._region is not None and self._region != value:
+            raise ValueError('Can not change region once it has been set')
+        self._cloud_admin_connection_info['region'] = value
+        self._test_user_connection_info['region'] = value
+        self._region = value
+
+    @property
     def cred_depot(self):
         if not self._cred_depot and self._cred_depot_connection_info.get('hostname'):
             self._cred_depot = Machine(**self._cred_depot_connection_info)
@@ -99,8 +132,9 @@ class TestController(object):
     @property
     def sysadmin(self):
         if not self._sysadmin:
+            if not self._system_connection_info.get('hostname', None):
+                return None
             try:
-
                 self._sysadmin = SystemConnection(**self._system_connection_info)
             except Exception as TE:
                 self.log.error('{0}\nCould not create sysadmin interface, timed out: "{1}"'
@@ -116,9 +150,10 @@ class TestController(object):
                 (conn_info.get('aws_access_key') and conn_info.get('aws_secret_key'))):
                 if conn_info.get('credpath'):
                     conn_info['machine'] = self.cred_depot
+                self.dump_conn_debug(conn_info)
                 self._cloudadmin = UserContext(**conn_info)
             else:
-                self._cloudadmin = UserContext(eucarc=self.sysadmin.creds)
+                self._cloudadmin = UserContext(eucarc=self.sysadmin.creds, region=self.region)
         return self._cloudadmin
 
     @property
@@ -171,14 +206,18 @@ class TestController(object):
                                      aws_access_key=None, aws_secret_key=None,
                                      credpath=None, eucarc=None,
                                      machine=None, service_connection=None, path='/',
-                                     log_level=None):
+                                     region=None, log_level=None):
         if log_level is None:
             log_level = self.log.stdout_level or 'DEBUG'
+        if region is None:
+            region = self.region
         self.log.debug('Attempting to create user with params: account:{0}, name:{1}'
                           'access_key:{2}, secret_key:{3}, credpath:{4}, eucarc:{5}'
-                          ', machine:{6}, service_connection:{7}, path:{8}, loglevel:{9}'
-                          .format(aws_account_name, aws_user_name, aws_access_key, aws_secret_key,
-                                  credpath, eucarc, machine, service_connection, path, log_level))
+                          ', machine:{6}, service_connection:{7}, path:{8}, region:{9},'
+                          'loglevel:{10}'
+                       .format(aws_account_name, aws_user_name, aws_access_key, aws_secret_key,
+                               credpath, eucarc, machine, service_connection, path, region,
+                               log_level))
         service_connection = service_connection or self.sysadmin
         if eucarc:
             if aws_access_key:
@@ -243,8 +282,30 @@ class TestController(object):
                                                        delegate_account=user.account_id)
         return user
 
+    def dump_conn_debug(self, info):
+            try:
+                self.log.debug(
+                        'Connection info:\n{0}'
+                        .format("\n".join("{0}:{1}".format(x, y) for x,y in info.iteritems())))
+            except Exception as doh:
+                self.log.error('{0}\nError attempting to dump connection info:{1}'
+                               .format(get_traceback(), doh))
+
     def wait_for_result(self, *args, **kwargs):
         return wait_for_result(*args, **kwargs)
+
+    def set_boto_logger_level(self, level='NOTSET', format_string=None):
+        """
+        Set the global boto loggers levels to 'level'. ie "DEBUG", "INFO", "CRITICAL"
+        default is "NOTSET"
+        :param level: string matching logging class levels, or integer representing the equiv value
+        :param format_string: logging class formatter string
+        """
+        level = Eulogger.format_log_level(level, 'NOTSET')
+        set_stream_logger('boto', level=level, format_string=None)
+        set_stream_logger('boto3', level=level, format_string=None)
+        set_stream_logger('botocore', level=level, format_string=None)
+
 
 
 

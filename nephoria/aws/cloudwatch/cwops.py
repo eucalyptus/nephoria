@@ -35,7 +35,7 @@ from boto import __version__ as boto_version
 from boto.ec2.regioninfo import RegionInfo
 from boto.ec2.cloudwatch import CloudWatchConnection
 from cloud_utils.log_utils import printinfo
-from nephoria.testconnection import TestConnection
+from nephoria.baseops.botobaseops import BotoBaseOps
 
 
 CWRegionData =        {
@@ -80,8 +80,8 @@ EbsMetricsArray     = [
                       {'name':'VolumeConsumedReadWriteOps','unit':'Count'}
                       ]
 
-class CWops(TestConnection):
-    AWS_REGION_SERVICE_PREFIX = 'monitoring'
+class CWops(BotoBaseOps):
+    SERVICE_PREFIX = 'monitoring'
     EUCARC_URL_NAME = 'cloudwatch_url'
     CONNECTION_CLASS = CloudWatchConnection
 

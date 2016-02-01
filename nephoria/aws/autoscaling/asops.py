@@ -38,12 +38,12 @@ from boto.ec2.autoscale import Tag
 from boto.ec2.autoscale import LaunchConfiguration
 from boto.ec2.autoscale import AutoScalingGroup, AutoScaleConnection
 from boto.ec2.regioninfo import RegionInfo
-from nephoria.testconnection import TestConnection
+from nephoria.baseops.botobaseops import BotoBaseOps
 
 
-class ASops(TestConnection):
+class ASops(BotoBaseOps):
     EUCARC_URL_NAME = 'auto_scaling_url'
-    AWS_REGION_SERVICE_PREFIX = 'autoscaling'
+    SERVICE_PREFIX = 'autoscaling'
     CONNECTION_CLASS = AutoScaleConnection
 
     def setup(self):

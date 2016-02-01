@@ -63,7 +63,7 @@ from boto.vpc import VPCConnection, VPC, Subnet
 from boto.ec2.networkinterface import NetworkInterfaceSpecification, NetworkInterfaceCollection
 
 from nephoria import CleanTestResourcesException
-from nephoria.testconnection import TestConnection
+from nephoria.baseops.botobaseops import BotoBaseOps
 from nephoria.testcase_utils import wait_for_result
 from cloud_utils.net_utils import sshconnection, ping, is_address_in_network
 from cloud_utils.log_utils import printinfo, get_traceback, markup
@@ -73,6 +73,7 @@ from nephoria.aws.ec2.euvolume import EuVolume
 from nephoria.aws.ec2.eusnapshot import EuSnapshot
 from nephoria.aws.ec2.euzone import EuZone
 from nephoria.aws.ec2.conversiontask import ConversionTask
+from boto3.session import Session
 
 
 class EucaSubnet(BotoSubnet):
@@ -119,11 +120,11 @@ EC2RegionData = {
     'ap-southeast-1': 'ec2.ap-southeast-1.amazonaws.com'}
 
 
-class EC2ops(TestConnection):
+class EC2ops(BotoBaseOps):
 
     enable_root_user_data = """#cloud-config
 disable_root: false"""
-    AWS_REGION_SERVICE_PREFIX = 'ec2'
+    SERVICE_PREFIX = 'ec2'
     EUCARC_URL_NAME = 'ec2_url'
     CONNECTION_CLASS = VPCConnection
 
