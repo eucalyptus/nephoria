@@ -41,7 +41,7 @@ from boto.s3.acl import ACL, Grant
 from boto.exception import S3ResponseError
 from boto.s3.deletemarker import DeleteMarker
 import boto.s3
-from nephoria.testconnection import TestConnection
+from nephoria.baseops.botobaseops import BotoBaseOps
 
 
 class S3opsException(Exception):
@@ -57,7 +57,7 @@ class S3opsException(Exception):
         print self.msg
 
 
-class S3ops(TestConnection):
+class S3ops(BotoBaseOps):
     s3_groups = {
              "all_users":"http://acs.amazonaws.com/groups/global/AllUsers",
              "authenticated_users":"http://acs.amazonaws.com/groups/global/AuthenticatedUsers",

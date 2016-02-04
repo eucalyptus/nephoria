@@ -32,11 +32,13 @@
 #
 
 from logging import INFO, DEBUG
+from boto3.session import Session
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_admin.access.autocreds import AutoCreds
 from nephoria.aws.iam.iamops import IAMops
 from nephoria.aws.s3.s3ops import S3ops
 from nephoria.aws.ec2.ec2ops import EC2ops
+from nephoria.aws.ec2.b3_ec2ops import B3_EC2ops
 from nephoria.aws.elb.elbops import ELBops
 from nephoria.aws.sts.stsops import STSops
 from nephoria.aws.cloudformation.cfnops import CFNops
@@ -45,7 +47,7 @@ from nephoria.aws.autoscaling.asops import ASops
 
 class UserContext(AutoCreds):
 
-    # This map is used for context lookups...
+    # This map is used for ops connection class lookups...
     CLASS_MAP = {IAMops.__name__: 'iam',
                  S3ops.__name__: 's3',
                  EC2ops.__name__: 'ec2',
@@ -53,10 +55,11 @@ class UserContext(AutoCreds):
                  STSops.__name__: 'sts',
                  CWops.__name__: 'cloudwatch',
                  CFNops.__name__: 'cloudformation',
-                 ASops.__name__: 'autoscaling'}
+                 ASops.__name__: 'autoscaling',
+                 B3_EC2ops.__name__: 'b3_ec2ops'}
 
     def __init__(self,  aws_access_key=None, aws_secret_key=None, aws_account_name=None,
-                 aws_user_name=None, credpath=None, string=None,
+                 aws_user_name=None, credpath=None, string=None, region=None,
                  machine=None, keysdir=None, logger=None, service_connection=None,
                  eucarc=None, existing_certs=False, boto_debug=0, log_level=DEBUG):
 
@@ -70,9 +73,10 @@ class UserContext(AutoCreds):
                                           existing_certs=existing_certs,
                                           service_connection=service_connection,
                                           auto_create=False)
-        self._connections = {}
-        self._previous_context = None
         self._user_info = {}
+        self._session = None
+        self._connections = {}
+        self.region = region
 
         # Logging setup
         if not logger:
@@ -90,8 +94,9 @@ class UserContext(AutoCreds):
             self.update_attrs_from_cloud_services()
         self._test_resources = {}
         self._connection_kwargs = {'eucarc': self, 
-                                   'boto_debug': boto_debug,
+                                   'connection_debug': boto_debug,
                                    'user_context': self,
+                                   'region': region,
                                    'log_level': log_level}
         self.log.identifier = str(self)
         self.log.debug('Successfully created User Context')
@@ -99,15 +104,6 @@ class UserContext(AutoCreds):
     ##########################################################################################
     #   User/Account Properties, Attributes, Methods, etc..
     ##########################################################################################
-    """
-    def __enter__(self):
-        self._previous_context = self.context_mgr.current_user_context
-        self.context_mgr.set_current_user_context(self)
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.context_mgr.set_current_user_context(self._previous_context)
-    """
 
     def __repr__(self):
         account_name = ""
@@ -170,8 +166,42 @@ class UserContext(AutoCreds):
         return self._account_id
 
     ##########################################################################################
+    #   BASE CONNECTION INFO
+    ##########################################################################################
+
+    @property
+    def session(self):
+        if not self._session:
+            self._session = Session(aws_access_key_id=self.aws_access_key,
+                                    aws_secret_access_key=self.aws_secret_key,
+                                    region_name=self.region)
+        return self._session
+
+    @session.setter
+    def session(self, newsession):
+        if newsession is None:
+            self._session = newsession
+            return
+        if isinstance(newsession, Session):
+            self._session = newsession
+            return
+        raise TypeError('Unsupported type for Session, got: "{0}/{1}"'
+                        .format(newsession, type(newsession)))
+
+
+
+
+    ##########################################################################################
     #   CLOUD SERVICE CONNECTIONS
     ##########################################################################################
+
+    @property
+    def b3_ec2(self):
+        ops_class = B3_EC2ops
+        name = self.CLASS_MAP[ops_class.__name__]
+        if not self._connections.get(name, None):
+            self._connections[name] = ops_class(**self._connection_kwargs)
+        return self._connections[name]
 
     @property
     def iam(self):

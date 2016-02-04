@@ -30,14 +30,15 @@
 #
 # Author: Vic Iglesias vic.iglesias@eucalyptus.com
 #
-from nephoria.testconnection import TestConnection
+from nephoria.baseops.botobaseops import BotoBaseOps
+
 import boto
 from boto.ec2.regioninfo import RegionInfo
 from boto.cloudformation import CloudFormationConnection
 import time
 
-class CFNops(TestConnection):
-    AWS_REGION_SERVICE_PREFIX = 'cloudformation'
+class CFNops(BotoBaseOps):
+    SERVICE_PREFIX = 'cloudformation'
     CONNECTION_CLASS = CloudFormationConnection
     EUCARC_URL_NAME = 'cloudformation_url'
 

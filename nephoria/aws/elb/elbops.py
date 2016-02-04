@@ -37,15 +37,15 @@ from concurrent.futures import ThreadPoolExecutor
 import urllib2
 import cookielib
 import requests
-from nephoria.testconnection import TestConnection
+from nephoria.baseops.botobaseops import BotoBaseOps
 from boto.ec2.elb import ELBConnection
 from boto.ec2.elb.listener import Listener
 from boto.ec2.elb.healthcheck import HealthCheck
 from os.path import join
 
 
-class ELBops(TestConnection):
-    AWS_REGION_SERVICE_PREFIX = 'elasticloadbalancing'
+class ELBops(BotoBaseOps):
+    SERVICE_PREFIX = 'elasticloadbalancing'
     EUCARC_URL_NAME = 'elb_url'
     CONNECTION_CLASS = ELBConnection
 
@@ -202,7 +202,7 @@ class ELBops(TestConnection):
         self.log.debug("removing listener")
         self.delete_load_balancer_listeners(name=lb_name, ports=[port])
 
-    def add_server_cert(self, cert_name, cert_dir="./testcases/cloud_user/elb/test_data",
+    def add_server_cert(self, cert_name, cert_dir="./cloudtests/cloud_user/elb/test_data",
                         cert_file="ssl_server_certs_basics.crt",
                         key_file="ssl_server_certs_basics.pem"):
         cert_body = open(join(cert_dir, cert_file)).read()

@@ -671,7 +671,7 @@ class EuConfig():
     def make_sections(self, strip='"'):
         '''
         Creates section objects within this euconfig instance. These are dynamic for python console
-        dev/debugging use,the use of these in testcases should be avoided.
+        dev/debugging use,the use of these in cloudtests should be avoided.
         Example: The machine classes may have a file called eucalyptus_conf and create a
         section '[eucalyptus_conf]'
         This will add the section to self.config.sections, as well as create a Config_Section()

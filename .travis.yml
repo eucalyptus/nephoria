@@ -11,5 +11,5 @@ before_install:
 install:
   - pip install -q boto==$BOTO_VERSION
   - python setup.py -q install
-# command to run tests
-script: nosetests -w tests
+# command to run nephoria_unit_tests
+script: nosetests -w nephoria_unit_tests
