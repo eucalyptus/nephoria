@@ -16,10 +16,14 @@ if [ "x$venv" != "x" ]; then
     source $venv/bin/activate
 fi
 cd adminapi
+git fetch
 git checkout $adminapi_branch
+git pull origin $adminapi_branch
 python setup.py install
 cd -
 cd nephoria
+git fetch
 git checkout $neph_branch
+git pull origin $neph_branch
 python setup.py install
 cd -
