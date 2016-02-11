@@ -25,7 +25,7 @@ parser.add_argument('filepath',
                     help='Optional zip filename/path. Default is ./<cred_user>.zip')
 
 parser.add_argument('--log-level', dest='log_level',
-                    default="DEBUG",
+                    default="INFO",
                     help='Log level')
 
 parser.add_argument('--unpack', dest='unpack', action='store_true',

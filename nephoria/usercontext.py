@@ -31,7 +31,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 
-from logging import INFO, DEBUG
+import logging
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_admin.access.autocreds import AutoCreds
 from nephoria.aws.iam.iamops import IAMops
@@ -58,8 +58,12 @@ class UserContext(AutoCreds):
     def __init__(self,  aws_access_key=None, aws_secret_key=None, aws_account_name=None,
                  aws_user_name=None, credpath=None, string=None,
                  machine=None, keysdir=None, logger=None, service_connection=None,
-                 eucarc=None, existing_certs=False, boto_debug=0, log_level=DEBUG):
-
+                 eucarc=None, existing_certs=False, boto_debug=0, log_level=None):
+        if log_level is None:
+            if service_connection:
+                log_level = service_connection.log.stdout_level
+            else:
+                log_level = logging.DEBUG
         super(UserContext, self).__init__(aws_access_key=aws_access_key,
                                           aws_secret_key=aws_secret_key,
                                           aws_account_name=aws_account_name,
