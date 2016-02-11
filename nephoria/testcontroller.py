@@ -1,11 +1,12 @@
 
-import signal
+import errno
+import os
 from cloud_admin.systemconnection import SystemConnection
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import get_traceback
 from cloud_utils.system_utils.machine import Machine
 from nephoria.usercontext import UserContext
-from nephoria.testcase_utils import TimerSeconds, TimeoutError, wait_for_result
+from nephoria.testcase_utils import wait_for_result
 
 class SystemConnectionFailure(Exception):
     pass
@@ -164,7 +165,6 @@ class TestController(object):
         else:
             raise ValueError('User info not returned for "account:{0}, user:{1}"'
                              .format(aws_account_name, aws_user_name))
-
 
 
     def create_user_using_cloudadmin(self, aws_account_name=None, aws_user_name='admin',
