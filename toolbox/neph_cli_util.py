@@ -27,7 +27,7 @@ parser.add_argument('filepath',
                     help='Optional zip filename/path. Default is ./<cred_user>.zip')
 
 parser.add_argument('--log-level', dest='log_level',
-                    default="INFO",
+                    default="ERROR",
                     help='Log level')
 
 parser.add_argument('--unpack', dest='unpack', action='store_true',
@@ -49,7 +49,8 @@ zip_only = True
 if args.unpack:
     zip_only = False
 logger = logging.getLogger('eulogger')
-log_level = getattr(logging, args.log_level.upper(), logging.DEBUG)
+if isinstance(args.log_level, basestring):
+    log_level = getattr(logging, args.log_level.upper(), logging.DEBUG)
 logger.setLevel(log_level)
 tc = TestController(args.clc_ip, log_level=args.log_level)
 user = tc.get_user_by_name(aws_account_name=args.cred_account, aws_user_name=args.cred_user)
