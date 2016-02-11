@@ -54,4 +54,7 @@ if isinstance(args.log_level, basestring):
 logger.setLevel(log_level)
 tc = TestController(args.clc_ip, log_level=args.log_level)
 user = tc.get_user_by_name(aws_account_name=args.cred_account, aws_user_name=args.cred_user)
-user.create_local_creds(local_destdir=zip_dest_dir, zipfilename=zip_file_name, ziponly=zip_only)
+files = user.create_local_creds(local_destdir=zip_dest_dir, zipfilename=zip_file_name,
+                                ziponly=zip_only) or []
+print 'Created artifacts:"{0}"'.format(", ".join(files))
+
