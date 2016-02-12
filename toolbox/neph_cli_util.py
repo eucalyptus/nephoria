@@ -52,7 +52,7 @@ logger = logging.getLogger('eulogger')
 if isinstance(args.log_level, basestring):
     log_level = getattr(logging, args.log_level.upper(), logging.DEBUG)
 logger.setLevel(log_level)
-tc = TestController(args.clc_ip, log_level=args.log_level)
+tc = TestController(args.clc_ip, log_level=args.log_level, password=args.clc_password)
 user = tc.get_user_by_name(aws_account_name=args.cred_account, aws_user_name=args.cred_user)
 files = user.create_local_creds(local_destdir=zip_dest_dir, zipfilename=zip_file_name,
                                 ziponly=zip_only) or []
