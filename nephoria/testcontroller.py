@@ -1,5 +1,7 @@
 
-import signal
+import errno
+import os
+import logging
 from cloud_admin.systemconnection import SystemConnection
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import get_traceback
@@ -7,7 +9,6 @@ from cloud_utils.system_utils.machine import Machine
 from nephoria.usercontext import UserContext
 from nephoria.testcase_utils import TimerSeconds, TimeoutError, wait_for_result
 from boto3 import set_stream_logger
-
 
 class SystemConnectionFailure(Exception):
     pass
@@ -40,6 +41,8 @@ class TestController(object):
         :param cloudadmin_secretkey:
         :param timeout:
         """
+        if isinstance(log_level, basestring):
+            log_level = getattr(logging, log_level.upper(), logging.DEBUG)
         self.log = Eulogger("TESTER:{0}".format(hostname), stdout_level=log_level)
         self._region = region
         self._sysadmin = None
@@ -64,12 +67,13 @@ class TestController(object):
                                         'euca_user': 'admin',
                                         'euca_account': 'eucalyptus'}
 
-        self._cloud_admin_connection_info = {'account_name': 'eucalyptus',
-                                             'user_name': 'admin',
+        self._cloud_admin_connection_info = {'aws_account_name': 'eucalyptus',
+                                             'aws_user_name': 'admin',
                                              'credpath': cloudadmin_credpath,
-                                             'access_key': cloudadmin_accesskey,
-                                             'secret_key': cloudadmin_secretkey,
                                              'region': self.region,
+                                             'aws_access_key': cloudadmin_accesskey,
+                                             'aws_secret_key': cloudadmin_secretkey,
+                                             'service_connection': self,
                                              'log_level': log_level}
 
         self._test_user_connection_info = {'aws_account_name': clouduser_account,
@@ -150,10 +154,9 @@ class TestController(object):
                 (conn_info.get('aws_access_key') and conn_info.get('aws_secret_key'))):
                 if conn_info.get('credpath'):
                     conn_info['machine'] = self.cred_depot
-                self.dump_conn_debug(conn_info)
-                self._cloudadmin = UserContext(**conn_info)
             else:
-                self._cloudadmin = UserContext(eucarc=self.sysadmin.creds, region=self.region)
+                conn_info['eucarc'] = self.sysadmin.creds
+            self._cloudadmin = UserContext(**conn_info)
         return self._cloudadmin
 
     @property
@@ -199,7 +202,6 @@ class TestController(object):
         else:
             raise ValueError('User info not returned for "account:{0}, user:{1}"'
                              .format(aws_account_name, aws_user_name))
-
 
 
     def create_user_using_cloudadmin(self, aws_account_name=None, aws_user_name='admin',
