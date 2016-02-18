@@ -260,7 +260,7 @@ disable_root: false"""
 
             
     def get_keypair(self, key_name=None, key_dir=None, extension='.pem'):
-        return self.connection.create_keypair_and_localcert(key_name=key_name, key_dir=key_dir,
+        return self.create_keypair_and_localcert(key_name=key_name, key_dir=key_dir,
                                                  extension=extension)
             
     def verify_local_keypath(self, keyname, path=None, exten=".pem"):
