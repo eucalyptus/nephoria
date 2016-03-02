@@ -83,6 +83,7 @@ class TestController(object):
                                             'username': cred_depot_username,
                                             'password': cred_depot_password or password,
                                             'log_level': log_level}
+
     def __repr__(self):
         try:
             myrepr = "{0}:{1}({2}:{3},{4}:{5})".format(

@@ -45,6 +45,7 @@ from nephoria.aws.cloudformation.cfnops import CFNops
 from nephoria.aws.cloudwatch.cwops import CWops
 from nephoria.aws.autoscaling.asops import ASops
 
+
 class UserContext(AutoCreds):
 
     # This map is used for ops connection class lookups...
