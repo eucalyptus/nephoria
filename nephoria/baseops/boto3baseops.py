@@ -119,5 +119,3 @@ class Boto3BaseOps(BaseOps):
         except:
             self.show_connection_kwargs()
             raise
-
-
