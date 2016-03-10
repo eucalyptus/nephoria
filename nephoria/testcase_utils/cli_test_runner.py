@@ -281,6 +281,11 @@ class CliTestRunner(object):
         'config_file': {'args': ['--config-file'],
                       'kwargs': {"help": "Test Config file path",
                                  "default": None}},
+        'no_clean':{'args': ['--no-clean'],
+                    'kwargs': {'help': 'Flag, if provided will not run the clean method on exit',
+                               'action': 'store_true',
+                               'default': False}}
+
     }
 
 
@@ -298,7 +303,7 @@ class CliTestRunner(object):
             self.parser.add_argument(*cli_args, **cli_kwargs)
         # Combine CLI provided args with any values found in a config file (if provided)
         self.get_args()
-        self._testlist = getattr(self.args, 'test_list', None)
+        self._testlist = []
         log_level = getattr(self.args, 'log_level', 'INFO')
         log_file = getattr(self.args, 'log_file', None)
         log_file_level = getattr(self.args, 'log_file_level', "DEBUG")
@@ -310,6 +315,11 @@ class CliTestRunner(object):
         print dir(self.args)
         self.log = Eulogger(identifier=self.name, stdout_level=log_level,
                                logfile=log_file, logfile_level=log_file_level)
+        # set the date format for the logger
+        for h in self.log.parent.handlers:
+            if h == self.log.stdout_handler:
+                h.formatter.datefmt = "%m-%d %H:%M:%S"
+                break
         self._term_width = 110
         height, width = get_terminal_size()
         if width < self._term_width:
@@ -468,7 +478,7 @@ class CliTestRunner(object):
             buf += "---------------------\n"
         return buf
 
-    def run_test_case_list(self, testlist=None, eof=False, clean_on_exit=True, printresults=True):
+    def run_test_case_list(self, testlist=None, eof=False, clean_on_exit=None, printresults=True):
         '''
         Desscription: wrapper to execute a list of ebsTestCase objects
 
@@ -491,20 +501,32 @@ class CliTestRunner(object):
         :rtype: integer
         :returns: integer exit code to represent pass/fail of the list executed.
         '''
+        if clean_on_exit is None:
+            clean_on_exit = not(getattr(self.args, 'no_clean', False))
+
         if testlist is None:
-            def key(text):
-                return [(int(c) if c.isdigit() else c) for c in re.split('(\d+)', text)]
-            testlist = []
-            # Get all the local methods which being with the work 'test' and run those.
-            attr_names = []
-            for name in dir(self):
-                if name.startswith('test'):
-                    attr_names.append(name)
-            for name in sorted(attr_names, key=key):
-                attr = getattr(self, name, None)
-                if hasattr(attr, '__call__'):
-                    testlist.append(self.create_testunit_from_method(method=attr,
-                                                                     test_unit_name=name))
+            # See if test names were provided via the command line. Match those to local methods
+            # and run them
+            if getattr(self.args, 'test_list', None):
+                test_names = str(self.args.test_list).replace(',', " ").split()
+                testlist = []
+                for test_name in test_names:
+                    testlist.append(self.create_testunit_by_name(name=test_name,
+                                                                 obj=self))
+            else:
+                # Get all the local methods which being with the work 'test' and run those.
+                def key(text):
+                    return [(int(c) if c.isdigit() else c) for c in re.split('(\d+)', text)]
+                testlist = []
+                attr_names = []
+                for name in dir(self):
+                    if name.startswith('test'):
+                        attr_names.append(name)
+                for name in sorted(attr_names, key=key):
+                    attr = getattr(self, name, None)
+                    if hasattr(attr, '__call__'):
+                        testlist.append(self.create_testunit_from_method(method=attr,
+                                                                         test_unit_name=name))
         self._testlist = testlist
         if not self._testlist:
             self.log.warning('No tests were provided or found to run?')
@@ -512,9 +534,13 @@ class CliTestRunner(object):
         start = time.time()
         tests_ran = 0
         test_count = len(self._testlist)
+        orig_log_id = self.log.identifier
         try:
             for test in self._testlist:
                 tests_ran += 1
+                self.log.identifier = markup(test.name, markups=[ForegroundColor.WHITE,
+                                                               BackGroundColor.BG_BLACK,
+                                                               TextStyle.BOLD])
                 self.print_test_unit_startmsg(test)
                 try:
                     test.run(eof=eof or test.eof)
@@ -534,9 +560,13 @@ class CliTestRunner(object):
                         self.endsuccess(' TEST:"{0}" COMPLETE'.format(test.name))
                     else:
                         self.log.info(' TEST:"{0}" COMPLETE'.format(test.name))
+                self.log.identifier = orig_log_id
                 self.log.debug(self.print_test_list_short_stats(self._testlist))
-
+        except:
+            self.log.warning('Error in test runner...')
+            raise
         finally:
+            self.log.identifier = orig_log_id
             elapsed = int(time.time() - start)
             msgout = "RUN TEST CASE LIST DONE:\n"
             msgout += "Ran " + str(tests_ran) + "/" + str(test_count) + " nephoria_unit_tests in " + str(
@@ -564,8 +594,8 @@ class CliTestRunner(object):
                         msgout = self.print_test_list_results(testlist=self._testlist,
                                                               printout=False)
                         self.status(msgout)
-            except:
-                pass
+            except Exception as E:
+                self.log.warning('{0}\nIgnoring Error:"{1}"'.format(get_traceback(), E))
             self._testlist = copy.copy(self._testlist)
             passed = 0
             failed = 0
@@ -866,7 +896,11 @@ class CliTestRunner(object):
         eof = False
         autoarg = True
         obj = obj or self
-        meth = getattr(obj, name)
+        try:
+            meth = getattr(obj, name)
+        except AttributeError as AE:
+            self.log.error('Could not create test unit for name:"{0}", err:"{1}"'.format(name, AE))
+            raise
         methvars = self.get_meth_arg_names(meth)
 
         # Pull out value relative to this method, leave in any that are intended to be
