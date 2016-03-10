@@ -293,23 +293,28 @@ class CliTestRunner(object):
     def __init__(self, name=None, description=None, **kwargs):
         self.name = name or self.__class__.__name__
         # create parser
+        self.args = argparse.Namespace()
+
         self.parser = argparse.ArgumentParser(prog=self.name, description=self._CLI_DESCRIPTION)
         # create cli options from class dict
         for argname, arg_dict in self._DEFAULT_CLI_ARGS.iteritems():
             cli_args = arg_dict.get('args')
             cli_kwargs = arg_dict.get('kwargs')
             self.parser.add_argument(*cli_args, **cli_kwargs)
+
         # Combine CLI provided args with any values found in a config file (if provided)
-        self.get_args()
+        self.get_args(runtime_kwargs=kwargs)
         self._testlist = []
         log_level = getattr(self.args, 'log_level', 'INFO')
         log_file = getattr(self.args, 'log_file', None)
         log_file_level = getattr(self.args, 'log_file_level', "DEBUG")
         self.html_anchors = False
-        # Allow __init__ to get args from __init__'s kwargs or through command line parser...
-        for kw in kwargs:
-            print 'Setting kwarg:'+str(kw)+" to "+str(kwargs[kw])
-            self.set_arg(kw, kwargs[kw])
+        # Allow __init__ to get args from __init__'s kwargs or through command line parser.
+        # kwargs provided at runtime will take precedence and overwrite default args and arg
+        # values provided from the cli argparser
+        for arg_name, value in kwargs.iteritems():
+            print 'Setting kwarg: {0} to {1}'.format(arg_name, value)
+            self.set_arg(arg=arg_name, value=value)
         self.log = Eulogger(identifier=self.name, stdout_level=log_level,
                             logfile=log_file, logfile_level=log_file_level)
         # set the date format for the logger
@@ -709,7 +714,7 @@ class CliTestRunner(object):
     # CLI parser and test argument inspection/manipulation methods
     ##############################################################################################
 
-    def get_args(self, use_cli=True, file_sections=[], verbose=True):
+    def get_args(self, use_cli=True, file_sections=[], runtime_kwargs=None, verbose=True):
         '''
         Description: Method will attempt to retrieve all command line arguments presented
         through local testcase's 'argparse' methods, as well as retrieve all EuConfig file
@@ -729,6 +734,9 @@ class CliTestRunner(object):
         :param sections: list of EuConfig sections to read configuration values from, and store
                          in self.args.
 
+        :type runtime_kwargs: dict
+        :param runtime_kwargs: dict used to populate arg values (in addition to cli and/or files)
+
         :rtype: arparse.namespace obj
         :returns: namespace object with values from cli and config file arguements
         '''
@@ -740,9 +748,25 @@ class CliTestRunner(object):
         # Setup/define the config file block/sections we intend to read from
         confblocks = file_sections or [self.name, 'global']
 
+        required = []
+        for action in self.parser._actions:
+            if action.required:
+                required.append(action)
+        argstring = sys.argv[1:]
+        has_cli_value = []
+        if required and argstring:
+            for action in required:
+                for optstring in action.option_strings:
+                    if re.match(optstring, argstring):
+                        has_cli_value.append(action)
+        for action in has_cli_value:
+            required.remove(action)
+        for action in required:
+            self.parser._actions.remove(action)
+
         if use_cli:
             # first get command line args to see if there's a config file
-            cliargs = self.parser.parse_args()
+            cliargs = self.parser.parse_args(args=argstring)
 
         # if a config file was passed, combine the config file and command line args into a
         # single namespace object
@@ -772,6 +796,18 @@ class CliTestRunner(object):
                 if (val[0] not in cf) or (val[1] is not None):
                     cf.__setattr__(str(val[0]), val[1])
             args = cf
+        for arg_name, value in runtime_kwargs.iteritems():
+            setattr(args, arg_name, value)
+        missing_required = []
+        for action in required:
+            if hasattr(args, action.dest):
+                setattr(args, action.dest, self.parser._get_value(action,
+                                                                  getattr(args, action.dest)))
+            else:
+                missing_required.extend(action.option_strings)
+        if missing_required:
+            message = 'error: arguments "{0}" are required'.format(", ".join(missing_required))
+            self.parser.error(message)
         self.args = args
         return args
 
