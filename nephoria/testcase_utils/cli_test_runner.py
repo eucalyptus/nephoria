@@ -307,9 +307,13 @@ class CliTestRunner(object):
         for kw in kwargs:
             print 'Setting kwarg:'+str(kw)+" to "+str(kwargs[kw])
             self.set_arg(kw ,kwargs[kw])
-
+        print dir(self.args)
         self.log = Eulogger(identifier=self.name, stdout_level=log_level,
                                logfile=log_file, logfile_level=log_file_level)
+        self._term_width = 110
+        height, width = get_terminal_size()
+        if width < self._term_width:
+            self._term_width = width
         self.show_args()
         self.show_self()
 
@@ -397,21 +401,27 @@ class CliTestRunner(object):
 
 
     def startmsg(self, msg=""):
-        self.status(msg, markups=[ForegroundColor.WHITE, BackGroundColor.BG_BLUE])
+        self.status(msg, markups=[ForegroundColor.WHITE, BackGroundColor.BG_BLUE, TextStyle.BOLD])
 
     def endsuccess(self, msg=""):
-        msg = "- SUCCESS - " + msg
-        self.status(msg, markups=[ForegroundColor.WHITE, BackGroundColor.BG_GREEN])
+        msg = "- END SUCCESS - {0}".format(msg).center(self._term_width)
+        self.status(msg, markups=[ForegroundColor.WHITE, BackGroundColor.BG_GREEN, TextStyle.BOLD])
         return msg
 
     def errormsg(self, msg=""):
         msg = "- ERROR - " + msg
-        self.status(msg, markups=[ForegroundColor.RED])
+        self.status(msg, markups=[ForegroundColor.RED, TextStyle.BOLD])
         return msg
 
     def endfailure(self, msg=""):
-        msg = "- FAILED - {0}".format(msg)
-        self.status(msg, markups=[ForegroundColor.WHITE, BackGroundColor.BG_RED])
+        msg = "- END FAILURE - {0}".format(msg).center(self._term_width)
+        self.status(msg, markups=[ForegroundColor.WHITE, BackGroundColor.BG_RED, TextStyle.BOLD])
+        return msg
+
+    def endnotrun(self, msg=""):
+        msg = "- END NOT RUN - {0}".format(msg).center(self._term_width)
+        self.status(msg, markups=[ForegroundColor.WHITE, BackGroundColor.BG_MAGENTA,
+                                  TextStyle.BOLD])
         return msg
 
     def resultdefault(self, msg, printout=True):
@@ -511,15 +521,19 @@ class CliTestRunner(object):
                 except Exception, e:
                     self.log.debug('Testcase:' + str(test.name) + ' error:' + str(e))
                     if eof or (not eof and test.eof):
-                        self.endfailure(' TEST:"{0}()"'.format(test.name))
+                        self.endfailure(' TEST:"{0}" COMPLETE'.format(test.name))
                         raise e
                     else:
-                        self.endfailure(' TEST:"{0}()"'.format(test.name))
+                        self.endfailure(' TEST:"{0}" COMPLETE '.format(test.name))
                 else:
                     if test.result == TestResult.failed:
-                        self.endfailure(' TEST:"{0}()"'.format(test.name))
+                        self.endfailure(' TEST:"{0}" COMPLETE'.format(test.name))
+                    elif test.result == TestResult.not_run:
+                        self.endnotrun(' TEST:"{0}" COMPLETE'.format(test.name))
+                    elif test.result == TestResult.passed:
+                        self.endsuccess(' TEST:"{0}" COMPLETE'.format(test.name))
                     else:
-                        self.endsuccess(' TEST:"{0}()"'.format(test.name))
+                        self.log.info(' TEST:"{0}" COMPLETE'.format(test.name))
                 self.log.debug(self.print_test_list_short_stats(self._testlist))
 
         finally:
@@ -578,14 +592,19 @@ class CliTestRunner(object):
             startbuf += '<div id="myDiv" name="myDiv" title="Example Div Element" style="color: ' \
                         '#0900C4; font: Helvetica 12pt;border: 1px solid black;">'
             startbuf += str(link)
-        startbuf += "STARTING TESTUNIT: " + test.name
+        pt = PrettyTable(['HEADER'])
+        pt.header = False
+        pt.align = 'l'
+        buf = "STARTING TESTUNIT: {0}".format(test.name).ljust(self._term_width)
         argbuf = self.get_pretty_args(test)
-        startbuf += str(test.description) + str(argbuf)
-        startbuf += 'Running list method: "' + str(
+        buf += str(test.description) + str(argbuf)
+        buf += 'Running list method: "' + str(
             self.format_testunit_method_arg_values(test)) + '"'
+        pt.add_row([buf])
+        startbuf += markup(pt, markups=[ForegroundColor.WHITE, BackGroundColor.BG_BLUE])
         if self.html_anchors:
             startbuf += '\n </div>'
-        self.startmsg(startbuf)
+        self.status(startbuf)
 
     def has_arg(self, arg):
         '''
@@ -694,8 +713,8 @@ class CliTestRunner(object):
                 markups=[ForegroundColor.BLUE, BackGroundColor.BG_WHITE]
 
             term_height, term_width = get_terminal_size()
-            if term_width > 110:
-                term_width = 110
+            if term_width > self._term_width:
+                term_width = self._term_width
             key_width = 10
             val_width = term_width - key_width - 6
             headers = ['KEY'.ljust(key_width, "-"), 'VALUE'.ljust(val_width, "-")]
@@ -756,7 +775,7 @@ class CliTestRunner(object):
         pt = PrettyTable(headers)
         pt.vrules = 2
         pt.add_row(results_row)
-        main_header = yellow('RESULTS SUMMARY FOR "{0}"'.format(self.name), bold=True)
+        main_header = yellow('LATEST RESULTS FOR: "{0}"'.format(self.name), bold=True)
         main_pt = PrettyTable([main_header])
         main_pt.align = 'l'
         main_pt.padding_width = 0
@@ -764,7 +783,7 @@ class CliTestRunner(object):
         main_pt.add_row([str(pt)])
         if printmethod:
             printmethod(main_pt.get_string())
-        return main_pt.get_string()
+        return "\n{0}\n".format(main_pt)
 
     @classmethod
     def get_testunit_method_arg_dict(cls, testunit):
@@ -1141,7 +1160,7 @@ class CliTestRunner(object):
 
 
 class SkipTestException(Exception):
-    def __init__(self, value):
+    def __init__(self, value='Skipped Test'):
         self.value = value
 
     def __str__(self):
