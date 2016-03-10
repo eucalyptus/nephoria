@@ -30,11 +30,11 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 #
-from nephoria.testcase_utils.eutestcase import EutesterTestCase
+from nephoria.testcase_utils.eutestcase import CliTestRunner
 from imageutils import ImageUtils
 
 machine=None
-testcase = EutesterTestCase()
+testcase = CliTestRunner()
 
 testcase.setup_parser(testname='load_hvm_image.py',
                       description='Loads an hvm image from either a remote url or local file path',

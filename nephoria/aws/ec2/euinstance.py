@@ -1082,6 +1082,23 @@ class EuInstance(Instance, TaggedResource, Machine):
         except:
             pass
 
+
+    def terminate(self, dry_run=False):
+        errors = ""
+        try:
+            if self.log:
+                self.log.close()
+        except Exception as LE:
+            errors = "{0}\n{1}\n".format(get_traceback(), LE)
+        try:
+            if self.ssh:
+                self.ssh.connection.close()
+                self.ssh.close()
+        except Exception as SE:
+            errors = "{0}\n{1}\n".format(get_traceback(), SE)
+        if errors:
+            self.log.error('{0}\n{1}Error closing instances fds'.format(errors, self.id))
+
     def terminate_and_verify(self, verify_vols=True, volto=180, timeout=300, poll_interval=10):
         '''
         Attempts to terminate the instance and verify delete on terminate state of an ebs root
