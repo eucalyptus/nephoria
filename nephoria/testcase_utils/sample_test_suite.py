@@ -22,6 +22,13 @@ prompt# python sample_test_suite.py --sample-arg 'woot' --test-list 'test1, test
 
 To run this test from a python shell:
 prompt# ipython
+In [1]: from nephoria.testcase_utils.sample_test_suite import SampleTestSuite1
+In [2]: test = SampleTestSuite1(sample_arg='another way to provide args', test_list='test12_skip_me')
+In [3]: test.run()
+
+# Or call the method directly...
+In [4]: test.test1()
+[03-10 11:07:29][INFO][SampleTestSuite1]: This is the default
 
 """
 
