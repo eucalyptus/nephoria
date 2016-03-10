@@ -1,10 +1,40 @@
 #!/usr/bin/env python
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, SkipTestException
+import copy
 import time
 
 
+"""
+This is intended to demonstrate some basic ways to write a test suite.
+
+To run this test from the command line:
+
+## First see what CLI args are provided. Not the --sample-arg added in the test vs the default
+## arguments provided by the CliTestRunner Class
+prompt# python sample_test_suite.py -h
+
+## Run the tests
+prompt# python sample_test_suite.py --sample-arg 'my sample arg'
+
+## Run a subset of the tests
+prompt# python sample_test_suite.py --sample-arg 'woot' --test-list 'test1, test12_skip_me'
+
+
+To run this test from a python shell:
+prompt# ipython
+In [1]: from nephoria.testcase_utils.sample_test_suite import SampleTestSuite1
+In [2]: test = SampleTestSuite1(sample_arg='another way to provide args', test_list='test12_skip_me')
+In [3]: test.run()
+
+# Or call the method directly...
+In [4]: test.test1()
+[03-10 11:07:29][INFO][SampleTestSuite1]: This is the default
+
+"""
+
+
 class SampleTestSuite1(CliTestRunner):
-    _DEFAULT_CLI_ARGS = CliTestRunner._DEFAULT_CLI_ARGS
+    _DEFAULT_CLI_ARGS = copy.copy(CliTestRunner._DEFAULT_CLI_ARGS)
     _DEFAULT_CLI_ARGS['sample_arg'] = {'args': ['--sample-arg'],
                                        'kwargs': {'help': 'This sample arg is mandatory',
                                                   'default': None,
