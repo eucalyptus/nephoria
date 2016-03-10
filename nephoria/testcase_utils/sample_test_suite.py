@@ -41,6 +41,6 @@ class SampleTestSuite1(CliTestRunner):
 if __name__ == "__main__":
 
     test = SampleTestSuite1()
-    result = test.run_test_case_list()
+    result = test.run()
     exit(result)
 

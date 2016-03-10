@@ -138,10 +138,10 @@ test4 = testcase.create_testunit_from_method(hope_i_get_to_run)
 ##################################################################################################
 # Finally run the test list                                                                      #
 ##################################################################################################
-result = testcase.run_test_case_list(list = [test0, test1, test2, test3, test4],
-                                     eof=False,
-                                     clean_on_exit=False,
-                                     printresults=True)
+result = testcase.run(list = [test0, test1, test2, test3, test4],
+                      eof=False,
+                      clean_on_exit=False,
+                      printresults=True)
 
 ##################################################################################################
 # Dont forget to exit with the proper code                                                       #
