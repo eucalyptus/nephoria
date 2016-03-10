@@ -805,7 +805,7 @@ class CliTestRunner(object):
         pt = PrettyTable(headers)
         pt.vrules = 2
         pt.add_row(results_row)
-        main_header = yellow('LATEST RESULTS FOR: "{0}"'.format(self.name), bold=True)
+        main_header = yellow('LATEST RESULTS:', bold=True)
         main_pt = PrettyTable([main_header])
         main_pt.align = 'l'
         main_pt.padding_width = 0
