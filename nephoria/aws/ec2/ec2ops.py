@@ -261,7 +261,7 @@ disable_root: false"""
 
             
     def get_keypair(self, key_name=None, key_dir=None, extension='.pem'):
-        return self.connection.create_keypair_and_localcert(key_name=key_name, key_dir=key_dir,
+        return self.create_keypair_and_localcert(key_name=key_name, key_dir=key_dir,
                                                  extension=extension)
             
     def verify_local_keypath(self, keyname, path=None, exten=".pem"):
@@ -381,9 +381,21 @@ disable_root: false"""
             string_to_decrypt = base64.b64decode(encrypted_string)
         else:
             string_to_decrypt = encrypted_string
-        popen = Popen(['openssl', 'rsautl', '-decrypt', '-inkey',
-                       private_key_path, '-pkcs'], stdin=PIPE, stdout=PIPE)
-        (stdout, _) = popen.communicate(string_to_decrypt)
+        popen = None
+        try:
+            popen = Popen(['openssl', 'rsautl', '-decrypt', '-inkey',
+                           private_key_path, '-pkcs'], stdin=PIPE, stdout=PIPE)
+            (stdout, _) = popen.communicate(string_to_decrypt)
+        finally:
+            if popen:
+                try:
+                    popen.stdin.close()
+                    popen.stdout.close()
+                    popen.stderr.close()
+                except Exception as FDE:
+                    self.log.warning('get_windows_instance_password, err closing fds:"{0}"'
+                                     .format(FDE))
+
         return stdout
 
     @printinfo
@@ -505,16 +517,17 @@ disable_root: false"""
                                      'request, name:{0}, ownerid:{1}'
                                      .format(src_security_group_name, src_security_group_owner_id))
 
-        return self.authorize_security_group(group_id=group_id,
-                                             src_security_group_name=src_security_group_name,
-                                             src_security_group_owner_id=src_security_group_owner_id,
-                                             src_security_group_group_id=src_security_group_id,
-                                             ip_protocol=protocol,
-                                             from_port=port,
-                                             to_port=end_port,
-                                             cidr_ip=cidr_ip,
-                                             group_name=None,
-                                             )
+        return self.connection.authorize_security_group(
+            group_id=group_id,
+            src_security_group_name=src_security_group_name,
+            src_security_group_owner_id=src_security_group_owner_id,
+            src_security_group_group_id=src_security_group_id,
+            ip_protocol=protocol,
+            from_port=port,
+            to_port=end_port,
+            cidr_ip=cidr_ip,
+            group_name=None,
+            )
 
     def revoke_all_rules(self, group):
 
@@ -3634,8 +3647,17 @@ disable_root: false"""
                                    str(rule.from_port),
                                    str(rule.to_port),
                                    str(g_buf)))
-                from_port = int(rule.from_port)
-                to_port= int(rule.to_port)
+                if rule.to_port is None:
+                    to_port = -1
+                else:
+                    to_port= int(rule.to_port)
+                if rule.from_port is  None:
+                    from_port = -1
+                else:
+                    from_port = int(rule.from_port)
+
+
+
                 if (to_port == 0 ) or (to_port == -1) or \
                         (port >= from_port and port <= to_port):
                     for grant in rule.grants:

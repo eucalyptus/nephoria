@@ -70,6 +70,7 @@ disable_root: false"""
             self.test_resources[resource_type] = []
         """
 
+<<<<<<< HEAD
     def create_keypair(self, key_name, key_dir=None, save_to_local=True):
         """
         Creates a key pair and saves the key pair into a local directory.
@@ -128,4 +129,4 @@ disable_root: false"""
             k.reload()
         except:
             return True
-
+                        

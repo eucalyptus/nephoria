@@ -1,10 +1,10 @@
-from nephoria.testcase_utils.eutestcase import EutesterTestCase, SkipTestException
+from nephoria.testcase_utils.eutestcase import CliTestRunner, SkipTestException
 from cloud_utils.net_utils.sshconnection import SshConnection
 
 ##################################################################################################
 # Create the testcase object                                                                     #
 ##################################################################################################
-testcase = EutesterTestCase()
+testcase = CliTestRunner()
 
 ##################################################################################################
 # See 'setup_parser' for all the default cli arguments. These can be negated by setting          #

@@ -1,7 +1,7 @@
 
 
 from nephoria.testcontroller import TestController
-from nephoria.testcase_utils.eutestcase import EutesterTestCase
+from nephoria.testcase_utils.eutestcase import CliTestRunner
 from cloud_utils.net_utils import packet_test, is_address_in_network
 from cloud_utils.log_utils import markup, printinfo, get_traceback
 from boto.vpc.subnet import Subnet
@@ -19,7 +19,7 @@ UDP = 17
 SCTP = 132
 
 
-class VpcBasics(EutesterTestCase):
+class VpcBasics(CliTestRunner):
     DEFAULT_RULES =  [('tcp', 22, 22, '0.0.0.0/0'), ('icmp', -1, -1, '0.0.0.0/0')]
 
     def __init__(self, test_controller=None, **kwargs):

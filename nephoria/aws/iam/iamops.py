@@ -42,6 +42,7 @@ from nephoria.baseops.botobaseops import BotoBaseOps
 
 class IAMops(BotoBaseOps):
     EUCARC_URL_NAME = 'iam_url'
+    SERVICE_PREFIX = 'iam'
     CONNECTION_CLASS = IAMConnection
 
     def setup_resource_trackers(self):
