@@ -1,13 +1,11 @@
 
-import errno
-import os
+
 import logging
 from cloud_admin.systemconnection import SystemConnection
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import get_traceback
 from cloud_utils.system_utils.machine import Machine
 from nephoria.usercontext import UserContext
-from nephoria.testcase_utils import TimerSeconds, TimeoutError, wait_for_result
 from boto3 import set_stream_logger
 
 class SystemConnectionFailure(Exception):
@@ -285,16 +283,18 @@ class TestController(object):
         return user
 
     def dump_conn_debug(self, info):
-            try:
-                self.log.debug(
-                        'Connection info:\n{0}'
-                        .format("\n".join("{0}:{1}".format(x, y) for x,y in info.iteritems())))
-            except Exception as doh:
-                self.log.error('{0}\nError attempting to dump connection info:{1}'
-                               .format(get_traceback(), doh))
-
-    def wait_for_result(self, *args, **kwargs):
-        return wait_for_result(*args, **kwargs)
+        """
+        Helper method to format and display the connection info contained in a specific dict.
+        Example: self.dump_conn_debug(self._system_connection_info)
+        :param info:  connection dict.
+        """
+        try:
+            self.log.debug(
+                    'Connection info:\n{0}'
+                    .format("\n".join("{0}:{1}".format(x, y) for x,y in info.iteritems())))
+        except Exception as doh:
+            self.log.error('{0}\nError attempting to dump connection info:{1}'
+                           .format(get_traceback(), doh))
 
     def set_boto_logger_level(self, level='NOTSET', format_string=None):
         """
