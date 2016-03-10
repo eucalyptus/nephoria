@@ -291,10 +291,16 @@ class CliTestRunner(object):
     _CLI_DESCRIPTION = "CLI TEST RUNNER"
 
     def __init__(self, name=None, description=None, **kwargs):
+        """
+        Cli Test Runner Class
+        :param name: Name user to identifiy this test suite
+        :param description: Description to be provided to the CLI
+        :param kwargs: Any arguments to be passed to the parser at runtime to supplement
+                      any arguments provided by the cli, and/or any config files.
+                      These kwargs will end up a attributes of self.args.
+        """
         self.name = name or self.__class__.__name__
         # create parser
-        self.args = argparse.Namespace()
-
         self.parser = argparse.ArgumentParser(prog=self.name, description=self._CLI_DESCRIPTION)
         # create cli options from class dict
         for argname, arg_dict in self._DEFAULT_CLI_ARGS.iteritems():
@@ -302,19 +308,15 @@ class CliTestRunner(object):
             cli_kwargs = arg_dict.get('kwargs')
             self.parser.add_argument(*cli_args, **cli_kwargs)
 
-        # Combine CLI provided args with any values found in a config file (if provided)
+        # Combine CLI provided args with any runtime values form **kwargs, and/or values
+        # found in a provided config file path
         self.get_args(runtime_kwargs=kwargs)
+
         self._testlist = []
         log_level = getattr(self.args, 'log_level', 'INFO')
         log_file = getattr(self.args, 'log_file', None)
         log_file_level = getattr(self.args, 'log_file_level', "DEBUG")
         self.html_anchors = False
-        # Allow __init__ to get args from __init__'s kwargs or through command line parser.
-        # kwargs provided at runtime will take precedence and overwrite default args and arg
-        # values provided from the cli argparser
-        for arg_name, value in kwargs.iteritems():
-            print 'Setting kwarg: {0} to {1}'.format(arg_name, value)
-            self.set_arg(arg=arg_name, value=value)
         self.log = Eulogger(identifier=self.name, stdout_level=log_level,
                             logfile=log_file, logfile_level=log_file_level)
         # set the date format for the logger
@@ -752,13 +754,17 @@ class CliTestRunner(object):
         for action in self.parser._actions:
             if action.required:
                 required.append(action)
-        argstring = sys.argv[1:]
+        sys_args = sys.argv[1:]
         has_cli_value = []
-        if required and argstring:
-            for action in required:
-                for optstring in action.option_strings:
-                    if re.match(optstring, argstring):
-                        has_cli_value.append(action)
+        if required and sys_args:
+            try:
+                for action in required:
+                    for optstring in action.option_strings:
+                        if optstring in sys_args:
+                            has_cli_value.append(action)
+            except Exception as E:
+                print 'argstring:"{0}"'.format(sys_args)
+                raise
         for action in has_cli_value:
             required.remove(action)
         for action in required:
@@ -766,7 +772,7 @@ class CliTestRunner(object):
 
         if use_cli:
             # first get command line args to see if there's a config file
-            cliargs = self.parser.parse_args(args=argstring)
+            cliargs = self.parser.parse_args(args=sys_args)
 
         # if a config file was passed, combine the config file and command line args into a
         # single namespace object
@@ -798,16 +804,24 @@ class CliTestRunner(object):
             args = cf
         for arg_name, value in runtime_kwargs.iteritems():
             setattr(args, arg_name, value)
+        # Check to see if arguments required by the parser were provided by the runtime kwargs or
+        # from any arguments read from a config file. Then process these values per their
+        # respective parser actions to enforce any formatting or rules of the parser action
         missing_required = []
         for action in required:
+            if action not in self.parser._actions:
+                self.parser._actions.append(action)
+            if not hasattr(args, action.dest):
+                missing_required.extend(action.option_strings)
+        if missing_required:
+            message = 'missing required arguments: "{0}"'.format(", ".join(missing_required))
+            self.parser.error(message)
+        # Reprocess all the arguments to enforce rule set by the parser actions in the case
+        # an argument value was provided by the runtime kwargs or a config file.
+        for action in self.parser._actions:
             if hasattr(args, action.dest):
                 setattr(args, action.dest, self.parser._get_value(action,
                                                                   getattr(args, action.dest)))
-            else:
-                missing_required.extend(action.option_strings)
-        if missing_required:
-            message = 'error: arguments "{0}" are required'.format(", ".join(missing_required))
-            self.parser.error(message)
         self.args = args
         return args
 
