@@ -1,8 +1,9 @@
 """
-This is the base class for any test case to be included in the Eutester repo. It should include any
-functionality that we expected to be repeated in most of the test cases that will be written.
-This harness is primarily intended to help provide a common means of running and reporting
-'system tests' (vs unit tests).
+This is the base class for any test case to be included in the Nephoria repo. It should include any
+functionality that we expect to be repeated in most of the test cases that will be written.
+These wrapper/harness classes are primarily intended to help provide a common means of running and
+reporting 'system level tests', although should work as well for "unit level tests". The intention
+is that tests can be built upon other test methods.
 For the purposes of this module, a 'system' focused test suite is the sum of a what would
 otherwise be many 'unit tests' in order to produce an end to end flow that might mimic a
 users's experience and test interactions of the system.
@@ -18,8 +19,6 @@ existing tests when this was written:
     ability to share/extend testcase classes to build upon other test case classes/suites.
     basic config file parsing (arguments in file are merged with cli args)
 
-
-
 Currently included:
  - Debug method
  - Allow parameterized test cases
@@ -28,15 +27,10 @@ Currently included:
  - Start, end and current status messages
  - Enum class for possible test results
 
-Necessary to work on:
- - Argument parsing
- - Metric tracking (need to define what metrics we want
- - Standardized result summary
- - Logging standardization
- - Use docstring as description for test case
- - Standardized setUp and tearDown that provides useful/necessary cloud resources
-  (ie group, keypair, image)
-
+TBD:
+ - Metric tracking (need to define what metrics we want, how they are to be reported)
+ - Use docstring as description for test case categorizing, and tracking over
+   time (ie via remote DB)
 
 ##################################################################################################
 #                       Sample test and output:                                                  #
@@ -45,10 +39,8 @@ See README.md for more info
 
 """
 
-import unittest
 import inspect
 import time
-import gc
 import argparse
 import re
 import sys
@@ -58,8 +50,6 @@ import traceback
 import random
 import string
 from collections import OrderedDict
-from decorator import decorator
-from functools import wraps
 from prettytable import PrettyTable
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import markup, ForegroundColor, BackGroundColor, TextStyle
@@ -83,21 +73,6 @@ def _get_method_args_kwargs(method):
         args = spec.args
     return args, kwargdict
 
-def RegisterTestCase(description=None, category=[], test_type=None, testids=[], misc={}):
-    def wrapped(fn):
-        ars, kws = _get_method_args_kwargs(fn)
-        @wraps(fn)
-        def wrapped_f(*args, **kwargs):
-            return fn(*args, **kwargs)
-        wrapped_f.description = description or wrapped_f.__doc__
-        wrapped_f.category = category
-        wrapped_f.misc = misc
-        wrapped_f.test_type = test_type
-        wrapped_f
-        return wrapped_f
-    return wrapped
-
-
 
 class TestResult():
     '''
@@ -106,6 +81,12 @@ class TestResult():
     not_run = "NOT_RUN"
     passed = "PASSED"
     failed = "FAILED"
+
+##################################################################################################
+#  Convenience class to run wrap individual methods to run, store and access results.
+#  A testunit represents an individual function or method to be run by the CliTestRunner class.
+##################################################################################################
+
 
 class TestUnit():
     '''
@@ -122,8 +103,8 @@ class TestUnit():
     param eof: boolean to indicate whether a failure while running the given 'method' should end t
     he test case execution.
     '''
-    def __init__(self, method, html_anchors=False, test_unit_name=None, test_unit_description=None,
-                 *args, **kwargs):
+    def __init__(self, method, html_anchors=False, test_unit_name=None, test_logger=None,
+                 test_unit_description=None, *args, **kwargs):
         if not hasattr(method, '__call__'):
             raise ValueError('TestUnit method is not callable: "{0}"'.format(method))
         self.method = method
@@ -133,7 +114,10 @@ class TestUnit():
         self.name = test_unit_name or str(method.__name__)
         self.result = TestResult.not_run
         self.time_to_run = 0
-        #if self.kwargs.get('html_anchors', False):
+        self._html_link = None
+        self.anchor_id = None
+        self.error_anchor_id = None
+        #  if self.kwargs.get('html_anchors', False):
         if html_anchors:
             self.anchor_id = str(str(time.ctime()) + self.name + "_" +
                                  str(''.join(random.choice(string.ascii_uppercase +
@@ -145,14 +129,16 @@ class TestUnit():
             self.description = self.get_test_method_description()
         self.eof = False
         self.error = ""
-        print "Creating testunit:" + str(self.name) + ", args:"
-        for count, thing in enumerate(args):
-            print '{0}. {1}'.format(count, thing)
-        for name, value in kwargs.items():
-            print '{0} = {1}'.format(name, value)
+        if test_logger:
+            debug_buf = 'Creating TestUnit: "{0}" with args:'.format(self.name)
+            for count, thing in enumerate(args):
+                debug_buf += '{0}. {1}'.format(count, thing)
+            for name, value in kwargs.items():
+                debug_buf += '{0} = {1}'.format(name, value)
+            test_logger.debug(debug_buf)
 
     @classmethod
-    def create_testcase_from_method(cls, method, eof=False, *args, **kwargs):
+    def create_testcase_from_method(cls, method, test_logger=None, eof=False, *args, **kwargs):
         '''
         Description: Creates a EutesterTestUnit object from a method and set of arguments to be
         fed to that method
@@ -163,7 +149,7 @@ class TestUnit():
         type args: list of arguments
         param args: the arguments to be fed to the given 'method'
         '''
-        testunit = TestUnit(method, args, kwargs)
+        testunit = TestUnit(method, *args, test_logger=test_logger, **kwargs)
         testunit.eof = eof
         return testunit
 
@@ -239,10 +225,26 @@ class TestUnit():
         finally:
             self.time_to_run = int(time.time() - start)
 
+##################################################################################################
+#  Cli Test Runner/Wrapper Class
+#  Used to wrap, run and report results on a set of test functions, methods, or TestUnit objects.
+#  This class's convenience methods are intended to provide;
+#  - a common CLI
+#  - a common CLI arguments used when testing a cloud environment with Nephoria.
+#  - a common methods to inspect, run and track the results of the wrapped test methods/functions
+#  - common methods to display progress and results of the tests being run.
+#  - common entry/exit point for running test suites in a CI environment, etc..
+##################################################################################################
+
 
 class CliTestRunner(object):
+
+    #####################################################################################
     # List of dicts/kwargs to be used to fed to
-    # cli parser.add_argument() to build additional cli args.
+    # arparse.add_argument() to build additional cli args.
+    # The intention here is to help enforce common cli arguments across individual tests,
+    # as well as help test authors from having to re-add/create these per test.
+    #####################################################################################
     _DEFAULT_CLI_ARGS = {
         'password': {'args': ["--password"],
                      'kwargs': {"help": "Password to use for machine root ssh access",
@@ -264,8 +266,8 @@ class CliTestRunner(object):
                       'kwargs': {"help": "log level for stdout logging",
                                  "default": 'DEBUG'}},
         'test_account': {'args': ['--test-account'],
-                      'kwargs': {"help": "Cloud account name to use",
-                                 "default": "testrunner"}},
+                         'kwargs': {"help": "Cloud account name to use",
+                                    "default": "testrunner"}},
         'test_user': {'args': ['--test-user'],
                       'kwargs': {"help": "Cloud user name to use",
                                  "default": "admin"}},
@@ -273,24 +275,20 @@ class CliTestRunner(object):
                      'kwargs': {"help": "file path to log to (in addition to stdout",
                                 "default": None}},
         'log_file_level': {'args': ['--log-file-level'],
-                          'kwargs': {"help": "log level to use when logging to '--log-file'",
-                                     "default": "DEBUG"}},
+                           'kwargs': {"help": "log level to use when logging to '--log-file'",
+                                      "default": "DEBUG"}},
         'test_list': {'args': ['--test-list'],
                       'kwargs': {"help": "comma or space delimited list of test names to run",
                                  "default": None}},
         'config_file': {'args': ['--config-file'],
-                      'kwargs': {"help": "Test Config file path",
-                                 "default": None}},
-        'no_clean':{'args': ['--no-clean'],
-                    'kwargs': {'help': 'Flag, if provided will not run the clean method on exit',
-                               'action': 'store_true',
-                               'default': False}}
-
+                        'kwargs': {"help": "Test Config file path",
+                                   "default": None}},
+        'no_clean': {'args': ['--no-clean'],
+                     'kwargs': {'help': 'Flag, if provided will not run the clean method on exit',
+                                'action': 'store_true',
+                                'default': False}}
     }
-
-
     _CLI_DESCRIPTION = "CLI TEST RUNNER"
-
 
     def __init__(self, name=None, description=None, **kwargs):
         self.name = name or self.__class__.__name__
@@ -311,10 +309,9 @@ class CliTestRunner(object):
         # Allow __init__ to get args from __init__'s kwargs or through command line parser...
         for kw in kwargs:
             print 'Setting kwarg:'+str(kw)+" to "+str(kwargs[kw])
-            self.set_arg(kw ,kwargs[kw])
-        print dir(self.args)
+            self.set_arg(kw, kwargs[kw])
         self.log = Eulogger(identifier=self.name, stdout_level=log_level,
-                               logfile=log_file, logfile_level=log_file_level)
+                            logfile=log_file, logfile_level=log_file_level)
         # set the date format for the logger
         for h in self.log.parent.handlers:
             if h == self.log.stdout_handler:
@@ -324,17 +321,54 @@ class CliTestRunner(object):
         height, width = get_terminal_size()
         if width < self._term_width:
             self._term_width = width
-        self.show_args()
         self.show_self()
 
+    def clean_method(self):
+        """
+        This method should be implemented per Test Class. This method will be called by default
+        during the test run method(s). 'no_clean_on_exit' set by cli '--no-clean' will prevent
+        this default method from being called.
+        """
+        raise Exception("Clean_method was not implemented. Was run_list using clean_on_exit?")
 
-    def run_test_list_by_name(self, list, eof=None):
-        unit_list = []
-        for test in list:
-            unit_list.append(self.create_testunit_by_name(test))
+    def get_default_userhome_config(self, fname='nephoria.conf'):
+        '''
+        Description: Attempts to fetch the file 'fname' from the current user's home dir.
+        Returns path to the user's home dir default nephoria config file.
 
-        # Run the EutesterUnitTest objects
-        return self.run_test_case_list(unit_list, eof=eof)
+        :type fname: string
+        :param fname: the nephoria default config file name
+
+        :rtype: string
+        :returns: string representing the path to 'fname', the default nephoria conf file.
+        '''
+        try:
+            def_path = os.getenv('HOME') + '/.nephoria/' + str(fname)
+        except:
+            return None
+        try:
+            os.stat(def_path)
+            return def_path
+        except:
+            self.log.debug("Default config not found:" + str(def_path))
+            return None
+
+    def show_self(self):
+        main_pt = PrettyTable([yellow('TEST CASE INFO', bold=True)])
+        main_pt.border = False
+        pt = PrettyTable(['KEY', 'VALUE'])
+        pt.header = False
+        pt.align = 'l'
+        pt.add_row([blue("NAME"), self.name])
+        pt.add_row([blue("TEST LIST"), self._testlist])
+        pt.add_row([blue('CONFIG FILES'), self.args.config_file])
+        main_pt.add_row([pt])
+        self.log.info("\n{0}\n".format(main_pt))
+        self.show_args()
+
+    ##############################################################################################
+    # Create 'TestUnit' obj methods
+    ##############################################################################################
 
     def create_testunit_from_method(self, method, *args, **kwargs):
         '''
@@ -380,105 +414,133 @@ class CliTestRunner(object):
                 eof = kwargs.pop('eof')
         # Only pass the arg if we need it otherwise it will print with all methods/testunits
         if self.html_anchors:
-            testunit = TestUnit(method, *args, html_anchors=self.html_anchors,
-                                        **kwargs)
+            testunit = TestUnit(method, *args, test_logger=self.log,
+                                html_anchors=self.html_anchors, **kwargs)
         else:
-            testunit = TestUnit(method, *args, **kwargs)
+            testunit = TestUnit(method, *args, test_logger=self.log, **kwargs)
         testunit.eof = eof
         # if autoarg, auto populate testunit arguements from local testcase.args namespace values
         if autoarg:
             self.populate_testunit_with_args(testunit)
         return testunit
 
-    def status(self, msg, markups=[32]):
+    def create_testunit_by_name(self, name, obj=None, eof=True, autoarg=True, test_logger=None,
+                                *args, **kwargs):
         '''
-        Description: Convenience method to format debug output
+        Description: Attempts to match a method name contained with object 'obj', and create a
+        EutesterTestUnit object from that method and the provided positional as well as keyword
+        arguments provided.
 
-        :type msg: string
-        :param msg: The string to be formated and printed via self.debug
+        :type name: string
+        :param name: Name of method to look for within instance of object 'obj'
 
-        :param color: asci markup color to use, or None
+        :type obj: class instance
+        :param obj: Instance type, defaults to self testcase object
+
+        :type args: positional arguements
+        :param args: None or more positional arguments to be passed to method to be run
+
+        :type kwargs: keyword arguments
+        :param kwargs: None or more keyword arguements to be passed to method to be run
         '''
-        if markups:
-            msg = markup(msg, markups=markups)
-        pt = PrettyTable(['status'])
-        pt.header = False
-        pt.align = 'l'
-        pt.padding_width = 0
-        pt.vrules = 2
-        pt.add_row([msg])
-        self.log.info("\n{0}\n".format(pt))
+        eof = False
+        autoarg = True
+        obj = obj or self
+        test_logger = test_logger or self.log
+        try:
+            meth = getattr(obj, name)
+        except AttributeError as AE:
+            self.log.error('Could not create test unit for name:"{0}", err:"{1}"'.format(name, AE))
+            raise
+        methvars = self.get_meth_arg_names(meth)
 
+        # Pull out value relative to this method, leave in any that are intended to be
+        # passed through
+        if 'autoarg' in kwargs:
+            if 'autoarg' in methvars:
+                autoarg = kwargs['autoarg']
+            else:
+                autoarg = kwargs.pop('autoarg')
+        if 'eof' in kwargs:
+            if 'eof' in methvars:
+                eof = kwargs['eof']
+            else:
+                eof = kwargs.pop('eof')
+        if 'obj' in kwargs:
+            if 'obj' in methvars:
+                obj = kwargs['obj']
+            else:
+                obj = kwargs.pop('obj')
 
-    def startmsg(self, msg=""):
-        self.status(msg, markups=[ForegroundColor.WHITE, BackGroundColor.BG_BLUE, TextStyle.BOLD])
+        testunit = TestUnit(meth, *args, test_logger=test_logger, **kwargs)
+        testunit.eof = eof
 
-    def endsuccess(self, msg=""):
-        msg = "- END SUCCESS - {0}".format(msg).center(self._term_width)
-        self.status(msg, markups=[ForegroundColor.WHITE, BackGroundColor.BG_GREEN, TextStyle.BOLD])
-        return msg
+        # if autoarg, auto populate testunit arguements from local testcase.args namespace values
+        if autoarg:
+            self.populate_testunit_with_args(testunit)
 
-    def errormsg(self, msg=""):
-        msg = "- ERROR - " + msg
-        self.status(msg, markups=[ForegroundColor.RED, TextStyle.BOLD])
-        return msg
+        return testunit
 
-    def endfailure(self, msg=""):
-        msg = "- END FAILURE - {0}".format(msg).center(self._term_width)
-        self.status(msg, markups=[ForegroundColor.WHITE, BackGroundColor.BG_RED, TextStyle.BOLD])
-        return msg
+    ##############################################################################################
+    # Convenience methods to help inspect, convert, and run provided test functions/methods
+    ##############################################################################################
 
-    def endnotrun(self, msg=""):
-        msg = "- END NOT RUN - {0}".format(msg).center(self._term_width)
-        self.status(msg, markups=[ForegroundColor.WHITE, BackGroundColor.BG_MAGENTA,
-                                  TextStyle.BOLD])
-        return msg
-
-    def resultdefault(self, msg, printout=True):
-        msg = markup(msg, markups=[ForegroundColor.BLUE, BackGroundColor.BG_WHITE])
-        if printout:
-            self.log.debug(msg)
-        return msg
-
-    def resultfail(self, msg, printout=True):
-        msg = markup(msg, markups=[ForegroundColor.RED, BackGroundColor.BG_WHITE])
-        if printout:
-            self.log.debug(msg)
-        return msg
-
-    def resulterr(self, msg, printout=True):
-        msg = red(msg)
-        if printout:
-            self.log.debug(msg)
-        return msg
-
-    def get_pretty_args(self, testunit):
+    def populate_testunit_with_args(self, testunit, namespace=None):
         '''
-        Description: Returns a string buf containing formated arg:value for printing later
-
+        Description: Checks a given test unit's available positional and key word args lists
+        for matching values contained with the given namespace, by default will use local
+        testcase.args. If testunit's underlying method has arguments matching the namespace
+        provided, then those args will be applied to the testunits args referenced when running
+        the testunit. Namespace values will not be applied/overwrite testunits, if the testunit
+        already has conflicting values in it's args(positional) list or kwargs(keyword args) dict.
         :type: testunit: Eutestcase.eutestertestunit object
-        :param: testunit: A testunit object for which the namespace args will be used
+        :param: testunit: A testunit object for which the namespace values will be applied
 
-        :rtype: string
-        :returns: formated string containing args and their values.
+        :type: namespace: namespace obj
+        :param: namespace: namespace obj containing args/values to be applied to testunit.
+                            None by default will use local testunit args.
         '''
-        buf = "\nEnd on Failure:" + str(testunit.eof)
-        buf += "\nPassing ARGS:"
-        if not testunit.args and not testunit.kwargs:
-            buf += '\"\"\n'
-        else:
-            buf += "\n---------------------\n"
-            varnames = self.get_meth_arg_names(testunit.method)
-            if testunit.args:
-                for count, arg in enumerate(testunit.args):
-                    buf += str(varnames[count + 1]) + " : " + str(arg) + "\n"
-            if testunit.kwargs:
-                for key in testunit.kwargs:
-                    buf += str(key) + " : " + str(testunit.kwargs[key]) + "\n"
-            buf += "---------------------\n"
-        return buf
+        self.log.debug(
+            "Attempting to populate testunit:" + str(testunit.name) + ", with testcase.args...")
+        args_to_apply = namespace or self.args
+        if not args_to_apply:
+            return
+        testunit_obj_args = {}
 
-    def run_test_case_list(self, testlist=None, eof=False, clean_on_exit=None, printresults=True):
+        # copy the test units key word args
+        testunit_obj_args.update(copy.copy(testunit.kwargs))
+        self.log.debug("Testunit keyword args:" + str(testunit_obj_args))
+
+        # Get all the var names of the underlying method the testunit is wrapping
+        method_args = self.get_meth_arg_names(testunit.method)
+        offset = 0 if isinstance(testunit.method, types.FunctionType) else 1
+        self.log.debug("Got method args:" + str(method_args))
+
+        # Add the var names of the positional args provided in testunit.args to check against later
+        # Append to the known keyword arg list
+        for x, arg in enumerate(testunit.args):
+            testunit_obj_args[method_args[x + offset]] = arg
+
+        self.log.debug("test unit total args:" + str(testunit_obj_args))
+        # populate any global args which do not conflict with args already contained within the
+        # test case first populate matching method args with our global testcase args taking
+        # least precedence
+        for apply_val in args_to_apply._get_kwargs():
+            for methvar in method_args:
+                if methvar == apply_val[0]:
+                    self.log.debug("Found matching arg for:" + str(methvar))
+                    # Don't overwrite existing testunit args/kwargs that have already been assigned
+                    if apply_val[0] in testunit_obj_args:
+                        self.log.debug("Skipping populate because testunit already has this arg:" +
+                                       str(methvar))
+                        continue
+                    # Append cmdargs list to testunits kwargs
+                    testunit.set_kwarg(methvar, apply_val[1])
+
+    ##############################################################################################
+    # "Run" test methods
+    ##############################################################################################
+    def run(self, testlist=None, eof=False, clean_on_exit=None, printresults=True):
         '''
         Desscription: wrapper to execute a list of ebsTestCase objects
 
@@ -539,8 +601,8 @@ class CliTestRunner(object):
             for test in self._testlist:
                 tests_ran += 1
                 self.log.identifier = markup(test.name, markups=[ForegroundColor.WHITE,
-                                                               BackGroundColor.BG_BLACK,
-                                                               TextStyle.BOLD])
+                                                                 BackGroundColor.BG_BLACK,
+                                                                 TextStyle.BOLD])
                 self.print_test_unit_startmsg(test)
                 try:
                     test.run(eof=eof or test.eof)
@@ -568,9 +630,8 @@ class CliTestRunner(object):
         finally:
             self.log.identifier = orig_log_id
             elapsed = int(time.time() - start)
-            msgout = "RUN TEST CASE LIST DONE:\n"
-            msgout += "Ran " + str(tests_ran) + "/" + str(test_count) + " nephoria_unit_tests in " + str(
-                elapsed) + " seconds\n"
+            msgout = ('RUN TEST CASE LIST DONE:\nRan {0}/{1} nephoria_unit_tests in'
+                      ' "{2}" seconds\n'.format(tests_ran, test_count, elapsed))
             if printresults:
                 try:
                     self.log.debug("Printing pre-cleanup results:")
@@ -615,26 +676,130 @@ class CliTestRunner(object):
             else:
                 return (0)
 
-    def print_test_unit_startmsg(self, test):
-        startbuf = ''
-        if self.html_anchors:
-            link = '<a name="' + str(test.anchor_id) + '"></a>\n'
-            startbuf += '<div id="myDiv" name="myDiv" title="Example Div Element" style="color: ' \
-                        '#0900C4; font: Helvetica 12pt;border: 1px solid black;">'
-            startbuf += str(link)
-        pt = PrettyTable(['HEADER'])
-        pt.header = False
-        pt.align = 'l'
-        buf = "STARTING TESTUNIT: {0}".format(test.name).ljust(self._term_width)
-        argbuf = self.get_pretty_args(test)
-        buf += str(test.description) + str(argbuf)
-        buf += 'Running list method: "' + str(
-            self.format_testunit_method_arg_values(test)) + '"'
-        pt.add_row([buf])
-        startbuf += markup(pt, markups=[ForegroundColor.WHITE, BackGroundColor.BG_BLUE])
-        if self.html_anchors:
-            startbuf += '\n </div>'
-        self.status(startbuf)
+    def run_test_list_by_name(self, list, eof=None):
+        unit_list = []
+        for test in list:
+            unit_list.append(self.create_testunit_by_name(test))
+
+        # Run the EutesterUnitTest objects
+        return self.run(unit_list, eof=eof)
+
+    def run_method_by_name(self, name, obj=None, *args, **kwargs):
+        '''
+        Description: Find a method within an instance of obj and run that method with either
+        args/kwargs provided or any self.args which match the methods varname.
+
+        :type name: string
+        :param name: Name of method to look for within instance of object 'obj'
+
+        :type obj: class instance
+        :param obj: Instance type, defaults to self testcase object
+
+        :type args: positional arguements
+        :param args: None or more positional arguments to be passed to method to be run
+
+        :type kwargs: keyword arguments
+        :param kwargs: None or more keyword arguements to be passed to method to be run
+        '''
+        obj = obj or self
+        meth = getattr(obj, name)
+        return self.do_with_args(meth, *args, **kwargs)
+
+    ##############################################################################################
+    # CLI parser and test argument inspection/manipulation methods
+    ##############################################################################################
+
+    def get_args(self, use_cli=True, file_sections=[], verbose=True):
+        '''
+        Description: Method will attempt to retrieve all command line arguments presented
+        through local testcase's 'argparse' methods, as well as retrieve all EuConfig file
+        arguments. All arguments will be combined into a single namespace object held locally
+        at 'testcase.args'. Note: cli arg 'config' must be provided for config file valus to be
+        store in self.args.
+
+        :type use_cli: boolean
+        :param use_cli: Boolean to indicate whether or not to create and read from a cli
+                        argparsing object
+
+        :type use_default_file: boolean
+        :param use_default_files: Boolean to indicate whether or not to read default config file
+                                 at $HOME/.nephoria/nephoria.conf (not indicated by cli)
+
+        :type sections: list
+        :param sections: list of EuConfig sections to read configuration values from, and store
+                         in self.args.
+
+        :rtype: arparse.namespace obj
+        :returns: namespace object with values from cli and config file arguements
+        '''
+        configfile = None
+        args = None
+        # build out a namespace object from the config file first
+        cf = argparse.Namespace()
+
+        # Setup/define the config file block/sections we intend to read from
+        confblocks = file_sections or [self.name, 'global']
+
+        if use_cli:
+            # first get command line args to see if there's a config file
+            cliargs = self.parser.parse_args()
+
+        # if a config file was passed, combine the config file and command line args into a
+        # single namespace object
+        if cliargs:
+            # Check to see if there's explicit config sections to read
+            # if a file or list of config files is specified add it to our list...
+            # legacy support for config, configfile config_file arg names...
+            config_file = getattr(cliargs, 'config_file', None)
+        # store config block list for debug purposes
+        cf.__setattr__('configsections', copy.copy(confblocks))
+
+        # create euconfig configparser objects from each file.
+        if config_file:
+            self.config_file = EuConfig(filename=configfile)
+            # Now iterate through remaining config block in file and add to args...
+            for section in confblocks:
+                if self.config_file.config.has_section(section):
+                    for item in self.config_file.config.items(section):
+                        cf.__setattr__(str(item[0]), item[1])
+        else:
+            self.config_file = None
+
+        if cliargs:
+            # Now make sure any conflicting args provided on the command line take precedence
+            # over config file args
+            for val in cliargs._get_kwargs():
+                if (val[0] not in cf) or (val[1] is not None):
+                    cf.__setattr__(str(val[0]), val[1])
+            args = cf
+        self.args = args
+        return args
+
+    def get_pretty_args(self, testunit):
+        '''
+        Description: Returns a string buf containing formated arg:value for printing later
+
+        :type: testunit: Eutestcase.eutestertestunit object
+        :param: testunit: A testunit object for which the namespace args will be used
+
+        :rtype: string
+        :returns: formated string containing args and their values.
+        '''
+        buf = "\nEnd on Failure:" + str(testunit.eof)
+        buf += "\nPassing ARGS:"
+        if not testunit.args and not testunit.kwargs:
+            buf += '\"\"\n'
+        else:
+            buf += "\n---------------------\n"
+            varnames = self.get_meth_arg_names(testunit.method)
+            if testunit.args:
+                for count, arg in enumerate(testunit.args):
+                    buf += str(varnames[count + 1]) + " : " + str(arg) + "\n"
+            if testunit.kwargs:
+                for key in testunit.kwargs:
+                    buf += str(key) + " : " + str(testunit.kwargs[key]) + "\n"
+            buf += "---------------------\n"
+        return buf
 
     def has_arg(self, arg):
         '''
@@ -706,331 +871,6 @@ class CliTestRunner(object):
         else:
             self.args.__setattr__(arg, value)
 
-    def clean_method(self):
-        raise Exception("Clean_method was not implemented. Was run_list using clean_on_exit?")
-
-    def print_test_list_results(self, testlist=None, printout=True, printmethod=None):
-        '''
-        Description: Prints a formated list of results for a list of EutesterTestUnits
-
-        :type testlist: list
-        :param testlist: list of EutesterTestUnits
-
-        :type printout: boolean
-        :param printout: boolean to flag whether to print using printmethod or self.debug,
-                         or to return a string buffer representing the results outputq
-
-        :type printmethod: method
-        :param printmethod: method to use for printing test result output. Default is self.debug
-        '''
-        main_header = yellow('TEST RESULTS FOR "{0}"'.format(self.name), bold=True)
-        if testlist is None:
-            testlist = self._testlist
-        if not testlist:
-            raise Exception("print_test_list_results, error: No Test list provided")
-        printmethod = printmethod or self.log.info
-        printmethod("Test list results for testcase:" + str(self.name))
-        main_pt = PrettyTable([main_header])
-        main_pt.align = 'l'
-        main_pt.vrules = 2
-        main_pt.hrules = 1
-
-        for testunit in testlist:
-            # Ascii mark up errors using pmethod() so errors are in bold/red, etc...
-            if testunit.result != TestResult.passed:
-                markups=[ForegroundColor.RED, BackGroundColor.BG_WHITE]
-            else:
-                markups=[ForegroundColor.BLUE, BackGroundColor.BG_WHITE]
-
-            term_height, term_width = get_terminal_size()
-            if term_width > self._term_width:
-                term_width = self._term_width
-            key_width = 10
-            val_width = term_width - key_width - 6
-            headers = ['KEY'.ljust(key_width, "-"), 'VALUE'.ljust(val_width, "-")]
-            pt = PrettyTable(headers)
-            pt.max_width[headers[0]] = key_width
-            pt.max_width[headers[1]] = val_width
-            pt.header = False
-            pt.align = 'l'
-            pt.vrules = 1
-            pt.hrules = 2
-            test_arg_string = self.format_testunit_method_arg_values(testunit)
-            error_summary = None
-            # Print additional line showing error in the failed case...
-            if testunit.result == TestResult.failed:
-                error_summary = "ERROR:({0})"\
-                    .format("\n".join(str(testunit.error).splitlines()[0:3]))
-
-            if testunit.result == TestResult.not_run:
-                error_summary = 'NOT_RUN ({0}:{1})'\
-                    .format(testunit.name, "\n".join(str(testunit.error).splitlines()[0:3]))
-            pt.add_row(['RESULT:', str(testunit.result).ljust(val_width)])
-            pt.add_row(['TEST NAME', testunit.name])
-            pt.add_row(['TIME:', testunit.time_to_run])
-            pt.add_row(['TEST ARGS:', test_arg_string])
-            pt.add_row(['OUTPUT:', error_summary])
-            main_pt.add_row([markup(pt, markups=markups)])
-
-        main_pt.add_row(["\n{0}\n".format(self.print_test_list_short_stats(testlist))])
-        if printout:
-            printmethod("\n{0}\n".format(main_pt))
-        else:
-            return main_pt
-
-    def print_test_list_short_stats(self, list, printmethod=None):
-        results = {}
-        total = 0
-        elapsed = 0
-        # initialize a dict containing all the possible defined test results
-        for result_string in dir(TestResult)[2:]:
-            results[getattr(TestResult, result_string)] = 0
-        # increment values in results dict based upon result of each testunit in list
-        try:
-            for testunit in list:
-                total += 1
-                elapsed += testunit.time_to_run
-                results[testunit.result] += 1
-        except:
-            print results
-            raise
-        # Create tables with results summaries
-        headers = ['TOTAL']
-        results_row = [total]
-        for field in results:
-            headers.append(field.upper())
-            results_row.append(results[field])
-        headers.append('ELAPSED')
-        results_row.append(elapsed)
-        pt = PrettyTable(headers)
-        pt.vrules = 2
-        pt.add_row(results_row)
-        main_header = yellow('LATEST RESULTS FOR: "{0}"'.format(self.name), bold=True)
-        main_pt = PrettyTable([main_header])
-        main_pt.align = 'l'
-        main_pt.padding_width = 0
-        main_pt.border = False
-        main_pt.add_row([str(pt)])
-        if printmethod:
-            printmethod(main_pt.get_string())
-        return "\n{0}\n".format(main_pt)
-
-    @classmethod
-    def get_testunit_method_arg_dict(cls, testunit):
-        argdict = {}
-        spec = inspect.getargspec(testunit.method)
-        if isinstance(testunit.method, types.FunctionType):
-            argnames = spec.args
-        else:
-            argnames = spec.args[1:len(spec.args)]
-        defaults = spec.defaults or []
-        # Initialize the return dict
-        for argname in argnames:
-            argdict[argname] = '<!None!>'
-        # Set the default values of the testunits method
-        for x in xrange(0, len(defaults)):
-            argdict[argnames.pop()] = defaults[len(defaults) - x - 1]
-        # Then overwrite those with the testunits kwargs values
-        for kwarg in testunit.kwargs:
-            argdict[kwarg] = testunit.kwargs[kwarg]
-        # then add the positional args in if they apply...
-        for count, value in enumerate(testunit.args):
-            argdict[argnames[count]] = value
-        return argdict
-
-    @classmethod
-    def format_testunit_method_arg_values(cls, testunit):
-        buf = testunit.name + "("
-        argdict = CliTestRunner.get_testunit_method_arg_dict(testunit)
-        for arg in argdict:
-            buf += str(arg) + "=" + str(argdict[arg]) + ", "
-        buf = buf.rstrip(',')
-        buf += ")"
-        return buf
-
-    def getline(self, len):
-        buf = ''
-        for x in xrange(0, len):
-            buf += '-'
-        return buf
-
-    def run_method_by_name(self, name, obj=None, *args, **kwargs):
-        '''
-        Description: Find a method within an instance of obj and run that method with either
-        args/kwargs provided or any self.args which match the methods varname.
-
-        :type name: string
-        :param name: Name of method to look for within instance of object 'obj'
-
-        :type obj: class instance
-        :param obj: Instance type, defaults to self testcase object
-
-        :type args: positional arguements
-        :param args: None or more positional arguments to be passed to method to be run
-
-        :type kwargs: keyword arguments
-        :param kwargs: None or more keyword arguements to be passed to method to be run
-        '''
-        obj = obj or self
-        meth = getattr(obj, name)
-        return self.do_with_args(meth, *args, **kwargs)
-
-    def create_testunit_by_name(self, name, obj=None, eof=True, autoarg=True, *args, **kwargs):
-        '''
-        Description: Attempts to match a method name contained with object 'obj', and create a
-        EutesterTestUnit object from that method and the provided positional as well as keyword
-        arguments provided.
-
-        :type name: string
-        :param name: Name of method to look for within instance of object 'obj'
-
-        :type obj: class instance
-        :param obj: Instance type, defaults to self testcase object
-
-        :type args: positional arguements
-        :param args: None or more positional arguments to be passed to method to be run
-
-        :type kwargs: keyword arguments
-        :param kwargs: None or more keyword arguements to be passed to method to be run
-        '''
-        eof = False
-        autoarg = True
-        obj = obj or self
-        try:
-            meth = getattr(obj, name)
-        except AttributeError as AE:
-            self.log.error('Could not create test unit for name:"{0}", err:"{1}"'.format(name, AE))
-            raise
-        methvars = self.get_meth_arg_names(meth)
-
-        # Pull out value relative to this method, leave in any that are intended to be
-        # passed through
-        if 'autoarg' in kwargs:
-            if 'autoarg' in methvars:
-                autoarg = kwargs['autoarg']
-            else:
-                autoarg = kwargs.pop('autoarg')
-        if 'eof' in kwargs:
-            if 'eof' in methvars:
-                eof = kwargs['eof']
-            else:
-                eof = kwargs.pop('eof')
-        if 'obj' in kwargs:
-            if 'obj' in methvars:
-                obj = kwargs['obj']
-            else:
-                obj = kwargs.pop('obj')
-
-        testunit = TestUnit(meth, *args, **kwargs)
-        testunit.eof = eof
-
-        # if autoarg, auto populate testunit arguements from local testcase.args namespace values
-        if autoarg:
-            self.populate_testunit_with_args(testunit)
-
-        return testunit
-
-    def get_args(self, use_cli=True, file_sections=[], verbose=True):
-        '''
-        Description: Method will attempt to retrieve all command line arguments presented
-        through local testcase's 'argparse' methods, as well as retrieve all EuConfig file
-        arguments. All arguments will be combined into a single namespace object held locally
-        at 'testcase.args'. Note: cli arg 'config' must be provided for config file valus to be
-        store in self.args.
-
-        :type use_cli: boolean
-        :param use_cli: Boolean to indicate whether or not to create and read from a cli
-                        argparsing object
-
-        :type use_default_file: boolean
-        :param use_default_files: Boolean to indicate whether or not to read default config file
-                                 at $HOME/.nephoria/nephoria.conf (not indicated by cli)
-
-        :type sections: list
-        :param sections: list of EuConfig sections to read configuration values from, and store
-                         in self.args.
-
-        :rtype: arparse.namespace obj
-        :returns: namespace object with values from cli and config file arguements
-        '''
-        configfile = None
-        args = None
-        # build out a namespace object from the config file first
-        cf = argparse.Namespace()
-
-        # Setup/define the config file block/sections we intend to read from
-        confblocks = file_sections or [self.name, 'global']
-
-        if use_cli:
-            # first get command line args to see if there's a config file
-            cliargs = self.parser.parse_args()
-
-        # if a config file was passed, combine the config file and command line args into a
-        # single namespace object
-        if cliargs:
-            # Check to see if there's explicit config sections to read
-            # if a file or list of config files is specified add it to our list...
-            # legacy support for config, configfile config_file arg names...
-            config_file = getattr(cliargs, 'config_file', None)
-        # store config block list for debug purposes
-        cf.__setattr__('configsections', copy.copy(confblocks))
-
-        # create euconfig configparser objects from each file.
-        if config_file:
-            self.config_file = EuConfig(filename=configfile)
-            # Now iterate through remaining config block in file and add to args...
-            for section in confblocks:
-                if self.config_file.config.has_section(section):
-                    for item in self.config_file.config.items(section):
-                        cf.__setattr__(str(item[0]), item[1])
-        else:
-            self.config_file = None
-
-        if cliargs:
-            # Now make sure any conflicting args provided on the command line take precedence
-            # over config file args
-            for val in cliargs._get_kwargs():
-                if (val[0] not in cf) or (val[1] is not None):
-                    cf.__setattr__(str(val[0]), val[1])
-            args = cf
-        self.args = args
-        return args
-
-    def get_default_userhome_config(self, fname='nephoria.conf'):
-        '''
-        Description: Attempts to fetch the file 'fname' from the current user's home dir.
-        Returns path to the user's home dir default nephoria config file.
-
-        :type fname: string
-        :param fname: the nephoria default config file name
-
-        :rtype: string
-        :returns: string representing the path to 'fname', the default nephoria conf file.
-        '''
-        try:
-            def_path = os.getenv('HOME') + '/.nephoria/' + str(fname)
-        except:
-            return None
-        try:
-            os.stat(def_path)
-            return def_path
-        except:
-            self.log.debug("Default config not found:" + str(def_path))
-            return None
-
-    def show_self(self):
-        main_pt = PrettyTable([yellow('TEST CASE INFO', bold=True)])
-        main_pt.border = False
-        pt = PrettyTable(['KEY', 'VALUE'])
-        pt.header = False
-        pt.align = 'l'
-        pt.add_row([blue("NAME"), self.name])
-        pt.add_row([blue("TEST LIST"), self._testlist])
-        pt.add_row([blue('CONFIG FILES'), self.args.config_file])
-        main_pt.add_row([pt])
-        self.log.info("\n{0}\n".format(main_pt))
-        self.show_args()
-
     def show_args(self, args=None):
         '''
         Description: Prints args names and values for debug purposes.
@@ -1049,58 +889,6 @@ class CliTestRunner(object):
         for key, val in args._get_kwargs():
             pt.add_row([blue(key), val])
         self.log.info("\n{0}\n".format(pt))
-
-    def populate_testunit_with_args(self, testunit, namespace=None):
-        '''
-        Description: Checks a given test unit's available positional and key word args lists
-        for matching values contained with the given namespace, by default will use local
-        testcase.args. If testunit's underlying method has arguments matching the namespace
-        provided, then those args will be applied to the testunits args referenced when running
-        the testunit. Namespace values will not be applied/overwrite testunits, if the testunit
-        already has conflicting values in it's args(positional) list or kwargs(keyword args) dict.
-        :type: testunit: Eutestcase.eutestertestunit object
-        :param: testunit: A testunit object for which the namespace values will be applied
-
-        :type: namespace: namespace obj
-        :param: namespace: namespace obj containing args/values to be applied to testunit.
-                            None by default will use local testunit args.
-        '''
-        self.log.debug(
-            "Attempting to populate testunit:" + str(testunit.name) + ", with testcase.args...")
-        args_to_apply = namespace or self.args
-        if not args_to_apply:
-            return
-        testunit_obj_args = {}
-
-        # copy the test units key word args
-        testunit_obj_args.update(copy.copy(testunit.kwargs))
-        self.log.debug("Testunit keyword args:" + str(testunit_obj_args))
-
-        # Get all the var names of the underlying method the testunit is wrapping
-        method_args = self.get_meth_arg_names(testunit.method)
-        offset = 0 if isinstance(testunit.method, types.FunctionType) else 1
-        self.log.debug("Got method args:" + str(method_args))
-
-        # Add the var names of the positional args provided in testunit.args to check against later
-        # Append to the known keyword arg list
-        for x, arg in enumerate(testunit.args):
-            testunit_obj_args[method_args[x + offset]] = arg
-
-        self.log.debug("test unit total args:" + str(testunit_obj_args))
-        # populate any global args which do not conflict with args already contained within the
-        # test case first populate matching method args with our global testcase args taking
-        # least precedence
-        for apply_val in args_to_apply._get_kwargs():
-            for methvar in method_args:
-                if methvar == apply_val[0]:
-                    self.log.debug("Found matching arg for:" + str(methvar))
-                    # Don't overwrite existing testunit args/kwargs that have already been assigned
-                    if apply_val[0] in testunit_obj_args:
-                        self.log.debug("Skipping populate because testunit already has this arg:" +
-                                   str(methvar))
-                        continue
-                    # Append cmdargs list to testunits kwargs
-                    testunit.set_kwarg(methvar, apply_val[1])
 
     def do_with_args(self, meth, *args, **kwargs):
         '''
@@ -1191,6 +979,254 @@ class CliTestRunner(object):
         fcode = cls.get_method_fcode(meth)
         varnames = fcode.co_varnames[0:fcode.co_argcount]
         return varnames
+
+    @classmethod
+    def get_testunit_method_arg_dict(cls, testunit):
+        argdict = {}
+        spec = inspect.getargspec(testunit.method)
+        if isinstance(testunit.method, types.FunctionType):
+            argnames = spec.args
+        else:
+            argnames = spec.args[1:len(spec.args)]
+        defaults = spec.defaults or []
+        # Initialize the return dict
+        for argname in argnames:
+            argdict[argname] = '<!None!>'
+        # Set the default values of the testunits method
+        for x in xrange(0, len(defaults)):
+            argdict[argnames.pop()] = defaults[len(defaults) - x - 1]
+        # Then overwrite those with the testunits kwargs values
+        for kwarg in testunit.kwargs:
+            argdict[kwarg] = testunit.kwargs[kwarg]
+        # then add the positional args in if they apply...
+        for count, value in enumerate(testunit.args):
+            argdict[argnames[count]] = value
+        return argdict
+
+    @classmethod
+    def format_testunit_method_arg_values(cls, testunit):
+        buf = testunit.name + "("
+        argdict = CliTestRunner.get_testunit_method_arg_dict(testunit)
+        for arg in argdict:
+            buf += str(arg) + "=" + str(argdict[arg]) + ", "
+        buf = buf.rstrip(',')
+        buf += ")"
+        return buf
+
+    ##############################################################################################
+    # Convenience methods for formatting test output
+    ##############################################################################################
+
+    def status(self, msg, markups=[32]):
+        '''
+        Description: Convenience method to format debug output
+
+        :type msg: string
+        :param msg: The string to be formated and printed via self.debug
+
+        :param color: asci markup color to use, or None
+        '''
+        if markups:
+            msg = markup(msg, markups=markups)
+        pt = PrettyTable(['status'])
+        pt.header = False
+        pt.align = 'l'
+        pt.padding_width = 0
+        pt.vrules = 2
+        pt.add_row([msg])
+        self.log.info("\n{0}\n".format(pt))
+
+    #########################################################################
+    # Messages formats used at the start and end of a specific test unit run
+    #########################################################################
+
+    def startmsg(self, msg=""):
+        self.status(msg, markups=[ForegroundColor.WHITE, BackGroundColor.BG_BLUE, TextStyle.BOLD])
+
+    def endsuccess(self, msg=""):
+        msg = "- SUCCESS - {0}".format(msg).center(self._term_width)
+        self.status(msg, markups=[ForegroundColor.WHITE, BackGroundColor.BG_GREEN, TextStyle.BOLD])
+        return msg
+
+    def endfailure(self, msg=""):
+        msg = "- FAILURE - {0}".format(msg).center(self._term_width)
+        self.status(msg, markups=[ForegroundColor.WHITE, BackGroundColor.BG_RED, TextStyle.BOLD])
+        return msg
+
+    def endnotrun(self, msg=""):
+        msg = "- NOT RUN - {0}".format(msg).center(self._term_width)
+        self.status(msg, markups=[ForegroundColor.WHITE, BackGroundColor.BG_MAGENTA,
+                                  TextStyle.BOLD])
+        return msg
+
+    ########################################################################
+    # Message formats used when displaying test suite/list result summaries
+    ########################################################################
+
+    def resultdefault(self, msg, printout=True):
+        msg = markup(msg, markups=[ForegroundColor.BLUE, BackGroundColor.BG_WHITE])
+        if printout:
+            self.log.debug(msg)
+        return msg
+
+    def resultfail(self, msg, printout=True):
+        msg = markup(msg, markups=[ForegroundColor.RED, BackGroundColor.BG_WHITE])
+        if printout:
+            self.log.debug(msg)
+        return msg
+
+    def resulterr(self, msg, printout=True):
+        msg = red(msg)
+        if printout:
+            self.log.debug(msg)
+        return msg
+
+    def print_test_unit_startmsg(self, test):
+        """
+        Logs a message at the beginning of a specific test unit run containing information about
+        the test to be run. TestUnits have their own description string which should help inform
+        the user as to what the test is going to try to achieve and how.
+        if the 'html_anchors' flag is provided an html anchor for this test unit's run will
+        also be printed and the test unit's html link can printed/accessed later.
+        :param test: test unit obj
+        """
+        startbuf = ''
+        if self.html_anchors:
+            link = '<a name="' + str(test.anchor_id) + '"></a>\n'
+            test._html_link = link
+            startbuf += '<div id="myDiv" name="myDiv" title="Example Div Element" style="color: ' \
+                        '#0900C4; font: Helvetica 12pt;border: 1px solid black;">'
+            startbuf += str(link)
+        pt = PrettyTable(['HEADER'])
+        pt.header = False
+        pt.align = 'l'
+        buf = "STARTING TESTUNIT: {0}".format(test.name).ljust(self._term_width)
+        argbuf = self.get_pretty_args(test)
+        buf += str(test.description) + str(argbuf)
+        buf += 'Running list method: "' + str(
+            self.format_testunit_method_arg_values(test)) + '"'
+        pt.add_row([buf])
+        startbuf += markup(pt, markups=[ForegroundColor.WHITE, BackGroundColor.BG_BLUE])
+        if self.html_anchors:
+            startbuf += '\n </div>'
+        self.status(startbuf)
+
+    def print_test_list_results(self, testlist=None, printout=True, printmethod=None):
+        '''
+        Description: Prints a formated list of results for a list of EutesterTestUnits
+
+        :type testlist: list
+        :param testlist: list of EutesterTestUnits
+
+        :type printout: boolean
+        :param printout: boolean to flag whether to print using printmethod or self.debug,
+                         or to return a string buffer representing the results outputq
+
+        :type printmethod: method
+        :param printmethod: method to use for printing test result output. Default is self.debug
+        '''
+        main_header = yellow('TEST RESULTS FOR "{0}"'.format(self.name), bold=True)
+        if testlist is None:
+            testlist = self._testlist
+        if not testlist:
+            raise Exception("print_test_list_results, error: No Test list provided")
+        printmethod = printmethod or self.log.info
+        printmethod("Test list results for testcase:" + str(self.name))
+        main_pt = PrettyTable([main_header])
+        main_pt.align = 'l'
+        main_pt.vrules = 2
+        main_pt.hrules = 1
+
+        for testunit in testlist:
+            # Ascii mark up errors using pmethod() so errors are in bold/red, etc...
+            if testunit.result != TestResult.passed:
+                markups = [ForegroundColor.RED, BackGroundColor.BG_WHITE]
+            else:
+                markups = [ForegroundColor.BLUE, BackGroundColor.BG_WHITE]
+
+            term_height, term_width = get_terminal_size()
+            if term_width > self._term_width:
+                term_width = self._term_width
+            key_width = 10
+            val_width = term_width - key_width - 6
+            headers = ['KEY'.ljust(key_width, "-"), 'VALUE'.ljust(val_width, "-")]
+            pt = PrettyTable(headers)
+            pt.max_width[headers[0]] = key_width
+            pt.max_width[headers[1]] = val_width
+            pt.header = False
+            pt.align = 'l'
+            pt.vrules = 1
+            pt.hrules = 2
+            test_arg_string = self.format_testunit_method_arg_values(testunit)
+            error_summary = None
+            # Print additional line showing error in the failed case...
+            if testunit.result == TestResult.failed:
+                error_summary = "ERROR:({0})"\
+                    .format("\n".join(str(testunit.error).splitlines()[0:3]))
+
+            if testunit.result == TestResult.not_run:
+                error_summary = 'NOT_RUN ({0}:{1})'\
+                    .format(testunit.name, "\n".join(str(testunit.error).splitlines()[0:3]))
+            pt.add_row(['RESULT:', str(testunit.result).ljust(val_width)])
+            pt.add_row(['TEST NAME', testunit.name])
+            pt.add_row(['TIME:', testunit.time_to_run])
+            pt.add_row(['TEST ARGS:', test_arg_string])
+            pt.add_row(['OUTPUT:', error_summary])
+            main_pt.add_row([markup(pt, markups=markups)])
+
+        main_pt.add_row(["\n{0}\n".format(self.print_test_list_short_stats(testlist))])
+        if printout:
+            printmethod("\n{0}\n".format(main_pt))
+        else:
+            return main_pt
+
+    def print_test_list_short_stats(self, list, printmethod=None):
+        results = {}
+        total = 0
+        elapsed = 0
+        # initialize a dict containing all the possible defined test results
+        for result_string in dir(TestResult)[2:]:
+            results[getattr(TestResult, result_string)] = 0
+        # increment values in results dict based upon result of each testunit in list
+        try:
+            for testunit in list:
+                total += 1
+                elapsed += testunit.time_to_run
+                results[testunit.result] += 1
+        except:
+            print results
+            raise
+        # Create tables with results summaries
+        headers = ['TOTAL']
+        results_row = [total]
+        for field in results:
+            headers.append(field.upper())
+            results_row.append(results[field])
+        headers.append('ELAPSED')
+        results_row.append(elapsed)
+        pt = PrettyTable(headers)
+        pt.vrules = 2
+        pt.add_row(results_row)
+        main_header = yellow('LATEST RESULTS:', bold=True)
+        main_pt = PrettyTable([main_header])
+        main_pt.align = 'l'
+        main_pt.padding_width = 0
+        main_pt.border = False
+        main_pt.add_row([str(pt)])
+        if printmethod:
+            printmethod(main_pt.get_string())
+        return "\n{0}\n".format(main_pt)
+
+    def getline(self, len):
+        """
+        Provide a string containing a line "---" of length len
+        :param len: integer
+        :return: string
+        """
+        buf = ''
+        for x in xrange(0, len):
+            buf += '-'
+        return buf
 
 
 class SkipTestException(Exception):

@@ -495,5 +495,5 @@ if __name__ == "__main__":
         test = getattr(instancetestsuite, test)
         unit_list.append(testcase.create_testunit_from_method(test))
     testcase.clean_method = instancetestsuite.clean_method
-    result = testcase.run_test_case_list(unit_list)
+    result = testcase.run(unit_list)
     exit(result)
