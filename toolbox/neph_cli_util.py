@@ -10,8 +10,8 @@ parser.add_argument('--get-credentials', dest='get_credentials', action='store_t
                     help='Operation to get credentials, boolean.(not used)')
 
 parser.add_argument('--cred-user', dest='cred_user',
-                    default='admin',
-                    help='Username to use for building runtime config, default:"admin"')
+                    default='sys_admin',
+                    help='Username to use for building runtime config, default:"sys_admin"')
 
 parser.add_argument('--cred-account', dest='cred_account',
                     default='eucalyptus',

@@ -39,7 +39,7 @@ Add common instance test routines to this class
 Examples:
 from eucaops import Eucaops
 from nephoria.windows_instance import WinInstance
-tester = Eucaops(credpath='eucarc-10.111.5.80-eucalyptus-admin')
+tester = Eucaops(credpath='eucarc-10.111.5.80-eucalyptus-sys_admin')
 wins = WinInstance.make_euinstance_from_instance(tester.get_instances(idstring='i-89E13DA8')[0], tester=tester, keypair='test')
 vol = tester.get_volume(status='available', zone=wins.placement)
 wins.attach_volume(vol)

@@ -138,7 +138,7 @@ class UserContext(AutoCreds):
     @property
     def user_info(self):
         if not self._user_info:
-            if self.account_name == 'eucalyptus' and self.user_name == 'admin':
+            if self.account_name == 'eucalyptus' and self.user_name == 'sys_admin':
                 delegate_account = self.account_id
             else:
                 delegate_account = None
