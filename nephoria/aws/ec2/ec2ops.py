@@ -493,6 +493,7 @@ disable_root: false"""
             group_name = group.name
             group_id = group.id
 
+
         if not group_id:
             if isinstance(group, basestring):
                 if re.match('^sg-\w{8}\s*$', group):
@@ -600,28 +601,30 @@ disable_root: false"""
         header.add_row([str(table)])
         self.log.info("\n{0}".format(str(header)))
 
-    def revoke(self, group,
-                     port=22,
-                     protocol="tcp",
-                     cidr_ip="0.0.0.0/0",
-                     src_security_group_name=None,
-                     src_security_group_owner_id=None):
+    def revoke_security_group(self, group, from_port, to_port=None, protocol="tcp",
+                              src_security_group_name=None, src_security_group_owner_id=None,
+                              cidr_ip="0.0.0.0/0"):
         if isinstance(group, SecurityGroup):
             group_name = group.name
         else:
             group_name = group
+        if to_port is None:
+            to_port = from_port
         if src_security_group_name:
-            self.log.debug( "Attempting revoke of " + group_name + " from " + str(src_security_group_name) +
-                        " on port " + str(port) + " " + str(protocol) )
+            self.log.debug( "Attempting revoke of {0} from {1} for proto/ports: {2}/{3}-{4}"
+                            .format(group_name, src_security_group_name,
+                                    protocol, from_port, to_port))
         else:
-            self.log.debug( "Attempting revoke of " + group_name + " on port " + str(port) + " " + str(protocol) )
-        self.connection.revoke_security_group(group_name,
-                                              ip_protocol=protocol,
-                                              from_port=port,
-                                              to_port=port,
-                                              cidr_ip=cidr_ip,
-                                              src_security_group_name=src_security_group_name,
-                                              src_security_group_owner_id=src_security_group_owner_id)
+            self.log.debug( "Attempting revoke proto/ports {0}/{1}-{2} from group:{3}"
+                            .format(protocol, from_port, to_port, group_name))
+        self.connection.revoke_security_group(
+            group_name,
+            ip_protocol=protocol,
+            from_port=from_port,
+            to_port=to_port,
+            cidr_ip=cidr_ip,
+            src_security_group_name=src_security_group_name,
+            src_security_group_owner_id=src_security_group_owner_id)
 
     def show_account_attributes(self, attribute_names=None, printmethod=None, printme=True):
         attrs = self.connection.describe_account_attributes(attribute_names=attribute_names)
@@ -2616,7 +2619,7 @@ disable_root: false"""
 
     def show_all_addresses_verbose(self, iam_connection=None, display=True):
         """
-        Print table to debug output showing all addresses available to cloud admin using verbose filter
+        Print table to debug output showing all addresses available to cloud sys_admin using verbose filter
         """
         address_width = 20
         info_width = 64
@@ -3528,18 +3531,21 @@ disable_root: false"""
             assert isinstance(src_group,SecurityGroup) , \
                 'src_group({0}) not of type SecurityGroup obj'.format(src_group)
         s = None
-        #self.log.debug("does_instance_sec_group_allow:"+str(instance.id)+" src_addr:"+str(src_addr))
+        # self.log.debug("does_instance_sec_group_allow:"+str(instance.id)+" src_addr:"+str(src_addr))
         try:
             if not src_group and not src_addr:
                 #Use the local test machine's addr
                 if not self.local_machine_source_ip:
-                    #Try to get the outgoing addr used to connect to this instance
+                    # Try to get the outgoing addr used to connect to this instance
                     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,socket.IPPROTO_UDP)
                     s.connect((instance.ip_address,1))
-                    #set the tester's global source_ip, assuming it can re-used (at least until another method sets it to None again)
+                    # set the tester's global source_ip, assuming it can re-used (at least until
+                    # another method sets it to None again)
                     self.local_machine_source_ip = s.getsockname()[0]
                 if self.local_machine_source_ip == "0.0.0.0":
-                    raise Exception('Test machine source ip detected:'+str(self.local_machine_source_ip)+', tester may need ec2_source_ip set manually')
+                    raise Exception('Test machine source ip detected:' +
+                                    str(self.local_machine_source_ip) +
+                                    ', tester may need ec2_source_ip set manually')
                 src_addr = self.local_machine_source_ip
             if src_addr:
                 self.log.debug('Using src_addr:'+str(src_addr))
@@ -3563,7 +3569,7 @@ disable_root: false"""
             #Security group does not allow from the src/proto/port
             return False
         except Exception, e:
-            self.log.debug(get_traceback() + "\nError in sec group check")
+            self.log.warning("{0}\nError in sec group check{1}".format(get_traceback(), e))
             raise e
         finally:
             if s:
@@ -3656,8 +3662,6 @@ disable_root: false"""
                 else:
                     from_port = int(rule.from_port)
 
-
-
                 if (to_port == 0 ) or (to_port == -1) or \
                         (port >= from_port and port <= to_port):
                     for grant in rule.grants:
@@ -3673,7 +3677,7 @@ disable_root: false"""
                         if src_group:
                             src_group_id = str(src_group.name) + \
                                            "-" + (src_group.owner_id)
-                            if ( src_group.id == grant.groupId ) or \
+                            if (src_group.id == grant.group_id ) or \
                                     ( grant.group_id == src_group_id ):
                                 self.log.debug('sec_group DOES allow: group:"{0}"'
                                            ', src_group:"{1}"/"{2}", '
@@ -5250,7 +5254,7 @@ disable_root: false"""
     def show_addresses(self, addresses=None, verbose=None, printme=True):
         """
         Print table to debug output showing all addresses available to
-        cloud admin using verbose filter
+        cloud sys_admin using verbose filter
         :param addresses:
         """
         pt = PrettyTable([markup('PUBLIC IP'), markup('ACCOUNT NAME'),
@@ -5644,7 +5648,7 @@ disable_root: false"""
         table.hrules = ALL
         maintable.add_row([str(table)])
         if printme:
-            self.log.debug("\n{0}".format(str(maintable)))
+            self.log.info("\n{0}".format(str(maintable)))
         else:
             return maintable
 
