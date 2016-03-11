@@ -192,7 +192,7 @@ class BaseOps(object):
             if self.eucarc:
                 account = getattr(self.eucarc, 'aws_account_name', None)
                 user = getattr(self.eucarc, 'aws_user_name', None)
-                if account == 'eucalyptus' and user == 'admin':
+                if account == 'eucalyptus' and user == 'sys_admin':
                     self._try_verbose = True
         return self._try_verbose
 

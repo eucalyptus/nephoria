@@ -270,7 +270,7 @@ class CliTestRunner(object):
                                     "default": "testrunner"}},
         'test_user': {'args': ['--test-user'],
                       'kwargs': {"help": "Cloud user name to use",
-                                 "default": "admin"}},
+                                 "default": "sys_admin"}},
         'log_file': {'args': ['--log-file'],
                      'kwargs': {"help": "file path to log to (in addition to stdout",
                                 "default": None}},
@@ -1189,10 +1189,12 @@ class CliTestRunner(object):
 
         for testunit in testlist:
             # Ascii mark up errors using pmethod() so errors are in bold/red, etc...
-            if testunit.result != TestResult.passed:
-                markups = [ForegroundColor.RED, BackGroundColor.BG_WHITE]
-            else:
+            if testunit.result == TestResult.passed:
                 markups = [ForegroundColor.BLUE, BackGroundColor.BG_WHITE]
+            elif testunit.result == TestResult.not_run:
+                markups = [ForegroundColor.BLACK, BackGroundColor.BG_WHITE]
+            else:
+                markups = [ForegroundColor.RED, BackGroundColor.BG_WHITE]
 
             term_height, term_width = get_terminal_size()
             if term_width > self._term_width:

@@ -16,7 +16,7 @@ class TestController(object):
     def __init__(self,
                  hostname=None, username='root', password=None, region=None,
                  proxy_hostname=None, proxy_password=None,
-                 clouduser_account='nephotest', clouduser_name='admin', clouduser_credpath=None,
+                 clouduser_account='nephotest', clouduser_name='sys_admin', clouduser_credpath=None,
                  clouduser_accesskey=None, clouduser_secretkey=None,
                  cloudadmin_credpath=None, cloudadmin_accesskey=None, cloudadmin_secretkey=None,
                  timeout=10, log_level='DEBUG',
@@ -62,11 +62,11 @@ class TestController(object):
                                         'aws_secret_key': cloudadmin_secretkey,
                                         'log_level': log_level,
                                         'boto_debug_level': 0,
-                                        'euca_user': 'admin',
+                                        'euca_user': 'sys_admin',
                                         'euca_account': 'eucalyptus'}
 
         self._cloud_admin_connection_info = {'aws_account_name': 'eucalyptus',
-                                             'aws_user_name': 'admin',
+                                             'aws_user_name': 'sys_admin',
                                              'credpath': cloudadmin_credpath,
                                              'region': self.region,
                                              'aws_access_key': cloudadmin_accesskey,
@@ -203,7 +203,7 @@ class TestController(object):
                              .format(aws_account_name, aws_user_name))
 
 
-    def create_user_using_cloudadmin(self, aws_account_name=None, aws_user_name='admin',
+    def create_user_using_cloudadmin(self, aws_account_name=None, aws_user_name='sys_admin',
                                      aws_access_key=None, aws_secret_key=None,
                                      credpath=None, eucarc=None,
                                      machine=None, service_connection=None, path='/',
