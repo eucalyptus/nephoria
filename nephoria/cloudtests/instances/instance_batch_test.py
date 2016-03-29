@@ -190,8 +190,12 @@ if __name__ == "__main__":
 
     errors =[]
     test = InstanceBatchTest()
-    # In the case we want to keep each instance connection open?...
-    resource.setrlimit(resource.RLIMIT_NOFILE, (10 * test.args.vm_max ,-1))
+    try:
+        # In the case we want to keep each instance connection open?...
+        resource.setrlimit(resource.RLIMIT_NOFILE, (10 * test.args.vm_max ,-1))
+    except Exception as RE:
+        test.log.warning(red('Unable to set resource limit to:"{0}", err:"{1}"'
+                             .format(10 * test.args.vm_max, RE)))
 
     def signal_handler(signal, frame):
         kill_it = False
