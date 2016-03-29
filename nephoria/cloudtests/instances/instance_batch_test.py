@@ -71,11 +71,20 @@ class InstanceBatchTest():
                                  help='Max or total number of VMs to run in this test')
         parser.add_option('--no-clean', default=False, action='store_true',
                           help="Do not terminate VMs during test")
+        parser.add_option('--user', type=str, default='admin',
+                                 help='Cloud username, default: "admin"')
+        parser.add_option('--account', type=str, default='nephotest',
+                                 help='Cloud account name, default:"nephotest"')
+
+
         self.args, pos = parser.parse_args()
         if not self.args.clc:
             raise ValueError('CLC must be provided. See --clc argument')
         self.log = eulogger.Eulogger('InstanceBatchTest', stdout_level=self.args.log_level)
-        self.tc = TestController(self.args.clc, password=self.args.password,
+        self.tc = TestController(self.args.clc,
+                                 password=self.args.password,
+                                 clouduser_account=self.args.account,
+                                 clouduser_name=self.args.user,
                                  log_level=self.args.log_level)
         self.emi = self.tc.user.ec2.get_emi(emi=self.args.emi)
         self.vmtype = self.args.vmtype
