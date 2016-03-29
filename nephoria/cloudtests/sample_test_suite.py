@@ -40,8 +40,6 @@ class SampleTestSuite1(CliTestRunner):
                                                   'default': None,
                                                   'required': True}}
 
-
-
     def test1(self, string_to_print='This is the default'):
         self.log.info(string_to_print)
 
