@@ -56,8 +56,9 @@ class InstanceBatchTest():
                           help="Seconds used as timeout in run-image/instance request")
         parser.add_option('--emi', type=str, default=None,
                                  help='Image id used to run VMs')
-        parser.add_option('--keypair', type=str, default='InstanceBatchTestKey',
-                                 help='EC2 Keypair name to use for VM connections')
+        parser.add_option('--keypair', type=str, default=None,
+                                 help='EC2 Keypair name to use for VM connections, '
+                                      'default:"InstanceBatchTestKey_<timestamp>"')
         parser.add_option('--zone', type=str, default=None,
                                  help='Name of availability zone to run VMs in')
         parser.add_option('--vmtype', type=str, default='t1.micro',
@@ -78,7 +79,7 @@ class InstanceBatchTest():
                                  log_level=self.args.log_level)
         self.emi = self.tc.user.ec2.get_emi(emi=self.args.emi)
         self.vmtype = self.args.vmtype
-        self.keyname = self.args.keypair
+        self.keyname = self.args.keypair or "InstanceBatchTestKey_{0}".format(int(time.time()))
         self.key = self.tc.user.ec2.get_keypair(key_name=self.keyname)
         self.group = self.tc.user.ec2.add_group('InstanceBatchTestGroup')
         self.tc.user.ec2.authorize_group(self.group, port=22, protocol='tcp')
