@@ -270,7 +270,7 @@ class CliTestRunner(object):
                                     "default": "testrunner"}},
         'test_user': {'args': ['--test-user'],
                       'kwargs': {"help": "Cloud user name to use",
-                                 "default": "sys_admin"}},
+                                 "default": "admin"}},
         'log_file': {'args': ['--log-file'],
                      'kwargs': {"help": "file path to log to (in addition to stdout",
                                 "default": None}},

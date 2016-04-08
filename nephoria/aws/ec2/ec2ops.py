@@ -61,6 +61,8 @@ from boto.ec2.zone import Zone
 from boto.vpc.subnet import Subnet as BotoSubnet
 from boto.vpc import VPCConnection, VPC, Subnet
 from boto.ec2.networkinterface import NetworkInterfaceSpecification, NetworkInterfaceCollection
+from boto.ec2.networkinterface import NetworkInterface
+
 
 from nephoria import CleanTestResourcesException
 from nephoria.baseops.botobaseops import BotoBaseOps
@@ -865,6 +867,47 @@ disable_root: false"""
             printmethod( "\n" + str(ret_buf) + "\n")
         else:
             return ret_buf
+
+
+    def show_network_interfaces(self, interfaces, printme=True):
+        buf = ""
+        if not interfaces:
+            buf = "No elastic network interfaces provided to show"
+        if not isinstance(interfaces, list):
+            interfaces = [interfaces]
+        for eni in interfaces:
+            if isinstance(eni, NetworkInterface):
+                title = " ENI ID: {0}, DESCRIPTION:{1}".format(eni.id, eni.description)
+                enipt = PrettyTable([title])
+                enipt.align[title] = 'l'
+                enipt.padding_width = 0
+                dot = "?"
+                attached_status = "?"
+                if eni.attachment:
+                    dot = eni.attachment.delete_on_termination
+                    attached_status = eni.attachment.status
+                pt = PrettyTable(['ENI ID', 'PRIV_IP (PRIMARY)', 'PUB IP', 'VPC', 'SUBNET',
+                                  'OWNER', 'DOT', 'STATUS'])
+                pt.padding_width = 0
+                if eni.private_ip_addresses:
+                    private_ips = ",".join(str("{0} ({1})".format(x.private_ip_address,
+                                                                  x.primary).center(20))
+                                           for x in eni.private_ip_addresses)
+                else:
+                    private_ips = None
+                pt.add_row([eni.id, private_ips,
+                            getattr(eni, 'publicIp', None),
+                            getattr(eni, 'vpc_id', None),
+                            getattr(eni, 'subnet_id', None),
+                            getattr(eni, 'owner_id', None),
+                            dot,
+                            "{0} ({1})".format(eni.status, attached_status)])
+                enipt.add_row([(str(pt))])
+                buf += str(enipt)
+        if printme:
+            self.log.info(buf)
+        else:
+            return buf
 
 
     def terminate_single_instance(self, instance, timeout=300 ):
