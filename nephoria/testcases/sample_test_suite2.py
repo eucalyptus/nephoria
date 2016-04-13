@@ -1,4 +1,4 @@
-from nephoria.testcase_utils.eutestcase import CliTestRunner, SkipTestException
+from nephoria.testcase_utils.cli_test_runner import CliTestRunner, SkipTestException
 from cloud_utils.net_utils.sshconnection import SshConnection
 
 ##################################################################################################
