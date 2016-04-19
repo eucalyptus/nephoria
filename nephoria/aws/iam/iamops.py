@@ -113,7 +113,7 @@ class IAMops(BotoBaseOps):
                     continue
             if account_id is not None:
                 if not search:
-                    account_id = "^{0}$".format(account_id  .strip())
+                    account_id = "{0}".format(account_id.strip())
                 if not re_meth(account['account_id'], account_id):
                     continue
             retlist.append(account)
@@ -447,28 +447,29 @@ class IAMops(BotoBaseOps):
             re_meth = re.search
         else:
             re_meth = re.match
-        names = self.get_user_policy_names(user_name, policy_name=policy_name,
-                                           delegate_account=delegate_account, search=search)
-        for p_name in names:
-            params = {'UserName': user_name,
-                      'PolicyName': p_name}
-            if delegate_account:
-                params['DelegateAccount'] = delegate_account
-            try:
+        try:
+            names = self.get_user_policy_names(user_name, policy_name=policy_name,
+                                               delegate_account=delegate_account, search=search)
+            for p_name in names:
+                params = {'UserName': user_name,
+                          'PolicyName': p_name}
+                if delegate_account:
+                    params['DelegateAccount'] = delegate_account
                 policy = self.connection.get_response(
                             'GetUserPolicy',
                             params,
                             verb='POST')['get_user_policy_response']['get_user_policy_result']
-            except BotoServerError, BE:
-                err_msg = 'Error fetching policy for params:\n{0}: "{1}"'.format(params, BE)
-                if BE.status == 403 and ignore_admin_err and str(p_name).strip() == 'sys_admin':
-                    self.log.debug('IGNORING:' + str(err_msg))
-                else:
-                    self.log.critical(err_msg)
-                    raise
-            if doc is not None and not re_meth(doc, policy['policy_document']):
-                continue
-            retlist.append(policy)
+                if doc is not None and not re_meth(doc, policy['policy_document']):
+                    continue
+                retlist.append(policy)
+        except BotoServerError as BE:
+            err_msg = 'Error fetching policy using params:\n{0}:"{1}:{2}"'\
+                .format(params, BE.status, BE.message)
+            if BE.status == 403 and ignore_admin_err and str(user_name).strip() == 'admin':
+                self.log.debug('IGNORING:' + str(err_msg))
+            else:
+                self.log.critical(err_msg)
+                raise
         return retlist
 
     def show_user_policy_summary(self,user_name,policy_name=None,delegate_account=None,
@@ -503,7 +504,7 @@ class IAMops(BotoBaseOps):
         else:
             return main_pt
 
-    def show_user_summary(self,user_name, delegate_account=None, account_id=None,
+    def show_user_summary(self,user_name=None, delegate_account=None, account_id=None,
                           print_table=True):
         """
         Debug method for to display euare/iam info for a specific user.
@@ -512,7 +513,10 @@ class IAMops(BotoBaseOps):
         :param delegate_account: string - used for user lookup
         :param account_id: regex - to use for account id
         """
-        user_name = user_name
+        if not user_name and self._user_context and self._user_context.user_name:
+            user_name = self._user_context.user_name
+        else:
+            raise ValueError('No user_name provided or found for this connection')
         if delegate_account is None:
             account_id=self.eucarc.account_id
             delegate_account= self.get_all_accounts(account_id=account_id)[0]['account_name']
