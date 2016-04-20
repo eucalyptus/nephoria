@@ -29,7 +29,6 @@ class BaseOps(object):
                  region=None, connection_debug=0, path=None, validate_certs=True,
                  test_resources=None, logger=None, log_level=None, user_context=None,
                  session=None, api_version=None, verbose_requests=None):
-
         if self.EUCARC_URL_NAME is None:
             raise NotImplementedError('EUCARC_URL_NAME not set for this class:"{0}"'
                                       .format(self.__class__.__name__))
@@ -54,16 +53,23 @@ class BaseOps(object):
         # Create the logger for this ops connection
         if log_level is None:
             log_level = DEBUG
-        if not logger:
-            context = ""
-            if user_context:
+        def get_logger_context():
+            host = self.service_host or ""
+            context = "({0})".format(host)
+            if self._user_context and \
+                    self._user_context._user_name and self._user_context._account_name:
                 try:
-                    context = "({0}:{1})".format(user_context.account_name, user_context.user_name)
+                    context = "({0}:{1}}@{2})".format(self._user_context.user_name,
+                                                 self._user_context.account_name,
+                                                 host)
                 except:
                     pass
-            logger = Eulogger("{0}{1}".format(self.__class__.__name__, context),
+            return context
+        if not logger:
+            logger = Eulogger("{0}{1}".format(self.__class__.__name__, get_logger_context()),
                               stdout_level=log_level)
         self.log = logger
+        self.log.debug('Creating ops: {0}'.format(self.__class__.__name__))
         self.log.set_stdout_loglevel(log_level)
         # Store the runtime configuration for this ops connection
         if not eucarc:
