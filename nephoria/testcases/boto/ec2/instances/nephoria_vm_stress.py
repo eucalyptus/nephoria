@@ -81,7 +81,7 @@ time.sleep(3)
 
 
 def add_user(id):
-    new_user = tc.create_user_using_cloudadmin(aws_user_name='sys_admin',
+    new_user = tc.create_user_using_cloudadmin(aws_user_name='admin',
                                                aws_account_name=account_prefix + str(x),
                                                service_connection=tc,
                                                log_level=log_level)

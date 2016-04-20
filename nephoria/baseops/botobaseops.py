@@ -28,6 +28,7 @@ class BotoBaseOps(BaseOps):
                                        endpoint=self.service_host,
                                        region_name=region)
 
+        # This needs to be re-visited due to changes in Eucalyptus and Boto regarding certs...
         if validate_certs is None:
             validate_certs = True
             if re.search('2.6', boto_version):

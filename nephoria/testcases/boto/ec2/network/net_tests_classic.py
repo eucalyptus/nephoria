@@ -99,10 +99,10 @@ test 6 (Multi-zone/cluster env):
 
 '''
 
-#todo: Make use of CC optional so test can be run with only creds and non-sys_admin user.
+#todo: Make use of CC optional so test can be run with only creds and non-admin user.
 # CC only provides additional point of debug so can be removed from test for non-euca testing
-#todo: Allow test to run with an sys_admin and non-sys_admin account, so debug can be provided through sys_admin and test can
-# be run under non-sys_admin if desired.
+#todo: Allow test to run with an admin and non-admin account, so debug can be provided through admin and test can
+# be run under non-admin if desired.
 
 from boto.ec2.instance import Instance
 from paramiko import SSHException
