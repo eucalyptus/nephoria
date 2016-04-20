@@ -60,7 +60,7 @@ class UserContext(AutoCreds):
                  B3_EC2ops.__name__: 'b3_ec2ops'}
 
     def __init__(self,  aws_access_key=None, aws_secret_key=None, aws_account_name=None,
-                 aws_user_name=None, credpath=None, string=None, region=None,
+                 aws_user_name=None, port=8773, credpath=None, string=None, region=None,
                  machine=None, keysdir=None, logger=None, service_connection=None,
                  eucarc=None, existing_certs=False, boto_debug=0, log_level=None):
         if log_level is None:
@@ -72,6 +72,7 @@ class UserContext(AutoCreds):
                                           aws_secret_key=aws_secret_key,
                                           aws_account_name=aws_account_name,
                                           aws_user_name=aws_user_name,
+                                          service_port=port, region_domain=region, 
                                           credpath=credpath, string=string,
                                           machine=machine, keysdir=keysdir,
                                           logger=logger, log_level=log_level,
@@ -145,7 +146,7 @@ class UserContext(AutoCreds):
     def user_info(self):
         if not self._user_info:
             if self.iam:
-                if self.account_name == 'eucalyptus' and self.user_name == 'sys_admin':
+                if self.account_name == 'eucalyptus' and self.user_name == 'admin':
                     delegate_account = self.account_id
                 else:
                     delegate_account = None

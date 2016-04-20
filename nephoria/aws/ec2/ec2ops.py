@@ -2662,7 +2662,7 @@ disable_root: false"""
 
     def show_all_addresses_verbose(self, iam_connection=None, display=True):
         """
-        Print table to debug output showing all addresses available to cloud sys_admin using verbose filter
+        Print table to debug output showing all addresses available to cloud admin using verbose filter
         """
         address_width = 20
         info_width = 64
@@ -5297,7 +5297,7 @@ disable_root: false"""
     def show_addresses(self, addresses=None, verbose=None, printme=True):
         """
         Print table to debug output showing all addresses available to
-        cloud sys_admin using verbose filter
+        cloud admin using verbose filter
         :param addresses:
         """
         pt = PrettyTable([markup('PUBLIC IP'), markup('ACCOUNT NAME'),
