@@ -64,6 +64,7 @@ class S3ops(BotoBaseOps):
              "log_delivery":"http://acs.amazonaws.com/groups/s3/LogDelivery"
              }
     EUCARC_URL_NAME = 's3_url'
+    SERVICE_PREFIX = 's3'
     CONNECTION_CLASS = S3Connection
 
     def setup(self):
@@ -94,17 +95,18 @@ class S3ops(BotoBaseOps):
 
     def create_bucket(self, bucket_name, location=None):
         """
-        Create a bucket.  If the bucket already exists and you have
-        access to it, no error will be returned by AWS.
-        Note that bucket names are global to S3
-        so you need to choose a unique name.
+        Test Coverages:
+            - Create a bucket.
+            - Ensures bucket exists by calling boto s3.lookup
+
+        bucket_name The name of the Bucket
         """
-        # First let's see if we already have a bucket of this name.
-        # The lookup method will return a Bucket object if the
-        # bucket exists and we have access to it or None.
+
+        # TODO create_bucket move to boto3
+
         bucket = self.get_bucket_by_name(bucket_name)
         if bucket:
-            self.debug("Bucket '(%s)' already exists" % bucket_name)
+            self.log.debug("Bucket '(%s)' already exists" % bucket_name)
         else:
             try:
                 if location:
@@ -113,20 +115,22 @@ class S3ops(BotoBaseOps):
                     bucket = self.connection.create_bucket(bucket_name)
             except self.connection.provider.storage_create_error, e:
                 raise S3opsException("Bucket '(%s)' is owned by another user" % bucket_name )
+
             if not self.get_bucket_by_name(bucket.name):
                 raise S3opsException("Bucket could not be found after creation")
+
         self.test_resources["buckets"].append(bucket)
-        self.debug("Created bucket: " + bucket_name)
+        self.log.debug("Created bucket: " + bucket_name)
         return bucket
     
     def delete_bucket(self, bucket):
         """
-        Delete a bucket.
-        bucket_name  The name of the Walrus Bucket
+        Test Coverage:
+            - Deletes a bucket.
+            - Checks if bucket still exists.
+
+        bucket_name The name of the Bucket
         """
-        # First let's see if we already have a bucket of this name.
-        # The lookup method will return a Bucket object if the
-        # bucket exists and we have access to it or None.
         if not isinstance(bucket, Bucket):
             try:
                 bucket = self.connection.get_bucket(bucket)
@@ -139,9 +143,10 @@ class S3ops(BotoBaseOps):
         except self.connection.provider.storage_create_error, e:
                 raise S3opsException('Bucket (%s) is owned by another user' % bucket_name)
 
-        ### Check if the bucket still exists
+        # Check if the bucket still exists
         if self.get_bucket_by_name(bucket_name):
             raise S3opsException('Bucket (%s) still exists after delete operation' % bucket_name )
+        self.log.debug("Bucket %s is deleted successfully." % bucket_name)
 
     def get_bucket_by_name(self, bucket_name):
         """
