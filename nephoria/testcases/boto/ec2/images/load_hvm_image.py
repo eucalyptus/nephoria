@@ -161,7 +161,8 @@ class LoadHvmImage(CliTestRunner):
     def tc(self):
         tc = getattr(self, '__tc', None)
         if not tc:
-            tc = TestController(environment_file=self.args.environment_file,
+            tc = TestController(hostname=self.args.clc,
+                                environment_file=self.args.environment_file,
                                 password=self.args.password,
                                 clouduser_name=self.args.test_user,
                                 clouduser_account=self.args.test_account,
