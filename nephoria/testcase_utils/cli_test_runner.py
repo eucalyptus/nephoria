@@ -302,6 +302,7 @@ class CliTestRunner(object):
         self.name = name or self.__class__.__name__
         # create parser
         self.parser = argparse.ArgumentParser(prog=self.name, description=self._CLI_DESCRIPTION)
+        self.pre_init()
         # create cli options from class dict
         for argname, arg_dict in self._DEFAULT_CLI_ARGS.iteritems():
             cli_args = arg_dict.get('args')
@@ -328,7 +329,20 @@ class CliTestRunner(object):
         height, width = get_terminal_size()
         if width < self._term_width:
             self._term_width = width
+        self.post_init()
         self.show_self()
+
+    def pre_init(self, *args, **kwargs):
+        """
+        Additional items to be run towards the beginning of init()
+        """
+        pass
+
+    def post_init(self, *args, **kwargs):
+        """
+        Additional items to be run at the end of init.
+        """
+        pass
 
     def clean_method(self):
         """

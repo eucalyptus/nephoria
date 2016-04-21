@@ -72,7 +72,7 @@ class UserContext(AutoCreds):
                                           aws_secret_key=aws_secret_key,
                                           aws_account_name=aws_account_name,
                                           aws_user_name=aws_user_name,
-                                          service_port=port, region_domain=region, 
+                                          service_port=port, region_domain=region,
                                           credpath=credpath, string=string,
                                           machine=machine, keysdir=keysdir,
                                           logger=logger, log_level=log_level,
