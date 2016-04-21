@@ -34,6 +34,7 @@
 from logging import INFO, DEBUG
 from boto3.session import Session
 from cloud_utils.log_utils.eulogger import Eulogger
+from cloud_utils.log_utils import get_traceback, red
 from cloud_admin.access.autocreds import AutoCreds
 from nephoria.aws.iam.iamops import IAMops
 from nephoria.aws.s3.s3ops import S3ops
@@ -223,63 +224,134 @@ class UserContext(AutoCreds):
         name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
             if getattr(self, ops_class.EUCARC_URL_NAME, None):
-                self._connections[name] = ops_class(**self._connection_kwargs)
+                try:
+                    self._connections[name] = ops_class(**self._connection_kwargs)
+                except Exception as CE:
+                    self.log.error(red('{0}\nFailed to created "{1}" interface.\n'
+                                   'Connection kwargs:\n{2}\nError:{3}'
+                                       .format(get_traceback(),
+                                               ops_class.__name__,
+                                               self._connection_kwargs,
+                                               CE)))
         return self._connections.get(name, None)
 
     @property
     def s3(self):
         ops_class = S3ops
         name = self.CLASS_MAP[ops_class.__name__]
-        if not self._connections.get(name, None) and getattr(self, ops_class.EUCARC_URL_NAME, None):
-            self._connections[name] = ops_class(**self._connection_kwargs)
+        if not self._connections.get(name, None):
+            if getattr(self, ops_class.EUCARC_URL_NAME, None):
+                try:
+                    self._connections[name] = ops_class(**self._connection_kwargs)
+                except Exception as CE:
+                    self.log.error(red('{0}\nFailed to created "{1}" interface.\n'
+                                   'Connection kwargs:\n{2}\nError:{3}'
+                                       .format(get_traceback(),
+                                               ops_class.__name__,
+                                               self._connection_kwargs,
+                                               CE)))
         return self._connections.get(name, None)
 
     @property
     def ec2(self):
         ops_class = EC2ops
         name = self.CLASS_MAP[ops_class.__name__]
-        if not self._connections.get(name, None) and getattr(self, ops_class.EUCARC_URL_NAME, None):
-            self._connections[name] = ops_class(**self._connection_kwargs)
+        if not self._connections.get(name, None):
+            if getattr(self, ops_class.EUCARC_URL_NAME, None):
+                try:
+                    self._connections[name] = ops_class(**self._connection_kwargs)
+                except Exception as CE:
+                    self.log.error(red('{0}\nFailed to created "{1}" interface.\n'
+                                   'Connection kwargs:\n{2}\nError:{3}'
+                                       .format(get_traceback(),
+                                               ops_class.__name__,
+                                               self._connection_kwargs,
+                                               CE)))
         return self._connections.get(name, None)
 
     @property
     def elb(self):
         ops_class = ELBops
         name = self.CLASS_MAP[ops_class.__name__]
-        if not self._connections.get(name, None) and getattr(self, ops_class.EUCARC_URL_NAME, None):
-            self._connections[name] = ops_class(**self._connection_kwargs)
+        if not self._connections.get(name, None):
+            if getattr(self, ops_class.EUCARC_URL_NAME, None):
+                try:
+                    self._connections[name] = ops_class(**self._connection_kwargs)
+                except Exception as CE:
+                    self.log.error(red('{0}\nFailed to created "{1}" interface.\n'
+                                   'Connection kwargs:\n{2}\nError:{3}'
+                                       .format(get_traceback(),
+                                               ops_class.__name__,
+                                               self._connection_kwargs,
+                                               CE)))
         return self._connections.get(name, None)
 
     @property
     def sts(self):
         ops_class = STSops
         name = self.CLASS_MAP[ops_class.__name__]
-        if not self._connections.get(name, None) and getattr(self, ops_class.EUCARC_URL_NAME, None):
-            self._connections[name] = ops_class(**self._connection_kwargs)
+        if not self._connections.get(name, None):
+            if getattr(self, ops_class.EUCARC_URL_NAME, None):
+                try:
+                    self._connections[name] = ops_class(**self._connection_kwargs)
+                except Exception as CE:
+                    self.log.error(red('{0}\nFailed to created "{1}" interface.\n'
+                                   'Connection kwargs:\n{2}\nError:{3}'
+                                       .format(get_traceback(),
+                                               ops_class.__name__,
+                                               self._connection_kwargs,
+                                               CE)))
         return self._connections.get(name, None)
 
     @property
     def autoscaling(self):
         ops_class = ASops
         name = self.CLASS_MAP[ops_class.__name__]
-        if not self._connections.get(name, None) and getattr(self, ops_class.EUCARC_URL_NAME, None):
-            self._connections[name] = ops_class(**self._connection_kwargs)
+        if not self._connections.get(name, None):
+            if getattr(self, ops_class.EUCARC_URL_NAME, None):
+                try:
+                    self._connections[name] = ops_class(**self._connection_kwargs)
+                except Exception as CE:
+                    self.log.error(red('{0}\nFailed to created "{1}" interface.\n'
+                                   'Connection kwargs:\n{2}\nError:{3}'
+                                       .format(get_traceback(),
+                                               ops_class.__name__,
+                                               self._connection_kwargs,
+                                               CE)))
         return self._connections.get(name, None)
 
     @property
     def cloudwatch(self):
         ops_class = CWops
         name = self.CLASS_MAP[ops_class.__name__]
-        if not self._connections.get(name, None) and getattr(self, ops_class.EUCARC_URL_NAME, None):
-            self._connections[name] = ops_class(**self._connection_kwargs)
+        if not self._connections.get(name, None):
+            if getattr(self, ops_class.EUCARC_URL_NAME, None):
+                try:
+                    self._connections[name] = ops_class(**self._connection_kwargs)
+                except Exception as CE:
+                    self.log.error(red('{0}\nFailed to created "{1}" interface.\n'
+                                   'Connection kwargs:\n{2}\nError:{3}'
+                                       .format(get_traceback(),
+                                               ops_class.__name__,
+                                               self._connection_kwargs,
+                                               CE)))
         return self._connections.get(name, None)
 
     @property
     def cloudformation(self):
         ops_class = CFNops
         name = self.CLASS_MAP[ops_class.__name__]
-        if not self._connections.get(name, None) and getattr(self, ops_class.EUCARC_URL_NAME, None):
-            self._connections[name] = ops_class(**self._connection_kwargs)
+        if not self._connections.get(name, None):
+            if getattr(self, ops_class.EUCARC_URL_NAME, None):
+                try:
+                    self._connections[name] = ops_class(**self._connection_kwargs)
+                except Exception as CE:
+                    self.log.error(red('{0}\nFailed to created "{1}" interface.\n'
+                                   'Connection kwargs:\n{2}\nError:{3}'
+                                       .format(get_traceback(),
+                                               ops_class.__name__,
+                                               self._connection_kwargs,
+                                               CE)))
         return self._connections.get(name, None)
 
 

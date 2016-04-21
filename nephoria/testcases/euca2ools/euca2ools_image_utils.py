@@ -502,7 +502,7 @@ class Euca2oolsImageUtils(object):
             cmdargs = cmdargs + " --debug "
         cmdargs = cmdargs + " -b " + str(bname) + " -m " +str(manifest)
 
-        cmd = 'euca-upload-bundle -a ' + str(access_key) + ' -s ' + str(secret_key) + str(cmdargs)
+        cmd = 'euca-upload-bundle -I ' + str(access_key) + ' -S ' + str(secret_key) + str(cmdargs)
         #execute upload-bundle command...
         out = machine.cmd(cmd, timeout=image_check_timeout, listformat=True,
                           cb=self._bundle_status_cb, cbargs=cbargs)
@@ -566,7 +566,9 @@ class Euca2oolsImageUtils(object):
         if not access_key:
             self.log.warning('Could not determine access key for euca2ools_register')
         if not secret_key:
-            self.log.warnin('Could not determine secret key for euca2ools_register')
+            self.log.warning('Could not determine secret key for euca2ools_register')
+        if not manifest:
+            self.log.warning('No manifest provided to register command! ')
         cmdargs = str(manifest) + " -n " + str(name)
         emi = None
         if description:
@@ -591,7 +593,7 @@ class Euca2oolsImageUtils(object):
             cmdargs += ' --url ' + str(ec2_url)
 
 
-        cmd = 'euca-register -a ' + access_key + ' -s ' + secret_key + str(cmdargs)
+        cmd = 'euca-register {0} -I {1} -S {2}'.format(cmdargs, access_key, secret_key)
         out = machine.sys(cmd=cmd, code=0)
         for line in out:
             if re.search('IMAGE',line):
@@ -629,7 +631,7 @@ class Euca2oolsImageUtils(object):
             cmdargs += " --url " + str(s3_url)
 
 
-        cmd = ('euca-download-bundle -a ' + access_key + ' -s ' + secret_key + str(cmdargs))
+        cmd = ('euca-download-bundle -I ' + access_key + ' -S ' + secret_key + str(cmdargs))
         out = machine.sys(cmd=cmd, code=0)
         # Complete this wrapper...
         raise NotImplemented('euca2ools_download_bundle wrapper '
