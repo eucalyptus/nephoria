@@ -280,8 +280,9 @@ class CliTestRunner(object):
         'test_list': {'args': ['--test-list'],
                       'kwargs': {"help": "comma or space delimited list of test names to run",
                                  "default": None}},
-        'config_file': {'args': ['--config-file'],
-                        'kwargs': {"help": "Test Config file path",
+        'environment_file': {'args': ['--environment-file'],
+                        'kwargs': {"help": "Environment file that describes Eucalyptus topology,"
+                                           "e.g Environment file that was used by Calyptos.",
                                    "default": None}},
         'no_clean': {'args': ['--no-clean'],
                      'kwargs': {'help': 'Flag, if provided will not run the clean method on exit',
@@ -382,7 +383,7 @@ class CliTestRunner(object):
         pt.align = 'l'
         pt.add_row([blue("NAME"), self.name])
         pt.add_row([blue("TEST LIST"), self._testlist])
-        pt.add_row([blue('CONFIG FILES'), self.args.config_file])
+        pt.add_row([blue('ENVIRONMENT FILE'), self.args.environment_file])
         main_pt.add_row([pt])
         self.log.info("\n{0}\n".format(main_pt))
         self.show_args()
