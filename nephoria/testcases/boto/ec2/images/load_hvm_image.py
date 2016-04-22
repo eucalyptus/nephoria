@@ -147,7 +147,8 @@ class LoadHvmImage(CliTestRunner):
     def tc(self):
         tc = getattr(self, '__tc', None)
         if not tc:
-            tc = TestController(self.args.clc,
+            tc = TestController(hostname=self.args.clc,
+                                environment_file=self.args.environment_file,
                                 password=self.args.password,
                                 clouduser_name=self.args.test_user,
                                 clouduser_account=self.args.test_account,
@@ -184,7 +185,7 @@ class LoadHvmImage(CliTestRunner):
                 self._user = UserContext(aws_access_key=self.args.access_key,
                                    aws_secret_key=self.args.secret_key,
                                    region=self.args.region)
-            if self.args.clc and self.tc:
+            if (self.args.clc or self.args.environment_file) and self.tc:
                 self._user = self.tc.user
         return self._user
 
