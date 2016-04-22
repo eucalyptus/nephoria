@@ -135,20 +135,6 @@ class LoadHvmImage(CliTestRunner):
         'kwargs': {'help': 'cloud account to be used in this test',
                    'default': None}}
 
-    _DEFAULT_CLI_ARGS['region_domain'] = {
-        'args': ['--region'],
-        'kwargs': {'help': 'Region domain to run this test in',
-                   'default': None}}
-
-    _DEFAULT_CLI_ARGS['access_key'] = {
-        'args': ['--access-key'],
-        'kwargs': {'help': 'Access key to use during test',
-                   'default': None}}
-
-    _DEFAULT_CLI_ARGS['secret_key'] = {
-        'args': ['--secret-key'],
-        'kwargs': {'help': 'Secret key to use during test',
-                   'default': None}}
 
     def post_init(self):
         self.created_image = None
