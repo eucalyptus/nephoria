@@ -114,7 +114,8 @@ from nephoria.aws.ec2.euinstance import EuInstance
 from cloud_utils.net_utils.sshconnection import SshConnection
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException, CommandTimeoutException
 from cloud_utils.log_utils import red
-from cloud_admin.backends.network.midget import Midget
+
+
 from boto.exception import EC2ResponseError
 from cloud_utils.net_utils import test_port_status
 from cloud_utils.log_utils import get_traceback
@@ -124,6 +125,10 @@ import time
 import os
 import re
 import sys
+try:
+    from cloud_admin.backends.network.midget import Midget
+except ImportError as IE:
+    sys.stderr.write('Failed to import midonet get interface. Err:"{0}"'.format(IE))
 
 
 class TestZone():
