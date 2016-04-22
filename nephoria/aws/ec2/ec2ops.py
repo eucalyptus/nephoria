@@ -401,7 +401,7 @@ disable_root: false"""
         return stdout
 
     @printinfo
-    def add_group(self, group_name=None, description=None, fail_if_exists=False ):
+    def add_group(self, group_name=None, description=None, vpc_id=None, fail_if_exists=False ):
         """
         Add a security group to the system with name group_name, if it exists dont create it
 
@@ -409,23 +409,29 @@ disable_root: false"""
         :param fail_if_exists: IF set, will fail if group already exists, otherwise will return the existing group
         :return: boto group object upon success or None for failure
         """
+        filters = {}
+        if vpc_id:
+            filters={'VpcId':vpc_id}
         if group_name is None:
             group_name = "group-" + str(int(time.time()))
-        if self.check_group(group_name):
+        if self.check_group(group_name, vpc_id=vpc_id):
             if fail_if_exists:
-                self.fail(  "Group " + group_name + " already exists")
+                raise ValueError("Cant add security group, '{0}' already exists. Using vpc:{1}"
+                                 .format(group_name, vpc_id))
             else:
-                self.log.debug(  "Group " + group_name + " already exists")
-                group = self.connection.get_all_security_groups(group_name)[0]
-            return self.get_security_group(name=group_name)
-        else:
-            self.log.debug( 'Creating Security Group: %s' % group_name)
-            # Create a security group to control access to instance via SSH.
-            if not description:
-                description = group_name
-            group = self.connection.create_security_group(group_name, description)
-            self.test_resources["security_groups"].append(group)
-        return self.get_security_group(name=group_name)
+                self.log.debug(  "Group '{0}' group already exists using vpc:'{1}'"
+                                 .format(group_name, vpc_id))
+                groups = self.connection.get_all_security_groups(group_name, filters=filters)
+                if groups:
+                    return groups[0]
+
+        self.log.debug( 'Creating Security Group: %s' % group_name)
+        # Create a security group to control access to instance via SSH.
+        if not description:
+            description = group_name
+        group = self.connection.create_security_group(group_name, description, vpc_id=vpc_id)
+        self.test_resources["security_groups"].append(group)
+        return group
 
     def delete_group(self, group):
         """
@@ -442,13 +448,16 @@ disable_root: false"""
             return False
         return True
 
-    def check_group(self, group_name):
+    def check_group(self, group_name, vpc_id=None):
         """
-        Check if a group with group_name exists in the system
+        Check if a group with group_name exists in the system for a given vpc
 
         :param group_name: Group name to check for existence
         :return: bool whether operation succeeded
         """
+        filters = {}
+        if vpc_id:
+            filters={'VpcId':vpc_id}
         self.log.debug( "Looking up group " + group_name )
         if self._use_verbose_requests:
             group_names = ['verbose']
@@ -456,7 +465,8 @@ disable_root: false"""
             group_names = []
         group_names.append(group_name)
         try:
-            group = self.connection.get_all_security_groups(groupnames=group_names)
+            group = self.connection.get_all_security_groups(groupnames=group_names,
+                                                            filters=filters)
         except EC2ResponseError:
             return False
         if not group:
@@ -686,7 +696,7 @@ disable_root: false"""
 
     def get_all_vpcs(self, vpc_ids=None, filters=None, dry_run=False, verbose=True):
          if verbose:
-            if vpc_ids:
+            if vpc_ids is not None:
                 if not isinstance(vpc_ids, list):
                     if vpc_ids != 'verbose':
                         subnet_ids = [vpc_ids, 'verbose']
@@ -2495,9 +2505,12 @@ disable_root: false"""
             # fetching a test image to work with...
             basic_image = True
         if name is None:
-             emi = "mi-"
-
-        images = self.connection.get_all_images(filters=filters)
+             emi = ""
+        if filters:
+            self.log.debug('Using following filters for image request:"{0}"'.format(filters))
+            images = self.connection.get_all_images(filters=filters)
+        else:
+            images = self.connection.get_all_images()
         self.log.debug("Got " + str(len(images)) + " total images " + str(emi) + ", now filtering..." )
         for image in images:
             if (re.search(emi, image.id) is None) and (re.search(emi, image.name) is None):
@@ -3618,7 +3631,7 @@ disable_root: false"""
             if s:
                 s.close()
 
-    def get_security_group(self, name=None, id=None, verbose=None):
+    def get_security_group(self, name=None, id=None, vpc_id=None, verbose=None):
         """
          Adding this as both a convienence to the user to separate euare groups
          from security groups
@@ -3642,6 +3655,7 @@ disable_root: false"""
             if isinstance(group, SecurityGroup) or isinstance(id, BotoGroup):
                 group_id = group.id
                 group_name = group.name
+                vpc_id = group.vpc_id
             elif re.match('^sg-\w{8}$',str(group).strip()):
                 group_id = group
             elif isinstance(group, basestring):
@@ -3656,7 +3670,11 @@ disable_root: false"""
             ids = [group_id]
         if group_name:
             names.append(group_name)
-        groups = self.connection.get_all_security_groups(groupnames=names, group_ids=ids)
+        filters = {}
+        if vpc_id:
+            filters={'VpcId':vpc_id}
+        groups = self.connection.get_all_security_groups(groupnames=names, group_ids=ids,
+                                                         filters=filters)
         for group in groups:
             if not group_id or (group_id and group.id == group_id):
                 if not group_name or (group_name and group.name == group_name):
