@@ -106,14 +106,13 @@ test 6 (Multi-zone/cluster env):
 
 from boto.ec2.instance import Instance
 from paramiko import SSHException
-from nephoria.aws.ec2.ec2ops import EC2ops
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, SkipTestException
 from nephoria.testcase_utils import wait_for_result, WaitForResultException
 from nephoria.testcontroller import TestController
 from nephoria.aws.ec2.euinstance import EuInstance
 from cloud_utils.net_utils.sshconnection import SshConnection
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException, CommandTimeoutException
-from cloud_utils.log_utils import red
+from cloud_utils.log_utils import red, get_traceback
 
 
 from boto.exception import EC2ResponseError
@@ -352,7 +351,7 @@ class NetTestsClassic(CliTestRunner):
                 self._vpc_backend = None
                 self.errormsg('FYI... Failed to create vpc backend interface, err:\n{0}'
                             '\nUnable to get VPC backend debug. Ignoring Error:"{1}"'
-                            .format(self.tester.get_traceback(), str(VBE)))
+                            .format(get_traceback(), str(VBE)))
                 return None
         return self._vpc_backend
 
@@ -474,7 +473,7 @@ class NetTestsClassic(CliTestRunner):
         if gw_machine:
             vpc_proxy_ssh = gw_machine.ssh
         else:
-            raise ValueError('Could not find eutester machine for ip: "{0}"'
+            raise ValueError('Could not find tester machine for ip: "{0}"'
                              .format(gw_machine.hostname))
 
         if instance.keypath:
@@ -1155,7 +1154,7 @@ class NetTestsClassic(CliTestRunner):
                                           end_port=start+count)
             auth_starttime = time.time()
             # test entire port range is accessible from this machine
-            test_file = 'eutester_port_test.txt'
+            test_file = 'nephoria_port_test.txt'
             #Allow some delay for the rule to be applied in the network...
             time.sleep(10)
             for x in xrange(start, start+count):
@@ -1819,7 +1818,7 @@ class NetTestsClassic(CliTestRunner):
                 unit_list.append(self.create_testunit_by_name(test))
         self.status('Got running the following list of tests:' + str(testlist))
 
-        ### Run the EutesterUnitTest objects
+        ### Run the nephoriaUnitTest objects
         result = self.run(unit_list,eof=False,clean_on_exit=True)
         self.status('Test finished with status:"{0}"'.format(result))
         return result
