@@ -604,6 +604,7 @@ class CliTestRunner(object):
                 test_names = str(self.args.test_list).replace(',', " ").split()
                 testlist = []
                 for test_name in test_names:
+                    test_name = test_name.strip(',')
                     testlist.append(self.create_testunit_by_name(name=test_name,
                                                                  obj=self))
             else:
@@ -958,8 +959,11 @@ class CliTestRunner(object):
             args = self.args
         if not args:
             return
-        pt = PrettyTable([yellow('TEST ARGS', bold=True), yellow('VALUE', bold=True)])
+        headers= [yellow('TEST ARGS', bold=True), yellow('VALUE', bold=True)]
+        pt = PrettyTable(headers)
         pt.align = 'l'
+        pt.max_width[headers[0]] = 30
+        pt.max_width[headers[1]] = 80
         for key, val in args._get_kwargs():
             pt.add_row([blue(key), val])
         self.log.info("\n{0}\n".format(pt))
