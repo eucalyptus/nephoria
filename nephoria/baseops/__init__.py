@@ -55,15 +55,22 @@ class BaseOps(object):
             log_level = DEBUG
         def get_logger_context():
             host = self.service_host or ""
-            context = "({0})".format(host)
-            if self._user_context and \
-                    self._user_context._user_name and self._user_context._account_name:
-                try:
-                    context = "({0}:{1}}@{2})".format(self._user_context.user_name,
-                                                 self._user_context.account_name,
-                                                 host)
-                except:
-                    pass
+            context = ""
+            try:
+                if self._user_context:
+                    if self._user_context._user_name and self._user_context._account_name:
+
+                        context = "({0}:{1})".format(self._user_context.user_name,
+                                                     self._user_context.account_name)
+                    elif self._user_context.access_key:
+                        context = "(AK:{0}...)".format(self._user_context.__access_key[5:])
+            except Exception as LE:
+                print 'error fetching user context: "{0}"'.format(LE)
+            if not context:
+                if aws_access_key_id:
+                    context = "(AK:{0}...)".format(aws_access_key_id[5:])
+                else:
+                    context = "()"
             return context
         if not logger:
             logger = Eulogger("{0}{1}".format(self.__class__.__name__, get_logger_context()),
