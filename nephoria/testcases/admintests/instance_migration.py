@@ -1,14 +1,9 @@
 #!/usr/bin/env python
-from nephoria.aws.ec2.euinstance import EuInstance
-from nephoria.aws.ec2.euvolume import EuVolume
 from nephoria.testcase_utils import wait_for_result
-from nephoria.testcase_utils.cli_test_runner import CliTestRunner, SkipTestException
-from nephoria.testcases.euca2ools.euca2ools_image_utils import Euca2oolsImageUtils
-from nephoria.usercontext import UserContext
+from nephoria.testcase_utils.cli_test_runner import CliTestRunner
 from nephoria.testcontroller import TestController
 import copy
 import time
-from urllib2 import Request, urlopen, URLError
 
 
 class InstanceMigration(CliTestRunner):
