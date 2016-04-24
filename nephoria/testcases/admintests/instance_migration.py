@@ -136,6 +136,10 @@ class InstanceMigration(CliTestRunner):
         ebs_emi = self.tc.admin.ec2.get_emi(root_device_type="ebs")
         self.test_instance_migration_basic(emi=ebs_emi)
 
+    def test_ebs_instance_migration_with_volume(self):
+        ebs_emi = self.tc.admin.ec2.get_emi(root_device_type="ebs")
+        self.test_instance_migration_basic(emi=ebs_emi, volume=True)
+
     def clean_method(self):
         # instances = getattr(self, 'instances', [])
         instances = self.tc.test_resources['_instances']
