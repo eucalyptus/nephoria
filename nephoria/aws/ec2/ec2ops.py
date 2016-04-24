@@ -1061,8 +1061,8 @@ disable_root: false"""
             vol = None
             try:
                 cmdstart = time.time()
-                vol = self.create_volume(size, zone, snapshot)
-                cmdtime =  time.time() - cmdstart 
+                vol = self.connection.create_volume(size, zone, snapshot)
+                cmdtime = time.time() - cmdstart
                 if vol:
                     vol = EuVolume.make_euvol_from_vol(vol, tester=self, cmdstart=cmdstart)
                     vol.eutest_cmdstart = cmdstart
@@ -1490,7 +1490,7 @@ disable_root: false"""
                 self.log.debug( "Sending delete for volume: " +  str(volume.id))
                 if volume in self.test_resources['volumes']:
                     self.test_resources['volumes'].remove(volume)
-                volumes = self.get_all_volumes([volume.id])
+                volumes = self.connection.get_all_volumes([volume.id])
                 if len(volumes) == 1:
                     volume = volumes[0]
                     #previous_status = volume.status
@@ -1516,7 +1516,7 @@ disable_root: false"""
         elapsed = 0
         while vollist and elapsed < timeout:
             for volume in vollist:
-                volumes = self.get_all_volumes([volume.id])
+                volumes = self.connection.get_all_volumes([volume.id])
                 if len(volumes) == 1:
                     volume = volumes[0]
                 elif len(volumes) == 0:
@@ -1542,7 +1542,7 @@ disable_root: false"""
         """
         Deletes all volumes on the cloud
         """
-        volumes = self.get_all_volumes()
+        volumes = self.connection.get_all_volumes()
         self.delete_volumes(volumes)
 
         

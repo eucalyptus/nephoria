@@ -93,6 +93,13 @@ class TestController(object):
                                             'password': cred_depot_password or password,
                                             'log_level': log_level}
 
+        # TODO ??
+        self.test_resources = \
+            {
+                '_instances': [],
+                '_volumes': []
+            }
+
     def __repr__(self):
         try:
             myrepr = "{0}:{1}({2}:{3},{4}:{5})".format(
