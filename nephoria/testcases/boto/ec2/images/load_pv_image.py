@@ -246,7 +246,7 @@ class Load_Pv_Image(CliTestRunner):
                 self._user = UserContext(aws_access_key=self.args.access_key,
                                    aws_secret_key=self.args.secret_key,
                                    region=self.args.region)
-            if self.args.clc and self.tc:
+            if (self.args.clc or self.args.environment_file) and self.tc:
                 self._user = self.tc.user
         return self._user
 
