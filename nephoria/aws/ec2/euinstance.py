@@ -188,6 +188,11 @@ class EuInstance(Instance, TaggedResource, Machine):
 
         return newins
 
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            return self.id == other.id
+        return False
+
     @property
     def ssh(self):
         return self._ssh
