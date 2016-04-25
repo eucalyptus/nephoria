@@ -38,7 +38,7 @@ import os
 import time
 #from eutester.euinstance import EuInstance
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner
-from nephoria.testcases.boto.ec2.base_ec2_template import BaseEc2Template
+from nephoria.testcases.ec2 import BaseEc2Template
 import random
 #from eutester.euvolume import EuVolume
 #from testcases.cloud_user.instances.bfebstest import BFEBSBasics
