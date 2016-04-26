@@ -1175,15 +1175,15 @@ class CliTestRunner(object):
             startbuf += '<div id="myDiv" name="myDiv" title="Example Div Element" style="color: ' \
                         '#0900C4; font: Helvetica 12pt;border: 1px solid black;">'
             startbuf += str(link)
-        pt = PrettyTable(['HEADER'])
-        pt.max_width['HEADER'] = 110
+        header = "HEADER".ljust(110)
+        pt = PrettyTable([header])
+        pt.max_width = 105
         pt.header = False
         pt.align = 'l'
         buf = "STARTING TESTUNIT: {0}".format(test.name).ljust(self._term_width)
         argbuf = self.get_pretty_args(test)
         buf += str(test.description) + str(argbuf)
-        buf += 'Running list method: "' + str(
-            self.format_testunit_method_arg_values(test)) + '"'
+        buf += 'Running list method: "{0}"'.format(self.format_testunit_method_arg_values(test))
         pt.add_row([buf])
         startbuf += markup(pt, markups=[ForegroundColor.WHITE, BackGroundColor.BG_BLUE])
         if self.html_anchors:
