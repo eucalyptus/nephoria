@@ -543,7 +543,7 @@ class NetTestsClassic(CliTestRunner):
 
     def get_active_nc_for_instance(self,instance):
         nc = self.sysadmin.get_hosts_for_node_controllers(instanceid=instance.id)[0]
-        return nc.machine
+        return nc
 
     def ping_instance_private_ip_from_euca_internal(self, instance, ping_timeout=120):
         assert isinstance(instance, EuInstance)
