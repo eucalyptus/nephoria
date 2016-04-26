@@ -1859,7 +1859,7 @@ disable_root: false"""
         for x in xrange(0,count):
             try:
                 start = time.time()
-                snapshot = self.create_snapshot( volume_id, description=str(description))
+                snapshot = self.connection.create_snapshot(volume_id, description=str(description))
                 cmdtime = time.time()-start
                 if snapshot:
                     self.log.debug("Attempting to create snapshot #"+str(x)+ ", id:"+str(snapshot.id))
