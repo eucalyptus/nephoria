@@ -68,29 +68,13 @@ import operator
 
 class EuInstance(Instance, TaggedResource, Machine):
     @classmethod
-    def make_euinstance_from_instance(cls,
-                                      instance,
-                                      ec2ops,
-                                      debugmethod=None,
-                                      keypair=None,
-                                      keypath=None,
-                                      password=None,
-                                      username="root",
-                                      do_ssh_connect=True,
-                                      verbose=True,
-                                      timeout=120,
-                                      private_addressing=False,
-                                      reservation=None,
-                                      cmdstart=None,
-                                      try_non_root_exec=True,
-                                      exec_password=None,
-                                      ssh_retry=2,
-                                      distro=None,
-                                      distro_ver=None,
-                                      arch=None,
-                                      proxy_hostname=None,
-                                      proxy_username='root',
-                                      proxy_password=None,
+    def make_euinstance_from_instance(cls, instance, ec2ops, debugmethod=None, keypair=None,
+                                      keypath=None, password=None, username="root",
+                                      do_ssh_connect=True, verbose=True, timeout=120,
+                                      private_addressing=False, reservation=None, cmdstart=None,
+                                      try_non_root_exec=True, exec_password=None, ssh_retry=2,
+                                      distro=None, distro_ver=None, arch=None, proxy_hostname=None,
+                                      proxy_username='root', proxy_password=None,
                                       proxy_keypath=None):
 
         '''
@@ -141,7 +125,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         if (keypair is not None):
             if isinstance(keypair, types.StringTypes):
                 keyname = keypair
-                keypair = tester.get_keypair(keyname)
+                keypair = ec2ops.get_keypair(keyname)
             else:
                 keyname = keypair.name
             keypath = os.getcwd() + "/" + keyname + ".pem"
@@ -156,7 +140,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         newins.private_addressing = private_addressing
         newins.reservation = reservation or newins.get_reservation()
         if newins.reservation and newins.state != 'terminated':
-            newins.security_groups = newins.tester.get_instance_security_groups(newins)
+            newins.security_groups = newins.ec2ops.get_instance_security_groups(newins)
         else:
             newins.security_groups = None
         newins.laststate = newins.state
@@ -167,10 +151,10 @@ class EuInstance(Instance, TaggedResource, Machine):
             newins.update_vm_type_info()
         if newins.root_device_type == 'ebs' and newins.state != 'terminated':
             try:
-                volume = newins.tester.get_volume(
+                volume = newins.ec2ops.get_volume(
                     volume_id=newins.block_device_mapping.get(newins.root_device_name).volume_id)
                 newins.bdm_root_vol = EuVolume.make_euvol_from_vol(volume,
-                                                                   tester=newins.tester,
+                                                                   tester=newins.ec2ops,
                                                                    cmdstart=newins.cmdstart)
             except:
                 pass

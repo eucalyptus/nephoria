@@ -3358,17 +3358,16 @@ disable_root: false"""
                     else:
                         if username is None:
                             username = 'root'
-                        eu_instance =  EuInstance.make_euinstance_from_instance(
-                            instance,
-                            self,
+                        eu_instance = EuInstance.make_euinstance_from_instance(
+                            instance, self,
                             keypair=keypair,
-                            username = username,
                             password=password,
-                            reservation = reservation,
-                            private_addressing=private_addressing,
+                            username=username,
+                            do_ssh_connect=False,
                             timeout=timeout,
-                            cmdstart=cmdstart,
-                            do_ssh_connect=False )
+                            private_addressing=private_addressing,
+                            reservation=reservation,
+                            cmdstart=cmdstart)
                     #set the connect flag in the euinstance object for future use
                     eu_instance.auto_connect = auto_connect
                     instances.append(eu_instance)
@@ -4094,15 +4093,13 @@ disable_root: false"""
                 timeout=timeout)
         else:
             username = username or 'root'
-            instance = EuInstance.make_euinstance_from_instance(
-                instance,
-                self,
-                keypair=keypair,
-                username = username,
-                password=password,
-                reservation=reservation,
-                do_ssh_connect=auto_connect,
-                timeout=timeout)
+            instance = EuInstance.make_euinstance_from_instance(instance, self,
+                                                                keypair=keypair,
+                                                                password=password,
+                                                                username=username,
+                                                                do_ssh_connect=auto_connect,
+                                                                timeout=timeout,
+                                                                reservation=reservation)
         if 'instances' in self.test_resources:
             for x in xrange(0, len(self.test_resources['instances'])):
                 ins = self.test_resources['instances'][x]
