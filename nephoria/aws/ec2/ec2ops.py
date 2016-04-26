@@ -1432,16 +1432,27 @@ disable_root: false"""
         :param volume: Volume object to delete
         :return: bool, success of the operation
         """
+        if not volume:
+            raise ValueError('Bad value passed to delete_volume: "{0}/{1}"'
+                             .format(volume, type(volume)))
+
+        if isinstance(volume, basestring):
+            volume_id = volume
+        else:
+            volume_id = volume.id
+
         try:
-            self.delete_volume(volume.id)
+
+            self.connection.delete_volume(volume_id)
         except Exception, e:
-            self.log.debug('Caught err while sending delete for volume:'+ str(volume.id) + " err:" + str(e))
-            self.log.debug('Monitoring to deleted state after catching error...')
-        self.log.debug( "Sent delete for volume: " +  str(volume.id) + ", monitor to deleted state or failure"  )
+            self.log.warning('Caught err while sending delete for volume:'+ str(volume_id) +
+                           " err:" + str(e))
+            self.log.warning('Monitoring to deleted state after catching error...')
+        self.log.debug("Sent delete for volume: " +  str(volume_id) +
+                       ", monitor to deleted state or failure")
         start = time.time()
         elapsed = 0
-        volume_id = volume.id
-        volume.update()
+        volume_id = volume_id
         while elapsed < timeout:
             try:
                 chk_volume = self.get_volume(volume_id=volume_id)
@@ -1449,7 +1460,8 @@ disable_root: false"""
                     self.log.debug(str(volume_id) + ', Volume no longer exists on system, deleted')
                     break
                 chk_volume.update()
-                self.log.debug( str(chk_volume) + " in " + chk_volume.status + " sleeping:"+str(poll_interval)+", elapsed:"+str(elapsed))
+                self.log.debug(str(chk_volume) + " in " + chk_volume.status +
+                                " sleeping:" + str(poll_interval) + ", elapsed:" + str(elapsed))
                 if chk_volume.status == "deleted":
                     break
                 time.sleep(poll_interval)
@@ -1467,7 +1479,7 @@ disable_root: false"""
             return True
 
         if volume.status != 'deleted':
-            self.log.error(str(volume) + " left in " +  volume.status + ',elapsed:'+str(elapsed))
+            self.log.error(str(volume) + " left in " +  volume.status + ',elapsed:' + str(elapsed))
             return False
         return True
     
@@ -1504,7 +1516,8 @@ disable_root: false"""
                 err = "ERROR: " + str(volume.id) + ", " + str(be.status)+ ", " + str(be.reason) + \
                           ", " +str(be.error_message) + "\n"
                 if previous_status == 'deleting':
-                    self.log.debug(str(volume.id)+ ":" + str(previous_status) + ', err:' + str(err))
+                    self.log.warning(str(volume.id)+ ":" + str(previous_status) + ', err:' +
+                                     str(err))
                 else:
                     errmsg += err
                     errlist.append(volume)
@@ -1516,7 +1529,13 @@ disable_root: false"""
         elapsed = 0
         while vollist and elapsed < timeout:
             for volume in vollist:
-                volumes = self.connection.get_all_volumes([volume.id])
+                try:
+                    volumes = self.connection.get_all_volumes([volume.id])
+                except EC2ResponseError as e:
+                    if e.status == 400:
+                        volumes = []
+                    else:
+                        raise(e)
                 if len(volumes) == 1:
                     volume = volumes[0]
                 elif len(volumes) == 0:
@@ -2262,7 +2281,7 @@ disable_root: false"""
         """
         snapshot.delete()
         self.log.debug( "Sent snapshot delete request for snapshot: " + snapshot.id)
-        return self.delete_snapshots([snapshot], base_timeout=60)
+        return self.connection.delete_snapshots([snapshot], base_timeout=60)
     
     @printinfo
     def register_snapshot(self,
