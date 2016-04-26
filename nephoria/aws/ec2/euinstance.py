@@ -99,7 +99,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         '''
         newins = EuInstance(instance.connection)
         newins.__dict__ = instance.__dict__
-
+        newins._package_manager = None
         newins.rootfs_device = "sda"
         newins.block_device_prefix = "sd"
         newins.virtio_blk = False
