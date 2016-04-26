@@ -1176,6 +1176,7 @@ class CliTestRunner(object):
                         '#0900C4; font: Helvetica 12pt;border: 1px solid black;">'
             startbuf += str(link)
         pt = PrettyTable(['HEADER'])
+        pt.max_width['HEADER'] = 110
         pt.header = False
         pt.align = 'l'
         buf = "STARTING TESTUNIT: {0}".format(test.name).ljust(self._term_width)

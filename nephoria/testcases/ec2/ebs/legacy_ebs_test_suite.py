@@ -121,11 +121,13 @@ class LegacyEbsTestSuite(CliTestRunner):
         self._group = None
         self._keypair = None
         self._keypair_name = None
+        self._user = None
+        self._tc = None
         self.snaps = []
 
     @property
     def tc(self):
-        tc = getattr(self, '__tc', None)
+        tc = getattr(self, '_tc', None)
         if not tc:
             tc = TestController(hostname=self.args.clc,
                                 environment_file=self.args.environment_file,
@@ -133,7 +135,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                                 clouduser_name=self.args.test_user,
                                 clouduser_account=self.args.test_account,
                                 log_level=self.args.log_level)
-            setattr(self, '__tc', tc)
+            setattr(self, '_tc', tc)
         return tc
 
     @property
@@ -173,7 +175,7 @@ class LegacyEbsTestSuite(CliTestRunner):
 
     @property
     def emi(self):
-        emi = getattr(self, '__emi', None)
+        emi = getattr(self, '_emi', None)
         if not emi:
             if self.args.emi:
                 emi = self.user.ec2.get_emi(emi=self.args.emi)
@@ -184,7 +186,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                     pass
                 if not emi:
                     emi = self.user.ec2.get_emi()
-            setattr(self, '__emi', emi)
+            setattr(self, '_emi', emi)
         return emi
 
     @emi.setter
@@ -192,7 +194,7 @@ class LegacyEbsTestSuite(CliTestRunner):
         if isinstance(value, basestring):
             value = self.user.ec2.get_emi(emi=value)
         if value is None or isinstance(value, Image):
-            setattr(self, '__emi', value)
+            setattr(self, '_emi', value)
         else:
             raise ValueError('Could not set emi to value:"{0}/{1}"'.format(value, type(value)))
 
@@ -292,12 +294,12 @@ class LegacyEbsTestSuite(CliTestRunner):
             if isinstance(image, types.StringTypes):
                 image = self.user.ec2.get_emi(emi=image)
         else:
-            image = self.image
+            image = self.emi
         if group is None:
             group = self.group
         if keypair is None:
             keypair = self.keypair
-        instance_password = instance_password or self.instance_password
+        instance_password = instance_password or self.args.instance_password
 
         vmtype = vmtype or self.vmtype
         if keypair:
@@ -311,8 +313,8 @@ class LegacyEbsTestSuite(CliTestRunner):
                                                 keypair=keyname,
                                                 group=group,
                                                 username=username,
-                                                password=instance_password,
-                                                user_data=self.user_data,
+                                                password=self.args.instance_password,
+                                                user_data=None,
                                                 type=vmtype,
                                                 zone=zone,
                                                 min=count,
