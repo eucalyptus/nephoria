@@ -28,9 +28,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 #
-# Author: vic.iglesias@eucalyptus.com
 
-import json
 import re
 import os
 import copy
@@ -44,6 +42,7 @@ import types
 import traceback
 from datetime import datetime, timedelta
 from subprocess import Popen, PIPE
+from nephoria.exceptions import EucaAdminRequired
 
 from boto.ec2.image import Image
 from boto.ec2.instance import Reservation, Instance
@@ -2876,8 +2875,8 @@ disable_root: false"""
             instance.update()
             time.sleep(5)
             elapsed = int(time.time()-start)
-            address = self.get_all_addresses(addresses=[address.public_ip])[0]
-        address = self.get_all_addresses(address.public_ip)
+            address = self.connection.get_all_addresses(addresses=[address.public_ip])[0]
+        address = self.connection.get_all_addresses(address.public_ip)
         self.show_addresses(address)
         self.log.debug("Disassociated IP successfully")
 
@@ -4125,7 +4124,7 @@ disable_root: false"""
             self.log.debug(output.output)
         return output
 
-    def get_zones(self):
+    def get_zone_names(self):
         """
         Return a list of availability zone names.
 
@@ -4136,6 +4135,98 @@ disable_root: false"""
         for zone in zone_objects:
             zone_names.append(zone.name)
         return zone_names
+
+
+    def get_zones(self, zone_name=None):
+        zones = self.connection.get_all_zones(zones=zone_name)
+        if not zones:
+            return zones
+        zone_names = ['verbose']
+        if zone_name:
+            zone_names.append(zone_name)
+        verbose_zones = self.connection.get_all_zones(zones=zone_names)
+        if len(zones) >= verbose_zones:
+            self.log.warning('Failed to fetch zones with verbose option, '
+                             'non-eucalyptus administrative account users may not be authorized '
+                             'for this request. No vm slot availability info will be provided')
+            return zones
+        # the user had verbose zone information, parse it and add it to the zones.
+        ret_list = []
+        current_zone = None
+        headers = []
+        for zone in verbose_zones:
+            z_name = str(zone.name)
+            if not str(z_name).startswith("|-"):
+                if current_zone:
+                    ret_list.append(current_zone)
+                current_zone = zone
+                setattr(current_zone, 'available_vm_slots', {})
+                order = 0
+                continue
+            elif current_zone:
+                z_name = z_name.lstrip('|-').strip()
+                if re.search('vm types', z_name):
+                    # this is a header
+                    headers = str(zone.state).replace("/", "").split()
+                else:
+                    # this is a vm_type
+                    vm_dict = {'order': order}
+                    info = str(zone.state).replace("/", "").split()
+                    for x in xrange(0, len(info)):
+                        vm_dict[headers[x]] = int(info[x])
+                    current_zone.available_vm_slots[z_name] = vm_dict
+                    order += 1
+        if current_zone:
+            ret_list.append(current_zone)
+        return ret_list
+
+    def get_available_vm_slots(self, vmtype, zone_name):
+        zone = self.get_zones(zone_name=zone_name)[0]
+        if not getattr(zone, 'available_vm_slots', None):
+            raise EucaAdminRequired()
+        vm_info = zone.available_vm_slots.get(vmtype)
+        return int(vm_info.get('free'))
+
+    def show_zone_availability(self, zone_name=None, print_me=True):
+        zones = self.get_zones(zone_name=zone_name)
+        main_pt = PrettyTable(['HEADER'])
+        main_pt.max_width = 120
+        main_pt.align = 'l'
+        main_pt.header = False
+        main_pt.border = False
+        order_header = str('#').ljust(3)
+        info_headers = ['VMTYPE'.ljust(16), 'FREE/MAX'.ljust(16), 'RAM'.ljust(10),
+                        'CPU'.ljust(10), 'DISK'.ljust(10), order_header]
+
+        if not zones:
+            main_pt.add_row(['No zones to show using zone_name:' + str(zone_name)])
+        for zone in zones:
+            main_pt.add_row(
+                [markup("ZONE: {0} AVAILABILE VM SLOTS:".format(zone.name),
+                        markups=[1, 4, 33]).ljust(110)])
+            if not hasattr(zone, 'available_vm_slots'):
+                main_pt.add_row(['No zone info available, and/or available to this user'])
+            else:
+                info_pt = PrettyTable(info_headers)
+                info_pt.align = "l"
+                for vmtype, info_dict in zone.available_vm_slots.iteritems():
+                    info_pt.add_row([vmtype,
+                                     "{0}/{1}".format(info_dict.get('free'),
+                                                      info_dict.get('max')),
+                                     info_dict.get('ram'),
+                                     info_dict.get('cpu'),
+                                     info_dict.get('disk'),
+                                     info_dict.get('order')])
+                main_pt.add_row(["{0}\n".format(info_pt.get_string(sortby=order_header,
+                                                                   fields=info_headers[:-1]))])
+        if not print_me:
+            return main_pt
+        else:
+            self.log.info("\n{0}\n".format(main_pt))
+
+
+
+
  
     @printinfo
     def get_instances(self,
@@ -5919,14 +6010,14 @@ disable_root: false"""
         snapshots, volumes, zones
         """
         current_artifacts = dict()
-        current_artifacts["addresses"] = self.get_all_addresses()
-        current_artifacts["images"] = self.get_all_images()
-        current_artifacts["instances"] = self.get_all_instances()
-        current_artifacts["key_pairs"] = self.get_all_key_pairs()
-        current_artifacts["security_groups"] = self.get_all_security_groups()
-        current_artifacts["snapshots"] = self.get_all_snapshots()
-        current_artifacts["volumes"] = self.get_all_volumes()
-        current_artifacts["zones"] = self.get_all_zones()
+        current_artifacts["addresses"] = self.connection.get_all_addresses()
+        current_artifacts["images"] = self.connection.get_all_images()
+        current_artifacts["instances"] = self.connection.get_all_instances()
+        current_artifacts["key_pairs"] = self.connection.get_all_key_pairs()
+        current_artifacts["security_groups"] = self.connection.get_all_security_groups()
+        current_artifacts["snapshots"] = self.connection.get_all_snapshots()
+        current_artifacts["volumes"] = self.connection.get_all_volumes()
+        current_artifacts["zones"] = self.connection.get_all_zones()
         if verbose:
             self.log.debug("Current resources in the system:\n{0}".format(current_artifacts))
         return current_artifacts
