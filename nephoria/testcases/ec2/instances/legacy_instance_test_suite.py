@@ -6,25 +6,23 @@
 #               found in the script under the "tests" list.
 
 import copy
-import os
 import re
-import random
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException
+from cloud_utils.net_utils import ping
 from cloud_utils.log_utils import red
-from nephoria.testcase_utils import WaitForResultException
+from nephoria.testcase_utils import WaitForResultException, wait_for_result
 from nephoria.aws.ec2.euinstance import EuInstance
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner
 from nephoria.usercontext import UserContext
 from nephoria.testcontroller import TestController
-import unittest
 
 from boto.ec2.group import Group
 from boto.ec2.image import Image
 
-class InstanceBasics(unittest.TestCase, CliTestRunner):
+class LegacyInstanceTestSuite(CliTestRunner):
 
     _CLI_DESCRIPTION = "Test the Eucalyptus EC2 instance store image functionality."
 
@@ -35,6 +33,14 @@ class InstanceBasics(unittest.TestCase, CliTestRunner):
         'kwargs': {'help': 'Time to wait for an instance to run',
                    'default': 600,
                    'type': int}}
+    _DEFAULT_CLI_ARGS['user_data'] = {
+        'args': ['--user-data'],
+        'kwargs': {'help': 'User Data to provide to instances run in this test',
+                   'default': None}}
+    _DEFAULT_CLI_ARGS['instance_user'] = {
+        'args': ['--instance-user'],
+        'kwargs': {'help': 'Login user to use for instances in this test',
+                   'default': 'root'}}
 
     def post_init(self, *args, **kwargs):
         self._is_multicluster = None
@@ -52,12 +58,28 @@ class InstanceBasics(unittest.TestCase, CliTestRunner):
         self.current_instances = None
         self.instances_lock = threading.Lock()
         self._managed_network = None
-        self.run_instance_params = {'image': self.emi,
-                                    'user_data': self.args.user_data,
-                                    'username': self.args.instance_user,
-                                    'keypair': self.keypair.name,
-                                    'group': self.group.name,
-                                    'timeout': self.args.instance_timeout}
+        self._run_instance_params = None
+
+    @property
+    def run_instance_params(self):
+        # Move params to property since items here may generate unnecessary
+        # requests to the cloud depending on the tests to be run.
+        if self._run_instance_params is None:
+            self._run_instance_params={'image': self.emi,
+                                       'user_data': self.args.user_data,
+                                       'username': self.args.instance_user,
+                                       'keypair': self.keypair.name,
+                                       'group': self.group.name,
+                                       'timeout': self.args.instance_timeout}
+        return  self._run_instance_params
+
+    @run_instance_params.setter
+    def run_instance_params(self, params):
+        params = params or {}
+        if not isinstance(params, dict):
+            raise ValueError('run_instance_params must be of type dict, got:"{0}/{1}"'
+                             .format(params, type(params)))
+        self._run_instance_params = params
 
     @property
     def managed_network(self):
@@ -107,7 +129,7 @@ class InstanceBasics(unittest.TestCase, CliTestRunner):
     def group(self):
         group = getattr(self, '_group', None)
         if not group:
-            group_name = self.args.group or "{0}_group".format(self.__class__.__name__)
+            group_name = "{0}_group".format(self.__class__.__name__)
             group = self.user.ec2.add_group(group_name)
             self.user.ec2.authorize_group(group, port=22, protocol='tcp')
             self.user.ec2.authorize_group(group,  protocol='icmp', port=-1)
@@ -188,10 +210,58 @@ class InstanceBasics(unittest.TestCase, CliTestRunner):
         self.current_instances = instances
         self.instances_lock.release()
 
+    def assertTrue(self, expr, msg=None):
+        """Check that the expression is true."""
+        if not expr:
+            msg = msg or (str(expr) + " is not true")
+            raise ValueError(msg)
+
+    def assertFalse(self, expr, msg):
+        if expr:
+            msg = msg or (str(expr) + " is not false")
+            raise ValueError(msg)
+
     def clean_method(self):
-        self.user.ec2.terminate_instances(self.instances)
-        self.user.ec2.delete_volumes(self.volumes)
-        self.user.ec2.delete_keypair(self.keypair)
+        errors = []
+        try:
+            if self.instances:
+                self.user.ec2.terminate_instances(self.instances)
+        except Exception as E:
+            errors.append(E)
+        try:
+            if self.volumes:
+                self.user.ec2.delete_volumes(self.volumes)
+        except Exception as E:
+            errors.append(E)
+        try:
+            if self._keypair:
+                self.user.ec2.delete_keypair(self.keypair)
+        except Exception as E:
+            errors.append(E)
+        try:
+            if self._group:
+                self.user.ec2.delete_group(self.group)
+        except Exception as E:
+            errors.append(E)
+        if errors:
+            buf = "The following errors occurred during test cleanup:"
+            for error in errors:
+                buf += "\n{0}".format(error)
+            raise RuntimeError(buf)
+
+
+    def merge_dicts(self, d1, d2):
+        new_d = d1.copy()
+        new_d.update(d2)
+        return new_d
+
+    def run_image(self, **additional_kwargs):
+        instances = []
+        instance_params = self.merge_dicts(self.run_instance_params, additional_kwargs)
+        for zone in self.zonelist:
+            instance_params['zone'] = zone
+            instances += self.user.ec2.run_image(**instance_params)
+        return instances
 
     def test1_BasicInstanceChecks(self):
         """
@@ -231,75 +301,107 @@ class InstanceBasics(unittest.TestCase, CliTestRunner):
         self.set_instances(instances)
         return instances
 
-    def ElasticIps(self):
+    def test2_DNSResolveCheck(self):
         """
-       This case was developed to test elastic IPs in Eucalyptus. This test case does
-       not test instances that are launched using private-addressing option.
-       The test case executes the following tests:
-           - allocates an IP, associates the IP to the instance, then pings the instance.
-           - disassociates the allocated IP, then pings the instance.
-           - releases the allocated IP address
-       If any of the tests fail, the test case will error out, logging the results.
+        This case was developed to test DNS resolution information for public/private DNS
+        names and IP addresses.  The tested DNS resolution behavior is expected to follow
+
+        AWS EC2.  The following tests are ran using the associated meta-data attributes:
+           - check to see if Eucalyptus Dynamic DNS is configured
+           - nslookup on hostname; checks to see if it matches local-ipv4
+           - nslookup on local-hostname; check to see if it matches local-ipv4
+           - nslookup on local-ipv4; check to see if it matches local-hostname
+           - nslookup on public-hostname; check to see if it matches local-ipv4
+           - nslookup on public-ipv4; check to see if it matches public-host
+        If any of these tests fail, the test case will error out; logging the results.
         """
         if not self.current_instances:
-            instances = self.run_image(**self.run_instance_params)
+            instances = self.run_image()
         else:
             instances = self.current_instances
 
-        for instance in instances:
-            if instance.ip_address == instance.private_ip_address:
-                self.log.warning("WARNING: System or Static mode detected, skipping ElasticIps")
-                return instances
-            domain = None
-            if instance.vpc_id:
-                domain = 'vpc' # Set domain to 'vpc' for use with instance in a VPC
-            self.address = self.user.ec2.allocate_address(domain=domain)
-            self.assertTrue(self.address, 'Unable to allocate address')
-            self.user.ec2.associate_address(instance, self.address)
-            instance.update()
-            self.assertTrue(self.user.ec2.ping(instance.ip_address),
-                            "Could not ping instance with new IP")
-            self.user.ec2.disassociate_address_from_instance(instance)
-            self.user.ec2.release_address(self.address)
-            self.address = None
-            assert isinstance(instance, EuInstance)
-            self.user.ec2.sleep(5)
-            instance.update()
-            self.assertTrue(self.user.ec2.ping(instance.ip_address),
-                            "Could not ping after dissassociate")
+        def install_bind_utils_on_instance(instance):
+            try:
+                instance.sys('which nslookup', code=0)
+                return
+            except CommandExitCodeException:
+                pass
+            instance.package_manager.install('bind-utils')
+
+        def validate_instance_dns(self):
+            try:
+                for instance in instances:
+                    if not re.search("internal", instance.private_dns_name):
+                        self.user.ec2.debug("Did not find instance DNS enabled, skipping test")
+                        self.set_instances(instances)
+                        return instances
+                    self.log.debug('\n'
+                               '# Test to see if Dynamic DNS has been configured \n'
+                               '# Per AWS standard, resolution should have private hostname or '
+                               'private IP as a valid response\n'
+                               '# Perform DNS resolution against public IP and public DNS name\n'
+                               '# Perform DNS resolution against private IP and private DNS name\n'
+                               '# Check to see if nslookup was able to resolve\n')
+                    assert isinstance(instance, EuInstance)
+                    install_bind_utils_on_instance(instance)
+                    self.log.debug('Check nslookup to resolve public DNS Name to local-ipv4 address')
+                    self.assertTrue(
+                        instance.found("nslookup " + instance.public_dns_name,
+                                       instance.private_ip_address),
+                        "Incorrect DNS resolution for hostname.")
+                    self.log.debug('Check nslookup to resolve public-ipv4 '
+                                   'address to public DNS name')
+                    if self.managed_network:
+                        self.assertTrue(instance.found("nslookup " + instance.ip_address,
+                                                       instance.public_dns_name),
+                                        "Incorrect DNS resolution for public IP address")
+                    self.log.debug('Check nslookup to resolve private DNS Name to local-ipv4 address')
+                    if self.managed_network:
+                        self.assertTrue(instance.found("nslookup " + instance.private_dns_name,
+                                                       instance.private_ip_address),
+                                        "Incorrect DNS resolution for private hostname.")
+                    self.log.debug('Check nslookup to resolve local-ipv4 address to private DNS name')
+                    self.assertTrue(instance.found("nslookup " + instance.private_ip_address,
+                                                   instance.private_dns_name),
+                                    "Incorrect DNS resolution for private IP address")
+                    self.log.debug('Attempt to ping instance public_dns_name')
+                    self.assertTrue(ping(instance.public_dns_name))
+                    return True
+            except Exception, e:
+                return False
+        self.user.ec2.wait_for_result(validate_instance_dns, True, timeout=120)
         self.set_instances(instances)
         return instances
 
-    def MultipleInstances(self):
+    def test3_Reboot(self):
         """
-        This case was developed to test the maximum number of m1.small vm types a configured
-        cloud can run.  The test runs the maximum number of m1.small vm types allowed, then
-        tests to see if all the instances reached a running state.  If there is a failure,
-        the test case errors out; logging the results.
+        This case was developed to test IP connectivity and volume attachment after
+        instance reboot.  The following tests are done for this test case:
+                   - creates a 1 gig EBS volume, then attach volume
+                   - reboot instance
+                   - attempts to connect to instance via ssh
+                   - checks to see if EBS volume is attached
+                   - detaches volume
+                   - deletes volume
+        If any of these tests fail, the test case will error out; logging the results.
         """
-        if self.current_instances:
-            self.user.ec2.terminate_instances(self.current_instances)
-            self.set_instances(None)
-
-        instances = self.run_image(min=2, max=2, **self.run_instance_params)
+        if not self.current_instances:
+            instances = self.run_image()
+        else:
+            instances = self.current_instances
+        for instance in instances.instances:
+            ### Create 1GB volume in first AZ
+            volume = self.user.ec2.create_volume(instance.placement, size=1, timepergig=180)
+            self.volumes.append(volume)
+            instance.attach_volume(volume)
+            ### Reboot instance
+            instance.reboot_instance_and_verify(waitconnect=20)
+            instance.detach_euvolume(volume)
+            self.user.ec2.delete_volume(volume)
         self.set_instances(instances)
         return instances
 
-    def LargestInstance(self):
-        """
-        This case was developed to test the maximum number of c1.xlarge vm types a configured
-        cloud can run.  The test runs the maximum number of c1.xlarge vm types allowed, then
-        tests to see if all the instances reached a running state.  If there is a failure,
-        the test case errors out; logging the results.
-        """
-        if self.current_instances:
-            self.user.ec2.terminate_instances(self.current_instances)
-            self.set_instances(None)
-        instances = self.run_image(type="c1.xlarge", **self.run_instance_params)
-        self.set_instances(instances)
-        return instances
-
-    def MetaData(self):
+    def test4_MetaData(self):
         """
         This case was developed to test the metadata service of an instance for consistency.
         The following meta-data attributes are tested:
@@ -378,119 +480,131 @@ class InstanceBasics(unittest.TestCase, CliTestRunner):
         self.set_instances(instances)
         return instances
 
-    def merge_dicts(self, d1, d2):
-        new_d = d1.copy()
-        new_d.update(d2)
-        return new_d
-
-    def run_image(self, **additional_kwargs):
-        instances = []
-        instance_params = self.merge_dicts(self.run_instance_params, additional_kwargs)
-        for zone in self.zonelist:
-            instances += self.run_image(zone=zone, **instance_params)
-        return instances
-
-    def DNSResolveCheck(self):
+    def test5_ElasticIps(self):
         """
-        This case was developed to test DNS resolution information for public/private DNS
-        names and IP addresses.  The tested DNS resolution behavior is expected to follow
-
-        AWS EC2.  The following tests are ran using the associated meta-data attributes:
-           - check to see if Eucalyptus Dynamic DNS is configured
-           - nslookup on hostname; checks to see if it matches local-ipv4
-           - nslookup on local-hostname; check to see if it matches local-ipv4
-           - nslookup on local-ipv4; check to see if it matches local-hostname
-           - nslookup on public-hostname; check to see if it matches local-ipv4
-           - nslookup on public-ipv4; check to see if it matches public-host
-        If any of these tests fail, the test case will error out; logging the results.
+       This case was developed to test elastic IPs in Eucalyptus. This test case does
+       not test instances that are launched using private-addressing option.
+       The test case executes the following tests:
+           - allocates an IP, associates the IP to the instance, then pings the instance.
+           - disassociates the allocated IP, then pings the instance.
+           - releases the allocated IP address
+       If any of the tests fail, the test case will error out, logging the results.
         """
         if not self.current_instances:
-            instances = self.run_image()
+            instances = self.run_image(**self.run_instance_params)
         else:
             instances = self.current_instances
 
-        def install_bind_utils_on_instance(instance):
-            try:
-                instance.sys('which nslookup', code=0)
-                return
-            except CommandExitCodeException:
-                pass
-            instance.package_manager.install('bind-utils')
-
-        def validate_instance_dns(self):
-            try:
-                for instance in instances:
-                    if not re.search("internal", instance.private_dns_name):
-                        self.user.ec2.debug("Did not find instance DNS enabled, skipping test")
-                        self.set_instances(instances)
-                        return instances
-                    self.log.debug('\n'
-                               '# Test to see if Dynamic DNS has been configured \n'
-                               '# Per AWS standard, resolution should have private hostname or '
-                               'private IP as a valid response\n'
-                               '# Perform DNS resolution against public IP and public DNS name\n'
-                               '# Perform DNS resolution against private IP and private DNS name\n'
-                               '# Check to see if nslookup was able to resolve\n')
-                    assert isinstance(instance, EuInstance)
-                    install_bind_utils_on_instance(instance)
-                    self.log.debug('Check nslookup to resolve public DNS Name to local-ipv4 address')
-                    self.assertTrue(
-                        instance.found("nslookup " + instance.public_dns_name,
-                                       instance.private_ip_address),
-                        "Incorrect DNS resolution for hostname.")
-                    self.log.debug('Check nslookup to resolve public-ipv4 '
-                                   'address to public DNS name')
-                    if self.managed_network:
-                        self.assertTrue(instance.found("nslookup " + instance.ip_address,
-                                                       instance.public_dns_name),
-                                        "Incorrect DNS resolution for public IP address")
-                    self.log.debug('Check nslookup to resolve private DNS Name to local-ipv4 address')
-                    if self.managed_network:
-                        self.assertTrue(instance.found("nslookup " + instance.private_dns_name,
-                                                       instance.private_ip_address),
-                                        "Incorrect DNS resolution for private hostname.")
-                    self.log.debug('Check nslookup to resolve local-ipv4 address to private DNS name')
-                    self.assertTrue(instance.found("nslookup " + instance.private_ip_address,
-                                                   instance.private_dns_name),
-                                    "Incorrect DNS resolution for private IP address")
-                    self.log.debug('Attempt to ping instance public_dns_name')
-                    self.assertTrue(self.user.ec2.ping(instance.public_dns_name))
-                    return True
-            except Exception, e:
-                return False
-        self.user.ec2.wait_for_result(validate_instance_dns, True, timeout=120)
+        for instance in instances:
+            if instance.ip_address == instance.private_ip_address:
+                self.log.warning("WARNING: System or Static mode detected, skipping ElasticIps")
+                return instances
+            domain = None
+            if instance.vpc_id:
+                domain = 'vpc' # Set domain to 'vpc' for use with instance in a VPC
+            self.address = self.user.ec2.allocate_address(domain=domain)
+            self.assertTrue(self.address, 'Unable to allocate address')
+            self.user.ec2.associate_address(instance, self.address)
+            instance.update()
+            self.assertTrue(self.user.ec2.pingself.user.ec2.ping(instance.ip_address),
+                            "Could not ping instance with new IP")
+            self.user.ec2.disassociate_address_from_instance(instance)
+            self.user.ec2.release_address(self.address)
+            self.address = None
+            assert isinstance(instance, EuInstance)
+            self.user.ec2.sleep(5)
+            instance.update()
+            self.assertTrue(self.user.ec2.ping(instance.ip_address),
+                            "Could not ping after dissassociate")
         self.set_instances(instances)
         return instances
 
-    def Reboot(self):
+    def test6_MultipleInstances(self):
         """
-        This case was developed to test IP connectivity and volume attachment after
-        instance reboot.  The following tests are done for this test case:
-                   - creates a 1 gig EBS volume, then attach volume
-                   - reboot instance
-                   - attempts to connect to instance via ssh
-                   - checks to see if EBS volume is attached
-                   - detaches volume
-                   - deletes volume
+        This case was developed to test the maximum number of m1.small vm types a configured
+        cloud can run.  The test runs the maximum number of m1.small vm types allowed, then
+        tests to see if all the instances reached a running state.  If there is a failure,
+        the test case errors out; logging the results.
+        """
+        if self.current_instances:
+            self.user.ec2.terminate_instances(self.current_instances)
+            self.set_instances(None)
+
+        instances = self.run_image(min=2, max=2, **self.run_instance_params)
+        self.set_instances(instances)
+        return instances
+
+
+    def test7_LargestInstance(self):
+        """
+        This case was developed to test the maximum number of c1.xlarge vm types a configured
+        cloud can run.  The test runs the maximum number of c1.xlarge vm types allowed, then
+        tests to see if all the instances reached a running state.  If there is a failure,
+        the test case errors out; logging the results.
+        """
+        if self.current_instances:
+            self.user.ec2.terminate_instances(self.current_instances)
+            self.set_instances(None)
+        instances = self.run_image(type="c1.xlarge", **self.run_instance_params)
+        self.set_instances(instances)
+        return instances
+
+    def test8_PrivateIPAddressing(self):
+        """
+        This case was developed to test instances that are launched with private-addressing
+        set to True.  The tests executed are as follows:
+            - run an instance with private-addressing set to True
+            - allocate/associate/disassociate/release an Elastic IP to that instance
+            - check to see if the instance went back to private addressing
         If any of these tests fail, the test case will error out; logging the results.
         """
-        if not self.current_instances:
-            instances = self.run_image()
-        else:
-            instances = self.current_instances
+        if self.current_instances:
+            for instance in self.current_instances:
+                if instance.ip_address == instance.private_ip_address:
+                    self.user.ec2.debug("WARNING: System or Static mode detected, skipping "
+                                      "PrivateIPAddressing")
+                    return self.current_instances
+            self.user.ec2.terminate_instances(self.current_instances)
+            self.set_instances(None)
+        instances = self.run_image(private_addressing=True,
+                                            auto_connect=False,
+                                            **self.run_instance_params)
         for instance in instances.instances:
-            ### Create 1GB volume in first AZ
-            volume = self.user.ec2.create_volume(instance.placement, size=1, timepergig=180)
-            self.volumes.append(volume)
-            instance.attach_volume(volume)
-            ### Reboot instance
-            instance.reboot_instance_and_verify(waitconnect=20)
-            instance.detach_euvolume(volume)
-            self.user.ec2.delete_volume(volume)
+            address = self.user.ec2.allocate_address()
+            self.assertTrue(address, 'Unable to allocate address')
+            self.user.ec2.associate_address(instance, address)
+            self.user.ec2.sleep(30)
+            instance.update()
+            self.log.debug('Attempting to ping associated IP:"{0}"'.format(address.public_ip))
+            self.assertTrue(self.user.ec2.ping(instance.ip_address),
+                            "Could not ping instance with new IP")
+            self.log.debug('Disassociating address:{0} from instance:{1}'.format(address.public_ip,
+                                                                             instance.id))
+            address.disassociate()
+            self.user.ec2.sleep(30)
+            instance.update()
+            self.log.debug('Confirming disassociated IP:"{0}" is no longer in use'
+                       .format(address.public_ip))
+            def wait_for_ping():
+                return ping(address.public_ip, poll_count=1)
+            try:
+                wait_for_result(callback=wait_for_ping, result=False)
+            except WaitForResultException as WE:
+                self.log.error("Was able to ping address:'{0}' that should no long be associated "
+                               "with an instance".format(address.public_ip))
+                raise WE
+            address.release()
+            if instance.ip_address:
+                if (instance.ip_address != "0.0.0.0" and
+                            instance.ip_address != instance.private_ip_address):
+                    raise RuntimeError("Instance:'{0}' received a new public IP:'{0}' "
+                                       "after disassociate"
+                                       .format(instance.id, instance.ip_address))
+        self.user.ec2.terminate_instances(instances)
         self.set_instances(instances)
         return instances
 
-    def Churn(self):
+    def test9_Churn(self):
         """
         This case was developed to test robustness of Eucalyptus by starting instances,
         stopping them before they are running, and increase the time to terminate on each
@@ -537,61 +651,6 @@ class InstanceBasics(unittest.TestCase, CliTestRunner):
                 return True
         self.user.ec2.wait_for_result(available_after_greater, result=True, timeout=360)
 
-    def PrivateIPAddressing(self):
-        """
-        This case was developed to test instances that are launched with private-addressing
-        set to True.  The tests executed are as follows:
-            - run an instance with private-addressing set to True
-            - allocate/associate/disassociate/release an Elastic IP to that instance
-            - check to see if the instance went back to private addressing
-        If any of these tests fail, the test case will error out; logging the results.
-        """
-        if self.current_instances:
-            for instance in self.current_instances.instances:
-                if instance.ip_address == instance.private_ip_address:
-                    self.user.ec2.debug("WARNING: System or Static mode detected, skipping "
-                                      "PrivateIPAddressing")
-                    return self.current_instances
-            self.user.ec2.terminate_instances(self.current_instances)
-            self.set_instances(None)
-        instances = self.run_image(private_addressing=True,
-                                            auto_connect=False,
-                                            **self.run_instance_params)
-        for instance in instances.instances:
-            address = self.user.ec2.allocate_address()
-            self.assertTrue(address, 'Unable to allocate address')
-            self.user.ec2.associate_address(instance, address)
-            self.user.ec2.sleep(30)
-            instance.update()
-            self.log.debug('Attempting to ping associated IP:"{0}"'.format(address.public_ip))
-            self.assertTrue(self.user.ec2.ping(instance.ip_address),
-                            "Could not ping instance with new IP")
-            self.log.debug('Disassociating address:{0} from instance:{1}'.format(address.public_ip,
-                                                                             instance.id))
-            address.disassociate()
-            self.user.ec2.sleep(30)
-            instance.update()
-            self.log.debug('Confirming disassociated IP:"{0}" is no longer in use'
-                       .format(address.public_ip))
-            def wait_for_ping():
-                return self.user.ec2.ping(address.public_ip, poll_count=1)
-            try:
-                self.user.ec2.wait_for_result(callback=wait_for_ping, result=False)
-            except WaitForResultException as WE:
-                self.log.error("Was able to ping address:'{0}' that should no long be associated "
-                               "with an instance".format(address.public_ip))
-                raise WE
-            address.release()
-            if instance.ip_address:
-                if (instance.ip_address != "0.0.0.0" and
-                            instance.ip_address != instance.private_ip_address):
-                    raise RuntimeError("Instance:'{0}' received a new public IP:'{0}' "
-                                       "after disassociate"
-                                       .format(instance.id, instance.ip_address))
-        self.user.ec2.terminate_instances(instances)
-        self.set_instances(instances)
-        return instances
-
     def ReuseAddresses(self):
         """
         This case was developed to test when you run instances in a series, and make sure
@@ -615,11 +674,16 @@ class InstanceBasics(unittest.TestCase, CliTestRunner):
             self.user.ec2.terminate_instances(instances)
 
     def BundleInstance(self):
+        """
+        Bundle a running instance(s).
+        Register new image, run the image and verify.
+
+        """
         if not self.current_instances:
             self.current_instances = self.run_image()
         original_image = self.run_instance_params['image']
-        for instance in self.current_instances.instances:
-            current_time = str(int(time.time()))
+        for instance in self.current_instances:
+        get_available_vms    current_time = str(int(time.time()))
             temp_file = "/root/my-new-file-" + current_time
             instance.sys("touch " + temp_file)
             self.user.ec2.sleep(60)
@@ -637,15 +701,6 @@ class InstanceBasics(unittest.TestCase, CliTestRunner):
         self.run_instance_params['image'] = original_image
 
 if __name__ == "__main__":
-    testcase =InstanceBasics()
-    ### Either use the list of tests passed from config/command line to determine what subset of tests to run
-    test_list = testcase.args.tests or ["BasicInstanceChecks", "DNSResolveCheck", "Reboot", "MetaData", "ElasticIps",
-                                        "MultipleInstances", "LargestInstance", "PrivateIPAddressing", "Churn"]
-    ### Convert test suite methods to EutesterUnitTest objects
-    unit_list = []
-    for test in test_list:
-        test = getattr(instancetestsuite, test)
-        unit_list.append(testcase.create_testunit_from_method(test))
-    testcase.clean_method = instancetestsuite.clean_method
-    result = testcase.run_test_case_list(unit_list)
+    test = LegacyInstanceTestSuite()
+    result = test.run()
     exit(result)

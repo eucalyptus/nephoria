@@ -4125,7 +4125,7 @@ disable_root: false"""
             self.log.debug(output.output)
         return output
 
-    def get_zones(self):
+    def get_zone_names(self):
         """
         Return a list of availability zone names.
 
@@ -4136,6 +4136,95 @@ disable_root: false"""
         for zone in zone_objects:
             zone_names.append(zone.name)
         return zone_names
+
+
+    def get_zones(self, zone_name=None):
+        zones = self.connection.get_all_zones(zones=zone_name)
+        if not zones:
+            return zones
+        zone_names = ['verbose']
+        if zone_name:
+            zone_names.append(zone_name)
+        verbose_zones = self.connection.get_all_zones(zones=zone_names)
+        if len(zones) >= verbose_zones:
+            self.log.warning('Failed to fetch zones with verbose option, '
+                             'non-eucalyptus administrative account users may not be authorized '
+                             'for this request. No vm slot availability info will be provided')
+            return zones
+        # the user had verbose zone information, parse it and add it to the zones.
+        ret_list = []
+        current_zone = None
+        headers = []
+        for zone in verbose_zones:
+            z_name = str(zone.name)
+            if not str(z_name).startswith("|-"):
+                if current_zone:
+                    ret_list.append(current_zone)
+                current_zone = zone
+                setattr(current_zone, 'available_vm_slots', {})
+                order = 0
+                continue
+            elif current_zone:
+                z_name = z_name.lstrip('|-').strip()
+                if re.search('vm types', z_name):
+                    # this is a header
+                    headers = str(zone.state).replace("/", "").split()
+                else:
+                    # this is a vm_type
+                    vm_dict = {'order': order}
+                    info = str(zone.state).replace("/", "").split()
+                    for x in xrange(0, len(info)):
+                        vm_dict[headers[x]] = int(info[x])
+                    current_zone.available_vm_slots[z_name] = vm_dict
+                    order += 1
+        if current_zone:
+            ret_list.append(current_zone)
+        return ret_list
+
+    def show_zone_availability(self, zone_name=None, print_me=True):
+        zones = self.get_zones(zone_name=zone_name)
+        main_pt = PrettyTable(['HEADER'])
+        main_pt.max_width = 120
+        main_pt.align = 'l'
+        main_pt.header = False
+        main_pt.border = False
+        order_header = str('#').ljust(3)
+        if not zones:
+            main_pt.add_row(['No zones to show using zone_name:' + str(zone_name)])
+        for zone in zones:
+            main_pt.add_row(
+                [markup("ZONE: {0} AVAILABILE VM SLOTS:".format(zone.name),
+                        markups=[1, 4, 33]).ljust(110)])
+            if not hasattr(zone, 'available_vm_slots'):
+                main_pt.add_row(['No zone info available, and/or available to this user'])
+            else:
+                headers = []
+                info_pt = None
+                for vmtype, info_dict in zone.available_vm_slots.iteritems():
+                    values = []
+                    values.append(vmtype)
+                    if not headers:
+                        headers = ['vmtype'.ljust(16)]
+                        for header in info_dict.keys():
+                            if header == "order":
+                                headers.append(order_header)
+                            else:
+                                headers.append(str(header).ljust(8))
+                        info_pt = PrettyTable(headers)
+                        info_pt.align = "l"
+                    for header, value in info_dict.iteritems():
+                        values.append(value)
+                    info_pt.add_row(values)
+                main_pt.add_row(["{0}\n".format(info_pt.get_string(sortby=order_header,
+                                                                   fields=headers[:-1]))])
+        if not print_me:
+            return main_pt
+        else:
+            self.log.info("\n{0}\n".format(main_pt))
+
+
+
+
  
     @printinfo
     def get_instances(self,

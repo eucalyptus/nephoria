@@ -218,7 +218,7 @@ class NetTestsClassic(CliTestRunner):
                 zones = str(self.args.zone).replace(',',' ')
                 zones = zones.split()
             else:
-                zones = self.user.ec2.get_zones()
+                zones = self.user.ec2.get_zone_names()
             if not zones:
                 raise RuntimeError('No zones found to run this test?')
             self.log.debug('Running test against zones:' + ",".join(zones))
