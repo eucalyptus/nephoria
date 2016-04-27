@@ -4,6 +4,38 @@
 
 # todo This test is in development and may not be working as of 4/27/16
 
+"""
+Original approach was to do a test matrix generator. The current method has the intention of
+supporting the following parameters in a test. Each parameter has a dictionary which defines the
+set of possible values for that parameter. The most basic subset of values will end up being
+several hundred test points.
+
+def packet_test_scenario(self, zone1, zone2, sec_group1, sec_group_2, vpc1, vpc2, subnet1,
+subnet2, use_private, protocol, pkt_count=5, retries=2, verbose=None):
+
+Some examples of defined parameter ranges to be iterator over so all combinations
+can be fed to the test generator. (This is just a small subnet):
+
+addressing = {'public': True, 'private': True, 'eip': True}
+vpc1 = self.default_vpc
+vpc2 = self.get_test_vpcs(count=1)[0]
+protocols = {'ICMP': {'protocol': ICMP, 'count': pkt_count},
+             'TCP': {'protocol': TCP, 'count': pkt_count, 'bind': True},
+             'UDP': {'protocol': UDP, 'count': pkt_count},
+             'SCTP': {'protocol': SCTP, 'count': pkt_count, 'bind': True}}
+vpc1_sec_group1, vpc1_sec_group2 = self.get_test_security_groups(vpc=vpc1, count=2, rules=[])
+vpc2_sec_group1, vpc2_sec_group2 = self.get_test_security_groups(vpc=vpc2, count=2, rules=[]
+Zones = self.user.ec2.get_zone_names()
+Vmtypes = ['c1.medium']
+subnet1 = self.default_subnet
+subnet2 = get_test_subnets(count=1)[0]
+eni_count =??
+eni_network = ??
+ingress/egress options for protocols = ['allow_per_protocol', 'allow_per_group', 'deny_per_proto',
+                                        'deny_per_port', 'deny_per_group']
+
+"""
+
 from nephoria.testcontroller import TestController
 from nephoria.usercontext import UserContext
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner
