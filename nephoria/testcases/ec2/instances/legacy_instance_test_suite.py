@@ -249,7 +249,8 @@ class LegacyInstanceTestSuite(CliTestRunner):
                     volume.update()
                     if volume.status != 'deleted':
                         delete.append(volume)
-                self.user.ec2.delete_volumes(delete)
+                if delete:
+                    self.user.ec2.delete_volumes(delete)
         except Exception as E:
             self.log.error(red(get_traceback()))
             errors.append(E)
