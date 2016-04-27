@@ -852,9 +852,9 @@ class EuInstance(Instance, TaggedResource, Machine):
         return self.ssh.cmd(cmd, verbose=verbose, timeout=timeout, listformat=listformat,
                             cb=cb, cbargs=cbargs, get_pty=get_pty)
 
-    def found(self, command, regex):
+    def found(self, command, regex, verbose=True):
         """ Returns a Boolean of whether the result of the command contains the regex"""
-        result = self.sys(command)
+        result = self.sys(command, verbose=verbose  )
         for line in result:
             found = re.search(regex, line)
             if found:

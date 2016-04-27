@@ -1183,7 +1183,7 @@ class CliTestRunner(object):
         buf = "STARTING TESTUNIT: {0}".format(test.name).ljust(self._term_width)
         argbuf = self.get_pretty_args(test)
         buf += str(test.description) + str(argbuf)
-        buf += 'Running list method: "{0}"'.format(self.format_testunit_method_arg_values(test))
+        buf += 'Running test method: "{0}"'.format(self.format_testunit_method_arg_values(test))
         pt.add_row([buf])
         startbuf += markup(pt, markups=[ForegroundColor.WHITE, BackGroundColor.BG_BLUE])
         if self.html_anchors:

@@ -2875,8 +2875,8 @@ disable_root: false"""
             instance.update()
             time.sleep(5)
             elapsed = int(time.time()-start)
-            address = self.get_all_addresses(addresses=[address.public_ip])[0]
-        address = self.get_all_addresses(address.public_ip)
+            address = self.connection.get_all_addresses(addresses=[address.public_ip])[0]
+        address = self.connection.get_all_addresses(address.public_ip)
         self.show_addresses(address)
         self.log.debug("Disassociated IP successfully")
 
@@ -4180,14 +4180,12 @@ disable_root: false"""
             ret_list.append(current_zone)
         return ret_list
 
-    def get_vmtype_availablity(self, vmtype, zone_name):
+    def get_available_vm_slots(self, vmtype, zone_name):
         zone = self.get_zones(zone_name=zone_name)[0]
         if not getattr(zone, 'available_vm_slots', None):
             raise EucaAdminRequired()
         vm_info = zone.available_vm_slots.get(vmtype)
-
-
-
+        return int(vm_info.get('free'))
 
     def show_zone_availability(self, zone_name=None, print_me=True):
         zones = self.get_zones(zone_name=zone_name)
@@ -6012,14 +6010,14 @@ disable_root: false"""
         snapshots, volumes, zones
         """
         current_artifacts = dict()
-        current_artifacts["addresses"] = self.get_all_addresses()
-        current_artifacts["images"] = self.get_all_images()
-        current_artifacts["instances"] = self.get_all_instances()
-        current_artifacts["key_pairs"] = self.get_all_key_pairs()
-        current_artifacts["security_groups"] = self.get_all_security_groups()
-        current_artifacts["snapshots"] = self.get_all_snapshots()
-        current_artifacts["volumes"] = self.get_all_volumes()
-        current_artifacts["zones"] = self.get_all_zones()
+        current_artifacts["addresses"] = self.connection.get_all_addresses()
+        current_artifacts["images"] = self.connection.get_all_images()
+        current_artifacts["instances"] = self.connection.get_all_instances()
+        current_artifacts["key_pairs"] = self.connection.get_all_key_pairs()
+        current_artifacts["security_groups"] = self.connection.get_all_security_groups()
+        current_artifacts["snapshots"] = self.connection.get_all_snapshots()
+        current_artifacts["volumes"] = self.connection.get_all_volumes()
+        current_artifacts["zones"] = self.connection.get_all_zones()
         if verbose:
             self.log.debug("Current resources in the system:\n{0}".format(current_artifacts))
         return current_artifacts

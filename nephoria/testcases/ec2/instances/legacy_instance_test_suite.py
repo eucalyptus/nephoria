@@ -12,12 +12,13 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 from cloud_utils.net_utils import ping
-from cloud_utils.log_utils import red
+from cloud_utils.log_utils import red, get_traceback
 from nephoria.testcase_utils import WaitForResultException, wait_for_result
 from nephoria.aws.ec2.euinstance import EuInstance
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner
 from nephoria.usercontext import UserContext
 from nephoria.testcontroller import TestController
+from nephoria.exceptions import EucaAdminRequired
 
 from boto.ec2.group import Group
 from boto.ec2.image import Image
@@ -70,7 +71,8 @@ class LegacyInstanceTestSuite(CliTestRunner):
                                        'username': self.args.instance_user,
                                        'keypair': self.keypair.name,
                                        'group': self.group.name,
-                                       'timeout': self.args.instance_timeout}
+                                       'timeout': self.args.instance_timeout,
+                                       'type': self.args.vmtype}
         return  self._run_instance_params
 
     @run_instance_params.setter
@@ -85,14 +87,18 @@ class LegacyInstanceTestSuite(CliTestRunner):
     def managed_network(self):
         # Check for legacy network modes; system, static. Default to managed, edge, vpc types
         if self._managed_network is None:
-            if self.tc:
-                mode_props = self.tc.sysadmin.get_properties('cluster.networkmode')
-                if mode_props:
-                    mode = mode_props[0]
-                    if re.search("(SYSTEM|STATIC)", mode):
-                        self._managed_network = False
-                else:
-                    self.log.error('No network mode properties found for any clusters?')
+            try:
+                if self.tc:
+                    mode_props = self.tc.sysadmin.get_properties('cluster.networkmode')
+                    if mode_props:
+                        mode_prop = mode_props[0]
+                        if re.search("(SYSTEM|STATIC)", mode_prop.value()):
+                            self._managed_network = False
+                    else:
+                        self.log.error('No network mode properties found for any clusters?')
+            except Exception as E:
+                self.log.error('{0}\nError while attempting to fetch network mode:"{1}"'
+                               .format(get_traceback(), E))
             if self._managed_network is None:
                 self._managed_network = True
         return self._managed_network
@@ -100,7 +106,7 @@ class LegacyInstanceTestSuite(CliTestRunner):
     @property
     def tc(self):
         tc = getattr(self, '_tc', None)
-        if not tc:
+        if not tc and self.args.clc or self.args.environment_file:
             tc = TestController(hostname=self.args.clc,
                                 environment_file=self.args.environment_file,
                                 password=self.args.password,
@@ -189,7 +195,7 @@ class LegacyInstanceTestSuite(CliTestRunner):
                 self._zonelist.append(self.args.zone)
                 self.multicluster = False
             else:
-                for zone in self.tc.sysadmin.get_all_cluster_names():
+                for zone in self.user.ec2.get_zone_names():
                     self._zonelist.append(zone)
             if not self._zonelist:
                 raise RuntimeError("Could not discover an availability zone to "
@@ -227,21 +233,30 @@ class LegacyInstanceTestSuite(CliTestRunner):
             if self.instances:
                 self.user.ec2.terminate_instances(self.instances)
         except Exception as E:
+            self.log.error(red(get_traceback()))
             errors.append(E)
         try:
             if self.volumes:
-                self.user.ec2.delete_volumes(self.volumes)
+                delete = []
+                for volume in self.volumes:
+                    volume.update()
+                    if volume.state != 'deleted':
+                        delete.append(volume)
+                self.user.ec2.delete_volumes(delete)
         except Exception as E:
+            self.log.error(red(get_traceback()))
             errors.append(E)
         try:
             if self._keypair:
                 self.user.ec2.delete_keypair(self.keypair)
         except Exception as E:
+            self.log.error(red(get_traceback()))
             errors.append(E)
         try:
             if self._group:
                 self.user.ec2.delete_group(self.group)
         except Exception as E:
+            self.log.error(red(get_traceback()))
             errors.append(E)
         if errors:
             buf = "The following errors occurred during test cleanup:"
@@ -255,15 +270,20 @@ class LegacyInstanceTestSuite(CliTestRunner):
         new_d.update(d2)
         return new_d
 
-    def run_image(self, **additional_kwargs):
+    def run_image(self, zones=None, **additional_kwargs):
         instances = []
         instance_params = self.merge_dicts(self.run_instance_params, additional_kwargs)
-        for zone in self.zonelist:
+        zones = zones or self.zonelist
+        if not isinstance(zones, list):
+            zones = [zones]
+        for zone in zones:
             instance_params['zone'] = zone
             instances += self.user.ec2.run_image(**instance_params)
+            with self.instances_lock:
+                self.instances += instances
         return instances
 
-    def test1_BasicInstanceChecks(self):
+    def test1_BasicInstanceChecks(self, zone=None):
         """
         This case was developed to run through a series of basic instance tests.
              The tests are as follows:
@@ -275,7 +295,7 @@ class LegacyInstanceTestSuite(CliTestRunner):
                        (ssh into instance and run basic ls command)
              If any of these tests fail, the test case will error out, logging the results.
         """
-        instances = self.run_image(**self.run_instance_params)
+        instances = self.run_image(zone=zone, **self.run_instance_params)
         self.instances += instances
         for instance in instances:
             if self.emi.virtualization_type == "paravirtual":
@@ -328,7 +348,7 @@ class LegacyInstanceTestSuite(CliTestRunner):
                 pass
             instance.package_manager.install('bind-utils')
 
-        def validate_instance_dns(self):
+        def validate_instance_dns(self=self):
             try:
                 for instance in instances:
                     if not re.search("internal", instance.private_dns_name):
@@ -368,8 +388,9 @@ class LegacyInstanceTestSuite(CliTestRunner):
                     self.assertTrue(ping(instance.public_dns_name))
                     return True
             except Exception, e:
+                self.log.error('{0}\nValidate_instance_dns error:"{1}"'.format(get_traceback(), e))
                 return False
-        self.user.ec2.wait_for_result(validate_instance_dns, True, timeout=120)
+        wait_for_result(validate_instance_dns, True, timeout=120, )
         self.set_instances(instances)
         return instances
 
@@ -389,7 +410,7 @@ class LegacyInstanceTestSuite(CliTestRunner):
             instances = self.run_image()
         else:
             instances = self.current_instances
-        for instance in instances.instances:
+        for instance in instances:
             ### Create 1GB volume in first AZ
             volume = self.user.ec2.create_volume(instance.placement, size=1, timepergig=180)
             self.volumes.append(volume)
@@ -451,8 +472,9 @@ class LegacyInstanceTestSuite(CliTestRunner):
             self.assertTrue(re.match(instance.get_metadata("ami-launch-index")[0],
                                      instance.ami_launch_index),
                             'Incorrect launch index in metadata')
-            self.assertTrue(re.match(instance.get_metadata("instances-id")[0],
-                                     instance.reservation.id), 'Incorrect reservation in metadata')
+            self.assertTrue(re.match(instance.get_metadata("reservation-id")[0],
+                                     instance.reservation.id),
+                            'Incorrect reservation-id in metadata')
             self.assertTrue(re.match(
                 instance.get_metadata("placement/availability-zone")[0],  instance.placement),
                 'Incorrect availability-zone in metadata')
@@ -506,15 +528,14 @@ class LegacyInstanceTestSuite(CliTestRunner):
             self.assertTrue(self.address, 'Unable to allocate address')
             self.user.ec2.associate_address(instance, self.address)
             instance.update()
-            self.assertTrue(self.user.ec2.pingself.user.ec2.ping(instance.ip_address),
-                            "Could not ping instance with new IP")
+            self.assertTrue(ping(instance.ip_address),"Could not ping instance with new IP")
             self.user.ec2.disassociate_address_from_instance(instance)
             self.user.ec2.release_address(self.address)
             self.address = None
             assert isinstance(instance, EuInstance)
-            self.user.ec2.sleep(5)
+            time.sleep(5)
             instance.update()
-            self.assertTrue(self.user.ec2.ping(instance.ip_address),
+            self.assertTrue(ping(instance.ip_address),
                             "Could not ping after dissassociate")
         self.set_instances(instances)
         return instances
@@ -545,7 +566,9 @@ class LegacyInstanceTestSuite(CliTestRunner):
         if self.current_instances:
             self.user.ec2.terminate_instances(self.current_instances)
             self.set_instances(None)
-        instances = self.run_image(type="c1.xlarge", **self.run_instance_params)
+        params = copy.copy(self.run_instance_params)
+        params['type'] = 'c1.xlarge'
+        instances = self.run_image(**params)
         self.set_instances(instances)
         return instances
 
@@ -569,19 +592,21 @@ class LegacyInstanceTestSuite(CliTestRunner):
         instances = self.run_image(private_addressing=True,
                                             auto_connect=False,
                                             **self.run_instance_params)
-        for instance in instances.instances:
+        for instance in instances:
             address = self.user.ec2.allocate_address()
             self.assertTrue(address, 'Unable to allocate address')
             self.user.ec2.associate_address(instance, address)
-            self.user.ec2.sleep(30)
+            self.log.info('Sleeping for 30 seconds to allow for association')
+            time.sleep(30)
             instance.update()
             self.log.debug('Attempting to ping associated IP:"{0}"'.format(address.public_ip))
-            self.assertTrue(self.user.ec2.ping(instance.ip_address),
+            self.assertTrue(ping(instance.ip_address),
                             "Could not ping instance with new IP")
             self.log.debug('Disassociating address:{0} from instance:{1}'.format(address.public_ip,
                                                                              instance.id))
             address.disassociate()
-            self.user.ec2.sleep(30)
+            self.log.info('Sleeping for 30 seconds to allow for disassociation')
+            time.sleep(30)
             instance.update()
             self.log.debug('Confirming disassociated IP:"{0}" is no longer in use'
                        .format(address.public_ip))
@@ -619,13 +644,25 @@ class LegacyInstanceTestSuite(CliTestRunner):
             self.user.ec2.terminate_instances(self.current_instances)
             self.set_instances(None)
         try:
-            available_instances_before = self.user.ec2.get_available_vms(zone=self.zone)
+            most = {'zone': "", 'count': 0}
+            for zone in self.zonelist:
+                user = self.user
+                if self.tc:
+                    user = self.tc.admin
+                zone_availability = user.ec2.get_available_vm_slots(vmtype=self.args.vmtype,
+                                                                    zone_name=zone)
+                if zone_availability > most.get('count'):
+                    most['zone'] = zone
+                    most['count'] = zone_availability
+            zone = most.get('zone')
+            available_instances_before = most.get('count')
+            # Limit this test...
             if available_instances_before > 4:
                 count = 4
             else:
                 count = available_instances_before
-        except IndexError, e:
-            self.log.debug("Running as non-admin, defaulting to 4 VMs")
+        except EucaAdminRequired:
+            self.log.warning("Running as non-admin, defaulting to 4 VMs")
             available_instances_before = count = 4
 
         future_instances = []
@@ -634,8 +671,8 @@ class LegacyInstanceTestSuite(CliTestRunner):
             ## Start asynchronous activity
             ## Run 5 basic instance check instances 10s apart
             for i in xrange(count):
-                future_instances.append(executor.submit(self.BasicInstanceChecks))
-                self.user.ec2.sleep(10)
+                future_instances.append(executor.submit(self.test1_BasicInstanceChecks, zone=zone))
+                time.sleep(10)
 
         with ThreadPoolExecutor(max_workers=count) as executor:
             ## Start asynchronous activity
@@ -645,11 +682,16 @@ class LegacyInstanceTestSuite(CliTestRunner):
 
         def available_after_greater():
             try:
-                return self.user.ec2.get_available_vms(zone=self.zone) >= available_instances_before
-            except IndexError, e:
+                if self.tc:
+                    user = self.tc.admin
+                else:
+                    user = self.user
+                return user.ec2.get_available_vm_slots(
+                    vmtype=self.args.vmtype, zone_name=zone) >= available_instances_before
+            except EucaAdminRequired:
                 self.log.warning("Running as non-admin, skipping validation of available VMs.")
                 return True
-        self.user.ec2.wait_for_result(available_after_greater, result=True, timeout=360)
+        wait_for_result(available_after_greater, result=True, timeout=360)
 
     def ReuseAddresses(self):
         """
@@ -683,10 +725,11 @@ class LegacyInstanceTestSuite(CliTestRunner):
             self.current_instances = self.run_image()
         original_image = self.run_instance_params['image']
         for instance in self.current_instances:
-        get_available_vms    current_time = str(int(time.time()))
+            current_time = str(int(time.time()))
             temp_file = "/root/my-new-file-" + current_time
             instance.sys("touch " + temp_file)
-            self.user.ec2.sleep(60)
+            self.log.info('Sleeping for 60 seconds to allow for bundle operation')
+            time.sleep(60)
             starting_uptime = instance.get_uptime()
             self.run_instance_params['image'] = \
                 self.user.ec2.bundle_instance_monitor_and_register(instance)
@@ -695,7 +738,7 @@ class LegacyInstanceTestSuite(CliTestRunner):
             if ending_uptime > starting_uptime:
                 raise RuntimeError("Instance did not get stopped then started")
             bundled_image_instances = self.run_image()
-            for new_instance in bundled_image_instances.instances:
+            for new_instance in bundled_image_instances:
                 new_instance.sys("ls " + temp_file, code=0)
             self.user.ec2.terminate_instances(bundled_image_instances)
         self.run_instance_params['image'] = original_image
