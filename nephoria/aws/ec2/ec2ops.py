@@ -28,9 +28,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 #
-# Author: vic.iglesias@eucalyptus.com
 
-import json
 import re
 import os
 import copy
@@ -44,6 +42,7 @@ import types
 import traceback
 from datetime import datetime, timedelta
 from subprocess import Popen, PIPE
+from nephoria.exceptions import EucaAdminRequired
 
 from boto.ec2.image import Image
 from boto.ec2.instance import Reservation, Instance
@@ -4181,6 +4180,15 @@ disable_root: false"""
             ret_list.append(current_zone)
         return ret_list
 
+    def get_vmtype_availablity(self, vmtype, zone_name):
+        zone = self.get_zones(zone_name=zone_name)[0]
+        if not getattr(zone, 'available_vm_slots', None):
+            raise EucaAdminRequired()
+        vm_info = zone.available_vm_slots.get(vmtype)
+
+
+
+
     def show_zone_availability(self, zone_name=None, print_me=True):
         zones = self.get_zones(zone_name=zone_name)
         main_pt = PrettyTable(['HEADER'])
@@ -4189,6 +4197,9 @@ disable_root: false"""
         main_pt.header = False
         main_pt.border = False
         order_header = str('#').ljust(3)
+        info_headers = ['VMTYPE'.ljust(16), 'FREE/MAX'.ljust(16), 'RAM'.ljust(10),
+                        'CPU'.ljust(10), 'DISK'.ljust(10), order_header]
+
         if not zones:
             main_pt.add_row(['No zones to show using zone_name:' + str(zone_name)])
         for zone in zones:
@@ -4198,25 +4209,18 @@ disable_root: false"""
             if not hasattr(zone, 'available_vm_slots'):
                 main_pt.add_row(['No zone info available, and/or available to this user'])
             else:
-                headers = []
-                info_pt = None
+                info_pt = PrettyTable(info_headers)
+                info_pt.align = "l"
                 for vmtype, info_dict in zone.available_vm_slots.iteritems():
-                    values = []
-                    values.append(vmtype)
-                    if not headers:
-                        headers = ['vmtype'.ljust(16)]
-                        for header in info_dict.keys():
-                            if header == "order":
-                                headers.append(order_header)
-                            else:
-                                headers.append(str(header).ljust(8))
-                        info_pt = PrettyTable(headers)
-                        info_pt.align = "l"
-                    for header, value in info_dict.iteritems():
-                        values.append(value)
-                    info_pt.add_row(values)
+                    info_pt.add_row([vmtype,
+                                     "{0}/{1}".format(info_dict.get('free'),
+                                                      info_dict.get('max')),
+                                     info_dict.get('ram'),
+                                     info_dict.get('cpu'),
+                                     info_dict.get('disk'),
+                                     info_dict.get('order')])
                 main_pt.add_row(["{0}\n".format(info_pt.get_string(sortby=order_header,
-                                                                   fields=headers[:-1]))])
+                                                                   fields=info_headers[:-1]))])
         if not print_me:
             return main_pt
         else:
