@@ -42,6 +42,12 @@ class LegacyInstanceTestSuite(CliTestRunner):
         'args': ['--instance-user'],
         'kwargs': {'help': 'Login user to use for instances in this test',
                    'default': 'root'}}
+    _DEFAULT_CLI_ARGS['root_device_type'] = {
+        'args': ['--root-device-type'],
+        'kwargs': {'help': 'root device type to filter for when fetching an EMI. '
+                           '(ie: ebs or instance-store)',
+                   'default': 'instance-store'}}
+
 
     def post_init(self, *args, **kwargs):
         self._is_multicluster = None
@@ -159,7 +165,8 @@ class LegacyInstanceTestSuite(CliTestRunner):
                 emi = self.user.ec2.get_emi(emi=self.args.emi)
             else:
                 try:
-                    self.user.ec2.get_emi(root_device_type="instance-store", basic_image=True)
+                    self.user.ec2.get_emi(root_device_type=self.args.root_device_type,
+                                          basic_image=True)
                 except:
                     pass
                 if not emi:
@@ -240,7 +247,7 @@ class LegacyInstanceTestSuite(CliTestRunner):
                 delete = []
                 for volume in self.volumes:
                     volume.update()
-                    if volume.state != 'deleted':
+                    if volume.status != 'deleted':
                         delete.append(volume)
                 self.user.ec2.delete_volumes(delete)
         except Exception as E:
