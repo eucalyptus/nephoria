@@ -3,7 +3,7 @@ set -x
 venv="nephoria_venv"
 neph_branch="oldboto"
 adminapi_branch="master"
-yum install -y python-devel gcc git python-setuptools python-virtualenv
+yum install -y python-devel gcc git python-setuptools python-virtualenv libffi-devel openssl-devel
 rpm -qa | grep virtualenv # verify it was installed successfully above
 yum repolist # check repos
 if [ ! -d adminapi ]; then
