@@ -354,7 +354,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         sec_grps = []
         for grp in self.groups:
             sec_grps.append(str(grp.id))
-        sec_grps = ",".join(sec_grps)
+        sec_grps = " ".join(sec_grps)
         private_addressing = "N"
         if self.private_addressing:
             private_addressing = "Y"
