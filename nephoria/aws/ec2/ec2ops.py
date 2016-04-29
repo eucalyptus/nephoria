@@ -67,7 +67,7 @@ from nephoria import CleanTestResourcesException
 from nephoria.baseops.botobaseops import BotoBaseOps
 from nephoria.testcase_utils import wait_for_result
 from cloud_utils.net_utils import sshconnection, ping, is_address_in_network
-from cloud_utils.log_utils import printinfo, get_traceback, markup
+from cloud_utils.log_utils import printinfo, get_traceback, markup, red
 from nephoria.aws.ec2.euinstance import EuInstance
 from nephoria.aws.ec2.windows_instance import WinInstance
 from nephoria.aws.ec2.euvolume import EuVolume
@@ -255,9 +255,10 @@ disable_root: false"""
                                       os.path.join(key_dir, "{0}{1}".format(key_name, extension))))
                 return key
             else:
-                self.log.warn('Key {0} already exists, but cert not found at:"{1}"'
-                              .format(key_name,
-                                      os.path.join(key_dir, "{0}{1}".format(key_name, extension))))
+                self.log.warn(
+                    red('Key {0} already exists, but cert not found at:"{1}"'
+                        .format(key_name,
+                                os.path.join(key_dir, "{0}{1}".format(key_name, extension)))))
                 return None
 
             

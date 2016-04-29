@@ -10,8 +10,8 @@ Installation
 ------
 If easy_install is not available in your environment use your package manager to install python-setuptools
     
-    yum install python-setuptools gcc python-devel git
-    apt-get install python-setuptools gcc python-dev git
+    yum install python-setuptools gcc python-devel git libffi-devel openssl-devel
+    apt-get install python-setuptools gcc python-dev git libffi-devel openssl-devel
 
 Installing nephoria and its dependencies is as easy as:
 

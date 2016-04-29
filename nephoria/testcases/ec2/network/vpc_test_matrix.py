@@ -43,9 +43,12 @@ from cloud_utils.net_utils import packet_test, is_address_in_network
 from cloud_utils.log_utils import markup, printinfo, get_traceback
 from boto.vpc.subnet import Subnet
 from boto.vpc.vpc import VPC
+from boto.ec2.image import Image
+from boto.ec2.group import Group
 from boto.ec2.securitygroup import SecurityGroup
 from random import randint
 from prettytable import PrettyTable
+import copy
 import re
 import time
 from os.path import basename
@@ -57,7 +60,16 @@ SCTP = 132
 
 
 class VpcBasics(CliTestRunner):
-    DEFAULT_RULES =  [('tcp', 22, 22, '0.0.0.0/0'), ('icmp', -1, -1, '0.0.0.0/0')]
+
+    _CLI_DESCRIPTION = "Test the Eucalyptus EC2 instance store image functionality."
+
+    _DEFAULT_CLI_ARGS = copy.copy(CliTestRunner._DEFAULT_CLI_ARGS)
+
+    DEFAULT_SG_RULES =  [('tcp', 22, 22, '0.0.0.0/0'), ('icmp', -1, -1, '0.0.0.0/0')]
+    _DEFAULT_CLI_ARGS['vpc_cidr'] = {
+        'args': ['--vpc-cidr'],
+        'kwargs': {'help': 'Cidr network range for VPC(s) created in this test',
+                   'default': "172.{0}.0.0/16"}}
 
     def post_init(self):
         self.test_id = randint(0, 100000)
@@ -71,7 +83,7 @@ class VpcBasics(CliTestRunner):
         self._security_groups = {}
         self.test_tag_name = '{0}_CREATED_NUMBER'.format(self.id)
 
-@property
+    @property
     def tc(self):
         tc = getattr(self, '_tc', None)
         if not tc and self.args.clc or self.args.environment_file:
@@ -127,8 +139,7 @@ class VpcBasics(CliTestRunner):
                 emi = self.user.ec2.get_emi(emi=self.args.emi)
             else:
                 try:
-                    self.user.ec2.get_emi(root_device_type=self.args.root_device_type,
-                                          basic_image=True)
+                    self.user.ec2.get_emi(basic_image=True)
                 except:
                     pass
                 if not emi:
@@ -171,26 +182,6 @@ class VpcBasics(CliTestRunner):
                                    "perform tests in. Please specify zone")
         return self._zonelist
 
-    @property
-    def ssh_key(self):
-        if self._ssh_key is None:
-            if self.args.keypair:
-
-                self._ssh_key = (self.tcc.user.ec2.create_keypair_and_localcert(self.args.keypair) or
-                                 self.tc.user.ec2.get_keypair(self.args.keypair))
-            else:
-                keyname = "{0}_key_{1}".format(self.test_name, self.test_id).lower()
-                self._ssh_key = self.tc.user.ec2.create_keypair_and_localcert(keyname)
-        return self._ssh_key
-
-    @property
-    def emi(self):
-        if self._emi is None:
-            if self.args.emi:
-                self._emi = self.user.get_image(image_id=self.args.emi)
-            else:
-                self._emi = self.user.ec2.get_emi(basic_image=True)
-        return self._emi
 
     @property
     def default_vpc(self):
@@ -215,7 +206,19 @@ class VpcBasics(CliTestRunner):
             self.user.ec2.show_vpc(new_vpc)
         return test_vpcs
 
+
+
     def create_test_subnets(self, vpc, count_per_zone=1):
+        """
+        This method is intended to provided the convenience of returning a number of subnets per
+        zone equal to the provided 'count_per_zone'. The intention is this method will
+        take care of first attempting to re-use existing subnets, and creating new ones if needed
+        to meet the count requested.
+
+        :param vpc: boto VPC object
+        :param count_per_zone: int, number of subnets needed per zone
+        :return: list of subnets
+        """
         test_subnets = []
         for x in xrange(0, count_per_zone):
             for zone in self.zones:
@@ -258,6 +261,14 @@ class VpcBasics(CliTestRunner):
         return test_subnets
 
     def get_test_vpcs(self, count=1):
+        """
+        This method is intended to provided the convenience of returning a number of VPCs equal
+        to 'count'. The intention is this method will take care of first attempting to
+        re-use existing VPCs, and creating new ones if needed to meet the count requested.
+
+        :param count: number of VPCs requested
+        :return: list of VPC boto objects
+        """
         existing = self.user.ec2.get_all_vpcs(filters={'tag-key': self.test_tag_name})
         if len(existing) >= count:
             return existing[0:count]
@@ -267,6 +278,13 @@ class VpcBasics(CliTestRunner):
         return ret_list
 
     def get_test_subnets_for_vpc(self, vpc, count=1):
+        """
+        Fetch a given number of subnets within the provided VPC by either finding existing
+        or creating new subnets to meet the count requested.
+        :param vpc: boto vpc object
+        :param count: number of subnets requested
+        :return: list of subnets
+        """
         existing = self.user.ec2.get_all_subnets(filters={'vpc-id': vpc.id,
                                                           'tag-key': self.test_tag_name})
         if len(existing) >= count:
@@ -277,8 +295,23 @@ class VpcBasics(CliTestRunner):
         return ret_subnets
 
     def get_test_security_groups(self, vpc=None, count=1, rules=None):
+        """
+        Fetch a given number of security groups by either finding existing or creating new groups
+        to meet the count requested. If VPC is not provided, self.default_vpc value will be used.
+        Any existing rules within the group will be removed and then replaced with the rules
+        provided to this method. If 'rules' is None, the 'self.DEFAULT_SG_RULES' value will be
+        used instead.
+        rules can be a list of rule sets. A rule set should be in the following format:
+        (protocol, start port, end port, cidr)
+        example: [('tcp', 22, 22, '0.0.0.0/0'), ('icmp', -1, -1, '0.0.0.0/0')]
+
+        :param vpc: boto vpc obj
+        :param count: int, number of security groups requested
+        :param rules: list of rule sets
+        :return:
+        """
         if rules is None:
-            rules = self.DEFAULT_RULES
+            rules = self.DEFAULT_SG_RULES
         ret_groups = []
         vpc = vpc or self.default_vpc
         if vpc and not isinstance(vpc, basestring):
@@ -393,9 +426,27 @@ class VpcBasics(CliTestRunner):
 
     @printinfo
     def create_test_instances(self, emi=None, key=None, group=None, zone=None, subnet=None,
-                              count=1, monitor_to_running=True, tag=True):
+                              count=1, monitor_to_running=True, auto_connect=True, tag=True):
+        """
+        Creates test instances using the criteria provided. This method is intended to be
+        called from 'get_test_instances()'.
+
+        :param emi: emi id
+        :param key: key obj or id
+        :param group: group obj or id
+        :param zone: zone name
+        :param subnet: subnet obj or id
+        :param count: numer of VMs to run
+        :param monitor_to_running: bool, if True will monitor instances and verify they are in a
+                                  correct working and accessible state.
+        "param auto_connect: bool, if True will attempt to automatically setup ssh connections
+                            to the instances upon running state.
+        :param tag:
+        :return:
+        """
         vpc_id = None
         subnet_id = None
+        subnet_obj = None
         if subnet:
             if not isinstance(subnet, Subnet):
                 subnet_obj = self.user.ec2.get_subnet(subnet)
@@ -417,6 +468,7 @@ class VpcBasics(CliTestRunner):
                                             zone=zone,
                                             subnet_id=subnet_id,
                                             max=count,
+                                            auto_connect=auto_connect,
                                             monitor_to_running=False)
         for instance in instances:
             instance.add_tag(key=self.test_name, value=self.test_id)
@@ -445,6 +497,29 @@ class VpcBasics(CliTestRunner):
 
     def packet_test_scenario(self, zone1, zone2, sec_group1, sec_group_2, vpc1, vpc2, subnet1, subnet2,
                  use_private, protocol, pkt_count=5, retries=2, verbose=None):
+        """
+        This method is intended to be used as the core test method. It can be fed different
+        sets of params each representing a different test scenario. This should allow for
+        dictionaries of params to be autogenerated and fed to this test method forming a
+        auto-generated test matrix. Used with cli_runner each param set can be ran as a testunit
+        providing formatted results. This method should also provide a dict of results for
+        additional usage.
+        params
+        :param zone1: zone name
+        :param zone2: zone name
+        :param sec_group1: group obj or id
+        :param sec_group_2: group obj or id
+        :param vpc1: vpc obj or id
+        :param vpc2: vpc obj or id
+        :param subnet1: subnet obj or id
+        :param subnet2: subnet obj or id
+        :param use_private: bool, to use private addressing or not
+        :param protocol: a dict to be fed to 'packet_test'. Example:{'protocol': ICMP, 'count': pkt_count}
+        :param pkt_count: number of packets
+        :param retries: number of retries
+        :param verbose: bool, for verbose output
+        :return dict of results (tbd)
+        """
         vpc = self.default_vpc
         results = {}
         start = time.time()
@@ -481,12 +556,19 @@ class VpcBasics(CliTestRunner):
                                               header='test2_icmp_packet_test_same_az_and_sg. '
                                                      'Zone:{0}'.format(zone))
         self.log.info('test2_icmp_packet_test_same_az_and_sg passed')
+        # todo decide up results format
+        return results
 
     def net_test(self, zone1, zone2, sec_group1, sec_group_2, vpc1, vpc2, subnet1, subnet2,
                  use_private, protocol, pkt_count=5, retries=2, verbose=None):
         pass
 
     def generate_vpc_test_matrix(self):
+        """
+        Sample method to show how a set of test parameters might be defined for feeding to
+        self.packet_test_scenario(). The set of parameters defines the test matrix to be run.
+        :return: test matrix dict
+        """
         pkt_count = 5
         start_port = 100
         end_port = 110
