@@ -656,28 +656,23 @@ disable_root: false"""
     def get_supported_platforms(self):
         attr = None
         try:
-            attr = self.connection.describe_account_attributes(attribute_names='supported-platforms')
+            attr = self.connection.describe_account_attributes(
+                attribute_names='supported-platforms')
         except Exception as E:
             self.log.warning('{0}\n{1}'
                              .format(markup('Could not describe account attributes', [1, 31]),
                                      get_traceback()))
-            try:
-                prop = self.property_manager.get_property_by_string('one.cluster.networkmode')
-                if prop and prop.value:
-                    return [prop.value]
-            except Exception as E:
-                try:
-                    err = "{0}\nFailed to get 'supported-platforms' fromcloud, err:'{1}'"\
-                          .format(self.get_traceback(),str(E))
-                    self.log.warning(markup(err, markups=[1, 31]))
-                except:
-                    pass
+
+            err = "{0}\nFailed to get 'supported-platforms' fromcloud, err:'{1}'"\
+                  .format(get_traceback(),str(E))
+            self.log.warning(markup(err, markups=[1, 31]))
         if attr:
             return attr[0].attribute_values
-        return []
+        else:
+            return []
 
     def get_default_vpc_attribute(self):
-        attr = self.describe_account_attributes(attribute_names='default-vpc')
+        attr = self.connection.describe_account_attributes(attribute_names='default-vpc')
         if attr:
             return attr[0].attribute_values
         return []
@@ -757,8 +752,13 @@ disable_root: false"""
         else:
             return ret_buf
 
-    def get_all_subnets(self, subnet_ids=None, filters=None, dry_run=False, verbose=None):
+    def get_all_subnets(self, subnet_ids=None, zone=None, filters=None, dry_run=False, verbose=None):
         ret_list = []
+        filters = filters or {}
+        if zone:
+            if not isinstance(zone, Zone):
+                zone = zone.name
+            filters['availabilityZone'] = zone
         if verbose is None:
             verbose = self._use_verbose_requests
         if verbose:
@@ -772,6 +772,7 @@ disable_root: false"""
                 subnet_ids = ['verbose']
         subnets = self.connection.get_all_subnets(subnet_ids=subnet_ids, filters=filters,
                                                   dry_run=dry_run)
+        # map unicode to actual bool values...
         for subnet in subnets:
             euca_sub = EucaSubnet()
             euca_sub.__dict__ = dict(euca_sub.__dict__.items() + subnet.__dict__.items())
@@ -877,48 +878,6 @@ disable_root: false"""
             printmethod( "\n" + str(ret_buf) + "\n")
         else:
             return ret_buf
-
-
-    def show_network_interfaces(self, interfaces, printme=True):
-        buf = ""
-        if not interfaces:
-            buf = "No elastic network interfaces provided to show"
-        if not isinstance(interfaces, list):
-            interfaces = [interfaces]
-        for eni in interfaces:
-            if isinstance(eni, NetworkInterface):
-                title = " ENI ID: {0}, DESCRIPTION:{1}".format(eni.id, eni.description)
-                enipt = PrettyTable([title])
-                enipt.align[title] = 'l'
-                enipt.padding_width = 0
-                dot = "?"
-                attached_status = "?"
-                if eni.attachment:
-                    dot = eni.attachment.delete_on_termination
-                    attached_status = eni.attachment.status
-                pt = PrettyTable(['ENI ID', 'PRIV_IP (PRIMARY)', 'PUB IP', 'VPC', 'SUBNET',
-                                  'OWNER', 'DOT', 'STATUS'])
-                pt.padding_width = 0
-                if eni.private_ip_addresses:
-                    private_ips = ",".join(str("{0} ({1})".format(x.private_ip_address,
-                                                                  x.primary).center(20))
-                                           for x in eni.private_ip_addresses)
-                else:
-                    private_ips = None
-                pt.add_row([eni.id, private_ips,
-                            getattr(eni, 'publicIp', None),
-                            getattr(eni, 'vpc_id', None),
-                            getattr(eni, 'subnet_id', None),
-                            getattr(eni, 'owner_id', None),
-                            dot,
-                            "{0} ({1})".format(eni.status, attached_status)])
-                enipt.add_row([(str(pt))])
-                buf += str(enipt)
-        if printme:
-            self.log.info(buf)
-        else:
-            return buf
-
 
     def terminate_single_instance(self, instance, timeout=300 ):
         """
@@ -2742,13 +2701,13 @@ disable_root: false"""
         :return: boto.ec2.address object allocated
         """
         try:
-            self.log.debug("Allocating an address")
+            self.log.debug("Attempting to allocate an address...")
             address = self.connection.allocate_address(domain=domain)
         except Exception, e:
             tb = get_traceback()
-            err_msg = 'Unable to allocate address'
+            err_msg = red('{0}\nUnable to allocate address, err: {1}'.format(tb, e))
             self.log.critical(str(err_msg))
-            raise Exception(str(tb) + "\n" + str(err_msg))
+            raise e
         self.log.debug("Allocated " + str(address))
         return address
 
@@ -3390,44 +3349,172 @@ disable_root: false"""
             raise E
     
 
-    def create_eni(self, subnet_id=None, zone=None, private_addressing=False, secgroups=None):
-        #  Attempts to create an ENI only if the ip request does not match the default
-            # behavior of the subnet running these instances.
-        subnet = None
-        if subnet_id:
-            # No network_interfaces were provided, check to see if this subnet already
-            # maps a public ip by default or if a new eni should be created to
-            # request one...
-            subnets = self.get_all_subnets(subnet_id)
-            if subnets:
-                subnet = subnets[0]
+    def create_network_interface_collection(self,
+                                            eni=None,
+                                            subnet_id=None,
+                                            zone=None,
+                                            device_index=None,
+                                            associate_public_ip_address=None,
+                                            eip=None,
+                                            auto_eip=False,
+                                            groups=None,
+                                            eip_domain=None,
+                                            description='Nephoria Test ENI',
+                                            network_interface_collection=None):
+        """
+        Helper method for create network interfaces.
+        :param eni: Existing Net Interface obj or id. If provided a new ENI will not be created.
+        :param subnet_id: subnet or subnet.id, if not provided the method will attempt to look
+                          for the default subnet in the zone provided.
+        :param zone: zone, used to look up the subnet to be used.
+        :param device_index: the device index to be used. If None this default to 0, or if a
+                              network_infc_collection is provided this will use the next
+                              available index.
+        :param associate_public_ip_address: Used to request a public ip from the subnet.
+                                            The cloud may reject this request if the dev index is
+                                            not 0, and/or there a more than 1 interfaces in the
+                                            network itfc collection.
+        :param eip: An elastic ip obj or id to be associated with this ENI
+        :param auto_eip: Bool, will attempt to allocate and associate an EIP with this ENI
+        :param groups: list of security groups for this ENI
+        :param eip_domain: domain for this ENI
+        :param description: description for this ENI
+        :param network_interface_collection: boto NetworkInterfaceCollection() object. If provided
+                                             this eni will be appended to the collection
+        :return: boto NetworkInterfaceSpecification() obj
+        """
+        # If the subnet was not provided attempt to find the default subnet.
+        if device_index is None:
+            if network_interface_collection:
+                device_index = len(network_interface_collection)
             else:
-                raise ValueError('Subnet: "{0}" not found during create_eni'
-                                 .format(subnet_id))
-        else:
-            subnets = self.get_default_subnets(zone=zone)
-            if subnets:
-                subnet = subnets[0]
-        if not subnet:
-            raise ValueError('Subnet not found (Either not provided, '
-                             'found and/or default not found)')
-        subnet_id = subnet.id
-        # mapPublicIpOnLaunch may be unicode true/false...
-        if not isinstance(subnet.mapPublicIpOnLaunch, bool):
-            if str(subnet.mapPublicIpOnLaunch).upper().strip() == 'TRUE':
-                subnet.mapPublicIpOnLaunch = True
+                device_index = 0
+        if isinstance(eni, basestring):
+            eni = self.connection.get_all_network_interfaces([eni])
+            if not eni:
+                raise ValueError('Could not retrieve existing eni:"{0}" from system'.format(eni))
+            eni = eni[0]
+        if not eni:
+            subnet = None
+            if subnet_id:
+                if isinstance(subnet, Subnet):
+                    subnet = subnet_id
+                elif isinstance(subnet_id, basestring):
+                    subnets = self.get_all_subnets(subnet_id, zone=zone)
+                    if subnets:
+                        subnet = subnets[0]
+                    else:
+                        raise ValueError('Subnet: "{0}" not found using zone filter:"{1}" during '
+                                         'create_eni'.format(subnet_id, zone))
+                else:
+                    raise ValueError('Unknown type for subnet_id: "{0}/{1}"'.format(subnet_id,
+                                                                                    type(subnet_id)))
             else:
-                subnet.mapPublicIpOnLaunch = False
-        # Default subnets or subnets whos attributes have been modified to
-        # provide a public ip should automatically provide an ENI and public ip
-        # association, skip if this is true...
-        eni = NetworkInterfaceSpecification(device_index=0, subnet_id=subnet_id,
-                                            groups=secgroups,
-                                            delete_on_termination=True,
-                                            description='nephoria_auto_assigned',
-                                            associate_public_ip_address=(not private_addressing))
-        return NetworkInterfaceCollection(eni)
+                self.log.debug('create_network_interface: No subnet provided, fetching default...')
+                subnets = self.get_default_subnets(zone=zone)
+                if subnets:
+                    subnet = subnets[0]
+            if not subnet:
+                raise ValueError('Subnet not found (Either not provided, '
+                                 'and/or default not found. Zone filter:"{0}")'.format(zone))
+            subnet_id = subnet.id
+            groups = groups or []
+            security_group_ids = []
+            # sanitize the groups param
+            for group in groups:
+                if isinstance(group, basestring):
+                    security_group_ids.append(group)
+                else:
+                    security_group_ids.append(group.id)
+            eni = self.connection.create_network_interface(subnet_id=subnet_id,
+                                                           groups=security_group_ids,
+                                                           description=description)
+        # If an EIP was provided or requested associate it with the ENI now...
+        if eip or auto_eip:
+            if not eip:
+                eip = self.allocate_address(domain=eip_domain)
+            if not isinstance(eip, basestring):
+                eip = eip.allocation_id
+            assoc = self.connection.associate_address(allocation_id=eip,
+                                                      network_interface_id=eni.id)
+        # Create the interface specification
+        interface = NetworkInterfaceSpecification(device_index=device_index,
+                                                  network_interface_id=eni.id,
+                                                  delete_on_termination=True,
+                                                  associate_public_ip_address=associate_public_ip_address,
+                                                  description=description)
+        network_interface_collection = network_interface_collection or NetworkInterfaceCollection()
+        network_interface_collection.append(interface)
+        return network_interface_collection
 
+
+    def show_network_interfaces(self, enis=None, printmethod=None, printme=True):
+        id_h = 'ID'
+        aid_h = 'ATTACH_ID'
+        public_h = 'PUB IP'
+        groups_h = 'SEC GRPS'
+        subnet_h = 'SUBNET'
+        vpc_h = 'VPC'
+        priv_h = 'PRIV IPS'
+        attach_h = 'ATTACHMENT'
+        index_h = '#'
+        dot_h = "DOT"
+        inst_h = 'INST ID'
+        status_h = 'STATUS'
+        enis = enis or self.connection.get_all_network_interfaces()
+        if isinstance(enis, basestring):
+            enis = self.connection.get_all_network_interfaces(network_interface_ids=[enis])
+        if isinstance(enis, list):
+            fetch_list = []
+            eni_list = []
+            for eni in enis:
+                if isinstance(eni, basestring):
+                    fetch_list.append(eni)
+                else:
+                    eni_list.append(eni)
+            if fetch_list:
+                eni_list += self.connection.get_all_network_interfaces(
+                    network_interface_ids=fetch_list)
+            enis = eni_list
+        pt = PrettyTable([id_h, public_h, vpc_h, subnet_h, groups_h, priv_h,
+                          aid_h, inst_h, index_h, status_h, dot_h])
+        pt.hrules = 1
+        pt.padding_width = 0
+        pt.max_width[groups_h] = 12
+        pt.max_width[priv_h] = 16
+        pt.align = 'l'
+        for eni in enis:
+            groups = "".join(x.id for x in (eni.groups or []))
+            private_ips = ""
+            for pi in (eni.private_ip_addresses or []):
+                if pi.primary:
+                    primary = "P"
+                else:
+                    primary = ""
+                private_ips += "{0} {1}".format(primary, pi.private_ip_address).ljust(
+                    pt.max_width[priv_h])
+            attachment = ""
+            instance_id = ""
+            device_index = ""
+            attach_status = ""
+            dot = ""
+            if eni.attachment:
+                att = eni.attachment
+                attachment = att.id
+                instance_id = att.instance_id
+                device_index = att.device_index
+                attach_status = att.status
+                if att.delete_on_termination:
+                    dot = "T"
+                else:
+                    dot = "F"
+            pt.add_row([eni.id, getattr(eni, 'publicIp', None), eni.vpc_id, eni.subnet_id, groups,
+                        private_ips, attachment, instance_id, device_index, attach_status, dot])
+        if printme:
+            printmethod = printmethod or self.log.info
+            printmethod("\n{0}\n".format(pt))
+        else:
+            return pt
 
 
     def wait_for_instances_block_dev_mapping(self,
