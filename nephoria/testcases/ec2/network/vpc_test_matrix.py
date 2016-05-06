@@ -495,8 +495,8 @@ class VpcBasics(CliTestRunner):
         self.log.info('test1_basic_instance_ssh_default_vpc passed')
         return instances
 
-    def packet_test_scenario(self, zone1, zone2, sec_group1, sec_group_2, vpc1, vpc2, subnet1, subnet2,
-                 use_private, protocol, pkt_count=5, retries=2, verbose=None):
+    def packet_test_scenario(self, zone1, zone2, sec_group1, sec_group_2, vpc1, vpc2,
+                             subnets, use_private, protocol, pkt_count=5, retries=2, verbose=None):
         """
         This method is intended to be used as the core test method. It can be fed different
         sets of params each representing a different test scenario. This should allow for
@@ -504,7 +504,6 @@ class VpcBasics(CliTestRunner):
         auto-generated test matrix. Used with cli_runner each param set can be ran as a testunit
         providing formatted results. This method should also provide a dict of results for
         additional usage.
-        params
         :param zone1: zone name
         :param zone2: zone name
         :param sec_group1: group obj or id
