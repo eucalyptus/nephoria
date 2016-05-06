@@ -7,7 +7,7 @@ import copy
 import time
 
 
-class RunInstances(CliTestRunner):
+class LoadBfebsImage(CliTestRunner):
 
     _DEFAULT_CLI_ARGS = copy.copy(CliTestRunner._DEFAULT_CLI_ARGS)
 
@@ -15,6 +15,9 @@ class RunInstances(CliTestRunner):
                                       'kwargs': {'help': 'URL of the image',
                                                  'default': None}
                                       }
+    def post_init(self):
+        self.created_image = None
+
     @property
     def tc(self):
         tc = getattr(self, '__tc', None)
@@ -49,7 +52,7 @@ class RunInstances(CliTestRunner):
                 emi = self.user.ec2.get_emi(emi=self.args.emi)
             else:
                 try:
-                    emi = self.user.ec2.get_emi(location='cirros')
+                    emi = self.user.ec2.get_emi()
                 except:
                     pass
                 if not emi:
@@ -91,7 +94,16 @@ class RunInstances(CliTestRunner):
     def group(self, value):
         setattr(self, '__group', value)
 
-    def test1_run_instances(self):
+    def make_image_public(self, emi=None):
+        emi = emi or self.created_image
+        if emi and isinstance(emi, basestring):
+            emi = self.user.ec2.get_emi(emi)
+        emi.set_launch_permissions(group_names=['all'])
+        self.log.info('\n---------------------------\n'
+                      'MADE PUBLIC EMI: {0}'
+                      '\n---------------------------'.format(emi))
+
+    def test1_build_ebs_backed_image_in_vm(self):
         """
         Attempts to run the number of instances provided by the vm_count param
         """
@@ -109,8 +121,30 @@ class RunInstances(CliTestRunner):
             volume_device = instance.attach_volume(volume_1)
             instance.sys("curl " + self.args.image_url + " > " + volume_device, timeout=800, code=0)
             snapshot = self.user.ec2.create_snapshot(volume_1.id)
-            image_id = self.user.ec2.register_snapshot(snapshot)
+            self.created_image = self.user.ec2.register_snapshot(snapshot)
         self.user.ec2.terminate_instances(instances)
+
+    def test2_make_image_public(self):
+        """
+        Attempts to make an image public.
+        By default will use the image EMI created within the test.
+        If an 'emi' ID was provided to the test it will instead use that image/EMI id.
+        :return:
+        """
+        emi = self.created_image
+        if not emi:
+            raise SkipTestException('Skipping test. No EMI created or provided to make public')
+        self.make_image_public(emi=emi)
+
+    def test3_tag_image(self):
+        emi = self.created_image
+        if not emi:
+            raise SkipTestException('Skipping test. No EMI created to make public')
+        if not isinstance(emi, basestring):
+            emi = emi.id
+        self.user.ec2.create_tags([emi],
+                                  {'Nephoria Test Image: {0}'.format(time.asctime()):'',
+                                   'URL': self.args.image_url})
 
     def clean_method(self):
         if self.tc.test_resources['_instances']:
@@ -127,7 +161,7 @@ class RunInstances(CliTestRunner):
 
 
 if __name__ == "__main__":
-    test = RunInstances()
+    test = LoadBfebsImage()
     result = test.run()
     exit(result)
 
