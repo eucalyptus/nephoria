@@ -37,6 +37,7 @@ Place holder for volume test specific convenience methods+objects to extend boto
 '''
 import re
 from boto.ec2.volume import Volume
+from boto.exception import EC2ResponseError
 import time
 from nephoria.euca.taggedresource import TaggedResource
 from datetime import datetime, timedelta
@@ -118,10 +119,19 @@ class EuVolume(Volume, TaggedResource):
         return datetime.strptime(" ".join(t), time_format)
 
     def update(self):
-        super(EuVolume, self).update()
-        if (self.tags.has_key(self.tag_md5_key) and (self.md5 != self.tags[self.tag_md5_key])) or \
-            (self.tags.has_key(self.tag_md5len_key) and (self.md5len != self.tags[self.tag_md5len_key])):
-            self.update_volume_attach_info_tags()
+        last_status = self.status
+        try:
+            super(EuVolume, self).update()
+            if (self.tags.has_key(self.tag_md5_key) and
+                    (self.md5 != self.tags[self.tag_md5_key])) or \
+                    (self.tags.has_key(self.tag_md5len_key) and
+                         (self.md5len != self.tags[self.tag_md5len_key])):
+                self.update_volume_attach_info_tags()
+        except EC2ResponseError as ER:
+            if ER.status == 400 and last_status in ['deleted', 'deleting']:
+                self.status = 'deleted'
+            else:
+                raise ER
         self.set_last_status()
     
     def set_last_status(self,status=None):

@@ -265,6 +265,16 @@ class LoadHvmImage(CliTestRunner):
             raise SkipTestException('Skipping test. No EMI created or provided to make public')
         self.make_image_public(emi=emi)
 
+    def test4_tag_image(self):
+        emi = self.created_image
+        if not emi:
+            raise SkipTestException('Skipping test. No EMI created to make public')
+        if not isinstance(emi, basestring):
+            emi = emi.id
+        self.user.ec2.create_tags([emi],
+                                  {'Nephoria Test Image: {0}'.format(time.asctime()):'',
+                                   'URL': self.args.url})
+
     def clean_method(self):
         pass
 
