@@ -16,7 +16,7 @@ class SystemConnectionFailure(Exception):
 
 class TestController(object):
     def __init__(self,
-                 hostname=None, username='root', password=None, region=None,
+                 hostname=None, username='root', password=None, keypath=None, region=None,
                  proxy_hostname=None, proxy_password=None,
                  clouduser_account='nephotest', clouduser_name='sys_admin', clouduser_credpath=None,
                  clouduser_accesskey=None, clouduser_secretkey=None,
@@ -60,6 +60,8 @@ class TestController(object):
         self._system_connection_info = {'hostname': hostname,
                                         'username': username,
                                         'password': password,
+                                        'keypath': keypath,
+                                        'region_domain': region,
                                         'proxy_hostname': proxy_hostname,
                                         'proxy_password': proxy_password,
                                         'proxy_username': None,
@@ -116,7 +118,7 @@ class TestController(object):
 
     @property
     def region(self):
-        if not self._region and self.sysadmin is not None:
+        if self._region is None and self.sysadmin is not None:
             try:
                 regions = self.sysadmin.ec2_connection.get_all_regions()
                 if not regions:
