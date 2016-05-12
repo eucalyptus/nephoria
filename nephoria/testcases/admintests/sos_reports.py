@@ -114,7 +114,7 @@ class SOSReports(CliTestRunner):
                                                code=0)[0]
                 tarball_name = os.path.basename(remote_tarball_path)
                 local_name = "{0}.{1}{2}".format(ip.replace('.', '_'), self.ticket_number,
-                                                 tarball_name.split(self.ticket_number)[1])
+                                                 tarball_name.split(str(self.ticket_number))[1])
                 local_tarball_path = os.path.join(self.args.local_dir, local_name)
                 self.log.debug("Downloading file to: " + local_tarball_path)
                 host.ssh.sftp_get(localfilepath=local_tarball_path,
