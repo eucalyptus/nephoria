@@ -82,6 +82,13 @@ class SOSReports(CliTestRunner):
         rc.results = {}
         rc.run_remote_commands(command='yum install sos eucalyptus-sos-plugins -y --nogpg')
         rc.show_results()
+        failed = 0
+        for host, result in rc.results.iteritems():
+            if result.get('status') != 0:
+                failed += 1
+        if failed:
+            raise RuntimeError('{0}/{1} hosts had errors during install sos and plugin packages'
+                               .format(failed/len(rc.ips)))
 
 
     def test2_run(self):
@@ -95,6 +102,14 @@ class SOSReports(CliTestRunner):
         rc.results = {}
         rc.run_remote_commands(command=command)
         rc.show_results()
+        failed = 0
+        for host, result in rc.results.iteritems():
+            if result.get('status') != 0:
+                failed += 1
+        if failed:
+            raise RuntimeError('{0}/{1} hosts had errors while attempting to run SOS'
+                               .format(failed/len(rc.ips)))
+
 
     def test3_download(self):
         """
