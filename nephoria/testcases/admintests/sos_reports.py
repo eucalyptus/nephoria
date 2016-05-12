@@ -2,6 +2,7 @@
 
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, SkipTestException
 from cloud_utils.log_utils import get_traceback, red, ForegroundColor, BackGroundColor, markup
+from cloud_utils.net_utils.remote_commands import RemoteCommands
 from nephoria.testcontroller import TestController
 import copy
 import time
@@ -60,6 +61,16 @@ class SOSReports(CliTestRunner):
             setattr(self, '__tc', tc)
         return tc
 
+    @property
+    def rc(self):
+        rc = getattr(self, '__rc', None)
+        if not rc:
+            rc = RemoteCommands(ips=self.tc.sysadmin.eucahosts.keys(),
+                            username='root',
+                            password=self.args.password)
+            setattr(self, '__rc', rc)
+        return rc
+
     def clean_method(self):
         pass
 
@@ -67,36 +78,23 @@ class SOSReports(CliTestRunner):
         """
         Attempts to install the SOS and Eucalyptus-sos-plugins on each machine in the cloud.
         """
-        for ip, host in self.tc.sysadmin.eucahosts.iteritems():
-            self.log.debug('Installing SOS on {0}'.format(ip))
-            host.install("sos")
-            self.log.debug('Install Eucalyptus-sos-plugins on {0}'.format(ip))
-            host.install("eucalyptus-sos-plugins", nogpg=True)
+        rc = self.rc
+        rc.results = {}
+        rc.run_remote_commands(command='yum install sos eucalyptus-sos-plugins -y --nogpg')
+        rc.show_results()
+
 
     def test2_run(self):
         """
         Attempts to run SOS on each host in the cloud to create and gather SOS reports.
         """
-        error_msg = ""
-        err_count = 0
-        host_count = len(self.tc.sysadmin.eucahosts)
-        for ip, host in self.tc.sysadmin.eucahosts.iteritems():
-            try:
-                host.sys("mkdir -p " + self.remote_dir)
-                host.sys("sosreport --batch --tmp-dir {0} --ticket-number {1} "
-                         .format(self.remote_dir, self.ticket_number),
-                         code=0, timeout=self.args.timeout)
-            except Exception, e:
-                err_count += 1
-                msg = '\nError running SOS report on host:{0}. Error:"{1}"\n'.format(ip, e)
-                self.log.error("{0}\n{1}".format(get_traceback(), msg))
-                error_msg += msg
-        if error_msg:
-            self.log.error(red(error_msg))
-            raise Exception('Error while running SOS on {0}/{1} hosts'.format(err_count,
-                                                                              host_count))
-
-
+        command = "mkdir -p " + self.remote_dir
+        command += "; sosreport --batch --tmp-dir {0} --ticket-number {1} "\
+            .format(self.remote_dir, self.ticket_number)
+        rc = self.rc
+        rc.results = {}
+        rc.run_remote_commands(command=command)
+        rc.show_results()
 
     def test3_download(self):
         """
