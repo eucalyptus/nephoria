@@ -3,6 +3,7 @@
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, SkipTestException
 from cloud_utils.log_utils import get_traceback, red, ForegroundColor, BackGroundColor, markup
 from cloud_utils.net_utils.remote_commands import RemoteCommands
+from cloud_utils.net_utils.sshconnection import SshConnection
 from nephoria.testcontroller import TestController
 import copy
 import time
@@ -36,6 +37,12 @@ class SOSReports(CliTestRunner):
                    'help': 'Local directory to use for gathering sos reports',
                    'default': ''}}
 
+    _DEFAULT_CLI_ARGS['ip_list'] = {
+        'args': ['--ip-list'],
+        'kwargs': {'dest': 'ip_list',
+                   'help': 'Comma separated list of ips or hostnames to gather sos reports from',
+                   'default': None }}
+
     _DEFAULT_CLI_ARGS['package_url'] = {
         'args': ['--package-url'],
         'kwargs': {'dest': 'package_url',
@@ -48,12 +55,38 @@ class SOSReports(CliTestRunner):
         self.ticket_number = self.args.ticket_number or self.start_time
         self.remote_dir = os.path.join(self.args.remote_dir,
                                        'euca-sosreport-{0}'.format(self.ticket_number))
+        self._ip_list = []
 
+
+    def _scrub_ip_list(self, value):
+        value = value or []
+        ip_list = []
+        if isinstance(value, basestring):
+            value = value.split(',')
+        if not isinstance(value, list):
+            self.log.error(red('ip_list must be a list of IPs or comma separated string of IPs'))
+            raise ValueError('ip_list must be a list of IPs or comma separated string of IPs')
+        for ip in value:
+            ip_list.append(str(ip).strip())
+        return ip_list
+
+
+    @property
+    def ip_list(self):
+        if not self._ip_list:
+            ip_list = self.args.ip_list or self.tc.sysadmin.eucahosts.keys()
+            self._ip_list = self._scrub_ip_list(ip_list)
+        return self._ip_list
+
+    @ip_list.setter
+    def ip_list(self, value):
+        self._ip_list = self._scrub_ip_list(value)
 
     @property
     def tc(self):
         tc = getattr(self, '__tc', None)
         if not tc:
+            self.log.debug('Attempting to create TestController...')
             tc = TestController(hostname=self.args.clc,
                                 environment_file=self.args.environment_file,
                                 password=self.args.password,
@@ -65,9 +98,12 @@ class SOSReports(CliTestRunner):
     def rc(self):
         rc = getattr(self, '__rc', None)
         if not rc:
-            rc = RemoteCommands(ips=self.tc.sysadmin.eucahosts.keys(),
-                            username='root',
-                            password=self.args.password)
+            ip_list = self.ip_list
+            self.log.debug('Attempting to create remote command driver with ip list: {0}'
+                           .format(ip_list))
+            rc = RemoteCommands(ips=self.ip_list,
+                                username='root',
+                                password=self.args.password)
             setattr(self, '__rc', rc)
         return rc
 
@@ -78,8 +114,10 @@ class SOSReports(CliTestRunner):
         """
         Attempts to install the SOS and Eucalyptus-sos-plugins on each machine in the cloud.
         """
+
         rc = self.rc
         rc.results = {}
+        self.log.debug('Running install on ips:{0}'.format(rc.ips))
         rc.run_remote_commands(command='yum install sos eucalyptus-sos-plugins -y --nogpg')
         rc.show_results()
         failed = 0
@@ -119,18 +157,24 @@ class SOSReports(CliTestRunner):
         error_msg = ""
         count = 0
         err_count = 0
-        host_count = len(self.tc.sysadmin.eucahosts)
-        for ip, host in self.tc.sysadmin.eucahosts.iteritems():
+        host_count = len(self.ip_list)
+        for ip in self.ip_list:
+            if self.tc:
+                if ip in self.tc.sysadmin.eucahosts.keys():
+                    host = self.tc.sysadmin.eucahosts.get(ip)
+                    ssh = host.ssh
+                else:
+                    ssh = SshConnection(host=ip, password=self.args.password)
             try:
-                remote_tarball_path = host.sys("ls -1 {0}/*.xz | grep {1}"
+                remote_tarball_path = ssh.sys("ls -1 {0}/*.xz | grep {1}"
                                                .format(self.remote_dir, self.ticket_number),
                                                code=0)[0]
                 tarball_name = os.path.basename(remote_tarball_path)
-                local_name = "{0}.{1}{2}".format(ip.replace('.', '_'), self.ticket_number,
+                local_name = "sosreport-{0}.{1}{2}".format(ip, self.ticket_number,
                                                  tarball_name.split(str(self.ticket_number))[1])
                 local_tarball_path = os.path.join(self.args.local_dir, local_name)
                 self.log.debug("Downloading file to: " + local_tarball_path)
-                host.ssh.sftp_get(localfilepath=local_tarball_path,
+                ssh.sftp_get(localfilepath=local_tarball_path,
                                   remotefilepath=remote_tarball_path)
             except Exception, e:
                 err_count += 1
