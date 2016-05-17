@@ -338,8 +338,9 @@ class TestController(object):
         try:
             with open(environment_file) as myenv:
                 env_dict = yaml.load(myenv)
-        except:
-            raise("Failed to read '" + environment_file + "' file.")
+        except Exception as EE:
+            self.log.error('Failed to read env file:"{0}", err:{1}'.format(environment_file, EE))
+            raise EE
 
         result = env_dict['default_attributes']['eucalyptus']['topology'][component_type]
 
