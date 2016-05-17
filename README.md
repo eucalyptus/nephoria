@@ -66,18 +66,19 @@ clc_ip = '1.2.3.4'
 tc = TestController(hostname=clc_ip, log_level='DEBUG')
 
 # Test controller has some baked in utilities and
-# two primary types of user interfaces; sysadmin and admin
-# sysadmin is for cloud host and cloud system administrative operations.
+# two primary types of user interfaces; sysadmin and admin...
 
+# sysadmin is for cloud host and cloud system administrative operations.
 # sysadmin is systemconnection interface which combines the eucalyptus admin only rest interface
 # with a set of connections and utlities to interact with the underlying linux hosts and backends
 # which make up a Eucalyptus cloud.
 tc.sysadmin.show_hosts()
 tc.sys.admin.show_services()
 
-# admin is a UserContext interface which is a key value store of credentials and cloud service
-# endpoint information. This interface also has cloud service interfaces such as user.ec2, user.s3,
-# user.iam, etc. for interacting with the cloud service APIs.
+# admin is a UserContext interface representing the 'eucalyptus/admin' account/user.
+A UserContext obj is basically a key value store of credentials + cloud service
+# endpoint information, combined with cloud service interfaces/connections such as user.ec2,
+# user.s3, user.iam, etc. for interacting with the cloud service APIs.
 tc.admin.iam.show_all_accounts()
 tc.admin.ec2.show_images()
 tc.admin.s3.get_bucket()
@@ -93,4 +94,4 @@ user.iam.show_user_summary()
 
 The primary test case class is CliTestRunner(). This class intends to provide consistent cli
 driven testcases, testcase arguements, and results. See the README under the testcase_utils as well
-as the existing testcases in the testcases\ directory for more info. 
+as the existing testcases in the testcases\ directory for more info.
