@@ -1028,7 +1028,7 @@ class Euca2oolsImageUtils(object):
                                                           overwrite=overwrite)
 
                 self.log.debug('Downloading image to ' + str(machine) + ':' +
-                               str(filepath) + ', url:' + str(image_url))
+                               str(filepath) + ', image_url:' + str(image_url))
                 filesize = self.wget_image(image_url,
                                            destpath=destpath,
                                            machine=machine,
