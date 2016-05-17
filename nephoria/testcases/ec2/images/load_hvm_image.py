@@ -76,8 +76,8 @@ class LoadHvmImage(CliTestRunner):
                    'help': 'Username needed to retrieve remote url',
                    'default': None}}
 
-    _DEFAULT_CLI_ARGS['url'] = {
-        'args': ['--url'],
+    _DEFAULT_CLI_ARGS['image_url'] = {
+        'args': ['--image-url'],
         'kwargs': {'help': 'URL containing remote windows image to create EMI from',
                    'default': None}}
 
@@ -192,8 +192,8 @@ class LoadHvmImage(CliTestRunner):
     def check_url(self, url=None):
         retries = 12
         retry_delay = 10
-        req = Request(self.args.url)
-        url = url or self.args.url
+        req = Request(self.args.image_url)
+        url = url or self.args.image_url
         for x in range(retries + 1):
             try:
                 response = urlopen(req)
@@ -231,11 +231,11 @@ class LoadHvmImage(CliTestRunner):
         """
         self.args_check = False
         if not self.args.uploaded_manifest and not self.args.bundle_manifest:
-            if (not self.args.url and not self.args.filepath) or \
-                    (self.args.url and self.args.filepath):
+            if (not self.args.image_url and not self.args.filepath) or \
+                    (self.args.image_url and self.args.filepath):
                 raise Exception('If manifest not provided, either a URL or FILE path '
                                 'is required to create image')
-            if self.args.url:
+            if self.args.image_url:
                 self.check_url()
         self.args_check = True
 
@@ -273,7 +273,7 @@ class LoadHvmImage(CliTestRunner):
             emi = emi.id
         self.user.ec2.create_tags([emi],
                                   {'Nephoria Test Image: {0}'.format(time.asctime()):'',
-                                   'URL': self.args.url})
+                                   'URL': self.args.image_url})
 
     def clean_method(self):
         pass
