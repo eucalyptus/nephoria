@@ -961,41 +961,41 @@ class Euca2oolsImageUtils(object):
         return ret
 
     def create_emi(self,
-                    url,
-                    machine=None,
-                    access_key=None,
-                    secret_key=None,
-                    ec2_url=None,
-                    s3_url=None,
-                    bucketname=None,
-                    machine_credpath=None,
-                    debug=False,
-                    prefix=None,
-                    kernel=None,
-                    ramdisk=None,
-                    architecture=None,
-                    block_device_mapping=[],
-                    destpath=None,
-                    root_device_name=None,
-                    description=None,
-                    virtualization_type=None,
-                    platform=None,
-                    name=None,
-                    interbundle_timeout=120,
-                    upload_timeout=0,
-                    uniquebucket=True,
-                    wget_user=None,
-                    wget_password=None,
-                    wget_retryconn=True,
-                    filepath=None,
-                    bundle_manifest=None,
-                    uploaded_manifest=None,
-                    time_per_gig=300,
-                    tagname=None,
-                    overwrite=False,
-                    user_context=None,
-                    region_domain=None,
-                    ):
+                   image_url,
+                   machine=None,
+                   access_key=None,
+                   secret_key=None,
+                   ec2_url=None,
+                   s3_url=None,
+                   bucketname=None,
+                   machine_credpath=None,
+                   debug=False,
+                   prefix=None,
+                   kernel=None,
+                   ramdisk=None,
+                   architecture=None,
+                   block_device_mapping=[],
+                   destpath=None,
+                   root_device_name=None,
+                   description=None,
+                   virtualization_type=None,
+                   platform=None,
+                   name=None,
+                   interbundle_timeout=120,
+                   upload_timeout=0,
+                   uniquebucket=True,
+                   wget_user=None,
+                   wget_password=None,
+                   wget_retryconn=True,
+                   filepath=None,
+                   bundle_manifest=None,
+                   uploaded_manifest=None,
+                   time_per_gig=300,
+                   tagname=None,
+                   overwrite=False,
+                   user_context=None,
+                   region_domain=None,
+                   ):
         start = time.time()
         user = user_context
         if not user:
@@ -1015,12 +1015,12 @@ class Euca2oolsImageUtils(object):
         filesize = None
         destpath = destpath or self.destpath
         destpath = str(destpath)
-        self.log.debug('create_emi_from_url:' + str(url) + ", starting...")
+        self.log.debug('create_emi_from_url:' + str(image_url) + ", starting...")
 
         if not destpath.endswith('/'):
             destpath += '/'
-        if url:
-            filename = str(url).split('/')[-1]
+        if image_url:
+            filename = str(image_url).split('/')[-1]
             destpath = destpath + str(filename.replace('.','_'))
             if filepath is None and bundle_manifest is None and uploaded_manifest is None:
                 filepath = destpath + "/" + str(filename)
@@ -1028,8 +1028,8 @@ class Euca2oolsImageUtils(object):
                                                           overwrite=overwrite)
 
                 self.log.debug('Downloading image to ' + str(machine) + ':' +
-                           str(filepath) + ', url:' + str(url))
-                filesize = self.wget_image(url,
+                               str(filepath) + ', image_url:' + str(image_url))
+                filesize = self.wget_image(image_url,
                                            destpath=destpath,
                                            machine=machine,
                                            user=wget_user,
@@ -1103,8 +1103,8 @@ class Euca2oolsImageUtils(object):
         try:
             if filesize is not None:
                 emi.add_tag('size', value= str(filesize))
-            if url:
-                emi.add_tag('source', value=(str(url)))
+            if image_url:
+                emi.add_tag('source', value=(str(image_url)))
             emi.add_tag(tagname or 'eutester-created')
         except Exception, te:
             self.log.debug('Could not add tags to image:' + str(emi.id) +
