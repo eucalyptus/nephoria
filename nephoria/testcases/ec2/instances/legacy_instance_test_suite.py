@@ -306,7 +306,7 @@ class LegacyInstanceTestSuite(CliTestRunner):
         instances = self.run_image(zone=zone, **self.run_instance_params)
         self.instances += instances
         for instance in instances:
-            if self.emi.virtualization_type == "paravirtual":
+            if instance.virtualization_type == "paravirtual":
                 paravirtual_ephemeral = "/dev/" + instance.rootfs_device + "2"
                 try:
                     instance.sys("ls -1 " + paravirtual_ephemeral, code=0)
@@ -315,7 +315,7 @@ class LegacyInstanceTestSuite(CliTestRunner):
                 except CommandExitCodeException as CE:
                     self.log.error(red("Did not find ephemeral storage at " +
                                        paravirtual_ephemeral))
-            elif self.emi.virtualization_type == "hvm":
+            elif instance.virtualization_type == "hvm" and instance.ins1.root_device_type != 'ebs':
                 hvm_ephemeral = "/dev/" + instance.block_device_prefix + "b"
                 try:
                     instance.sys("ls -1 " + hvm_ephemeral, code=0)
