@@ -1112,7 +1112,7 @@ class LegacyEbsTestSuite(CliTestRunner):
         for zone in self.zonelist:
             self.user.ec2.terminate_instances(zone.instances)
             self.user.ec2.delete_volumes(zone.volumes)
-            self.user.ec2.delete_snapshots(zone.snapshots)
+            self.user.ec2.delete_snapshots(self.snaps)
         self.user.ec2.delete_keypair(self.keypair)
 
 
