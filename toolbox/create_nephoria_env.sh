@@ -65,7 +65,7 @@ pwd
 ls -la
 ### Install nephoria
 if [ ! -d nephoria ]; then
-    git clone NEPHORIA_REPO
+    git clone $NEPHORIA_REPO
 fi
 cd nephoria
 ls -la
