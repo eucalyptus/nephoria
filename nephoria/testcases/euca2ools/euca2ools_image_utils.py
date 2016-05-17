@@ -253,7 +253,7 @@ class Euca2oolsImageUtils(object):
         return rfsize
 
     def wget_image(self,
-                   url,
+                   image_url,
                    destpath=None,
                    dest_file_name=None,
                    machine=None,
@@ -263,7 +263,7 @@ class Euca2oolsImageUtils(object):
                    time_per_gig=300):
         '''
         Attempts to wget a url to a remote (worker) machine.
-        :param url: url to wget/download
+        :param image_url: url to wget/download
         :param destpath:path/dir to download to
         :param dest_file_name: filename to download image to
         :param machine: remote (worker) machine to wget on
@@ -276,14 +276,14 @@ class Euca2oolsImageUtils(object):
         machine = machine or self.worker_machine
         if destpath is None and self.destpath is not None:
             destpath = self.destpath
-        size = self.getHttpRemoteImageSize(url)
+        size = self.getHttpRemoteImageSize(image_url)
         if (size <  machine.get_available(destpath, unit=self.__class__.gig)):
             raise Exception("Not enough available space at: " +
-                            str(destpath) + ", for image: " + str(url))
+                            str(destpath) + ", for image: " + str(image_url))
         timeout = size * time_per_gig
-        self.log.debug('wget_image: ' + str(url) + ' to destpath' +
-                   str(destpath) + ' on machine:' + str(machine.hostname))
-        saved_location = machine.wget_remote_image(url,
+        self.log.debug('wget_image: ' + str(image_url) + ' to destpath' +
+                       str(destpath) + ' on machine:' + str(machine.hostname))
+        saved_location = machine.wget_remote_image(image_url,
                                                    path=destpath,
                                                    dest_file_name=dest_file_name,
                                                    user=user,

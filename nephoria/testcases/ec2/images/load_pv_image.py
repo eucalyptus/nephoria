@@ -288,7 +288,7 @@ class Load_Pv_Image(CliTestRunner):
                 return self.eki
         if not kernelfilepath:
             destpath = self.args.destpath
-            size, kernelfilepath = image_utils.wget_image(url=kernel_image_url,
+            size, kernelfilepath = image_utils.wget_image(image_url=kernel_image_url,
                                                           destpath=destpath)
         manifest = image_utils.euca2ools_bundle_image(path=kernelfilepath,
                                                       destination=self.args.destpath)
@@ -348,7 +348,7 @@ class Load_Pv_Image(CliTestRunner):
                 return self.eri
         if not ramdiskfilepath:
             destpath = self.args.destpath
-            size, ramdiskfilepath = image_utils.wget_image(url=ramdisk_image_url,
+            size, ramdiskfilepath = image_utils.wget_image(image_url=ramdisk_image_url,
                                                            destpath=destpath)
         manifest = image_utils.euca2ools_bundle_image(path=ramdiskfilepath,
                                                       destination=self.args.destpath)
@@ -387,7 +387,7 @@ class Load_Pv_Image(CliTestRunner):
         imagename = filename[0:20] + '_by_eutester'
         if not diskfilepath:
             destpath = self.args.destpath
-            size, diskfilepath = image_utils.wget_image(url=disk_image_url,
+            size, diskfilepath = image_utils.wget_image(image_url=disk_image_url,
                                                         destpath=destpath)
         try:
             self.user.ec2.get_emi(emi='', filters={'name':imagename}, state=None)
