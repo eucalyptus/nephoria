@@ -1,7 +1,7 @@
 # Nephoria
 Cloud Utilties and Automated Test Framework for Eucalyptus
 =======
-Nephoria (previously known as nephoria)
+Nephoria
 ======================
 
 nephoria is an attempt to leverage existing test code to make test writing faster and standardized.  
