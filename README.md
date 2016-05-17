@@ -92,6 +92,68 @@ user = tc.create_user_using_cloudadmin('newaccount', 'admin')
 user.iam.show_user_summary()
 ```
 
+Creating and Running TestCases
+------
 The primary test case class is CliTestRunner(). This class intends to provide consistent cli
-driven testcases, testcase arguements, and results. See the README under the testcase_utils as well
+driven testcases, testcase arguements, and results.
+The tests typically require 1 or more of the following:
+
+ - CLC IP
+ - Calyptos Cloud Topology yml
+ - Cloud user access key and secret key
+ - Specific Cloud service endpoints
+
+
+See the README under the testcase_utils as well
 as the existing testcases in the testcases\ directory for more info.
+
+Example TestCase run:
+```
+python load_hvm_image.py --clc 192.168.0.199 --image-url http://images.qa1/disk.img --test-list test1_check_args
+...
+...
+...
+---------------------------------------------------------------------------------------------------------------------
+ -------------------------------------------------------------------------------------------------------------------
+   TEST RESULTS FOR "LoadHvmImage"
+ -------------------------------------------------------------------------------------------------------------------
+   | RESULT:    | PASSED                                                                                         |
+   | TEST NAME  | test1_check_args                                                                               |
+   | TIME:      | 0                                                                                              |
+   | TEST ARGS: | test1_check_args()                                                                             |
+   | OUTPUT:    | None                                                                                           |
+ -------------------------------------------------------------------------------------------------------------------
+   | RESULT:    | NOT_RUN                                                                                        |
+   | TEST NAME  | test2_create_emi                                                                               |
+   | TIME:      | 1                                                                                              |
+   | TEST ARGS: | test2_create_emi()                                                                             |
+   | OUTPUT:    | NOT_RUN (test2_create_emi:)                                                                    |
+ -------------------------------------------------------------------------------------------------------------------
+   | RESULT:    | NOT_RUN                                                                                        |
+   | TEST NAME  | test3_make_image_public                                                                        |
+   | TIME:      | 0                                                                                              |
+   | TEST ARGS: | test3_make_image_public()                                                                      |
+   | OUTPUT:    | NOT_RUN (test3_make_image_public:)                                                             |
+ -------------------------------------------------------------------------------------------------------------------
+   | RESULT:    | NOT_RUN                                                                                        |
+   | TEST NAME  | test4_tag_image                                                                                |
+   | TIME:      | 0                                                                                              |
+   | TEST ARGS: | test4_tag_image()                                                                              |
+   | OUTPUT:    | NOT_RUN (test4_tag_image:)                                                                     |
+ -------------------------------------------------------------------------------------------------------------------
+   | RESULT:    | PASSED                                                                                         |
+   | TEST NAME  | clean_method                                                                                   |
+   | TIME:      | 0                                                                                              |
+   | TEST ARGS: | clean_method()                                                                                 |
+   | OUTPUT:    | None                                                                                           |
+ -------------------------------------------------------------------------------------------------------------------
+
+
+   LATEST RESULTS:
+   -----------------------------------------------
+     TOTAL   FAILED   PASSED   NOT_RUN   ELAPSED
+   -----------------------------------------------
+       5       0        2         3         1
+   -----------------------------------------------
+
+   ```
