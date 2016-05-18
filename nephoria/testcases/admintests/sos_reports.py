@@ -146,7 +146,7 @@ class SOSReports(CliTestRunner):
                 failed += 1
         if failed:
             raise RuntimeError('{0}/{1} hosts had errors while attempting to run SOS'
-                               .format(failed/len(rc.ips)))
+                               .format(failed, len(rc.ips)))
 
 
     def test3_download(self):
