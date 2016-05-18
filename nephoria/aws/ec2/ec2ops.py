@@ -2201,6 +2201,7 @@ disable_root: false"""
                        ' snaps to delete...' )
             waiting_list = copy.copy(delete_me)
             for snapshot in waiting_list:
+                get_snapshot = None
                 try:
                     snapshot.update()
                     get_snapshot = self.connection.get_all_snapshots(snapshot_ids=[snapshot.id])
