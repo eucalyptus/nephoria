@@ -38,7 +38,8 @@ import sys
 from cloud_utils.net_utils.sshconnection import SshCbReturn
 from cloud_utils.system_utils.machine import Machine
 from cloud_utils.log_utils.eulogger import Eulogger
-from cloud_utils.log_utils import TextStyle, ForegroundColor, BackGroundColor, markup
+from cloud_utils.log_utils import TextStyle, ForegroundColor, BackGroundColor, markup, \
+    get_traceback
 from nephoria.aws.ec2.conversiontask import ConversionTask
 from nephoria.usercontext import UserContext
 
@@ -217,10 +218,22 @@ class Euca2oolsImageUtils(object):
                 url = url.replace('http://', '')
                 host = url.split('/')[0]
                 path = url.replace(host, '')
-                debug("get_remote_file, host(" + host + ") path(" + path + ")")
-                conn = httplib.HTTPConnection(host)
-                conn.request("HEAD", path)
-                res = conn.getresponse()
+                res = None
+                err = None
+                for retry in xrange(0,2):
+                    try:
+                        debug("get_remote_file, host(" + host + ") path(" + path + ")")
+                        conn = httplib.HTTPConnection(host)
+                        conn.request("HEAD", path)
+                        res = conn.getresponse()
+                        break
+                    except Exception as HE:
+                        err = '{0}\nError attempting to fetch url:{1}, error:{2}'\
+                            .format(get_traceback(), url, HE)
+                        debug(err)
+                if not res:
+                    err = err or "Error retrieving url:{0}".format(url)
+                    raise RuntimeError(err)
                 location = res.getheader('location')
                 if location and location != url:
                     depth += 1
