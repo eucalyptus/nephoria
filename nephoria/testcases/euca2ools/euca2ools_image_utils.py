@@ -230,8 +230,8 @@ class Euca2oolsImageUtils(object):
                         res = conn.getresponse()
                         break
                     except Exception as HE:
-                        err = '{0}\nError attempting to fetch url:{1}, error:{2}'\
-                            .format(get_traceback(), url, HE)
+                        err = '{0}\nError attempting to fetch url:{1}, attempt:{2}/{3}, ' \
+                              'error:{4}'.format(get_traceback(), url, retry, retries, HE)
                         debug(err)
                         time.sleep(retry)
                 if not res:
