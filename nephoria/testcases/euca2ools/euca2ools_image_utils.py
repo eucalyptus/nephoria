@@ -220,17 +220,20 @@ class Euca2oolsImageUtils(object):
                 path = url.replace(host, '')
                 res = None
                 err = None
-                for retry in xrange(0,2):
+                retries = 5
+                for retry in xrange(0, retries):
                     try:
-                        debug("get_remote_file, host(" + host + ") path(" + path + ")")
+                        debug('HTTP HEAD request for: {0}, attempt:{1}/{2}'
+                              .format(url, retry, retries))
                         conn = httplib.HTTPConnection(host)
                         conn.request("HEAD", path)
                         res = conn.getresponse()
                         break
                     except Exception as HE:
-                        err = '{0}\nError attempting to fetch url:{1}, error:{2}'\
-                            .format(get_traceback(), url, HE)
+                        err = '{0}\nError attempting to fetch url:{1}, attempt:{2}/{3}, ' \
+                              'error:{4}'.format(get_traceback(), url, retry, retries, HE)
                         debug(err)
+                        time.sleep(retry)
                 if not res:
                     err = err or "Error retrieving url:{0}".format(url)
                     raise RuntimeError(err)
