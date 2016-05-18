@@ -3,7 +3,7 @@ set -x
 venv="nephoria_venv"
 neph_branch="oldboto"
 adminapi_branch="master"
-gpg=""
+gpg="--nogpg"
 NEPHORIA_REPO="https://github.com/eucalyptus/nephoria.git"
 
 while [[ $# > 1 ]]
@@ -15,8 +15,8 @@ case $key in
     NEPHORIA_REPO="$2"
     shift # past argument
     ;;
-    --nogpg)
-    gpg="--nogpg"
+    --gpg)
+    gpg=""
     ;;
     -a|--adminapi-branch)
     adminapi_branch="$2"
