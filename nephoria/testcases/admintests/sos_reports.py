@@ -90,6 +90,7 @@ class SOSReports(CliTestRunner):
             tc = TestController(hostname=self.args.clc,
                                 environment_file=self.args.environment_file,
                                 password=self.args.password,
+                                timeout=self.args.timeout,
                                 log_level=self.args.log_level)
             setattr(self, '__tc', tc)
         return tc
