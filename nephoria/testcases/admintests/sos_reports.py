@@ -104,7 +104,8 @@ class SOSReports(CliTestRunner):
                            .format(ip_list))
             rc = RemoteCommands(ips=self.ip_list,
                                 username='root',
-                                password=self.args.password)
+                                password=self.args.password,
+                                timeout=600)
             setattr(self, '__rc', rc)
         return rc
 
