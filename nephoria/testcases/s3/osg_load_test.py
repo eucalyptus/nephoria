@@ -1,15 +1,10 @@
 #!/usr/bin/env python
 from __future__ import division
 
-import hashlib
-import logging
 from cStringIO import StringIO
-import re
 import tempfile
 
 import os
-
-import datetime
 from concurrent.futures.thread import ThreadPoolExecutor
 from math import ceil
 
@@ -53,7 +48,9 @@ class OSGConcurrentTests(CliTestRunner):
 
     bucket_list = []
     temp_files = []
-
+    total_put_latency = 0
+    total_get_latency = 0
+    total_del_latency = 0
 
     @property
     def tc(self):
@@ -84,7 +81,7 @@ class OSGConcurrentTests(CliTestRunner):
     def bucket_prefix(self):
         bucket_prefix = getattr(self, '__bucket_prefix', None)
         if not bucket_prefix:
-            bucket_prefix = "nephoria-bucket-test-suite-" + str(int(time.time()))
+            bucket_prefix = "nephoria-bucket-" + str(int(time.time()))
         return bucket_prefix
 
     @bucket_prefix.setter
@@ -96,28 +93,6 @@ class OSGConcurrentTests(CliTestRunner):
         self.temp_files.append(temp_file)
         temp_file.write(os.urandom(1024 * size_in_kb))
         return temp_file.name
-
-    def get_object(self, bucket, key_name, meta=True):
-        """
-        Writes the object to a temp file and returns the meta info of the object e.g hash, name.
-        Returns the downloaded object when meta is set to False.
-        """
-        # self.log.debug("Getting object '" + key_name + "'")
-        ret_key = bucket.get_key(key_name)
-        temp_object = tempfile.NamedTemporaryFile(mode="w+b", prefix="eutester-mpu")
-        self.temp_files.append(temp_object)
-        ret_key.get_contents_to_file(temp_object)
-        if meta:
-            return {'name': temp_object.name, 'hash': self.get_hash(temp_object.name)}
-        return temp_object
-
-    def get_hash(self, file_path):
-        return hashlib.md5(self.get_content(file_path)).hexdigest()
-
-    def get_content(self, file_path):
-        with open(file_path) as file_to_check:
-            data = file_to_check.read()
-        return data
 
     def single_upload(self, bucket, key_name, file_path):
         key = bucket.new_key(key_name)
@@ -158,22 +133,7 @@ class OSGConcurrentTests(CliTestRunner):
         else:
             upload_time = self.time_to_exec(self.single_upload, bucket, key_name, eu_file.name)
             with open('osg_perf.log', 'a') as f:
-                f.write('PUT\t' + str(upload_time['time']) + '\n')
-
-        get_time = self.time_to_exec(self.get_object, bucket, key_name)
-        with open('osg_perf.log', 'a') as f:
-            f.write('GET\t' + str(get_time['time']) + '\n')
-        ret_object_meta = get_time['output']
-        local_object_hash = self.get_hash(eu_file.name)
-
-        # self.log.debug("Matching local and remote hashes of object: " + eu_file.name)
-        # self.log.debug("Remote object: " + ret_object_meta['hash'])
-        # self.log.debug("Local object:  " + local_object_hash)
-        if ret_object_meta['hash'] != local_object_hash:
-            # self.log.debug("return_object hash: " + ret_object_meta['hash'])
-            # self.log.debug("local_object hash: " + local_object_hash)
-            # self.log.debug("Uploaded content and downloaded content are not same.")
-            return False
+                f.write('PUT\t' + str(upload_time) + '\n')
         return True
 
     def time_to_exec(self, method, *args, **kwargs):
@@ -182,14 +142,14 @@ class OSGConcurrentTests(CliTestRunner):
         try:
             result = method(*args, **kwargs)
         except Exception as e:
+            self.log.error(e)
             end_time = time.time()
             total_time = end_time - start_time
             self.log.error("Failed to run method: " + method_name)
-            self.log.error(e.message)
         else:
             end_time = time.time()
             total_time = end_time - start_time
-        return {'time': total_time, 'output': result}
+        return total_time
 
     def create_buckets(self, num):
         for i in range(num):
@@ -200,10 +160,34 @@ class OSGConcurrentTests(CliTestRunner):
 
         self.log.debug(self.tc.admin.s3.connection.get_all_buckets())
 
-    def test_concurrent_upload(self):
+    def get_content(self, key):
+        self.log.debug("Getting content as string for: " + key.name)
+        content = key.get_contents_as_string()
+
+
+
+    def put_objects(self, bucket_name, key_name, eu_file=None):
+        """
+        Args:
+            bucket_name: existing bucket_name to put objects
+            key_name: name of the key
+            eu_file: file to put into bucket
+        """
+        bucket = self.tc.admin.s3.get_bucket_by_name(bucket_name)
+
+        if (os.path.getsize(eu_file.name) > (5 * 1024 * 1024)) and (self.args.mpu_threshold >= (5 * 1024)):
+            self.multipart_upload(bucket, key_name, eu_file)
+        else:
+            upload_time = self.time_to_exec(self.single_upload, bucket, key_name, eu_file.name)
+            self.total_put_latency = self.total_put_latency + upload_time
+            with open('osg_perf.log', 'a') as f:
+                f.write('PUT\t\t' + str(upload_time) + '\n')
+            return True
+
+    def test1_concurrent_upload(self):
         with open('osg_perf.log', 'w') as f:
-            f.write(str('OPS\t\tTime') + '\n')
-            f.write(str('---\t\t----') + '\n')
+            f.write(str('OPS\t\t   Time   ') + '\n')
+            f.write(str('---\t\t----------') + '\n')
         self.log.debug("Creating buckets..")
         self.create_buckets(self.args.buckets)
 
@@ -212,10 +196,18 @@ class OSGConcurrentTests(CliTestRunner):
 
         thread_pool = []
         with ThreadPoolExecutor(max_workers=self.args.threads) as executor:
-            for i in range(self.args.buckets):
-                for j in range(self.args.objects):
-                    thread_pool.append(executor.submit(self.put_get_check, bucket_name=self.bucket_list[i],
-                                                       key_name=eu_file.name + '-' + str(j), eu_file=eu_file))
+            for bucket_name in self.bucket_list:
+                for k in range(self.args.objects):
+                    thread_pool.append(executor.submit(self.put_objects,
+                                                       bucket_name=bucket_name,
+                                                       key_name=eu_file.name + '-' + str(k),
+                                                       eu_file=eu_file))
+        lock_time = 2
+        self.log.debug("len(thread_pool): " + str(len(thread_pool)))
+        while len(thread_pool) < (self.args.buckets * self.args.objects):
+            self.log.debug("len(thread_pool): " + str(len(thread_pool)))
+            self.log.warning("Uncanny lock, sleeping for " + str(lock_time) + " seconds.")
+            time.sleep(lock_time)
 
         for tp in thread_pool:
             try:
@@ -224,25 +216,96 @@ class OSGConcurrentTests(CliTestRunner):
             except Exception as e:
                 self.log.error("Found exception in thread-pool: " + e.message)
 
-    def clear_bucket(self, bucket_name):
-        bucket = self.tc.admin.s3.get_bucket_by_name(bucket_name)
-        for key in bucket:
-            self.log.debug('deleting key: ' + key.name)
-            delete_time = self.time_to_exec(key.delete)
-            with open('osg_perf.log', 'a') as f:
-                f.write('DEL\t' + str(delete_time['time']) + '\n')
+    def get_objects(self, key):
+        download_time = self.time_to_exec(self.get_content, key)
+        self.total_get_latency = self.total_get_latency + download_time
+        with open('osg_perf.log', 'a') as f:
+            f.write('GET\t\t' + str(download_time) + '\n')
 
-    def clean_method(self):
+    def test2_get_objects(self):
+        get_thread_pool = []
         with ThreadPoolExecutor(max_workers=self.args.threads) as executor:
             for bucket_name in self.bucket_list:
-                executor.submit(self.clear_bucket, bucket_name)
+                bucket = self.tc.admin.s3.get_bucket_by_name(bucket_name)
+                max_keys = 10
+                keys = bucket.get_all_keys(max_keys=max_keys)
+                for key in keys:
+                    get_thread_pool.append(executor.submit(self.get_objects, key))
+                while keys.next_marker:
+                    self.log.debug("found keys.next_marker: " + keys.next_marker)
+                    keys = bucket.get_all_keys(marker=keys.next_marker)
+                    for key in keys:
+                        get_thread_pool.append(executor.submit(self.get_objects, key))
+        self.log.debug("len(get_thread_pool): " + str(len(get_thread_pool)))
+
+        lock_time = 2
+        while len(get_thread_pool) < (self.args.buckets * self.args.objects):
+            self.log.debug("len(get_thread_pool): " + str(len(get_thread_pool)))
+            self.log.warning("Uncanny lock, sleeping for " + str(lock_time) + " seconds.")
+            time.sleep(lock_time)
+
+    def delete_key(self, key):
+        self.log.debug('deleting key: ' + key.name)
+        delete_time = self.time_to_exec(key.delete)
+        self.total_del_latency = self.total_del_latency + delete_time
+        with open('osg_perf.log', 'a') as f:
+            f.write('DEL\t\t' + str(delete_time) + '\n')
+        return True
+
+    def test3_delete_objects(self):
+        clean_thread_pool = []
+
+        with ThreadPoolExecutor(max_workers=self.args.threads) as executor:
+            for bucket_name in self.bucket_list:
+                bucket = self.tc.admin.s3.get_bucket_by_name(bucket_name)
+                max_keys = 10
+                keys = bucket.get_all_keys(max_keys=max_keys)
+                for key in keys:
+                    clean_thread_pool.append(executor.submit(self.delete_key, key))
+                while keys.next_marker:
+                    self.log.debug("found keys.next_marker: " + keys.next_marker)
+                    keys = bucket.get_all_keys(marker=keys.next_marker)
+                    for key in keys:
+                        clean_thread_pool.append(executor.submit(self.delete_key, key))
+
+        self.log.debug("len(clean_thread_pool): " + str(len(clean_thread_pool)))
+        lock_time = 2
+        while len(clean_thread_pool) < (self.args.buckets * self.args.objects):
+            self.log.debug("len(clean_thread_pool): " + str(len(clean_thread_pool)))
+            self.log.warning("Uncanny lock, sleeping for " + str(2) + " seconds.")
+            time.sleep(lock_time)
+
+        for ctp in clean_thread_pool:
+            try:
+                if not ctp.result():
+                    self.log.error("[CRITICAL] failed delete in thread")
+            except Exception as e:
+                self.log.error("Found exception in clean_thread_pool: " + e.message)
 
         for bucket_name in self.bucket_list:
             self.tc.admin.s3.connection.delete_bucket(bucket_name)
         for tf in self.temp_files:
             tf.close()
 
+    def test4_calculate_average_latency(self):
+        with open('osg_perf.log', 'a') as f:
+            f.write('\n\n')
+            f.write('  Average Latency  ' + '\n')
+            f.write('-------------------' + '\n')
+        avg_put = self.total_put_latency / (self.args.objects * self.args.buckets)
+        with open('osg_perf.log', 'a') as f:
+            f.write('Avg PUT\t\t' + str(avg_put) + '\n')
+        avg_get = self.total_get_latency / (self.args.objects * self.args.buckets)
+        with open('osg_perf.log', 'a') as f:
+            f.write('Avg GET\t\t' + str(avg_get) + '\n')
+        avg_del = self.total_del_latency / (self.args.objects * self.args.buckets)
+        with open('osg_perf.log', 'a') as f:
+            f.write('Avg DEL\t\t' + str(avg_del) + '\n')
+
+    def clean_method(self):
+        pass
+
 if __name__ == "__main__":
     test = OSGConcurrentTests()
-    result = test.run()
-    exit(result)
+    test_result = test.run()
+    exit(test_result)
