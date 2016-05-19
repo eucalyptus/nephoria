@@ -1,10 +1,18 @@
 # Nephoria
-Cloud Utilties and Automated Test Framework for Eucalyptus
+Cloud Utilities and Automated Test Framework for Eucalyptus
 =======
 Nephoria
 ======================
 
-nephoria is an attempt to leverage existing test code to make test writing faster and standardized.  
+Nephoria is an attempt to leverage existing test code to make navigating clouds, the systems they
+run on, and the services they provide easier for the purpose of testing and validating cloud
+related operations.
+
+Nephoria attempts to provide the following utlities through a set of simple interfaces:
+ - Linux System Administrative Utilities
+ - Eucalyptus Cloud Administrative Utilities
+ - User Interfaces For Common AWS and Eucalyptus Cloud Services
+ - CLI Driven Testcases, Frameworks, Harness, etc..
 
 Installation
 ------
@@ -73,7 +81,7 @@ tc = TestController(hostname=clc_ip, log_level='DEBUG')
 # with a set of connections and utlities to interact with the underlying linux hosts and backends
 # which make up a Eucalyptus cloud.
 tc.sysadmin.show_hosts()
-tc.sys.admin.show_services()
+tc.sysadmin.show_services()
 
 # admin is a UserContext interface representing the 'eucalyptus/admin' account/user.
 A UserContext obj is basically a key value store of credentials + cloud service
@@ -90,6 +98,8 @@ user.ec2.show_images()
 # ...or easilly create a new account and/or user on the cloud...
 user = tc.create_user_using_cloudadmin('newaccount', 'admin')
 user.iam.show_user_summary()
+instance = user.ec2.run_image()
+
 ```
 
 Creating and Running TestCases
