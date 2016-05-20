@@ -92,7 +92,15 @@ class EuVolume(Volume, TaggedResource):
         :rtype: integer
         :returns: The number of seconds elapsed since this volume was created.
         """
-        volume.update()
+        last_status = volume.status
+        try:
+            volume.update()
+        except EC2ResponseError as ER:
+            if ER.status == 400 and last_status in ['deleted', 'deleting']:
+                self.status = 'deleted'
+                self.attach_data = None
+            else:
+                raise ER
         #get timestamp from attach_data
         create_time = self.get_datetime_from_resource_string(volume.create_time)
         #return the elapsed time in seconds
@@ -130,6 +138,7 @@ class EuVolume(Volume, TaggedResource):
         except EC2ResponseError as ER:
             if ER.status == 400 and last_status in ['deleted', 'deleting']:
                 self.status = 'deleted'
+                self.attach_data =  None
             else:
                 raise ER
         self.set_last_status()
