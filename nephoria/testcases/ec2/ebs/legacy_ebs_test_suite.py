@@ -39,7 +39,7 @@ from nephoria.aws.ec2 import euinstance
 from nephoria.aws.ec2.ec2ops import VolumeStateException
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner
 from nephoria.testcontroller import TestController
-from cloud_utils.log_utils import red
+from cloud_utils.log_utils import red, get_traceback
 from nephoria.usercontext import UserContext
 from boto.ec2.image import Image
 from boto.ec2.group import Group
@@ -428,8 +428,8 @@ class LegacyEbsTestSuite(CliTestRunner):
                                                                       attached_status='attached',
                                                                       timeout=60)
                         except Exception, e:
-                            self.log.error("attach_all_vols_to_instances_in_zones failed "
-                                           "to attach volume")
+                            self.log.error(red("{0}\nattach_all_vols_to_instances_in_zones failed "
+                                           "to attach volume, err:{1}".format(get_traceback(), e)))
                             raise e
                         i += 1
 
