@@ -90,6 +90,7 @@ class SOSReports(CliTestRunner):
             tc = TestController(hostname=self.args.clc,
                                 environment_file=self.args.environment_file,
                                 password=self.args.password,
+                                timeout=self.args.timeout,
                                 log_level=self.args.log_level)
             setattr(self, '__tc', tc)
         return tc
@@ -103,7 +104,8 @@ class SOSReports(CliTestRunner):
                            .format(ip_list))
             rc = RemoteCommands(ips=self.ip_list,
                                 username='root',
-                                password=self.args.password)
+                                password=self.args.password,
+                                timeout=600)
             setattr(self, '__rc', rc)
         return rc
 
