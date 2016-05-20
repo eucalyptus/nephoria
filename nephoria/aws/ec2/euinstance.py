@@ -47,6 +47,7 @@ Sample usage:
 
 from boto.ec2.instance import Instance, InstanceState
 from boto.ec2.networkinterface import NetworkInterface
+from boto.exception import EC2ResponseError
 from cloud_utils.log_utils import eulogger, printinfo, markup
 from nephoria.aws.ec2.euvolume import EuVolume
 from nephoria.euca.taggedresource import TaggedResource
@@ -1222,7 +1223,11 @@ class EuInstance(Instance, TaggedResource, Machine):
                     continue
             # Check to see if the cloud has a conflict with this device name...
             for vol in cloudlist:
-                vol.update()
+                try:
+                    vol.update()
+                except EC2ResponseError as ER:
+                    if ER.status == 400:
+                        continue
                 if (vol.attach_data is not None) and (vol.attach_data.device == dev):
                     inuse = True
                     in_use_cloud += str(vol.id) + ", "
