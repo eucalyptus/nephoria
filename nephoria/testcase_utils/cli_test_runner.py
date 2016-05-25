@@ -266,11 +266,20 @@ class CliTestRunner(object):
                       'kwargs': {"help": "log level for stdout logging",
                                  "default": 'DEBUG'}},
         'test_account': {'args': ['--test-account'],
-                         'kwargs': {"help": "Cloud account name to use",
+                         'kwargs': {"help": "Cloud account name to use with test controller",
                                     "default": "testrunner"}},
         'test_user': {'args': ['--test-user'],
-                      'kwargs': {"help": "Cloud user name to use",
+                      'kwargs': {"help": "Cloud user name to use with test controller",
                                  "default": "admin"}},
+        'region_domain': {'args': ['--region'],
+                          'kwargs': {'help': 'Region domain to run this test in',
+                                     'default': None}},
+        'access_key': {'args': ['--access-key'],
+                       'kwargs': {'help': 'Access key to use during test',
+                                  'default': None}},
+        'secret_key': {'args': ['--secret-key'],
+                       'kwargs': {'help': 'Secret key to use during test',
+                                  'default': None}},
         'log_file': {'args': ['--log-file'],
                      'kwargs': {"help": "file path to log to (in addition to stdout",
                                 "default": None}},
@@ -280,8 +289,9 @@ class CliTestRunner(object):
         'test_list': {'args': ['--test-list'],
                       'kwargs': {"help": "comma or space delimited list of test names to run",
                                  "default": None}},
-        'config_file': {'args': ['--config-file'],
-                        'kwargs': {"help": "Test Config file path",
+        'environment_file': {'args': ['--environment-file'],
+                        'kwargs': {"help": "Environment file that describes Eucalyptus topology,"
+                                           "e.g Environment file that was used by Calyptos.",
                                    "default": None}},
         'no_clean': {'args': ['--no-clean'],
                      'kwargs': {'help': 'Flag, if provided will not run the clean method on exit',
@@ -302,6 +312,7 @@ class CliTestRunner(object):
         self.name = name or self.__class__.__name__
         # create parser
         self.parser = argparse.ArgumentParser(prog=self.name, description=self._CLI_DESCRIPTION)
+        self.pre_init()
         # create cli options from class dict
         for argname, arg_dict in self._DEFAULT_CLI_ARGS.iteritems():
             cli_args = arg_dict.get('args')
@@ -328,7 +339,20 @@ class CliTestRunner(object):
         height, width = get_terminal_size()
         if width < self._term_width:
             self._term_width = width
+        self.post_init()
         self.show_self()
+
+    def pre_init(self, *args, **kwargs):
+        """
+        Additional items to be run towards the beginning of init()
+        """
+        pass
+
+    def post_init(self, *args, **kwargs):
+        """
+        Additional items to be run at the end of init.
+        """
+        pass
 
     def clean_method(self):
         """
@@ -368,7 +392,7 @@ class CliTestRunner(object):
         pt.align = 'l'
         pt.add_row([blue("NAME"), self.name])
         pt.add_row([blue("TEST LIST"), self._testlist])
-        pt.add_row([blue('CONFIG FILES'), self.args.config_file])
+        pt.add_row([blue('ENVIRONMENT FILE'), self.args.environment_file])
         main_pt.add_row([pt])
         self.log.info("\n{0}\n".format(main_pt))
         self.show_args()
@@ -580,6 +604,7 @@ class CliTestRunner(object):
                 test_names = str(self.args.test_list).replace(',', " ").split()
                 testlist = []
                 for test_name in test_names:
+                    test_name = test_name.strip(',')
                     testlist.append(self.create_testunit_by_name(name=test_name,
                                                                  obj=self))
             else:
@@ -934,8 +959,11 @@ class CliTestRunner(object):
             args = self.args
         if not args:
             return
-        pt = PrettyTable([yellow('TEST ARGS', bold=True), yellow('VALUE', bold=True)])
+        headers= [yellow('TEST ARGS', bold=True), yellow('VALUE', bold=True)]
+        pt = PrettyTable(headers)
         pt.align = 'l'
+        pt.max_width[headers[0]] = 30
+        pt.max_width[headers[1]] = 80
         for key, val in args._get_kwargs():
             pt.add_row([blue(key), val])
         self.log.info("\n{0}\n".format(pt))
@@ -1147,14 +1175,15 @@ class CliTestRunner(object):
             startbuf += '<div id="myDiv" name="myDiv" title="Example Div Element" style="color: ' \
                         '#0900C4; font: Helvetica 12pt;border: 1px solid black;">'
             startbuf += str(link)
-        pt = PrettyTable(['HEADER'])
+        header = "HEADER".ljust(110)
+        pt = PrettyTable([header])
+        pt.max_width = 105
         pt.header = False
         pt.align = 'l'
         buf = "STARTING TESTUNIT: {0}".format(test.name).ljust(self._term_width)
         argbuf = self.get_pretty_args(test)
         buf += str(test.description) + str(argbuf)
-        buf += 'Running list method: "' + str(
-            self.format_testunit_method_arg_values(test)) + '"'
+        buf += 'Running test method: "{0}"'.format(self.format_testunit_method_arg_values(test))
         pt.add_row([buf])
         startbuf += markup(pt, markups=[ForegroundColor.WHITE, BackGroundColor.BG_BLUE])
         if self.html_anchors:

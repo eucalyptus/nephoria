@@ -28,9 +28,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 #
-# Author: vic.iglesias@eucalyptus.com
 
-import json
 import re
 import os
 import copy
@@ -44,6 +42,7 @@ import types
 import traceback
 from datetime import datetime, timedelta
 from subprocess import Popen, PIPE
+from nephoria.exceptions import EucaAdminRequired
 
 from boto.ec2.image import Image
 from boto.ec2.instance import Reservation, Instance
@@ -68,7 +67,7 @@ from nephoria import CleanTestResourcesException
 from nephoria.baseops.botobaseops import BotoBaseOps
 from nephoria.testcase_utils import wait_for_result
 from cloud_utils.net_utils import sshconnection, ping, is_address_in_network
-from cloud_utils.log_utils import printinfo, get_traceback, markup
+from cloud_utils.log_utils import printinfo, get_traceback, markup, red
 from nephoria.aws.ec2.euinstance import EuInstance
 from nephoria.aws.ec2.windows_instance import WinInstance
 from nephoria.aws.ec2.euvolume import EuVolume
@@ -256,9 +255,10 @@ disable_root: false"""
                                       os.path.join(key_dir, "{0}{1}".format(key_name, extension))))
                 return key
             else:
-                self.log.warn('Key {0} already exists, but cert not found at:"{1}"'
-                              .format(key_name,
-                                      os.path.join(key_dir, "{0}{1}".format(key_name, extension))))
+                self.log.warn(
+                    red('Key {0} already exists, but cert not found at:"{1}"'
+                        .format(key_name,
+                                os.path.join(key_dir, "{0}{1}".format(key_name, extension)))))
                 return None
 
             
@@ -401,7 +401,7 @@ disable_root: false"""
         return stdout
 
     @printinfo
-    def add_group(self, group_name=None, description=None, fail_if_exists=False ):
+    def add_group(self, group_name=None, description=None, vpc_id=None, fail_if_exists=False ):
         """
         Add a security group to the system with name group_name, if it exists dont create it
 
@@ -409,23 +409,29 @@ disable_root: false"""
         :param fail_if_exists: IF set, will fail if group already exists, otherwise will return the existing group
         :return: boto group object upon success or None for failure
         """
+        filters = {}
+        if vpc_id:
+            filters={'VpcId':vpc_id}
         if group_name is None:
             group_name = "group-" + str(int(time.time()))
-        if self.check_group(group_name):
+        if self.check_group(group_name, vpc_id=vpc_id):
             if fail_if_exists:
-                self.fail(  "Group " + group_name + " already exists")
+                raise ValueError("Cant add security group, '{0}' already exists. Using vpc:{1}"
+                                 .format(group_name, vpc_id))
             else:
-                self.log.debug(  "Group " + group_name + " already exists")
-                group = self.connection.get_all_security_groups(group_name)[0]
-            return self.get_security_group(name=group_name)
-        else:
-            self.log.debug( 'Creating Security Group: %s' % group_name)
-            # Create a security group to control access to instance via SSH.
-            if not description:
-                description = group_name
-            group = self.connection.create_security_group(group_name, description)
-            self.test_resources["security_groups"].append(group)
-        return self.get_security_group(name=group_name)
+                self.log.debug(  "Group '{0}' group already exists using vpc:'{1}'"
+                                 .format(group_name, vpc_id))
+                groups = self.connection.get_all_security_groups(group_name, filters=filters)
+                if groups:
+                    return groups[0]
+
+        self.log.debug( 'Creating Security Group: %s' % group_name)
+        # Create a security group to control access to instance via SSH.
+        if not description:
+            description = group_name
+        group = self.connection.create_security_group(group_name, description, vpc_id=vpc_id)
+        self.test_resources["security_groups"].append(group)
+        return group
 
     def delete_group(self, group):
         """
@@ -442,13 +448,16 @@ disable_root: false"""
             return False
         return True
 
-    def check_group(self, group_name):
+    def check_group(self, group_name, vpc_id=None):
         """
-        Check if a group with group_name exists in the system
+        Check if a group with group_name exists in the system for a given vpc
 
         :param group_name: Group name to check for existence
         :return: bool whether operation succeeded
         """
+        filters = {}
+        if vpc_id:
+            filters={'VpcId':vpc_id}
         self.log.debug( "Looking up group " + group_name )
         if self._use_verbose_requests:
             group_names = ['verbose']
@@ -456,7 +465,8 @@ disable_root: false"""
             group_names = []
         group_names.append(group_name)
         try:
-            group = self.connection.get_all_security_groups(groupnames=group_names)
+            group = self.connection.get_all_security_groups(groupnames=group_names,
+                                                            filters=filters)
         except EC2ResponseError:
             return False
         if not group:
@@ -646,28 +656,23 @@ disable_root: false"""
     def get_supported_platforms(self):
         attr = None
         try:
-            attr = self.connection.describe_account_attributes(attribute_names='supported-platforms')
+            attr = self.connection.describe_account_attributes(
+                attribute_names='supported-platforms')
         except Exception as E:
             self.log.warning('{0}\n{1}'
                              .format(markup('Could not describe account attributes', [1, 31]),
                                      get_traceback()))
-            try:
-                prop = self.property_manager.get_property_by_string('one.cluster.networkmode')
-                if prop and prop.value:
-                    return [prop.value]
-            except Exception as E:
-                try:
-                    err = "{0}\nFailed to get 'supported-platforms' fromcloud, err:'{1}'"\
-                          .format(self.get_traceback(),str(E))
-                    self.log.warning(markup(err, markups=[1, 31]))
-                except:
-                    pass
+
+            err = "{0}\nFailed to get 'supported-platforms' fromcloud, err:'{1}'"\
+                  .format(get_traceback(),str(E))
+            self.log.warning(markup(err, markups=[1, 31]))
         if attr:
             return attr[0].attribute_values
-        return []
+        else:
+            return []
 
     def get_default_vpc_attribute(self):
-        attr = self.describe_account_attributes(attribute_names='default-vpc')
+        attr = self.connection.describe_account_attributes(attribute_names='default-vpc')
         if attr:
             return attr[0].attribute_values
         return []
@@ -686,7 +691,7 @@ disable_root: false"""
 
     def get_all_vpcs(self, vpc_ids=None, filters=None, dry_run=False, verbose=True):
          if verbose:
-            if vpc_ids:
+            if vpc_ids is not None:
                 if not isinstance(vpc_ids, list):
                     if vpc_ids != 'verbose':
                         subnet_ids = [vpc_ids, 'verbose']
@@ -747,8 +752,13 @@ disable_root: false"""
         else:
             return ret_buf
 
-    def get_all_subnets(self, subnet_ids=None, filters=None, dry_run=False, verbose=None):
+    def get_all_subnets(self, subnet_ids=None, zone=None, filters=None, dry_run=False, verbose=None):
         ret_list = []
+        filters = filters or {}
+        if zone:
+            if not isinstance(zone, Zone):
+                zone = zone.name
+            filters['availabilityZone'] = zone
         if verbose is None:
             verbose = self._use_verbose_requests
         if verbose:
@@ -762,6 +772,7 @@ disable_root: false"""
                 subnet_ids = ['verbose']
         subnets = self.connection.get_all_subnets(subnet_ids=subnet_ids, filters=filters,
                                                   dry_run=dry_run)
+        # map unicode to actual bool values...
         for subnet in subnets:
             euca_sub = EucaSubnet()
             euca_sub.__dict__ = dict(euca_sub.__dict__.items() + subnet.__dict__.items())
@@ -867,48 +878,6 @@ disable_root: false"""
             printmethod( "\n" + str(ret_buf) + "\n")
         else:
             return ret_buf
-
-
-    def show_network_interfaces(self, interfaces, printme=True):
-        buf = ""
-        if not interfaces:
-            buf = "No elastic network interfaces provided to show"
-        if not isinstance(interfaces, list):
-            interfaces = [interfaces]
-        for eni in interfaces:
-            if isinstance(eni, NetworkInterface):
-                title = " ENI ID: {0}, DESCRIPTION:{1}".format(eni.id, eni.description)
-                enipt = PrettyTable([title])
-                enipt.align[title] = 'l'
-                enipt.padding_width = 0
-                dot = "?"
-                attached_status = "?"
-                if eni.attachment:
-                    dot = eni.attachment.delete_on_termination
-                    attached_status = eni.attachment.status
-                pt = PrettyTable(['ENI ID', 'PRIV_IP (PRIMARY)', 'PUB IP', 'VPC', 'SUBNET',
-                                  'OWNER', 'DOT', 'STATUS'])
-                pt.padding_width = 0
-                if eni.private_ip_addresses:
-                    private_ips = ",".join(str("{0} ({1})".format(x.private_ip_address,
-                                                                  x.primary).center(20))
-                                           for x in eni.private_ip_addresses)
-                else:
-                    private_ips = None
-                pt.add_row([eni.id, private_ips,
-                            getattr(eni, 'publicIp', None),
-                            getattr(eni, 'vpc_id', None),
-                            getattr(eni, 'subnet_id', None),
-                            getattr(eni, 'owner_id', None),
-                            dot,
-                            "{0} ({1})".format(eni.status, attached_status)])
-                enipt.add_row([(str(pt))])
-                buf += str(enipt)
-        if printme:
-            self.log.info(buf)
-        else:
-            return buf
-
 
     def terminate_single_instance(self, instance, timeout=300 ):
         """
@@ -1051,8 +1020,8 @@ disable_root: false"""
             vol = None
             try:
                 cmdstart = time.time()
-                vol = self.create_volume(size, zone, snapshot)
-                cmdtime =  time.time() - cmdstart 
+                vol = self.connection.create_volume(size, zone, snapshot)
+                cmdtime = time.time() - cmdstart
                 if vol:
                     vol = EuVolume.make_euvol_from_vol(vol, tester=self, cmdstart=cmdstart)
                     vol.eutest_cmdstart = cmdstart
@@ -1422,16 +1391,27 @@ disable_root: false"""
         :param volume: Volume object to delete
         :return: bool, success of the operation
         """
+        if not volume:
+            raise ValueError('Bad value passed to delete_volume: "{0}/{1}"'
+                             .format(volume, type(volume)))
+
+        if isinstance(volume, basestring):
+            volume_id = volume
+        else:
+            volume_id = volume.id
+
         try:
-            self.delete_volume(volume.id)
+
+            self.connection.delete_volume(volume_id)
         except Exception, e:
-            self.log.debug('Caught err while sending delete for volume:'+ str(volume.id) + " err:" + str(e))
-            self.log.debug('Monitoring to deleted state after catching error...')
-        self.log.debug( "Sent delete for volume: " +  str(volume.id) + ", monitor to deleted state or failure"  )
+            self.log.warning('Caught err while sending delete for volume:'+ str(volume_id) +
+                           " err:" + str(e))
+            self.log.warning('Monitoring to deleted state after catching error...')
+        self.log.debug("Sent delete for volume: " +  str(volume_id) +
+                       ", monitor to deleted state or failure")
         start = time.time()
         elapsed = 0
-        volume_id = volume.id
-        volume.update()
+        volume_id = volume_id
         while elapsed < timeout:
             try:
                 chk_volume = self.get_volume(volume_id=volume_id)
@@ -1439,7 +1419,8 @@ disable_root: false"""
                     self.log.debug(str(volume_id) + ', Volume no longer exists on system, deleted')
                     break
                 chk_volume.update()
-                self.log.debug( str(chk_volume) + " in " + chk_volume.status + " sleeping:"+str(poll_interval)+", elapsed:"+str(elapsed))
+                self.log.debug(str(chk_volume) + " in " + chk_volume.status +
+                                " sleeping:" + str(poll_interval) + ", elapsed:" + str(elapsed))
                 if chk_volume.status == "deleted":
                     break
                 time.sleep(poll_interval)
@@ -1457,7 +1438,7 @@ disable_root: false"""
             return True
 
         if volume.status != 'deleted':
-            self.log.error(str(volume) + " left in " +  volume.status + ',elapsed:'+str(elapsed))
+            self.log.error(str(volume) + " left in " +  volume.status + ',elapsed:' + str(elapsed))
             return False
         return True
     
@@ -1480,7 +1461,7 @@ disable_root: false"""
                 self.log.debug( "Sending delete for volume: " +  str(volume.id))
                 if volume in self.test_resources['volumes']:
                     self.test_resources['volumes'].remove(volume)
-                volumes = self.get_all_volumes([volume.id])
+                volumes = self.connection.get_all_volumes([volume.id])
                 if len(volumes) == 1:
                     volume = volumes[0]
                     #previous_status = volume.status
@@ -1494,7 +1475,8 @@ disable_root: false"""
                 err = "ERROR: " + str(volume.id) + ", " + str(be.status)+ ", " + str(be.reason) + \
                           ", " +str(be.error_message) + "\n"
                 if previous_status == 'deleting':
-                    self.log.debug(str(volume.id)+ ":" + str(previous_status) + ', err:' + str(err))
+                    self.log.warning(str(volume.id)+ ":" + str(previous_status) + ', err:' +
+                                     str(err))
                 else:
                     errmsg += err
                     errlist.append(volume)
@@ -1506,7 +1488,13 @@ disable_root: false"""
         elapsed = 0
         while vollist and elapsed < timeout:
             for volume in vollist:
-                volumes = self.get_all_volumes([volume.id])
+                try:
+                    volumes = self.connection.get_all_volumes([volume.id])
+                except EC2ResponseError as e:
+                    if e.status == 400:
+                        volumes = []
+                    else:
+                        raise(e)
                 if len(volumes) == 1:
                     volume = volumes[0]
                 elif len(volumes) == 0:
@@ -1532,7 +1520,7 @@ disable_root: false"""
         """
         Deletes all volumes on the cloud
         """
-        volumes = self.get_all_volumes()
+        volumes = self.connection.get_all_volumes()
         self.delete_volumes(volumes)
 
         
@@ -1849,7 +1837,7 @@ disable_root: false"""
         for x in xrange(0,count):
             try:
                 start = time.time()
-                snapshot = self.create_snapshot( volume_id, description=str(description))
+                snapshot = self.connection.create_snapshot(volume_id, description=str(description))
                 cmdtime = time.time()-start
                 if snapshot:
                     self.log.debug("Attempting to create snapshot #"+str(x)+ ", id:"+str(snapshot.id))
@@ -2213,6 +2201,7 @@ disable_root: false"""
                        ' snaps to delete...' )
             waiting_list = copy.copy(delete_me)
             for snapshot in waiting_list:
+                get_snapshot = None
                 try:
                     snapshot.update()
                     get_snapshot = self.connection.get_all_snapshots(snapshot_ids=[snapshot.id])
@@ -2252,7 +2241,7 @@ disable_root: false"""
         """
         snapshot.delete()
         self.log.debug( "Sent snapshot delete request for snapshot: " + snapshot.id)
-        return self.delete_snapshots([snapshot], base_timeout=60)
+        return self.connection.delete_snapshots([snapshot], base_timeout=60)
     
     @printinfo
     def register_snapshot(self,
@@ -2495,9 +2484,12 @@ disable_root: false"""
             # fetching a test image to work with...
             basic_image = True
         if name is None:
-             emi = "mi-"
-
-        images = self.connection.get_all_images(filters=filters)
+             emi = ""
+        if filters:
+            self.log.debug('Using following filters for image request:"{0}"'.format(filters))
+            images = self.connection.get_all_images(filters=filters)
+        else:
+            images = self.connection.get_all_images()
         self.log.debug("Got " + str(len(images)) + " total images " + str(emi) + ", now filtering..." )
         for image in images:
             if (re.search(emi, image.id) is None) and (re.search(emi, image.name) is None):
@@ -2662,7 +2654,7 @@ disable_root: false"""
 
     def show_all_addresses_verbose(self, iam_connection=None, display=True):
         """
-        Print table to debug output showing all addresses available to cloud sys_admin using verbose filter
+        Print table to debug output showing all addresses available to cloud admin using verbose filter
         """
         address_width = 20
         info_width = 64
@@ -2710,13 +2702,13 @@ disable_root: false"""
         :return: boto.ec2.address object allocated
         """
         try:
-            self.log.debug("Allocating an address")
+            self.log.debug("Attempting to allocate an address...")
             address = self.connection.allocate_address(domain=domain)
         except Exception, e:
             tb = get_traceback()
-            err_msg = 'Unable to allocate address'
+            err_msg = red('{0}\nUnable to allocate address, err: {1}'.format(tb, e))
             self.log.critical(str(err_msg))
-            raise Exception(str(tb) + "\n" + str(err_msg))
+            raise e
         self.log.debug("Allocated " + str(address))
         return address
 
@@ -2844,8 +2836,8 @@ disable_root: false"""
             instance.update()
             time.sleep(5)
             elapsed = int(time.time()-start)
-            address = self.get_all_addresses(addresses=[address.public_ip])[0]
-        address = self.get_all_addresses(address.public_ip)
+            address = self.connection.get_all_addresses(addresses=[address.public_ip])[0]
+        address = self.connection.get_all_addresses(address.public_ip)
         self.show_addresses(address)
         self.log.debug("Disassociated IP successfully")
 
@@ -3326,17 +3318,16 @@ disable_root: false"""
                     else:
                         if username is None:
                             username = 'root'
-                        eu_instance =  EuInstance.make_euinstance_from_instance(
-                            instance,
-                            self,
+                        eu_instance = EuInstance.make_euinstance_from_instance(
+                            instance, self,
                             keypair=keypair,
-                            username = username,
                             password=password,
-                            reservation = reservation,
-                            private_addressing=private_addressing,
+                            username=username,
+                            do_ssh_connect=False,
                             timeout=timeout,
-                            cmdstart=cmdstart,
-                            do_ssh_connect=False )
+                            private_addressing=private_addressing,
+                            reservation=reservation,
+                            cmdstart=cmdstart)
                     #set the connect flag in the euinstance object for future use
                     eu_instance.auto_connect = auto_connect
                     instances.append(eu_instance)
@@ -3359,44 +3350,172 @@ disable_root: false"""
             raise E
     
 
-    def create_eni(self, subnet_id=None, zone=None, private_addressing=False, secgroups=None):
-        #  Attempts to create an ENI only if the ip request does not match the default
-            # behavior of the subnet running these instances.
-        subnet = None
-        if subnet_id:
-            # No network_interfaces were provided, check to see if this subnet already
-            # maps a public ip by default or if a new eni should be created to
-            # request one...
-            subnets = self.get_all_subnets(subnet_id)
-            if subnets:
-                subnet = subnets[0]
+    def create_network_interface_collection(self,
+                                            eni=None,
+                                            subnet_id=None,
+                                            zone=None,
+                                            device_index=None,
+                                            associate_public_ip_address=None,
+                                            eip=None,
+                                            auto_eip=False,
+                                            groups=None,
+                                            eip_domain=None,
+                                            description='Nephoria Test ENI',
+                                            network_interface_collection=None):
+        """
+        Helper method for create network interfaces.
+        :param eni: Existing Net Interface obj or id. If provided a new ENI will not be created.
+        :param subnet_id: subnet or subnet.id, if not provided the method will attempt to look
+                          for the default subnet in the zone provided.
+        :param zone: zone, used to look up the subnet to be used.
+        :param device_index: the device index to be used. If None this default to 0, or if a
+                              network_infc_collection is provided this will use the next
+                              available index.
+        :param associate_public_ip_address: Used to request a public ip from the subnet.
+                                            The cloud may reject this request if the dev index is
+                                            not 0, and/or there a more than 1 interfaces in the
+                                            network itfc collection.
+        :param eip: An elastic ip obj or id to be associated with this ENI
+        :param auto_eip: Bool, will attempt to allocate and associate an EIP with this ENI
+        :param groups: list of security groups for this ENI
+        :param eip_domain: domain for this ENI
+        :param description: description for this ENI
+        :param network_interface_collection: boto NetworkInterfaceCollection() object. If provided
+                                             this eni will be appended to the collection
+        :return: boto NetworkInterfaceSpecification() obj
+        """
+        # If the subnet was not provided attempt to find the default subnet.
+        if device_index is None:
+            if network_interface_collection:
+                device_index = len(network_interface_collection)
             else:
-                raise ValueError('Subnet: "{0}" not found during create_eni'
-                                 .format(subnet_id))
-        else:
-            subnets = self.get_default_subnets(zone=zone)
-            if subnets:
-                subnet = subnets[0]
-        if not subnet:
-            raise ValueError('Subnet not found (Either not provided, '
-                             'found and/or default not found)')
-        subnet_id = subnet.id
-        # mapPublicIpOnLaunch may be unicode true/false...
-        if not isinstance(subnet.mapPublicIpOnLaunch, bool):
-            if str(subnet.mapPublicIpOnLaunch).upper().strip() == 'TRUE':
-                subnet.mapPublicIpOnLaunch = True
+                device_index = 0
+        if isinstance(eni, basestring):
+            eni = self.connection.get_all_network_interfaces([eni])
+            if not eni:
+                raise ValueError('Could not retrieve existing eni:"{0}" from system'.format(eni))
+            eni = eni[0]
+        if not eni:
+            subnet = None
+            if subnet_id:
+                if isinstance(subnet, Subnet):
+                    subnet = subnet_id
+                elif isinstance(subnet_id, basestring):
+                    subnets = self.get_all_subnets(subnet_id, zone=zone)
+                    if subnets:
+                        subnet = subnets[0]
+                    else:
+                        raise ValueError('Subnet: "{0}" not found using zone filter:"{1}" during '
+                                         'create_eni'.format(subnet_id, zone))
+                else:
+                    raise ValueError('Unknown type for subnet_id: "{0}/{1}"'.format(subnet_id,
+                                                                                    type(subnet_id)))
             else:
-                subnet.mapPublicIpOnLaunch = False
-        # Default subnets or subnets whos attributes have been modified to
-        # provide a public ip should automatically provide an ENI and public ip
-        # association, skip if this is true...
-        eni = NetworkInterfaceSpecification(device_index=0, subnet_id=subnet_id,
-                                            groups=secgroups,
-                                            delete_on_termination=True,
-                                            description='nephoria_auto_assigned',
-                                            associate_public_ip_address=(not private_addressing))
-        return NetworkInterfaceCollection(eni)
+                self.log.debug('create_network_interface: No subnet provided, fetching default...')
+                subnets = self.get_default_subnets(zone=zone)
+                if subnets:
+                    subnet = subnets[0]
+            if not subnet:
+                raise ValueError('Subnet not found (Either not provided, '
+                                 'and/or default not found. Zone filter:"{0}")'.format(zone))
+            subnet_id = subnet.id
+            groups = groups or []
+            security_group_ids = []
+            # sanitize the groups param
+            for group in groups:
+                if isinstance(group, basestring):
+                    security_group_ids.append(group)
+                else:
+                    security_group_ids.append(group.id)
+            eni = self.connection.create_network_interface(subnet_id=subnet_id,
+                                                           groups=security_group_ids,
+                                                           description=description)
+        # If an EIP was provided or requested associate it with the ENI now...
+        if eip or auto_eip:
+            if not eip:
+                eip = self.allocate_address(domain=eip_domain)
+            if not isinstance(eip, basestring):
+                eip = eip.allocation_id
+            assoc = self.connection.associate_address(allocation_id=eip,
+                                                      network_interface_id=eni.id)
+        # Create the interface specification
+        interface = NetworkInterfaceSpecification(device_index=device_index,
+                                                  network_interface_id=eni.id,
+                                                  delete_on_termination=True,
+                                                  associate_public_ip_address=associate_public_ip_address,
+                                                  description=description)
+        network_interface_collection = network_interface_collection or NetworkInterfaceCollection()
+        network_interface_collection.append(interface)
+        return network_interface_collection
 
+
+    def show_network_interfaces(self, enis=None, printmethod=None, printme=True):
+        id_h = 'ID'
+        aid_h = 'ATTACH_ID'
+        public_h = 'PUB IP'
+        groups_h = 'SEC GRPS'
+        subnet_h = 'SUBNET'
+        vpc_h = 'VPC'
+        priv_h = 'PRIV IPS'
+        attach_h = 'ATTACHMENT'
+        index_h = '#'
+        dot_h = "DOT"
+        inst_h = 'INST ID'
+        status_h = 'STATUS'
+        enis = enis or self.connection.get_all_network_interfaces()
+        if isinstance(enis, basestring):
+            enis = self.connection.get_all_network_interfaces(network_interface_ids=[enis])
+        if isinstance(enis, list):
+            fetch_list = []
+            eni_list = []
+            for eni in enis:
+                if isinstance(eni, basestring):
+                    fetch_list.append(eni)
+                else:
+                    eni_list.append(eni)
+            if fetch_list:
+                eni_list += self.connection.get_all_network_interfaces(
+                    network_interface_ids=fetch_list)
+            enis = eni_list
+        pt = PrettyTable([id_h, public_h, vpc_h, subnet_h, groups_h, priv_h,
+                          aid_h, inst_h, index_h, status_h, dot_h])
+        pt.hrules = 1
+        pt.padding_width = 0
+        pt.max_width[groups_h] = 12
+        pt.max_width[priv_h] = 16
+        pt.align = 'l'
+        for eni in enis:
+            groups = "".join(x.id for x in (eni.groups or []))
+            private_ips = ""
+            for pi in (eni.private_ip_addresses or []):
+                if pi.primary:
+                    primary = "P"
+                else:
+                    primary = ""
+                private_ips += "{0} {1}".format(primary, pi.private_ip_address).ljust(
+                    pt.max_width[priv_h])
+            attachment = ""
+            instance_id = ""
+            device_index = ""
+            attach_status = ""
+            dot = ""
+            if eni.attachment:
+                att = eni.attachment
+                attachment = att.id
+                instance_id = att.instance_id
+                device_index = att.device_index
+                attach_status = att.status
+                if att.delete_on_termination:
+                    dot = "T"
+                else:
+                    dot = "F"
+            pt.add_row([eni.id, getattr(eni, 'publicIp', None), eni.vpc_id, eni.subnet_id, groups,
+                        private_ips, attachment, instance_id, device_index, attach_status, dot])
+        if printme:
+            printmethod = printmethod or self.log.info
+            printmethod("\n{0}\n".format(pt))
+        else:
+            return pt
 
 
     def wait_for_instances_block_dev_mapping(self,
@@ -3618,7 +3737,7 @@ disable_root: false"""
             if s:
                 s.close()
 
-    def get_security_group(self, name=None, id=None, verbose=None):
+    def get_security_group(self, name=None, id=None, vpc_id=None, verbose=None):
         """
          Adding this as both a convienence to the user to separate euare groups
          from security groups
@@ -3642,6 +3761,7 @@ disable_root: false"""
             if isinstance(group, SecurityGroup) or isinstance(id, BotoGroup):
                 group_id = group.id
                 group_name = group.name
+                vpc_id = group.vpc_id
             elif re.match('^sg-\w{8}$',str(group).strip()):
                 group_id = group
             elif isinstance(group, basestring):
@@ -3656,7 +3776,11 @@ disable_root: false"""
             ids = [group_id]
         if group_name:
             names.append(group_name)
-        groups = self.connection.get_all_security_groups(groupnames=names, group_ids=ids)
+        filters = {}
+        if vpc_id:
+            filters={'VpcId':vpc_id}
+        groups = self.connection.get_all_security_groups(groupnames=names, group_ids=ids,
+                                                         filters=filters)
         for group in groups:
             if not group_id or (group_id and group.id == group_id):
                 if not group_name or (group_name and group.name == group_name):
@@ -4057,15 +4181,13 @@ disable_root: false"""
                 timeout=timeout)
         else:
             username = username or 'root'
-            instance = EuInstance.make_euinstance_from_instance(
-                instance,
-                self,
-                keypair=keypair,
-                username = username,
-                password=password,
-                reservation=reservation,
-                do_ssh_connect=auto_connect,
-                timeout=timeout)
+            instance = EuInstance.make_euinstance_from_instance(instance, self,
+                                                                keypair=keypair,
+                                                                password=password,
+                                                                username=username,
+                                                                do_ssh_connect=auto_connect,
+                                                                timeout=timeout,
+                                                                reservation=reservation)
         if 'instances' in self.test_resources:
             for x in xrange(0, len(self.test_resources['instances'])):
                 ins = self.test_resources['instances'][x]
@@ -4091,7 +4213,7 @@ disable_root: false"""
             self.log.debug(output.output)
         return output
 
-    def get_zones(self):
+    def get_zone_names(self):
         """
         Return a list of availability zone names.
 
@@ -4102,6 +4224,98 @@ disable_root: false"""
         for zone in zone_objects:
             zone_names.append(zone.name)
         return zone_names
+
+
+    def get_zones(self, zone_name=None):
+        zones = self.connection.get_all_zones(zones=zone_name)
+        if not zones:
+            return zones
+        zone_names = ['verbose']
+        if zone_name:
+            zone_names.append(zone_name)
+        verbose_zones = self.connection.get_all_zones(zones=zone_names)
+        if len(zones) >= verbose_zones:
+            self.log.warning('Failed to fetch zones with verbose option, '
+                             'non-eucalyptus administrative account users may not be authorized '
+                             'for this request. No vm slot availability info will be provided')
+            return zones
+        # the user had verbose zone information, parse it and add it to the zones.
+        ret_list = []
+        current_zone = None
+        headers = []
+        for zone in verbose_zones:
+            z_name = str(zone.name)
+            if not str(z_name).startswith("|-"):
+                if current_zone:
+                    ret_list.append(current_zone)
+                current_zone = zone
+                setattr(current_zone, 'available_vm_slots', {})
+                order = 0
+                continue
+            elif current_zone:
+                z_name = z_name.lstrip('|-').strip()
+                if re.search('vm types', z_name):
+                    # this is a header
+                    headers = str(zone.state).replace("/", "").split()
+                else:
+                    # this is a vm_type
+                    vm_dict = {'order': order}
+                    info = str(zone.state).replace("/", "").split()
+                    for x in xrange(0, len(info)):
+                        vm_dict[headers[x]] = int(info[x])
+                    current_zone.available_vm_slots[z_name] = vm_dict
+                    order += 1
+        if current_zone:
+            ret_list.append(current_zone)
+        return ret_list
+
+    def get_available_vm_slots(self, vmtype, zone_name):
+        zone = self.get_zones(zone_name=zone_name)[0]
+        if not getattr(zone, 'available_vm_slots', None):
+            raise EucaAdminRequired()
+        vm_info = zone.available_vm_slots.get(vmtype)
+        return int(vm_info.get('free'))
+
+    def show_zone_availability(self, zone_name=None, print_me=True):
+        zones = self.get_zones(zone_name=zone_name)
+        main_pt = PrettyTable(['HEADER'])
+        main_pt.max_width = 120
+        main_pt.align = 'l'
+        main_pt.header = False
+        main_pt.border = False
+        order_header = str('#').ljust(3)
+        info_headers = ['VMTYPE'.ljust(16), 'FREE/MAX'.ljust(16), 'RAM'.ljust(10),
+                        'CPU'.ljust(10), 'DISK'.ljust(10), order_header]
+
+        if not zones:
+            main_pt.add_row(['No zones to show using zone_name:' + str(zone_name)])
+        for zone in zones:
+            main_pt.add_row(
+                [markup("ZONE: {0} AVAILABILE VM SLOTS:".format(zone.name),
+                        markups=[1, 4, 33]).ljust(110)])
+            if not hasattr(zone, 'available_vm_slots'):
+                main_pt.add_row(['No zone info available, and/or available to this user'])
+            else:
+                info_pt = PrettyTable(info_headers)
+                info_pt.align = "l"
+                for vmtype, info_dict in zone.available_vm_slots.iteritems():
+                    info_pt.add_row([vmtype,
+                                     "{0}/{1}".format(info_dict.get('free'),
+                                                      info_dict.get('max')),
+                                     info_dict.get('ram'),
+                                     info_dict.get('cpu'),
+                                     info_dict.get('disk'),
+                                     info_dict.get('order')])
+                main_pt.add_row(["{0}\n".format(info_pt.get_string(sortby=order_header,
+                                                                   fields=info_headers[:-1]))])
+        if not print_me:
+            return main_pt
+        else:
+            self.log.info("\n{0}\n".format(main_pt))
+
+
+
+
  
     @printinfo
     def get_instances(self,
@@ -5297,7 +5511,7 @@ disable_root: false"""
     def show_addresses(self, addresses=None, verbose=None, printme=True):
         """
         Print table to debug output showing all addresses available to
-        cloud sys_admin using verbose filter
+        cloud admin using verbose filter
         :param addresses:
         """
         pt = PrettyTable([markup('PUBLIC IP'), markup('ACCOUNT NAME'),
@@ -5885,14 +6099,14 @@ disable_root: false"""
         snapshots, volumes, zones
         """
         current_artifacts = dict()
-        current_artifacts["addresses"] = self.get_all_addresses()
-        current_artifacts["images"] = self.get_all_images()
-        current_artifacts["instances"] = self.get_all_instances()
-        current_artifacts["key_pairs"] = self.get_all_key_pairs()
-        current_artifacts["security_groups"] = self.get_all_security_groups()
-        current_artifacts["snapshots"] = self.get_all_snapshots()
-        current_artifacts["volumes"] = self.get_all_volumes()
-        current_artifacts["zones"] = self.get_all_zones()
+        current_artifacts["addresses"] = self.connection.get_all_addresses()
+        current_artifacts["images"] = self.connection.get_all_images()
+        current_artifacts["instances"] = self.connection.get_all_instances()
+        current_artifacts["key_pairs"] = self.connection.get_all_key_pairs()
+        current_artifacts["security_groups"] = self.connection.get_all_security_groups()
+        current_artifacts["snapshots"] = self.connection.get_all_snapshots()
+        current_artifacts["volumes"] = self.connection.get_all_volumes()
+        current_artifacts["zones"] = self.connection.get_all_zones()
         if verbose:
             self.log.debug("Current resources in the system:\n{0}".format(current_artifacts))
         return current_artifacts

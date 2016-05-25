@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, SkipTestException
 from nephoria.testcontroller import TestController
+from boto.ec2.group import Group
 import copy
 import time
 
@@ -129,7 +130,11 @@ class RunInstances(CliTestRunner):
 
     @group.setter
     def group(self, value):
-        setattr(self, '__group', value)
+        if value is None or isinstance(value, Group):
+            setattr(self, '__group', value)
+        else:
+            raise ValueError('Can not set security group to type:"{0/{1}"'
+                             .format(value, type(value)))
 
     #####################################################################################
     # Create the test methods...

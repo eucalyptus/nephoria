@@ -1,6 +1,8 @@
 
 
 import logging
+
+import yaml
 from cloud_admin.systemconnection import SystemConnection
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import get_traceback
@@ -14,12 +16,12 @@ class SystemConnectionFailure(Exception):
 
 class TestController(object):
     def __init__(self,
-                 hostname=None, username='root', password=None, region=None,
+                 hostname=None, username='root', password=None, keypath=None, region=None,
                  proxy_hostname=None, proxy_password=None,
                  clouduser_account='nephotest', clouduser_name='sys_admin', clouduser_credpath=None,
                  clouduser_accesskey=None, clouduser_secretkey=None,
                  cloudadmin_credpath=None, cloudadmin_accesskey=None, cloudadmin_secretkey=None,
-                 timeout=10, log_level='DEBUG',
+                 timeout=10, log_level='DEBUG', environment_file=None,
                  cred_depot_hostname=None, cred_depot_username='root', cred_depot_password=None):
 
         """
@@ -41,6 +43,11 @@ class TestController(object):
         """
         if isinstance(log_level, basestring):
             log_level = getattr(logging, log_level.upper(), logging.DEBUG)
+
+        if not hostname and environment_file:
+            component = self.get_component_from_topology(environment_file, 'clc-1')
+            hostname = component['clc-1']
+
         self.log = Eulogger("TESTER:{0}".format(hostname), stdout_level=log_level)
         self._region = region
         self._sysadmin = None
@@ -53,6 +60,8 @@ class TestController(object):
         self._system_connection_info = {'hostname': hostname,
                                         'username': username,
                                         'password': password,
+                                        'keypath': keypath,
+                                        'region_domain': region,
                                         'proxy_hostname': proxy_hostname,
                                         'proxy_password': proxy_password,
                                         'proxy_username': None,
@@ -62,11 +71,11 @@ class TestController(object):
                                         'aws_secret_key': cloudadmin_secretkey,
                                         'log_level': log_level,
                                         'boto_debug_level': 0,
-                                        'euca_user': 'sys_admin',
+                                        'euca_user': 'admin',
                                         'euca_account': 'eucalyptus'}
 
         self._cloud_admin_connection_info = {'aws_account_name': 'eucalyptus',
-                                             'aws_user_name': 'sys_admin',
+                                             'aws_user_name': 'admin',
                                              'credpath': cloudadmin_credpath,
                                              'region': self.region,
                                              'aws_access_key': cloudadmin_accesskey,
@@ -86,6 +95,13 @@ class TestController(object):
                                             'password': cred_depot_password or password,
                                             'log_level': log_level}
 
+        # TODO ??
+        self.test_resources = \
+            {
+                '_instances': [],
+                '_volumes': []
+            }
+
     def __repr__(self):
         try:
             myrepr = "{0}:{1}({2}:{3},{4}:{5})".format(
@@ -102,7 +118,7 @@ class TestController(object):
 
     @property
     def region(self):
-        if not self._region and self.sysadmin is not None:
+        if self._region is None and self.sysadmin is not None:
             try:
                 regions = self.sysadmin.ec2_connection.get_all_regions()
                 if not regions:
@@ -203,7 +219,7 @@ class TestController(object):
                              .format(aws_account_name, aws_user_name))
 
 
-    def create_user_using_cloudadmin(self, aws_account_name=None, aws_user_name='sys_admin',
+    def create_user_using_cloudadmin(self, aws_account_name=None, aws_user_name='admin',
                                      aws_access_key=None, aws_secret_key=None,
                                      credpath=None, eucarc=None,
                                      machine=None, service_connection=None, path='/',
@@ -309,19 +325,23 @@ class TestController(object):
         set_stream_logger('boto3', level=level, format_string=None)
         set_stream_logger('botocore', level=level, format_string=None)
 
+    def get_component_from_topology(self, environment_file, component_type=None):
+        """
+        Reads eucalyptus topology from environment file and returns value of expected component.
 
+        Args:
+            environment_file - environment file to extract Eucalyptus topology
+            component_type - type of the component that needs to be extracted
+        Returns:
+            a dict with component_type as key and value from the environment file
+        """
+        try:
+            with open(environment_file) as myenv:
+                env_dict = yaml.load(myenv)
+        except Exception as EE:
+            self.log.error('Failed to read env file:"{0}", err:{1}'.format(environment_file, EE))
+            raise EE
 
+        result = env_dict['default_attributes']['eucalyptus']['topology'][component_type]
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+        return {component_type: result}

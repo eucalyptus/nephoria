@@ -99,22 +99,22 @@ test 6 (Multi-zone/cluster env):
 
 '''
 
-#todo: Make use of CC optional so test can be run with only creds and non-sys_admin user.
+#todo: Make use of CC optional so test can be run with only creds and non-admin user.
 # CC only provides additional point of debug so can be removed from test for non-euca testing
-#todo: Allow test to run with an sys_admin and non-sys_admin account, so debug can be provided through sys_admin and test can
-# be run under non-sys_admin if desired.
+#todo: Allow test to run with an admin and non-admin account, so debug can be provided through admin and test can
+# be run under non-admin if desired.
 
 from boto.ec2.instance import Instance
 from paramiko import SSHException
-from nephoria.aws.ec2.ec2ops import EC2ops
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, SkipTestException
 from nephoria.testcase_utils import wait_for_result, WaitForResultException
 from nephoria.testcontroller import TestController
 from nephoria.aws.ec2.euinstance import EuInstance
 from cloud_utils.net_utils.sshconnection import SshConnection
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException, CommandTimeoutException
-from cloud_utils.log_utils import red
-from cloud_admin.backends.network.midget import Midget
+from cloud_utils.log_utils import red, get_traceback
+
+
 from boto.exception import EC2ResponseError
 from cloud_utils.net_utils import test_port_status
 from cloud_utils.log_utils import get_traceback
@@ -124,6 +124,10 @@ import time
 import os
 import re
 import sys
+try:
+    from cloud_admin.backends.network.midget import Midget
+except ImportError as IE:
+    sys.stderr.write('Failed to import midonet get interface. Err:"{0}"'.format(IE))
 
 
 class TestZone():
@@ -159,12 +163,13 @@ class NetTestsClassic(CliTestRunner):
         tc = getattr(self, '_test_controller', None)
         if not tc:
             clc_ip = self.args.clc
+            environment_file = self.args.environment_file
             clc_pw = self.args.password
             test_account = self.args.test_account
             test_user = self.args.test_user
             log_level = getattr(self.args, 'log_level', 'DEBUG')
-            tc = TestController(hostname=clc_ip, password=clc_pw, log_level=log_level,
-                                clouduser_name=test_user, clouduser_account=test_account)
+            tc = TestController(hostname=clc_ip, environment_file=environment_file, password=clc_pw,
+                                log_level=log_level, clouduser_name=test_user, clouduser_account=test_account)
             setattr(self, '_test_controller', tc)
         return tc
 
@@ -213,7 +218,7 @@ class NetTestsClassic(CliTestRunner):
                 zones = str(self.args.zone).replace(',',' ')
                 zones = zones.split()
             else:
-                zones = self.user.ec2.get_zones()
+                zones = self.user.ec2.get_zone_names()
             if not zones:
                 raise RuntimeError('No zones found to run this test?')
             self.log.debug('Running test against zones:' + ",".join(zones))
@@ -347,7 +352,7 @@ class NetTestsClassic(CliTestRunner):
                 self._vpc_backend = None
                 self.errormsg('FYI... Failed to create vpc backend interface, err:\n{0}'
                             '\nUnable to get VPC backend debug. Ignoring Error:"{1}"'
-                            .format(self.tester.get_traceback(), str(VBE)))
+                            .format(get_traceback(), str(VBE)))
                 return None
         return self._vpc_backend
 
@@ -469,7 +474,7 @@ class NetTestsClassic(CliTestRunner):
         if gw_machine:
             vpc_proxy_ssh = gw_machine.ssh
         else:
-            raise ValueError('Could not find eutester machine for ip: "{0}"'
+            raise ValueError('Could not find tester machine for ip: "{0}"'
                              .format(gw_machine.hostname))
 
         if instance.keypath:
@@ -538,7 +543,7 @@ class NetTestsClassic(CliTestRunner):
 
     def get_active_nc_for_instance(self,instance):
         nc = self.sysadmin.get_hosts_for_node_controllers(instanceid=instance.id)[0]
-        return nc.machine
+        return nc
 
     def ping_instance_private_ip_from_euca_internal(self, instance, ping_timeout=120):
         assert isinstance(instance, EuInstance)
@@ -877,7 +882,7 @@ class NetTestsClassic(CliTestRunner):
         self.status('Auth group1 access to group2...')
         self.user.ec2.authorize_group(self.group2, cidr_ip=None, port=22,
                                       protocol='tcp', src_security_group=self.group1)
-        self.user.ec2.authorize_group(self.group2, cidr_ip=None, port=None,
+        self.user.ec2.authorize_group(self.group2, cidr_ip=None, port=-1,
                                       protocol='icmp', src_security_group=self.group1)
         self.status('Group2 should now allow access from source group1 on tcp/22 and icmp...')
         self.user.ec2.show_security_group(self.group2)
@@ -1150,7 +1155,7 @@ class NetTestsClassic(CliTestRunner):
                                           end_port=start+count)
             auth_starttime = time.time()
             # test entire port range is accessible from this machine
-            test_file = 'eutester_port_test.txt'
+            test_file = 'nephoria_port_test.txt'
             #Allow some delay for the rule to be applied in the network...
             time.sleep(10)
             for x in xrange(start, start+count):
@@ -1814,7 +1819,7 @@ class NetTestsClassic(CliTestRunner):
                 unit_list.append(self.create_testunit_by_name(test))
         self.status('Got running the following list of tests:' + str(testlist))
 
-        ### Run the EutesterUnitTest objects
+        ### Run the nephoriaUnitTest objects
         result = self.run(unit_list,eof=False,clean_on_exit=True)
         self.status('Test finished with status:"{0}"'.format(result))
         return result

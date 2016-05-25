@@ -113,7 +113,7 @@ class IAMops(BotoBaseOps):
                     continue
             if account_id is not None:
                 if not search:
-                    account_id = "^{0}$".format(account_id  .strip())
+                    account_id = "{0}".format(account_id.strip())
                 if not re_meth(account['account_id'], account_id):
                     continue
             retlist.append(account)
@@ -154,7 +154,7 @@ class IAMops(BotoBaseOps):
 
         :param user_name: str name of user
         :param path: str user path
-        :param delegate_account: str can be used by Cloud sys_admin in Eucalyptus to choose an account to operate on
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
         """
         if not user_name:
             # Assuming this could be part of a test, allow it but warn...
@@ -189,7 +189,7 @@ class IAMops(BotoBaseOps):
         Delete a user
 
         :param user_name: str name of user
-        :param delegate_account: str can be used by Cloud sys_admin in Eucalyptus to choose an account to operate on
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
         """
         self.log.debug("Deleting user " + user_name)
         params = {'UserName': user_name}
@@ -205,7 +205,7 @@ class IAMops(BotoBaseOps):
         :param path: regex - to match for path
         :param user_name: str name of user
         :param user_id: regex - to match for user_id
-        :param delegate_account: str can be used by Cloud sys_admin in Eucalyptus to choose an account to operate on
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
         :param search: use regex search (any occurrence) rather than match (exact same strings must occur)
         :return:
         """
@@ -420,7 +420,7 @@ class IAMops(BotoBaseOps):
                 retlist.append(name)
         except BotoServerError, BE:
             err = 'Error fetching policy for params:\n{0}: '.format(params, BE)
-            if BE.status == 403 and ignore_admin_err and str(user_name).strip() == 'sys_admin':
+            if BE.status == 403 and ignore_admin_err and str(user_name).strip() == 'admin':
                 self.log.debug('IGNORING: '+ err)
             else:
                 self.log.critical(err)
@@ -438,7 +438,7 @@ class IAMops(BotoBaseOps):
         :param doc: policy document to use as a filter
         :param search: boolean - specify whether to use match or search when filtering the
                                  returned list
-        :param ignore_admin_err: boolean- will ignore 403 responses if the user is 'sys_admin'
+        :param ignore_admin_err: boolean- will ignore 403 responses if the user is 'admin'
         :return:
         """
         retlist = []
@@ -447,28 +447,29 @@ class IAMops(BotoBaseOps):
             re_meth = re.search
         else:
             re_meth = re.match
-        names = self.get_user_policy_names(user_name, policy_name=policy_name,
-                                           delegate_account=delegate_account, search=search)
-        for p_name in names:
-            params = {'UserName': user_name,
-                      'PolicyName': p_name}
-            if delegate_account:
-                params['DelegateAccount'] = delegate_account
-            try:
+        try:
+            names = self.get_user_policy_names(user_name, policy_name=policy_name,
+                                               delegate_account=delegate_account, search=search)
+            for p_name in names:
+                params = {'UserName': user_name,
+                          'PolicyName': p_name}
+                if delegate_account:
+                    params['DelegateAccount'] = delegate_account
                 policy = self.connection.get_response(
                             'GetUserPolicy',
                             params,
                             verb='POST')['get_user_policy_response']['get_user_policy_result']
-            except BotoServerError, BE:
-                err_msg = 'Error fetching policy for params:\n{0}: "{1}"'.format(params, BE)
-                if BE.status == 403 and ignore_admin_err and str(p_name).strip() == 'sys_admin':
-                    self.log.debug('IGNORING:' + str(err_msg))
-                else:
-                    self.log.critical(err_msg)
-                    raise
-            if doc is not None and not re_meth(doc, policy['policy_document']):
-                continue
-            retlist.append(policy)
+                if doc is not None and not re_meth(doc, policy['policy_document']):
+                    continue
+                retlist.append(policy)
+        except BotoServerError as BE:
+            err_msg = 'Error fetching policy using params:\n{0}:"{1}:{2}"'\
+                .format(params, BE.status, BE.message)
+            if BE.status == 403 and ignore_admin_err and str(user_name).strip() == 'admin':
+                self.log.debug('IGNORING:' + str(err_msg))
+            else:
+                self.log.critical(err_msg)
+                raise
         return retlist
 
     def show_user_policy_summary(self,user_name,policy_name=None,delegate_account=None,
@@ -503,7 +504,7 @@ class IAMops(BotoBaseOps):
         else:
             return main_pt
 
-    def show_user_summary(self,user_name, delegate_account=None, account_id=None,
+    def show_user_summary(self,user_name=None, delegate_account=None, account_id=None,
                           print_table=True):
         """
         Debug method for to display euare/iam info for a specific user.
@@ -512,7 +513,10 @@ class IAMops(BotoBaseOps):
         :param delegate_account: string - used for user lookup
         :param account_id: regex - to use for account id
         """
-        user_name = user_name
+        if not user_name and self._user_context and self._user_context.user_name:
+            user_name = self._user_context.user_name
+        else:
+            raise ValueError('No user_name provided or found for this connection')
         if delegate_account is None:
             account_id=self.eucarc.account_id
             delegate_account= self.get_all_accounts(account_id=account_id)[0]['account_name']
@@ -546,7 +550,7 @@ class IAMops(BotoBaseOps):
         :param user_name: string - user to apply policy to
         :param policy_name: Name to upload policy as
         :param policy_json: Policy text
-        :param delegate_account: str can be used by Cloud sys_admin in Eucalyptus to choose an account to operate on
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an account to operate on
         """
         self.log.debug("Attaching the following policy to " + user_name + ":" + policy_json)
         params = {'UserName': user_name,
@@ -562,7 +566,7 @@ class IAMops(BotoBaseOps):
 
         :param user_name: string - user to apply policy to
         :param policy_name: Name to upload policy as
-        :param delegate_account: str can be used by Cloud sys_admin in Eucalyptus to choose an
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
         self.log.debug("Detaching the following policy from " + user_name + ":" + policy_name)
@@ -641,7 +645,7 @@ class IAMops(BotoBaseOps):
         """
         :param group_name: name of the group whose access should be returned.
         :param delegate_account: specific account name when method is being called from
-                                 eucalyptus sys_admin user.
+                                 eucalyptus admin user.
         :return: list of access of an IAM group.
         """
         ret_list = []
@@ -723,7 +727,7 @@ class IAMops(BotoBaseOps):
 
         :param
         :param path: path for group
-        :param delegate_account: str can be used by Cloud sys_admin in Eucalyptus to choose an
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
         self.log.debug("Attempting to create group: " + group_name)
@@ -752,7 +756,7 @@ class IAMops(BotoBaseOps):
 
         :param group_name: name of group to add user to
         :param user_name: name of user to add to group
-        :param delegate_account: str can be used by Cloud sys_admin in Eucalyptus to choose an
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
         self.log.debug("Adding user "  +  user_name + " to group " + group_name)
@@ -768,7 +772,7 @@ class IAMops(BotoBaseOps):
 
         :param group_name: name of group to remove user from
         :param user_name: name of user to remove from group
-        :param delegate_account: str can be used by Cloud sys_admin in Eucalyptus to choose an
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
         self.log.debug("Removing user "  +  user_name + " to group " + group_name)
@@ -785,7 +789,7 @@ class IAMops(BotoBaseOps):
         :param group_name: name of group to remove user from
         :param policy_name: Name to upload policy as
         :param policy_json: Policy text
-        :param delegate_account: str can be used by Cloud sys_admin in Eucalyptus to choose an
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
         self.log.debug("Attaching the following policy to " + group_name + ":" + policy_json)
@@ -802,7 +806,7 @@ class IAMops(BotoBaseOps):
 
         :param group_name: name of group to remove user from
         :param policy_name: Name to upload policy as
-        :param delegate_account: str can be used by Cloud sys_admin in Eucalyptus to choose an
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         """
         self.log.debug("Detaching the following policy from " + group_name + ":" + policy_name)
@@ -817,7 +821,7 @@ class IAMops(BotoBaseOps):
         Create a new access key for the user.
 
         :param user_name: Name of user to create access key for to
-        :param delegate_account: str can be used by Cloud sys_admin in Eucalyptus to choose an
+        :param delegate_account: str can be used by Cloud admin in Eucalyptus to choose an
                                  account to operate on
         :return: A tuple of access key and and secret key with keys: 'access_key_id' and
                 'secret_access_key'

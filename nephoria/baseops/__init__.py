@@ -29,7 +29,6 @@ class BaseOps(object):
                  region=None, connection_debug=0, path=None, validate_certs=True,
                  test_resources=None, logger=None, log_level=None, user_context=None,
                  session=None, api_version=None, verbose_requests=None):
-
         if self.EUCARC_URL_NAME is None:
             raise NotImplementedError('EUCARC_URL_NAME not set for this class:"{0}"'
                                       .format(self.__class__.__name__))
@@ -54,16 +53,30 @@ class BaseOps(object):
         # Create the logger for this ops connection
         if log_level is None:
             log_level = DEBUG
-        if not logger:
+        def get_logger_context():
+            host = self.service_host or ""
             context = ""
-            if user_context:
-                try:
-                    context = "({0}:{1})".format(user_context.account_name, user_context.user_name)
-                except:
-                    pass
-            logger = Eulogger("{0}{1}".format(self.__class__.__name__, context),
+            try:
+                if self._user_context:
+                    if self._user_context._user_name and self._user_context._account_name:
+
+                        context = "({0}:{1})".format(self._user_context.user_name,
+                                                     self._user_context.account_name)
+                    elif self._user_context.access_key:
+                        context = "(AK:{0}...)".format(self._user_context.__access_key[5:])
+            except Exception as LE:
+                print 'error fetching user context: "{0}"'.format(LE)
+            if not context:
+                if aws_access_key_id:
+                    context = "(AK:{0}...)".format(aws_access_key_id[5:])
+                else:
+                    context = "()"
+            return context
+        if not logger:
+            logger = Eulogger("{0}{1}".format(self.__class__.__name__, get_logger_context()),
                               stdout_level=log_level)
         self.log = logger
+        self.log.debug('Creating ops: {0}'.format(self.__class__.__name__))
         self.log.set_stdout_loglevel(log_level)
         # Store the runtime configuration for this ops connection
         if not eucarc:
@@ -192,7 +205,7 @@ class BaseOps(object):
             if self.eucarc:
                 account = getattr(self.eucarc, 'aws_account_name', None)
                 user = getattr(self.eucarc, 'aws_user_name', None)
-                if account == 'eucalyptus' and user == 'sys_admin':
+                if account == 'eucalyptus' and user == 'admin':
                     self._try_verbose = True
         return self._try_verbose
 

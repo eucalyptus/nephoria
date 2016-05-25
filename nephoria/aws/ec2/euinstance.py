@@ -47,6 +47,7 @@ Sample usage:
 
 from boto.ec2.instance import Instance, InstanceState
 from boto.ec2.networkinterface import NetworkInterface
+from boto.exception import EC2ResponseError
 from cloud_utils.log_utils import eulogger, printinfo, markup
 from nephoria.aws.ec2.euvolume import EuVolume
 from nephoria.euca.taggedresource import TaggedResource
@@ -68,29 +69,13 @@ import operator
 
 class EuInstance(Instance, TaggedResource, Machine):
     @classmethod
-    def make_euinstance_from_instance(cls,
-                                      instance,
-                                      tester,
-                                      debugmethod=None,
-                                      keypair=None,
-                                      keypath=None,
-                                      password=None,
-                                      username="root",
-                                      do_ssh_connect=True,
-                                      verbose=True,
-                                      timeout=120,
-                                      private_addressing=False,
-                                      reservation=None,
-                                      cmdstart=None,
-                                      try_non_root_exec=True,
-                                      exec_password=None,
-                                      ssh_retry=2,
-                                      distro=None,
-                                      distro_ver=None,
-                                      arch=None,
-                                      proxy_hostname=None,
-                                      proxy_username='root',
-                                      proxy_password=None,
+    def make_euinstance_from_instance(cls, instance, ec2ops, debugmethod=None, keypair=None,
+                                      keypath=None, password=None, username="root",
+                                      do_ssh_connect=True, verbose=True, timeout=120,
+                                      private_addressing=False, reservation=None, cmdstart=None,
+                                      try_non_root_exec=True, exec_password=None, ssh_retry=2,
+                                      distro=None, distro_ver=None, arch=None, proxy_hostname=None,
+                                      proxy_username='root', proxy_password=None,
                                       proxy_keypath=None):
 
         '''
@@ -115,7 +100,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         '''
         newins = EuInstance(instance.connection)
         newins.__dict__ = instance.__dict__
-
+        newins._package_manager = None
         newins.rootfs_device = "sda"
         newins.block_device_prefix = "sd"
         newins.virtio_blk = False
@@ -132,7 +117,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         newins.use_sudo = None
         newins.security_groups = []
 
-        newins.tester = tester
+        newins.ec2ops = ec2ops
         newins.debugmethod = debugmethod
         if newins.debugmethod is None:
             newins.log = eulogger.Eulogger(identifier=str(instance.id))
@@ -141,7 +126,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         if (keypair is not None):
             if isinstance(keypair, types.StringTypes):
                 keyname = keypair
-                keypair = tester.get_keypair(keyname)
+                keypair = ec2ops.get_keypair(keyname)
             else:
                 keyname = keypair.name
             keypath = os.getcwd() + "/" + keyname + ".pem"
@@ -156,7 +141,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         newins.private_addressing = private_addressing
         newins.reservation = reservation or newins.get_reservation()
         if newins.reservation and newins.state != 'terminated':
-            newins.security_groups = newins.tester.get_instance_security_groups(newins)
+            newins.security_groups = newins.ec2ops.get_instance_security_groups(newins)
         else:
             newins.security_groups = None
         newins.laststate = newins.state
@@ -167,10 +152,10 @@ class EuInstance(Instance, TaggedResource, Machine):
             newins.update_vm_type_info()
         if newins.root_device_type == 'ebs' and newins.state != 'terminated':
             try:
-                volume = newins.tester.get_volume(
+                volume = newins.ec2ops.get_volume(
                     volume_id=newins.block_device_mapping.get(newins.root_device_name).volume_id)
                 newins.bdm_root_vol = EuVolume.make_euvol_from_vol(volume,
-                                                                   tester=newins.tester,
+                                                                   tester=newins.ec2ops,
                                                                    cmdstart=newins.cmdstart)
             except:
                 pass
@@ -188,6 +173,11 @@ class EuInstance(Instance, TaggedResource, Machine):
 
         return newins
 
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            return self.id == other.id
+        return False
+
     @property
     def ssh(self):
         return self._ssh
@@ -198,7 +188,7 @@ class EuInstance(Instance, TaggedResource, Machine):
 
     @property
     def age(self):
-        launchtime = self.tester.get_datetime_from_resource_string(self.launch_time)
+        launchtime = self.ec2ops.get_datetime_from_resource_string(self.launch_time)
         # return the elapsed time in seconds
         return (time.mktime(datetime.utcnow().utctimetuple()) -
                 time.mktime(launchtime.utctimetuple()))
@@ -215,7 +205,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             except ValueError:
                 if validate:
                     raise
-                tb = self.tester.get_traceback()
+                tb = self.ec2ops.get_traceback()
                 self.log.debug('Failed to update instance. Attempt:{0}/{1}'
                            .format(x, retries))
         if not ret:
@@ -233,7 +223,7 @@ class EuInstance(Instance, TaggedResource, Machine):
     def set_last_status(self, status=None):
         self.laststate = self.state
         self.laststatetime = time.time()
-        self.age_at_state = self.tester.get_instance_time_launched(self)
+        self.age_at_state = self.ec2ops.get_instance_time_launched(self)
         # Also record age from user's perspective, ie when they issued the run instance
         # request (if this is available)
         if hasattr(self, "cmdstart") and self.cmdstart:
@@ -292,7 +282,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                   "{0}".format(markup("ACCOUNT ID:")), owner_id]
         id_string, idlen = multi_line(idlist)
         try:
-            emi = self.tester.get_emi(self.image_id)
+            emi = self.ec2ops.get_emi(self.image_id)
             emi_name = str(emi.name[0:18]) + ".."
         except:
             emi_name = ""
@@ -365,7 +355,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         sec_grps = []
         for grp in self.groups:
             sec_grps.append(str(grp.id))
-        sec_grps = ",".join(sec_grps)
+        sec_grps = " ".join(sec_grps)
         private_addressing = "N"
         if self.private_addressing:
             private_addressing = "Y"
@@ -417,12 +407,12 @@ class EuInstance(Instance, TaggedResource, Machine):
         mainbuf += header("\nINSTANCE ENI TABLE:\n")
         mainbuf += str(self.show_enis(printme=False)) + "\n"
         mainbuf += header("\nINSTANCE SECURITY GROUPS:\n")
-        mainbuf += str(self.tester.show_security_groups_for_instance(self, printme=False)) + "\n"
+        mainbuf += str(self.ec2ops.show_security_groups_for_instance(self, printme=False)) + "\n"
         mainbuf += header("\nINSTANCE IMAGE:\n")
-        image = self.tester.get_emi(self.image_id)
-        mainbuf += str(self.tester.show_image(image=image, printme=False)) + "\n"
+        image = self.ec2ops.get_emi(self.image_id)
+        mainbuf += str(self.ec2ops.show_image(image=image, printme=False)) + "\n"
         mainbuf += header("\nINSTANCE BLOCK DEVICE MAPPING:\n")
-        mainbuf += str(self.tester.show_block_device_map(self.block_device_mapping,
+        mainbuf += str(self.ec2ops.show_block_device_map(self.block_device_mapping,
                                                          printme=False))
         main_pt.add_row([mainbuf])
         if printme:
@@ -491,7 +481,7 @@ class EuInstance(Instance, TaggedResource, Machine):
     def get_reservation(self):
         res = None
         try:
-            res = self.tester.get_reservation_for_instance(self)
+            res = self.ec2ops.get_reservation_for_instance(self)
         except Exception, e:
             self.update()
             self.log.debug('Could not get reservation for instance in state:' +
@@ -586,14 +576,14 @@ class EuInstance(Instance, TaggedResource, Machine):
         self.get_cloud_init_info_from_console()
         try:
             node = None
-            node = self.tester.service_manager.get_all_node_controllers(instance_id=self.id)[0]
+            node = self.ec2ops.service_manager.get_all_node_controllers(instance_id=self.id)[0]
             node.sys('ip addr list')
         except Exception as NE:
             self.log.debug('Was unable to gather debug for the node hosting this VM, err: {0}'
                        .format(NE))
             pass
         try:
-            nodes = self.tester.service_manager.get_all_node_controllers()
+            nodes = self.ec2ops.service_manager.get_all_node_controllers()
             if node and (node in nodes):
                 nodes.remove(node)
             self.log.debug('Ip addrs for node:"{0}" which is hosting:"{1}"...'
@@ -614,7 +604,7 @@ class EuInstance(Instance, TaggedResource, Machine):
     def get_cloud_init_info_from_console(self):
         ret_buf = ""
         try:
-            c_output = self.tester.get_console_output(self, debug=False)
+            c_output = self.ec2ops.get_console_output(self, debug=False)
             if c_output:
                 output = c_output.output
                 ci_lines = []
@@ -863,9 +853,9 @@ class EuInstance(Instance, TaggedResource, Machine):
         return self.ssh.cmd(cmd, verbose=verbose, timeout=timeout, listformat=listformat,
                             cb=cb, cbargs=cbargs, get_pty=get_pty)
 
-    def found(self, command, regex):
+    def found(self, command, regex, verbose=True):
         """ Returns a Boolean of whether the result of the command contains the regex"""
-        result = self.sys(command)
+        result = self.sys(command, verbose=verbose  )
         for line in result:
             found = re.search(regex, line)
             if found:
@@ -927,7 +917,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             # update our block device prefix, detect if virtio is now in use
             self.set_block_device_prefix()
             dev = self.get_free_scsi_dev()
-        if (self.tester.attach_volume(self, euvolume, dev, pause=10, timeout=timeout)):
+        if (self.ec2ops.attach_volume(self, euvolume, dev, pause=10, timeout=timeout)):
             if euvolume.attach_data.device != dev:
                 raise Exception('Attached device:' + str(euvolume.attach_data.device) +
                                 ", does not equal requested dev:" + str(dev))
@@ -972,7 +962,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 self.vol_write_random_data_get_md5(euvolume, overwrite=overwrite)
                 return True
             except:
-                self.log.debug("\n" + str(self.tester.get_traceback()) +
+                self.log.debug("\n" + str(self.ec2ops.get_traceback()) +
                            "\nError caught in try_to_write_to_disk")
                 return False
 
@@ -996,7 +986,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         for vol in self.attached_vols:
             if vol.id == euvolume.id:
                 dev = vol.guestdev
-                if (self.tester.detach_volume(euvolume, timeout=timeout)):
+                if (self.ec2ops.detach_volume(euvolume, timeout=timeout)):
                     if waitfordev:
                         self.log.debug("Wait for device:" + str(dev) + " to be removed on guest...")
                         while (elapsed < timeout):
@@ -1045,7 +1035,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                             code=0, timeout=timeout)
         except CommandTimeoutException as se:
             if staticmode:
-                return self.sys("curl http://" + self.tester.get_ec2_ip() + ":8773/" +
+                return self.sys("curl http://" + self.ec2ops.get_ec2_ip() + ":8773/" +
                                 str(prefix) + str(element_path), code=0)
             else:
                 raise (se)
@@ -1098,6 +1088,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             errors = "{0}\n{1}\n".format(get_traceback(), SE)
         if errors:
             self.log.error('{0}\n{1}Error closing instances fds'.format(errors, self.id))
+        super(EuInstance, self).terminate(dry_run=dry_run)
 
     def terminate_and_verify(self, verify_vols=True, volto=180, timeout=300, poll_interval=10):
         '''
@@ -1133,7 +1124,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                                 ':Caught exception verifying attached status for:' + \
                                 str(vol.id) + ", Error:" + str(e)
         if verify_vols:
-            all_vols = self.tester.get_volumes(attached_instance=self.id)
+            all_vols = self.ec2ops.get_volumes(attached_instance=self.id)
             for device in self.block_device_mapping:
                 dev_map = self.block_device_mapping[device]
                 self.log.debug(str(self.id) + ", has volume:" + str(dev_map.volume_id) +
@@ -1141,8 +1132,8 @@ class EuInstance(Instance, TaggedResource, Machine):
                 for volume in all_vols:
                     if volume.id == dev_map.volume_id:
                         volume.delete_on_termination = dev_map.delete_on_termination
-
-        self.tester.terminate_single_instance(self, timeout=timeout)
+        self.terminate()
+        self.ec2ops.wait_for_instance(self, state='terminated', timeout=timeout)
         start = time.time()
         while all_vols and elapsed < volto:
             elapsed = int(time.time() - start)
@@ -1167,7 +1158,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 # If volume has reached it's intended status or
                 # the volume is no longer on the system and it's intended status is 'deleted'
                 if vol.status == vol_status or \
-                        (not self.tester.get_volume(volume_id=vol.id, eof=False) and
+                        (not self.ec2ops.get_volume(volume_id=vol.id, eof=False) and
                          vol_status == 'deleted'):
                     self.log.debug(str(self.id) + ' terminated, ' + str(vol.id) +
                                "/" + str(vol.status) + ": volume entered expected state:" +
@@ -1217,7 +1208,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         dev = None
         if prefix is None:
             prefix = self.block_device_prefix
-        cloudlist = self.tester.get_volumes(attached_instance=self.id)
+        cloudlist = self.ec2ops.get_volumes(attached_instance=self.id)
 
         for x in xrange(0, maxdevs):
             inuse = False
@@ -1232,7 +1223,11 @@ class EuInstance(Instance, TaggedResource, Machine):
                     continue
             # Check to see if the cloud has a conflict with this device name...
             for vol in cloudlist:
-                vol.update()
+                try:
+                    vol.update()
+                except EC2ResponseError as ER:
+                    if ER.status == 400:
+                        continue
                 if (vol.attach_data is not None) and (vol.attach_data.device == dev):
                     inuse = True
                     in_use_cloud += str(vol.id) + ", "
@@ -1388,7 +1383,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 euvolume.md5 = md5
                 euvolume.md5len = length
         except Exception, e:
-            tb = self.tester.get_traceback()
+            tb = self.ec2ops.get_traceback()
             print str(tb)
             raise Exception(str(self.id) + ": Failed to md5 attached volume: " + str(e))
         return md5
@@ -1518,13 +1513,13 @@ class EuInstance(Instance, TaggedResource, Machine):
         '''
         for euvol in list:
             if not isinstance(euvol, EuVolume):  # or not euvol.md5:
-                list[list.index(euvol)] = EuVolume.make_euvol_from_vol(euvol, self.tester)
+                list[list.index(euvol)] = EuVolume.make_euvol_from_vol(euvol, self.ec2ops)
         for euvol in list:
             dev = self.get_free_scsi_dev()
             if euvol.md5:
                 # Monitor volume to attached, dont write/read head for md5 use existing.
                 # Check md5 sum later in get_unsynced_volumes.
-                if (self.tester.attach_volume(self, euvol, dev, pause=10, timeout=timepervol)):
+                if (self.ec2ops.attach_volume(self, euvol, dev, pause=10, timeout=timepervol)):
                     self.attached_vols.append(euvol)
                 else:
                     raise Exception('attach_euvolume_list: {0} Test Failed to attach volume:{1}'
@@ -1704,7 +1699,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         Confirm that the cloud is showing the state for this euvolume as attached to this instance
         '''
         try:
-            euvolume = self.tester.get_volume(volume_id=euvolume.id)
+            euvolume = self.ec2ops.get_volume(volume_id=euvolume.id)
         except Exception, e:
             self.log.debug("Error in verify_attached_vol_status, try running init_volume_list first")
             raise Exception("Failed to get volume in get_attached_vol_cloud_status, err:" + str(e))
@@ -1739,7 +1734,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 raise Exception("Error in sync_volume_list attempting to detach badvol:" +
                                 str(badvol.id) + ". Err:" + str(e))
 
-        cloudlist = self.tester.ec2.get_all_volumes()
+        cloudlist = self.ec2ops.ec2.get_all_volumes()
         found = False
         for vol in cloudlist:
             # check to see if the volume is attached to us, but is not involved with the
@@ -1761,10 +1756,10 @@ class EuInstance(Instance, TaggedResource, Machine):
                             evol.guestdev = dev
                             self.attached_vols.append(evol)
                         else:
-                            self.tester.detach_volume(vol, timeout=timeout)
+                            self.ec2ops.detach_volume(vol, timeout=timeout)
                     except Exception, e:
                         if reattach or detach:
-                            self.tester.detach_volume(vol, timeout=timeout)
+                            self.ec2ops.detach_volume(vol, timeout=timeout)
                         if reattach:
                             dev = self.get_free_scsi_dev()
                             self.attach_volume(self, self, vol, dev)
@@ -1826,7 +1821,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                                         str(volume.status) +
                                         ' state did not remain in-use during stop')
         self.log.debug("\n" + str(self.id) + ": Printing Instance 'attached_vol' list:\n")
-        self.tester.show_volumes(self.attached_vols)
+        self.ec2ops.show_volumes(self.attached_vols)
         msg = ""
         start = time.time()
         elapsed = 0
@@ -1925,7 +1920,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         return mount_dir
 
     def update_vm_type_info(self):
-        self.vmtype_info = self.tester.get_vm_type_from_zone(self.placement, self.instance_type)
+        self.vmtype_info = self.ec2ops.get_vm_type_from_zone(self.placement, self.instance_type)
         return self.vmtype_info
 
     def get_ephemeral_dev(self):
@@ -2006,7 +2001,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         self.log.debug(dbg_buf)
         mapped_device = self.block_device_mapping.get(map_device)
         volume_id = mapped_device.volume_id
-        volume = self.tester.get_volume(volume_id=volume_id)
+        volume = self.ec2ops.get_volume(volume_id=volume_id)
         if volume.attach_data.device != map_device:
             raise Exception('mapped device name:' + str(mapped_device) +
                             ', does not match attached device name:' +
@@ -2034,7 +2029,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         against the current values of the instance; self.block_device_mapping &
         self.root_device_name
         '''
-        self.tester.show_block_device_map(self.block_device_mapping)
+        self.ec2ops.show_block_device_map(self.block_device_mapping)
         meta_dev_names = self.get_metadata('block-device-mapping')
         meta_devices = {}
         root_dev = root_dev or self.root_device_name

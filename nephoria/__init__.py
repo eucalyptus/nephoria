@@ -6,7 +6,7 @@ import re
 import random
 import string
 
-__version__ = '2.0'
+__version__ = '2.1'
 
 
 def handle_timeout(self, signum, frame):
