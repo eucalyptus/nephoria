@@ -59,9 +59,10 @@ can be provided.
 
 Constructor
 ------
-
+```
 from nephoria.testcontroller import TestController
 clc_ip = '1.2.3.4'
 tc = TestController(hostname=clc_ip, log_level='DEBUG')
 user = tc.get_user_by_name('testrunner', 'admin')
 user.ec2.show_images()
+```
