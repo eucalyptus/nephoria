@@ -322,6 +322,11 @@ class LegacyInstanceTestSuite(CliTestRunner):
                 except CommandExitCodeException as CE:
                     self.log.error(red("Did not find ephemeral storage at " + hvm_ephemeral))
                     raise CE
+            try:
+                self.user.ec2.show_security_groups_for_instance(instance)
+            except Exception as SE:
+                self.log.error("{0}\nError showing {1} security group info, err:'{2}'"
+                               .format(get_traceback(), instance.id, SE))
             self.log.debug("Pinging instance public IP from inside instance")
             instance.sys('ping -c 1 ' + instance.ip_address, code=0)
             self.log.debug("Pinging instance private IP from inside instance")
