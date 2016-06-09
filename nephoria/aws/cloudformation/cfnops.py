@@ -56,6 +56,14 @@ class CFNops(BotoBaseOps):
 
     create_stack.__doc__ = CloudFormationConnection.create_stack.__doc__
 
+    def validate_template(self, template_body, template_url=None, *args, **kwargs):
+        self.log.info("Validating template: {0}".format(template_body))
+        return super(CFNops, self).connection.validate_template(template_body,
+                                                                template_url=template_url,
+                                                                *args, **kwargs) 
+
+    validate_template.__doc__ = CloudFormationConnection.validate_template.__doc__
+
     def delete_stack(self, stack_name_or_id, *args, **kwargs):
         self.log.info("Deleting stack: {0}".format(stack_name_or_id))
         return super(CFNops, self).connection.delete_stack(stack_name_or_id, *args, **kwargs)
