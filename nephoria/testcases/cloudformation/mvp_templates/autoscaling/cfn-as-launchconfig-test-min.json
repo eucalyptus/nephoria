@@ -1,0 +1,29 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "AutoScaling Launch Configuration Test - Minimum Required Properties",
+    "Parameters": {
+        "ImageId": {
+            "Description":"Image Id",
+            "Type":"String"
+        },
+        "InstanceType": {
+            "Description":"Instance Type",
+            "Type":"String"
+        }
+    },
+    "Resources" : {
+        "LaunchConfig": {
+            "Type" : "AWS::AutoScaling::LaunchConfiguration",
+                "Properties" : {
+                    "ImageId": { "Ref" : "ImageId" },
+                    "InstanceType": { "Ref" : "InstanceType" }
+                }
+        }
+    },
+    "Outputs": {
+        "LaunchConfiguration": {
+            "Description" : "Auto Scaling Launch Configuration",
+            "Value" : { "Ref" : "LaunchConfig" }
+        }    
+    }
+}
