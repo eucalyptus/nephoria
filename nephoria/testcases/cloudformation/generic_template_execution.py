@@ -6,6 +6,7 @@ from nephoria.testcase_utils.cli_test_runner import CliTestRunner
 from nephoria.testcase_utils.cli_test_runner import SkipTestException
 from nephoria.testcontroller import TestController
 import copy
+import time
 import os.path
 
 
@@ -29,12 +30,68 @@ class GenericTemplateRun(CliTestRunner):
                    'default': None}}
 
     _DEFAULT_CLI_ARGS['template_params'] = {
-        'args': ['--template-paramaters'],
+        'args': ['--template-parameters'],
         'kwargs': {
                    'dest': 'template_params',
-                   'help': "key/value parameters to use with stack's template",
-                   'nargs': '*',
+                   'help': ("key=value parameters to use with "
+                            "stack's template. Multiple parameters "
+                            "should be space-delimited."),
+                   'nargs': '?',
                    'default': None}}
+
+    _DEFAULT_CLI_ARGS['stack_name'] = {
+        'args': ['--stack-name'],
+        'kwargs': {'dest': 'stack_name',
+                   'help': 'Name of Cloudformation Stack Deployment',
+                   'default': None}}
+
+    _DEFAULT_CLI_ARGS['disable_rollback'] = {
+        'args': ['--disable-rollback'],
+        'kwargs': {'dest': 'disable_rollback',
+                   'help': ("Set to True to disable rollback of "
+                            "the stack if stack creation failed. "
+                            "Default is False."),
+                   'action': 'store_true'}}
+
+    _DEFAULT_CLI_ARGS['timeout_min'] = {
+        'args': ['--timeout-in-min'],
+        'kwargs': {'dest': 'timeout',
+                   'help': ("The amount of time that can pass before the "
+                            "stack status becomes CREATE_FAILED; if "
+                            "DisableRollback is not set or is set to "
+                            "False, the stack will be rolled back."),
+                   'type': int,
+                   'default': '1'}}
+
+    _DEFAULT_CLI_ARGS['capabilities'] = {
+        'args': ['--capabilities'],
+        'kwargs': {'dest': 'capabilities',
+                   'help': ("The list of capabilities that you want to allow "
+                            "in the stack. If your template contains certain "
+                            "resources, you must specify the CAPABILITY_IAM "
+                            "value for this parameter; otherwise, this action "
+                            "returns an InsufficientCapabilities error. The "
+                            "following resources require you to specify the "
+                            "capabilities parameter: "
+                            "`AWS::CloudFormation::Stack`_,"
+                            " `AWS::IAM::AccessKey`_, "
+                            "`AWS::IAM::Group`_, "
+                            "`AWS::IAM::InstanceProfile`_, "
+                            "`AWS::IAM::Policy`_, "
+                            "`AWS::IAM::Role`_, "
+                            "`AWS::IAM::User`_, and "
+                            "`AWS::IAM::UserToGroupAddition`_."),
+                   'choices': ['CAPABILITY_IAM'],
+                   'default': None}}
+
+    _DEFAULT_CLI_ARGS['on_failure'] = {
+        'args': ['--on_failure'],
+        'kwargs': {'dest': 'on_failure',
+                   'help': ("Determines what action will be taken if stack "
+                            "creation fails. This must be one of: "
+                            "DO_NOTHING, ROLLBACK, or DELETE."),
+                   'choices': ['DO_NOTHING', 'ROLLBACK', 'DELETE'],
+                   'default': 'ROLLBACK'}}
 
     @property
     def tc(self):
@@ -78,13 +135,15 @@ class GenericTemplateRun(CliTestRunner):
         """
         if self.args.template_file is None and self.args.template_url is None:
             raise ValueError("Please pass either template-file/template-url.")
-        if self.args.template_file and os.path.exists(self.args.template_file) is False:
+        if (
+               self.args.template_file and
+               os.path.exists(self.args.template_file) is False
+           ):
             raise ValueError("File passed for template-file does not exist.")
         if self.args.template_file:
             temp = open(self.args.template_file)
             temp_body = temp.read()
             temp.close()
-            import ipdb; ipdb.set_trace()
             try:
                 self.tc.user.cloudformation.validate_template(
                                                    template_body=temp_body)
@@ -101,6 +160,111 @@ class GenericTemplateRun(CliTestRunner):
             except BotoServerError as e:
                 self.log.error("Error validating template: " + e.error_message)
                 raise e
+
+    def test_stack_deployment(self):
+        self.log.debug("Deploy Cloudformation Stack")
+        """
+        Check to see if --disable-rollback is set to true.
+        If so, set --on-failure to None.
+        """
+        if self.args.disable_rollback is True:
+            disable_rollback = self.args.disable_rollback
+            on_failure = None
+        else:
+            disable_rollback = None
+            on_failure = self.args.on_failure
+        """
+        If template parameter(s), store them in a list
+        """
+        parameters = []
+        for param in self.args.template_params.split():
+            try:
+                k, v = param.split("=")
+                parameters.append((k, v))
+            except ValueError as e:
+                self.log.error("Parameter not in key=value format")
+                raise e
+        """
+        Make sure stack name is set.  If stack name not passed,
+        generate stack name.
+        """
+        if self.args.stack_name:
+            stack_name = self.args.stack_name
+        else:
+            stack_name = "nephoria-stack-" + str(int(time.time()))
+        """
+        If capabilities, store in a list
+        Currently, only CAPABILITY_IAM should be in the list
+        """
+        if self.args.capabilities:
+            capabilities = self.args.capabilities.split()
+
+        """
+        Create custom tags to associate test
+        with resource(s)
+        """
+        tags = {
+                "Purpose": "nephoria test resource",
+                "Test Script": "generic_template_execution.py"
+               }
+        """
+        Create stack passing supported arguments.
+        Stack information should be returned from create_stack
+        """
+        if self.args.template_file:
+            temp = open(self.args.template_file)
+            temp_body = temp.read()
+            temp.close()
+            try:
+                resp = self.tc.user.cloudformation.create_stack(
+                                   stack_name,
+                                   template_body=temp_body,
+                                   parameters=parameters,
+                                   disable_rollback=disable_rollback,
+                                   tags=tags,
+                                   on_failure=on_failure)
+            except BotoServerError as e:
+                self.log.error("Failed to create stack")
+                raise e
+        else:
+            url = self.args.template_url
+            try:
+                resp = self.tc.user.cloudformation.create_stack(
+                                   stack_name,
+                                   template_url=url,
+                                   parameters=parameters,
+                                   disable_rollback=disable_rollback,
+                                   tags=tags,
+                                   on_failure=on_failure)
+            except BotoServerError as e:
+                self.log.error("Failed to create stack")
+                raise e
+
+        for x in xrange(0, 5):
+            stacks = self.tc.user.cloudformation.describe_stacks(
+                                   resp.stack_name)
+            if stacks[0].stack_status == 'CREATE_COMPLETE':
+                self.log.debug("Stack deployment complete.")
+                break 
+            time.sleep(2 * x)
+
+    def clean_method(self):
+        """
+        Check to see if there are any stacks.
+        If so, delete the stacks
+        """
+        stack_id = None
+        stacks = self.tc.user.cloudformation.describe_stacks(stack_id)
+        if stacks:
+            for stack in stacks:
+                self.log.debug("Deleting the following stack: " +
+                               str(stack.stack_name))
+                try:
+                    self.tc.user.cloudformation.delete_stack(
+                                                        stack.stack_name)
+                except BotoServerError as e:
+                    self.log.error("Failed to delete stack")
+                    raise e
 
 if __name__ == "__main__":
     test = GenericTemplateRun()

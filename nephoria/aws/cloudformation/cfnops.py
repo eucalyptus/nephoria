@@ -61,7 +61,7 @@ class CFNops(BotoBaseOps):
         for x in xrange(0, 5):
             stacks = self.connection.describe_stacks(arn)
             if stacks:
-                self.test_resources["stacks"].append(stack[0])
+                self.test_resources["stacks"].append(stacks[0])
                 return stacks[0]
             time.sleep(2 * x)
 
@@ -80,3 +80,10 @@ class CFNops(BotoBaseOps):
         return self.connection.delete_stack(stack_name_or_id, *args, **kwargs)
 
     delete_stack.__doc__ = CloudFormationConnection.delete_stack.__doc__
+
+    def describe_stacks(self, stack_name_or_id, *args, **kwargs):
+        self.log.info("Describing stack: {0}".format(stack_name_or_id))
+        return self.connection.describe_stacks(stack_name_or_id, *args, **kwargs)
+
+    describe_stacks.__doc__ = CloudFormationConnection.describe_stacks.__doc__
+
