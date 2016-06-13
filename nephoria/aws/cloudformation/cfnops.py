@@ -30,27 +30,38 @@
 #
 # Author: Vic Iglesias vic.iglesias@eucalyptus.com
 #
-from nephoria.baseops.botobaseops import BotoBaseOps
 
-import boto
-from boto.ec2.regioninfo import RegionInfo
 from boto.cloudformation import CloudFormationConnection
+from boto.cloudformation.stack import Stack
+from boto.exception import BotoServerError
 import time
+import json
+import os
+import re
+import urllib
+from prettytable import PrettyTable
+from nephoria.baseops.botobaseops import BotoBaseOps
 
 class CFNops(BotoBaseOps):
     SERVICE_PREFIX = 'cloudformation'
     CONNECTION_CLASS = CloudFormationConnection
     EUCARC_URL_NAME = 'cloudformation_url'
 
+    def setup_resource_trackers(self):
+        ## add test resource trackers and cleanup methods...
+        self.test_resources["stacks"] = self.test_resources.get('stacks', [])
+        self.test_resources_clean_methods["stacks"] = None
+
     def create_stack(self, stack_name, template_body, template_url=None, parameters=None,
                      *args, **kwargs):
         self.log.info("Creating stack: {0}".format(stack_name))
-        arn = super(CFNops, self).connection.create_stack(stack_name, template_body,
-                                                          template_url=template_url,
-                                                          parameters=parameters, *args, **kwargs)
+        arn = self.connection.create_stack(stack_name, template_body,
+                                           template_url=template_url,
+                                           parameters=parameters, *args, **kwargs)
         for x in xrange(0, 5):
             stacks = self.connection.describe_stacks(arn)
             if stacks:
+                self.test_resources["stacks"].append(stack[0])
                 return stacks[0]
             time.sleep(2 * x)
 
@@ -58,14 +69,14 @@ class CFNops(BotoBaseOps):
 
     def validate_template(self, template_body, template_url=None, *args, **kwargs):
         self.log.info("Validating template: {0}".format(template_body))
-        return super(CFNops, self).connection.validate_template(template_body,
-                                                                template_url=template_url,
-                                                                *args, **kwargs) 
+        return self.connection.validate_template(template_body,
+                                                 template_url=template_url,
+                                                 *args, **kwargs) 
 
     validate_template.__doc__ = CloudFormationConnection.validate_template.__doc__
 
     def delete_stack(self, stack_name_or_id, *args, **kwargs):
         self.log.info("Deleting stack: {0}".format(stack_name_or_id))
-        return super(CFNops, self).connection.delete_stack(stack_name_or_id, *args, **kwargs)
+        return self.connection.delete_stack(stack_name_or_id, *args, **kwargs)
 
     delete_stack.__doc__ = CloudFormationConnection.delete_stack.__doc__
