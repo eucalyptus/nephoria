@@ -84,13 +84,14 @@ class GenericTemplateRun(CliTestRunner):
             temp = open(self.args.template_file)
             temp_body = temp.read()
             temp.close()
+            import ipdb; ipdb.set_trace()
             try:
                 self.tc.user.cloudformation.validate_template(
                                                    template_body=temp_body)
                 self.log.debug("Template is valid.")
             except BotoServerError as e:
                 self.log.error("Error validating template: " + e.error_message)
-                raise str(e)
+                raise e
         else:
             url = self.args.template_url
             try:
@@ -99,7 +100,7 @@ class GenericTemplateRun(CliTestRunner):
                 self.log.debug("Template is valid.")
             except BotoServerError as e:
                 self.log.error("Error validating template: " + e.error_message)
-                raise str(e)
+                raise e
 
 if __name__ == "__main__":
     test = GenericTemplateRun()
