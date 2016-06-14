@@ -120,7 +120,7 @@ class GenericTemplateRun(CliTestRunner):
                                     aws_user_name=self.args.test_user)
             setattr(self, '__user', user)
         return user
-    
+
     @property
     def stack_name(self):
         """
@@ -138,7 +138,6 @@ class GenericTemplateRun(CliTestRunner):
 
         setattr(self, '__stack_name', stack_name)
         return stack_name
-
 
     def test_validate_template(self):
         """
