@@ -200,6 +200,11 @@ class GenericTemplateRun(CliTestRunner):
             capabilities = self.args.capabilities.split()
 
         """
+        Make sure timeout is set to minutes.
+        Timeout will be used for stack creation.
+        """
+        timeout = int(time.time()) + 60*int(self.args.timeout)
+        """
         Create custom tags to associate test
         with resource(s)
         """
@@ -240,13 +245,22 @@ class GenericTemplateRun(CliTestRunner):
                 self.log.error("Failed to create stack")
                 raise e
 
-        for x in xrange(0, 5):
+        while True:
             stacks = self.tc.user.cloudformation.describe_stacks(
                                    resp.stack_name)
             if stacks[0].stack_status == 'CREATE_COMPLETE':
                 self.log.debug("Stack deployment complete.")
                 break 
-            time.sleep(2 * x)
+            elif int(time.time()) > timeout:
+                self.log.error("Stack deployment failed "
+                               "to complete in provided stack "
+                               "timeout: " + self.args.timeout +
+                               " min.")
+                raise RuntimeError("Stack failed to deploy"
+                                   "within timeout: " +
+                                   self.args.timeout) 
+ 
+            time.sleep(2 * self.args.timeout)
 
     def clean_method(self):
         """
