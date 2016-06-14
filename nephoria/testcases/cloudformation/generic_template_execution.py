@@ -7,6 +7,7 @@ from nephoria.testcase_utils.cli_test_runner import SkipTestException
 from nephoria.testcontroller import TestController
 import copy
 import time
+import random
 import os.path
 
 
@@ -246,21 +247,31 @@ class GenericTemplateRun(CliTestRunner):
                 raise e
 
         while True:
+            """
+            Confirm stack completed within timeout period
+            by using describe_stack leverging
+            decorrelated jitter exponential backoff for each
+            request. If stack failed to create, raise error
+            """
             stacks = self.tc.user.cloudformation.describe_stacks(
                                    resp.stack_name)
             if stacks[0].stack_status == 'CREATE_COMPLETE':
                 self.log.debug("Stack deployment complete.")
-                break 
+                break
             elif int(time.time()) > timeout:
                 self.log.error("Stack deployment failed "
                                "to complete in provided stack "
-                               "timeout: " + self.args.timeout +
+                               "timeout: " + str(self.args.timeout) +
                                " min.")
                 raise RuntimeError("Stack failed to deploy"
                                    "within timeout: " +
-                                   self.args.timeout) 
- 
-            time.sleep(2 * self.args.timeout)
+                                   str(self.args.timeout) +
+                                   " min.")
+            sleep_time = min(int(timeout),
+                             random.uniform(2, 2*3))
+            self.log.debug("Sleep " + str(sleep_time) +
+                           " seconds before next request..")
+            time.sleep(sleep_time)
 
     def clean_method(self):
         """
