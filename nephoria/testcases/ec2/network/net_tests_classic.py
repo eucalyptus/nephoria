@@ -1520,7 +1520,7 @@ class NetTestsClassic(CliTestRunner):
             instance1.ssh.sftp_put(instance1.keypath, 'testkey.pem')
             instance1.sys('chmod 0600 testkey.pem')
             for zone2 in self.zones:
-                if zone != zone2:
+                if zone1 != zone2:
                     instance2 = zone_instances[zone2][0]
                     testphrase = "diffpubzone_test_from_instance1_{0}".format(instance1.id)
                     testfile = 'testfile.txt'
