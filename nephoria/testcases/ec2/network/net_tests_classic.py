@@ -943,26 +943,30 @@ class NetTestsClassic(CliTestRunner):
             if not zone.test_instance_group1:
                 raise Exception('Could not find an instance in group1 for zone:' + str(zone.zone))
 
-        self.log.debug('Iterating through zones, attempting ssh between zones within same security group...')
+        self.log.debug('Iterating through zones, attempting ssh between zones within '
+                       'same security group...')
         for zone in zones:
             instance1 = zone.test_instance_group1
             for zone2 in zones:
                 if zone.zone != zone2.zone:
                     instance2 = zone2.test_instance_group1
                     if not instance1 or not instance2:
-                        raise Exception('Security group: ' + str(self.group1.name) + ", missing instances in a Zone:"
-                                        + str(zone.zone) + " = instance:" + str(instance1) +
-                                        ", Zone:" + str(zone2.zone) + " = instance:" + str(instance2))
-                    self.log.debug('Attempting to run ssh command "uname -a" between instances across zones and security groups:\n'
-                               + str(instance1.id) + '/sec grps(' + str(instance1.security_groups)+") --> "
-                               + str(instance2.id) + '/sec grps(' + str(instance2.security_groups)+")\n"
-                               + "Current test run in zones: " + str(instance1.placement) + "-->" + str(instance2.placement),
-                               linebyline=False )
-                    self.log.debug('Check some debug information re this data connection in this security group first...')
-                    self.user.ec2.does_instance_sec_group_allow(instance=instance2,
-                                                              src_addr=instance1.private_ip_address,
-                                                              protocol='tcp',
-                                                              port=22)
+                        raise Exception('Security group: {0}, missing instances in a '
+                                        'Zone:{1} = instance:{2}, Zone:{3} = instance:{4}'
+                                        .format(self.group1.name, zone.zone, instance1,
+                                                zone2.zone, instance2))
+                    self.log.debug('Attempting to run ssh command "uname -a" between '
+                                   'instances across zones and security groups:\n'
+                                   '{0}/sec grps({1}) --> {2}/sec grps({3})\n'
+                                   'Current test run in zones: {4} ---> {5}'
+                                   .format(instance1.id, instance1.security_groups,
+                                           instance2.id, instance2.security_groups,
+                                           instance1.placement, instance2.placement))
+                    self.log.debug('Check some debug information re this data connection in '
+                                   'this security group first...')
+                    self.user.ec2.does_instance_sec_group_allow(
+                        instance=instance2, src_addr=instance1.private_ip_address, protocol='tcp',
+                        port=22)
                     self.log.debug('Now Running the ssh command...')
                     try:
                         instance1.sys("ssh -o StrictHostKeyChecking=no -i "
@@ -975,12 +979,9 @@ class NetTestsClassic(CliTestRunner):
                             try:
                                 self.vpc_backend.show_instance_network_summary(instance)
                             except Exception, ME:
-                                self.log.debug('{0}\nCould not dump Mido debug, err:{1}'
-                                           .format(ME, get_traceback()))
+                                self.log.warning('{0}\nCould not dump Mido debug, err:{1}'
+                                                 .format(ME, get_traceback()))
                         raise
-
-
-
 
     def test6_test_ssh_between_instances_in_diff_sec_groups_different_zone(self):
         '''
