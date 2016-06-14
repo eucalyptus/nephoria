@@ -1635,7 +1635,7 @@ class NetTestsClassic(CliTestRunner):
                     testfile = 'testfile.txt'
                     instance1.sys("ssh -o StrictHostKeyChecking=no -i testkey.pem root@{0} "
                                   "\'echo {1} > {2}; hostname; ifconfig; pwd; ls\'"
-                                  .format(instance2.ip_address, testphrase, testfile),
+                                  .format(instance2.private_ip_address, testphrase, testfile),
                                   code=0,
                                   timeout=10)
                     instance2.sys('cat {0} | grep {1}'.format(testfile, testphrase), code=0)
