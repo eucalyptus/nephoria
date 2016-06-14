@@ -475,7 +475,8 @@ class Euca2oolsImageUtils(object):
                       interbundle_timeout=120,
                       timeout=0,
                       image_check_timeout=300,
-                      uniquebucket=True):
+                      uniquebucket=True,
+                      retry=True):
         '''
         Bundle an image on a 'machine'.
         where credpath to creds on machine
@@ -514,6 +515,8 @@ class Euca2oolsImageUtils(object):
         cmdargs = cmdargs + " -b " + str(bname)
         if s3_url:
             cmdargs += " --url " + str(s3_url)
+        if retry:
+            cmdargs += " --retry "
         if debug:
             cmdargs = cmdargs + " --debug "
         cmdargs = cmdargs + " -b " + str(bname) + " -m " +str(manifest)
