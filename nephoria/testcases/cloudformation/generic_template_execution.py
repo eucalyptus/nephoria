@@ -120,6 +120,25 @@ class GenericTemplateRun(CliTestRunner):
                                     aws_user_name=self.args.test_user)
             setattr(self, '__user', user)
         return user
+    
+    @property
+    def stack_name(self):
+        """
+        Make sure stack name is set.  If stack name not passed,
+        generate stack name.
+        """
+        stack_name = getattr(self, '__stack_name', None)
+        if (
+               self.args.stack_name and
+               not stack_name
+           ):
+            stack_name = self.args.stack_name
+        elif not stack_name:
+            stack_name = "nephoria-stack-" + str(int(time.time()))
+
+        setattr(self, '__stack_name', stack_name)
+        return stack_name
+
 
     def test_validate_template(self):
         """
@@ -186,14 +205,6 @@ class GenericTemplateRun(CliTestRunner):
                 self.log.error("Parameter not in key=value format")
                 raise e
         """
-        Make sure stack name is set.  If stack name not passed,
-        generate stack name.
-        """
-        if self.args.stack_name:
-            stack_name = self.args.stack_name
-        else:
-            stack_name = "nephoria-stack-" + str(int(time.time()))
-        """
         If capabilities, store in a list
         Currently, only CAPABILITY_IAM should be in the list
         """
@@ -223,7 +234,7 @@ class GenericTemplateRun(CliTestRunner):
             temp.close()
             try:
                 resp = self.tc.user.cloudformation.create_stack(
-                                   stack_name,
+                                   self.stack_name,
                                    template_body=temp_body,
                                    parameters=parameters,
                                    disable_rollback=disable_rollback,
@@ -236,7 +247,7 @@ class GenericTemplateRun(CliTestRunner):
             url = self.args.template_url
             try:
                 resp = self.tc.user.cloudformation.create_stack(
-                                   stack_name,
+                                   self.stack_name,
                                    template_url=url,
                                    parameters=parameters,
                                    disable_rollback=disable_rollback,
@@ -278,7 +289,7 @@ class GenericTemplateRun(CliTestRunner):
         Check to see if there are any stacks.
         If so, delete the stacks
         """
-        stack_id = None
+        stack_id = self.stack_name
         stacks = self.tc.user.cloudformation.describe_stacks(stack_id)
         if stacks:
             for stack in stacks:
