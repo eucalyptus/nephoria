@@ -404,10 +404,12 @@ disable_root: false"""
     def add_group(self, group_name=None, description=None, vpc_id=None, fail_if_exists=False ):
         """
         Add a security group to the system with name group_name, if it exists dont create it
-
-        :param group_name: Name of the security group to create
-        :param fail_if_exists: IF set, will fail if group already exists, otherwise will return the existing group
-        :return: boto group object upon success or None for failure
+        Args:
+            group_name:  name of security group
+            description:  description of group
+            vpc_id: VPC id for this security group or None to use the default if it exists
+            fail_if_exists: bool, if True will raise Value error, if false will return the
+                            existing group
         """
         filters = {}
         if vpc_id:

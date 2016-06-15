@@ -196,7 +196,7 @@ class ImportInstanceTests(CliTestRunner):
         cli_test_runner method which runs after __init__()
         """
         self.args.worker_password = self.args.worker_password or self.args.password
-        self.args.worker_keypath = self.args.worker_keypath or self.args.keypair
+        self.args.worker_keypath = self.args.worker_keypath
         # Format platform case sensitive arg.
         if str(self.args.platform).upper().strip() == "WINDOWS":
             self.args.platform = "Windows"
@@ -226,20 +226,26 @@ class ImportInstanceTests(CliTestRunner):
 
     @property
     def tc(self):
-        tc = getattr(self, '__tc', None)
-        if not tc:
-            tc = TestController(hostname=self.args.clc,
-                                environment_file=self.args.environment_file,
-                                password=self.args.password,
-                                clouduser_name=self.args.test_user,
-                                clouduser_account=self.args.test_account,
-                                log_level=self.args.log_level)
-            setattr(self, '__tc', tc)
-        return tc
+        if not self._tc:
+            if not self.args.clc:
+                self.log.error('Must provide --clc flag to run this test')
+                raise ValueError('Must provide --clc flag to run this test')
+            try:
+                self._tc = TestController(hostname=self.args.clc,
+                                    environment_file=self.args.environment_file,
+                                    password=self.args.password,
+                                    clouduser_name=self.args.test_user,
+                                    clouduser_account=self.args.test_account,
+                                    log_level=self.args.log_level)
+            except Exception as E:
+                self.log.error("{0}\nError creating TestController obj:{1}"
+                               .format(get_traceback(), E))
+                raise E
+        return self._tc
 
     @property
     def created_image(self):
-        task = self.latest_task_dict.get('task', None)
+        task = (self.latest_task_dict or {}).get('task', None)
         return getattr(task, 'id', None)
 
     @property
@@ -260,6 +266,8 @@ class ImportInstanceTests(CliTestRunner):
         if iu is None:
             # Create an ImageUtils helper from the arguments provided in this testcase...
             setattr(self.args, 'worker_machine', self.tc.sysadmin.clc_machine)
+            setattr(self.args, 'user_context', self.user)
+            setattr(self.args, 'test_controller', self.tc)
             setattr(self.args, 'user_context', self.user)
             iu = self.do_with_args(Euca2oolsImageUtils)
             setattr(self, '_image_utils', iu)
@@ -363,21 +371,26 @@ class ImportInstanceTests(CliTestRunner):
                 group_name = group
             else:
                 group_name = group.name
-            self._group = self._get_security_group(group_name=group_name)
+            try:
+                self._group = self._get_security_group(group_name=group_name)
+            except Exception as E:
+                self.log.error("{0}\nError setting up security group, err:{1}"
+                               .format(get_traceback(), E))
+                raise E
 
     def _get_security_group(self, group_name=None):
         group_name = group_name or 'import_instance_test_group'
         user = self.user
-        group = user.add_group(group_name=group_name)
+        group = user.ec2.add_group(group_name=group_name)
         #authorize group for ssh and icmp
-        user.authorize_group(self.group)
-        user.authorize_group(self.group, protocol='icmp', port='-1')
+        user.ec2.authorize_group(group, protocol='tcp', port=22)
+        user.ec2.authorize_group(group, protocol='icmp', port='-1')
         if self.args.platform == 'Windows':
-            user.authorize_group(self.group, protocol='tcp', port='3389')
-            user.authorize_group(self.group, protocol='tcp', port='80')
-            user.authorize_group(self.group, protocol='tcp', port='443')
-            user.authorize_group(self.group, protocol='tcp', port='5985')
-            user.authorize_group(self.group, protocol='tcp', port='5986')
+            user.ec2.authorize_group(group, protocol='tcp', port='3389')
+            user.ec2.authorize_group(group, protocol='tcp', port='80')
+            user.ec2.authorize_group(group, protocol='tcp', port='443')
+            user.ec2.authorize_group(group, protocol='tcp', port='5985')
+            user.ec2.authorize_group(group, protocol='tcp', port='5986')
         return group
 
     @property
@@ -477,13 +490,19 @@ class ImportInstanceTests(CliTestRunner):
         -Verify the image owner id is the same as the account id that made the
         task request.
         '''
+        self.log.info('Attempting euca-import-instance...')
+        try:
+            self.user.iam.show_user_summary()
+            self.user.show()
+        except:
+            pass
         base_timout = base_timout or self.args.base_timeout
         time_per_gig = time_per_gig or self.args.time_per_gig
         img_utils = self.image_utils
         user = self.user
         assert isinstance(img_utils, Euca2oolsImageUtils)
         params = {'import_file':self.imagelocation,
-                  'bucket':self.bucket,
+                  'bucket':self.bucket.name,
                   'zone':self.zone,
                   'format':self.args.imageformat,
                   'instance_type':self.args.vmtype,
@@ -491,6 +510,7 @@ class ImportInstanceTests(CliTestRunner):
                   'keypair':self.keyname,
                   'group':self.groupname,
                   'platform':self.args.platform,
+                  'user_context': self.user,
                   'user_data':self.args.task_user_data}
         task = img_utils.euca2ools_import_instance(**params)
         assert isinstance(task,ConversionTask)
