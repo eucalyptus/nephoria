@@ -1520,7 +1520,7 @@ class NetTestsClassic(CliTestRunner):
             instance1.ssh.sftp_put(instance1.keypath, 'testkey.pem')
             instance1.sys('chmod 0600 testkey.pem')
             for zone2 in self.zones:
-                if zone != zone2:
+                if zone1 != zone2:
                     instance2 = zone_instances[zone2][0]
                     testphrase = "diffpubzone_test_from_instance1_{0}".format(instance1.id)
                     testfile = 'testfile.txt'
@@ -1635,7 +1635,7 @@ class NetTestsClassic(CliTestRunner):
                     testfile = 'testfile.txt'
                     instance1.sys("ssh -o StrictHostKeyChecking=no -i testkey.pem root@{0} "
                                   "\'echo {1} > {2}; hostname; ifconfig; pwd; ls\'"
-                                  .format(instance2.ip_address, testphrase, testfile),
+                                  .format(instance2.private_ip_address, testphrase, testfile),
                                   code=0,
                                   timeout=10)
                     instance2.sys('cat {0} | grep {1}'.format(testfile, testphrase), code=0)
