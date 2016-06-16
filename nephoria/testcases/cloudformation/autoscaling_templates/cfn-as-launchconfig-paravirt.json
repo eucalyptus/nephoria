@@ -5,7 +5,7 @@
     "Description":"Test Creation of AutoScaling Launch Configuration",
 
     "Parameters": {
-        "EucaImageId": {
+        "ImageId": {
             "Description":"Eucalyptus Machine Image Id",
             "Type":"String",
             "NoEcho":"True"
@@ -36,7 +36,7 @@
             "NoEcho":"True"
         },
 
-        "VmType": {
+        "InstanceType": {
             "Description":"Desired VM Type for Instances",
             "Type":"String",
             "NoEcho":"True"
@@ -49,10 +49,10 @@
         "EucaLaunchConfig" : {
             "Type" : "AWS::AutoScaling::LaunchConfiguration",
             "Properties": {
-                "ImageId" : { "Ref":"EucaImageId" },
+                "ImageId" : { "Ref":"ImageId" },
                 "KernelId" : { "Ref":"EucaKernelId" },
                 "RamDiskId" : { "Ref":"EucaRamdiskId" },
-                "InstanceType" : { "Ref" : "VmType" },
+                "InstanceType" : { "Ref" : "InstanceType" },
                 "InstanceMonitoring" : { "Ref" : "EucaMonitor" },
                 "UserData" : { "Fn::Base64" : "#include https://get.docker.io" },
                 "SecurityGroups" : [

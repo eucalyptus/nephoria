@@ -5,7 +5,7 @@
     "Description":"Test Creation of AutoScaling Launch Configuration passing VPC and Internet Gateway parameters",
 
     "Parameters": {
-        "EucaImageId": {
+        "ImageId": {
             "Description":"Eucalyptus Machine Image Id",
             "Type":"String",
             "NoEcho":"True"
@@ -34,7 +34,7 @@
             "NoEcho":"True"
         },
 
-        "VmType": {
+        "InstanceType": {
             "Description":"Desired VM Type for Instances",
             "Type":"String",
             "NoEcho":"True"
@@ -57,8 +57,8 @@
             "DependsOn" : "EucaVPCGatewayAttachment",
             "Properties": {
                 "AssociatePublicIpAddress" : "True",
-                "ImageId" : { "Ref":"EucaImageId" },
-                "InstanceType" : { "Ref" : "VmType" },
+                "ImageId" : { "Ref":"ImageId" },
+                "InstanceType" : { "Ref" : "InstanceType" },
                 "InstanceMonitoring" : { "Ref" : "EucaMonitor" },
                 "UserData" : { "Fn::Base64" : "#include https://get.docker.io" },
                 "SecurityGroups" : [
