@@ -31,54 +31,55 @@
 # Author: vic.iglesias@eucalyptus.com
 import re
 import copy
+import boto
 from boto import __version__ as boto_version
 from boto.ec2.regioninfo import RegionInfo
 from boto.ec2.cloudwatch import CloudWatchConnection
-from cloud_utils.log_utils import printinfo
 from nephoria.baseops.botobaseops import BotoBaseOps
+from cloud_utils.log_utils import printinfo
 
+CWRegionData = {
+    'us-east-1': 'monitoring.us-east-1.amazonaws.com',
+    'us-west-1': 'monitoring.us-west-1.amazonaws.com',
+    'eu-west-1': 'monitoring.eu-west-1.amazonaws.com',
+    'ap-northeast-1': 'monitoring.ap-northeast-1.amazonaws.com',
+    'ap-southeast-1': 'monitoring.ap-southeast-1.amazonaws.com'
+}
 
-CWRegionData =        {
-                      'us-east-1': 'monitoring.us-east-1.amazonaws.com',
-                      'us-west-1': 'monitoring.us-west-1.amazonaws.com',
-                      'eu-west-1': 'monitoring.eu-west-1.amazonaws.com',
-                      'ap-northeast-1': 'monitoring.ap-northeast-1.amazonaws.com',
-                      'ap-southeast-1': 'monitoring.ap-southeast-1.amazonaws.com'
-                      }
+DimensionArray = ['AutoScalingGroupName', 'ImageId', 'InstanceId', 'InstanceType']
 
-DimensionArray      = ['AutoScalingGroupName', 'ImageId', 'InstanceId', 'InstanceType']
+StatsArray = ['Average', 'Sum', 'Maximum', 'Minimum', 'SampleCount']
 
-StatsArray          = ['Average', 'Sum', 'Maximum', 'Minimum','SampleCount']
-
-ComparisonOperator  = ['>=', '>', '<', '<=']
+ComparisonOperator = ['>=', '>', '<', '<=']
 
 InstanceMetricArray = [
-                      {'name':'CPUUtilization','unit':'Percent' },
-                      {'name':'DiskReadOps','unit':'Count'},
-                      {'name':'DiskWriteOps','unit':'Count'},
-                      {'name':'DiskReadBytes','unit': 'Bytes'},
-                      {'name':'DiskWriteBytes','unit':'Bytes'},
-                      {'name':'NetworkIn','unit':'Bytes'},
-                      {'name':'NetworkOut','unit':'Bytes'}
-                      ]
+    {'name': 'CPUUtilization', 'unit': 'Percent'},
+    {'name': 'DiskReadOps', 'unit': 'Count'},
+    {'name': 'DiskWriteOps', 'unit': 'Count'},
+    {'name': 'DiskReadBytes', 'unit': 'Bytes'},
+    {'name': 'DiskWriteBytes', 'unit': 'Bytes'},
+    {'name': 'NetworkIn', 'unit': 'Bytes'},
+    {'name': 'NetworkOut', 'unit': 'Bytes'}
+]
 
-StatusMetricArray   = [
-                      {'name':'StatusCheckFailed','unit':'Count'},
-                      {'name':'StatusCheckFailed_Instance','unit':'Count'},
-                      {'name':'StatusCheckFailed_System','unit':'Count'}
-                      ]
-EbsMetricsArray     = [
-                      {'name':'VolumeReadBytes','unit':'Bytes'},
-                      {'name':'VolumeWriteBytes','unit':'Bytes'},
-                      {'name':'VolumeReadOps','unit':'Count'},
-                      {'name':'VolumeWriteOps','unit':'Count'},
-                      {'name':'VolumeTotalReadTime','unit':'Seconds'},
-                      {'name':'VolumeTotalWriteTime','unit':'Seconds'},
-                      {'name':'VolumeIdleTime','unit':'Seconds'},
-                      {'name':'VolumeQueueLength','unit':'Count'},
-                      {'name':'VolumeThroughputPercentage','unit':'Percent'},
-                      {'name':'VolumeConsumedReadWriteOps','unit':'Count'}
-                      ]
+StatusMetricArray = [
+    {'name': 'StatusCheckFailed', 'unit': 'Count'},
+    {'name': 'StatusCheckFailed_Instance', 'unit': 'Count'},
+    {'name': 'StatusCheckFailed_System', 'unit': 'Count'}
+]
+EbsMetricsArray = [
+    {'name': 'VolumeReadBytes', 'unit': 'Bytes'},
+    {'name': 'VolumeWriteBytes', 'unit': 'Bytes'},
+    {'name': 'VolumeReadOps', 'unit': 'Count'},
+    {'name': 'VolumeWriteOps', 'unit': 'Count'},
+    {'name': 'VolumeTotalReadTime', 'unit': 'Seconds'},
+    {'name': 'VolumeTotalWriteTime', 'unit': 'Seconds'},
+    {'name': 'VolumeIdleTime', 'unit': 'Seconds'},
+    {'name': 'VolumeQueueLength', 'unit': 'Count'},
+    {'name': 'VolumeThroughputPercentage', 'unit': 'Percent'},
+    {'name': 'VolumeConsumedReadWriteOps', 'unit': 'Count'}
+]
+
 
 class CWops(BotoBaseOps):
     SERVICE_PREFIX = 'monitoring'
@@ -103,7 +104,7 @@ class CWops(BotoBaseOps):
         '''
         cw_region = RegionInfo()
         if region:
-            self.debug('Check region: ' + str(region))
+            self.log.debug('Check region: ' + str(region))
             try:
                 if not endpoint:
                     cw_region.endpoint = CWRegionData[region]
@@ -133,7 +134,6 @@ class CWops(BotoBaseOps):
         cw_connection_args['region'] = cw_region
         return cw_connection_args
 
-
     def setup_resource_trackers(self):
         '''
         Setup keys in the test_resources hash in order to track artifacts created
@@ -148,7 +148,7 @@ class CWops(BotoBaseOps):
 
         :return: Dict where key is the Namespace and the value is a list with all metrics
         '''
-        metrics= self.connection.list_metrics()
+        metrics = self.connection.list_metrics()
         namespaces = {}
         for metric in metrics:
             if not namespaces[metric.namespace]:
@@ -157,64 +157,91 @@ class CWops(BotoBaseOps):
                 namespaces[metric.namespace].append(metric)
         return namespaces
 
-    def list_metrics( self, next_token=None, dimensions=None, metric_name=None, namespace=None ):
-        self.debug('Calling list_metrics( {p1}, {p2}, {p3}, {p4} )'.format(p1=next_token, p2=dimensions, p3=metric_name, p4=namespace))
-        return self.connection.list_metrics(next_token , dimensions, metric_name, namespace)
+    def list_metrics(self, next_token=None, dimensions=None, metric_name=None, namespace=None):
+        self.log.debug(
+            'Calling list_metrics( {p1}, {p2}, {p3}, {p4} )'.format(p1=next_token, p2=dimensions, p3=metric_name,
+                                                                    p4=namespace))
+        return self.connection.list_metrics(next_token, dimensions, metric_name, namespace)
 
-    def get_metric_statistics( self, period, start_time, end_time, metric_name, namespace, statistics, dimensions=None, unit=None):
-        self.debug('Calling get_metric_statistics( {p1}, {p2}, {p3}, {p4}, {p5}, {p6}, {p7}, {p8} )'.format(
-                   p1=period, p2=start_time, p3=end_time, p4=metric_name, p5=namespace, p6=statistics, p7=dimensions, p8=unit))
-        return self.connection.get_metric_statistics(period, start_time, end_time, metric_name, namespace, statistics, dimensions, unit)
+    def get_metric_statistics(self, period, start_time, end_time, metric_name, namespace, statistics, dimensions=None,
+                              unit=None):
+        self.log.debug(
+            'Calling get_metric_statistics( {p1}, {p2}, {p3}, {p4}, {p5}, {p6}, {p7}, {p8} )'.format(
+                p1=period, p2=start_time, p3=end_time, p4=metric_name, p5=namespace, p6=statistics, p7=dimensions,
+                p8=unit))
+        return self.connection.get_metric_statistics(period, start_time, end_time, metric_name, namespace, statistics,
+                                                     dimensions, unit)
 
-    def put_metric_data( self, namespace, name, value=None, timestamp=None, unit=None, dimensions=None, statistics=None):
-        self.debug('Calling put_metric_data( {p1}, {p2}, {p3}, {p4}, {p5}, {p6}, {p7} )'.format(
-                   p1=namespace, p2=name, p3=value, p4=timestamp, p5=unit, p6=dimensions, p7=dimensions))
+    def put_metric_data(self, namespace, name, value=None, timestamp=None, unit=None, dimensions=None, statistics=None):
+        self.log.debug('Calling put_metric_data( {p1}, {p2}, {p3}, {p4}, {p5}, {p6}, {p7} )'.format(
+            p1=namespace, p2=name, p3=value, p4=timestamp, p5=unit, p6=dimensions, p7=dimensions))
         return self.connection.put_metric_data(namespace, name, value, timestamp, unit, dimensions, statistics)
 
     def metric_alarm(self, name, metric, comparison, threshold, period, evaluation_periods, statistic,
                      description=None, dimensions=None, alarm_actions=None,
                      ok_actions=None, insufficient_data_actions=None, unit=None, namespace=None):
 
-        self.debug('Calling create_metric_alarm ( {p1}, {p2}, {p3}, {p4}, {p5}, {p6}, {p7}, {p8}, {p9}, {p10}, {p11}, {p12}, {p13}, {p14} )'.format(
-                   p1=name, p2=metric, p3=comparison, p4=threshold, p5=period, p6=evaluation_periods, p7=statistic,
-                   p8=description, p9=dimensions, p10=alarm_actions, p11=ok_actions, p12=insufficient_data_actions, p13=unit, p14=namespace))
+        self.log.debug(
+            'Calling create_metric_alarm ( {p1}, {p2}, {p3}, {p4}, {p5}, {p6}, {p7}, {p8}, {p9}, {p10}, {p11}, {p12}, {p13}, {p14} )'.format(
+                p1=name, p2=metric, p3=comparison, p4=threshold, p5=period, p6=evaluation_periods, p7=statistic,
+                p8=description, p9=dimensions, p10=alarm_actions, p11=ok_actions, p12=insufficient_data_actions,
+                p13=unit, p14=namespace))
 
-        alarm = boto.ec2.cloudwatch.alarm.MetricAlarm(name=name, metric=metric, comparison=comparison, threshold=threshold, period=period,
-                                                     evaluation_periods=evaluation_periods, statistic=statistic,
-                                                     description=description, dimensions=dimensions, alarm_actions=alarm_actions,
-                                                     ok_actions=ok_actions, insufficient_data_actions=insufficient_data_actions, unit=unit,
-                                                     namespace=namespace)
+        alarm = boto.ec2.cloudwatch.alarm.MetricAlarm(name=name, metric=metric, comparison=comparison,
+                                                      threshold=threshold, period=period,
+                                                      evaluation_periods=evaluation_periods, statistic=statistic,
+                                                      description=description, dimensions=dimensions,
+                                                      alarm_actions=alarm_actions,
+                                                      ok_actions=ok_actions,
+                                                      insufficient_data_actions=insufficient_data_actions, unit=unit,
+                                                      namespace=namespace)
         return alarm
 
     def put_metric_alarm(self, alarm):
-        self.debug('Calling put_metric_alarm (' + str(alarm) +')')
+        self.log.debug('Calling put_metric_alarm (' + str(alarm) + ')')
         self.connection.put_metric_alarm(alarm)
 
     def set_alarm_state(self, alarm_name, state_reason='testing', state_value='ALARM', state_reason_data=None):
-        self.debug('Calling set_alarm_state( {p1}, {p2}, {p3}, {p4})'.format( p1=alarm_name, p2=state_reason, p3=state_value, p4=state_reason_data))
+        self.log.debug(
+            'Calling set_alarm_state( {p1}, {p2}, {p3}, {p4})'.format(p1=alarm_name, p2=state_reason, p3=state_value,
+                                                                      p4=state_reason_data))
         self.connection.set_alarm_state(alarm_name, state_reason, state_value)
 
     def delete_all_alarms(self):
-        self.debug('Calling delete_all_alarms(' + str(self.connection.describe_alarms()) + ')')
+        self.log.debug('Calling delete_all_alarms(' + str(self.connection.describe_alarms()) + ')')
         alarms = self.connection.describe_alarms()
         if alarms:
             alarm_names = [alarm.name for alarm in alarms]
             self.connection.delete_alarms(alarm_names)
 
-    def describe_alarms(self, action_prefix=None, alarm_name_prefix=None, alarm_names=None, max_records=None, state_value=None, next_token=None):
-        self.debug('Calling describe_alarms( {p1}, {p2}, {p3}, {p4}, {p5}, {p6} )'.format(p1=action_prefix, p2=alarm_name_prefix, p3=alarm_names,
-                   p4=max_records, p5=state_value, p6=next_token))
-        return self.connection.describe_alarms(action_prefix, alarm_name_prefix, alarm_names, max_records, state_value, next_token)
+    def describe_alarms(self, action_prefix=None, alarm_name_prefix=None, alarm_names=None, max_records=None,
+                        state_value=None, next_token=None):
+        self.log.debug(
+            'Calling describe_alarms( {p1}, {p2}, {p3}, {p4}, {p5}, {p6} )'.format(p1=action_prefix,
+                                                                                   p2=alarm_name_prefix, p3=alarm_names,
+                                                                                   p4=max_records, p5=state_value,
+                                                                                   p6=next_token))
+        return self.connection.describe_alarms(action_prefix, alarm_name_prefix, alarm_names, max_records, state_value,
+                                               next_token)
 
-    def describe_alarms_for_metric(self, metric_name, namespace, period=None, statistic=None, dimensions=None, unit=None):
-        self.debug('Calling describe_alarms_for_metric( {p1}, {p2}, {p3}, {p4}, {p5}, {p6} )'.format(p1=metric_name, p2=namespace, p3=period, p4=statistic,
-                   p5=dimensions, p6=unit))
+    def describe_alarms_for_metric(self, metric_name, namespace, period=None, statistic=None, dimensions=None,
+                                   unit=None):
+        self.log.debug(
+            'Calling describe_alarms_for_metric( {p1}, {p2}, {p3}, {p4}, {p5}, {p6} )'.format(p1=metric_name,
+                                                                                              p2=namespace, p3=period,
+                                                                                              p4=statistic,
+                                                                                              p5=dimensions, p6=unit))
         return self.connection.describe_alarms_for_metric(metric_name, namespace, period, statistic, dimensions, unit)
 
-    def describe_alarm_history(self, alarm_name=None, start_date=None, end_date=None, max_records=None, history_item_type=None, next_token=None):
-        self.debug('Calling describe_alarm_history( {p1}, {p2}, {p3}, {p4}, {p5}, {p6} )'.format(p1=alarm_name, p2=start_date, p3=end_date, p4=max_records, 
-                  p5=history_item_type, p6=next_token))
-        return self.connection.describe_alarm_history(alarm_name, start_date, end_date, max_records, history_item_type, next_token)
+    def describe_alarm_history(self, alarm_name=None, start_date=None, end_date=None, max_records=None,
+                               history_item_type=None, next_token=None):
+        self.log.debug(
+            'Calling describe_alarm_history( {p1}, {p2}, {p3}, {p4}, {p5}, {p6} )'.format(p1=alarm_name, p2=start_date,
+                                                                                          p3=end_date, p4=max_records,
+                                                                                          p5=history_item_type,
+                                                                                          p6=next_token))
+        return self.connection.describe_alarm_history(alarm_name, start_date, end_date, max_records, history_item_type,
+                                                      next_token)
 
     def get_dimension_array(self):
         return DimensionArray
@@ -231,17 +258,17 @@ class CWops(BotoBaseOps):
     def get_ebs_metrics_array(self):
         return EbsMetricsArray
 
-    def enable_alarm_actions(self, alarm_names ):
-        self.debug('Calling enable_alarm_actions( ' + str(alarm_names) + ' )')
+    def enable_alarm_actions(self, alarm_names):
+        self.log.debug('Calling enable_alarm_actions( ' + str(alarm_names) + ' )')
         self.connection.enable_alarm_actions(alarm_names)
 
-    def disable_alarm_actions(self, alarm_names ):
-        self.debug('Calling disable_alarm_actions( ' + str(alarm_names) + ' )')
+    def disable_alarm_actions(self, alarm_names):
+        self.log.debug('Calling disable_alarm_actions( ' + str(alarm_names) + ' )')
         self.connection.disable_alarm_actions(alarm_names)
 
     def validateStats(self, values):
         average = float(values[0])
-        theSum  = float(values[1])
+        theSum = float(values[1])
         maximum = float(values[2])
         minimum = float(values[3])
         sample = float(values[4])
@@ -249,4 +276,3 @@ class CWops(BotoBaseOps):
         assert maximum >= minimum
         assert minimum <= maximum
         assert sample > 0
-
