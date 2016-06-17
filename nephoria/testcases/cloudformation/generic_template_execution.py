@@ -210,13 +210,16 @@ class GenericTemplateRun(CliTestRunner):
         If template parameter(s), store them in a list
         """
         parameters = []
-        for param in self.args.template_params.split():
-            try:
-                k, v = param.split("=")
-                parameters.append((k, v))
-            except ValueError as e:
-                self.log.error("Parameter not in key=value format")
-                raise e
+        if self.args.template_params:
+            for param in self.args.template_params.split():
+                try:
+                    k, v = param.split("=")
+                    parameters.append((k, v))
+                except ValueError as e:
+                    self.log.error("Parameter not in key=value format")
+                    raise e
+        else:
+            self.log.debug("No parameters passed.")
         """
         If capabilities, store in a list
         Currently, only CAPABILITY_IAM should be in the list
