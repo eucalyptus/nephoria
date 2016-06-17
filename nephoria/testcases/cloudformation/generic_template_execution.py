@@ -86,7 +86,7 @@ class GenericTemplateRun(CliTestRunner):
                    'default': None}}
 
     _DEFAULT_CLI_ARGS['on_failure'] = {
-        'args': ['--on_failure'],
+        'args': ['--on-failure'],
         'kwargs': {'dest': 'on_failure',
                    'help': ("Determines what action will be taken if stack "
                             "creation fails. This must be one of: "
@@ -139,6 +139,30 @@ class GenericTemplateRun(CliTestRunner):
         setattr(self, '__stack_name', stack_name)
         return stack_name
 
+    @property
+    def on_failure(self):
+        """
+        Check to see if --disable-rollback is set to true.
+        If so, set --on-failure to None.
+        """
+        if self.args.disable_rollback is True:
+            on_failure = None
+        else:
+            on_failure = self.args.on_failure
+        return on_failure
+
+    @property
+    def disable_rollback(self):
+        """
+        Check to see if --disable-rollback is set to true.
+        If so, set to value appropriately
+        """
+        if self.args.disable_rollback is True:
+            disable_rollback = self.args.disable_rollback
+        else:
+            disable_rollback = None
+        return disable_rollback
+
     def test_validate_template(self):
         """
         Test Coverage:
@@ -183,16 +207,6 @@ class GenericTemplateRun(CliTestRunner):
     def test_stack_deployment(self):
         self.log.debug("Deploy Cloudformation Stack")
         """
-        Check to see if --disable-rollback is set to true.
-        If so, set --on-failure to None.
-        """
-        if self.args.disable_rollback is True:
-            disable_rollback = self.args.disable_rollback
-            on_failure = None
-        else:
-            disable_rollback = None
-            on_failure = self.args.on_failure
-        """
         If template parameter(s), store them in a list
         """
         parameters = []
@@ -219,9 +233,11 @@ class GenericTemplateRun(CliTestRunner):
         Create custom tags to associate test
         with resource(s)
         """
+        nephoria_job_id = self.stack_name + str(time.time())
         tags = {
                 "Purpose": "nephoria test resource",
-                "Test Script": "generic_template_execution.py"
+                "Test Script": "generic_template_execution.py",
+                "Nephoria Job ID": nephoria_job_id
                }
         """
         Create stack passing supported arguments.
@@ -236,9 +252,9 @@ class GenericTemplateRun(CliTestRunner):
                                    self.stack_name,
                                    template_body=temp_body,
                                    parameters=parameters,
-                                   disable_rollback=disable_rollback,
+                                   disable_rollback=self.disable_rollback,
                                    tags=tags,
-                                   on_failure=on_failure)
+                                   on_failure=self.on_failure)
             except BotoServerError as e:
                 self.log.error("Failed to create stack")
                 raise e
@@ -249,9 +265,9 @@ class GenericTemplateRun(CliTestRunner):
                                    self.stack_name,
                                    template_url=url,
                                    parameters=parameters,
-                                   disable_rollback=disable_rollback,
+                                   disable_rollback=self.disable_rollback,
                                    tags=tags,
-                                   on_failure=on_failure)
+                                   on_failure=self.on_failure)
             except BotoServerError as e:
                 self.log.error("Failed to create stack")
                 raise e
@@ -292,14 +308,21 @@ class GenericTemplateRun(CliTestRunner):
         stacks = self.tc.user.cloudformation.describe_stacks(stack_id)
         if stacks:
             for stack in stacks:
-                self.log.debug("Deleting the following stack: " +
-                               str(stack.stack_name))
-                try:
-                    self.tc.user.cloudformation.delete_stack(
+                if (
+                       self.on_failure == 'DELETE' or
+                       self.on_failure == 'ROLLBACK'
+                   ):
+                        self.log.debug("Deleting the following stack: " +
+                                       str(stack.stack_name))
+                        try:
+                            self.tc.user.cloudformation.delete_stack(
                                                         stack.stack_name)
-                except BotoServerError as e:
-                    self.log.error("Failed to delete stack")
-                    raise e
+                        except BotoServerError as e:
+                            self.log.error("Failed to delete stack")
+                            raise e
+                else:
+                    self.log.debug("Stack and resources not deleted.")
+                    pass
 
 if __name__ == "__main__":
     test = GenericTemplateRun()
