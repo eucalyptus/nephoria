@@ -287,12 +287,17 @@ class GenericTemplateRun(CliTestRunner):
             if stacks[0].stack_status == 'CREATE_COMPLETE':
                 self.log.debug("Stack deployment complete.")
                 break
+            elif stacks[0].stack_status == 'CREATE_FAILED':
+                self.log.error("Stack deployment failed: "
+                               + str(stacks[0].stack_status_reason)) 
+                raise RuntimeError("Stack deployment failed: "
+                                   + str(stacks[0].stack_status_reason)) 
             elif int(time.time()) > timeout:
                 self.log.error("Stack deployment failed "
                                "to complete in provided stack "
                                "timeout: " + str(self.args.timeout) +
                                " min.")
-                raise RuntimeError("Stack failed to deploy"
+                raise RuntimeError("Stack failed to deploy "
                                    "within timeout: " +
                                    str(self.args.timeout) +
                                    " min.")
