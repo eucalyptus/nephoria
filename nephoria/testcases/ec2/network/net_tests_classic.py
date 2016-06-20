@@ -152,6 +152,9 @@ class NetTestsClassic(CliTestRunner):
     self._vpc_backend = None
 
     '''
+    def post_init(self, *args, **kwargs):
+        self.cc_last_checked = time.time()
+
     @property
     def subnet_id(self):
         if hasattr(self.args, 'subnet_id'):
