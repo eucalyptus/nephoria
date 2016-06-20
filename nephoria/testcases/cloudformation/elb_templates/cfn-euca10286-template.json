@@ -1,6 +1,6 @@
 {
     "AWSTemplateFormatVersion": "2010-09-09",
-    "Description": "Cloudformation Example => EUCA-10286 - ELB resource creation fails"
+    "Description": "Cloudformation Example => EUCA-10286 - ELB resource creation fails",
     "Resources": {
         "ELB": {
             "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
