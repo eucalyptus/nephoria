@@ -1,0 +1,60 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+  "Description": "Cloudformation Example => Conditionally create resources for a production, development, or test stack",  
+  "Parameters" : {
+    "ImageId": {
+     "Description": "Ubuntu Image ID",
+      "Type": "String",
+      "NoEcho": "False"
+    },
+    "EnvType" : {
+      "Description" : "Environment type.",
+      "Default" : "test",
+      "Type" : "String",
+      "AllowedValues" : ["prod", "dev", "test"],
+      "ConstraintDescription" : "must specify prod, dev, or test."
+    }
+  },
+  
+  "Conditions" : {
+    "CreateProdResources" : {"Fn::Equals" : [{"Ref" : "EnvType"}, "prod"]},
+    "CreateDevResources" : {"Fn::Equals" : [{"Ref" : "EnvType"}, "dev"]}
+  },
+  
+  "Resources" : {
+    "EC2Instance" : {
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+        "ImageId" : { "Ref": "ImageId" },
+        "InstanceType" : { "Fn::If" : [
+          "CreateProdResources",
+          "c1.xlarge",
+          {"Fn::If" : [
+            "CreateDevResources",
+            "m1.large",
+            "m1.small"
+          ]}
+        ]}
+      }
+    },
+
+    "MountPoint" : {
+      "Type" : "AWS::EC2::VolumeAttachment",
+      "Condition" : "CreateProdResources",
+      "Properties" : {
+        "InstanceId" : { "Ref" : "EC2Instance" },
+        "VolumeId"  : { "Ref" : "NewVolume" },
+        "Device" : "/dev/sdh"
+      }
+    },
+
+    "NewVolume" : {
+      "Type" : "AWS::EC2::Volume",
+      "Condition" : "CreateProdResources",
+      "Properties" : {
+        "Size" : "100",
+        "AvailabilityZone" : { "Fn::GetAtt" : [ "EC2Instance", "AvailabilityZone" ]}
+      }
+    }
+  }
+}

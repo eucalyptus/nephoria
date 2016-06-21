@@ -94,6 +94,9 @@ tc.admin.s3.get_bucket()
 # Create a UserContext object from either a existing user on the cloud...
 user = tc.get_user_by_name('testrunner', 'admin')
 user.ec2.show_images()
+<<<<<<< HEAD
+```
+=======
 
 # ...or easilly create a new account and/or user on the cloud...
 user = tc.create_user_using_cloudadmin('newaccount', 'admin')
@@ -167,3 +170,4 @@ python load_hvm_image.py --clc 192.168.0.199 --image-url http://images.qa1/disk.
    -----------------------------------------------
 
    ```
+>>>>>>> upstream/master

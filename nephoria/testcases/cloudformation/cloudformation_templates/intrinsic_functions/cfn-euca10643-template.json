@@ -1,0 +1,28 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Cloudformation Example: EUCA-10643 - Condition Function does not work in Outputs",
+  "Parameters" : {
+    "CreateBucket" : {
+      "Description" : "Create Bucket",
+      "Default" : "false",
+      "Type" : "String",
+      "AllowedValues" : ["true","false"],
+      "ConstraintDescription" : "Do you want to create a Bucket"
+    }
+  },
+   "Conditions" : {
+    "Create" : {"Fn::Equals" : [{"Ref" : "CreateBucket"}, "true"]}
+  },
+  "Resources":{
+    "MyBucket" : {
+      "Type":"AWS::S3::Bucket",
+      "Condition" : "Create"
+    }
+  },
+  "Outputs" : {
+    "BucketName":{
+         "Value":{"Ref":"MyBucket"},
+         "Condition" : "Create"         
+    }
+  }
+}
