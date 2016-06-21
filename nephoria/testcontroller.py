@@ -61,7 +61,6 @@ class TestController(object):
                                         'username': username,
                                         'password': password,
                                         'keypath': keypath,
-                                        'region_domain': region,
                                         'proxy_hostname': proxy_hostname,
                                         'proxy_password': proxy_password,
                                         'proxy_username': None,

@@ -1,0 +1,25 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Cloudformation Example => EUCA-10204 - delete stack does not check for bucket existence",
+
+  "Resources" : {
+    "S3Bucket" : {
+      "Type" : "AWS::S3::Bucket",
+      "Properties" : {
+        "Tags" : [ {"Key" : "Application", "Value" : "bucket-tagging-delete-test" } ],
+        "AccessControl" : "PublicRead"
+      },
+      "DeletionPolicy" : "Delete"
+    }
+  },
+
+  "Outputs" : {
+      "BucketName": {
+          "Value": {
+              "Ref": "S3Bucket"
+          },
+          "Description": "Name of OSG Bucket Created"
+      }
+  } 
+}
