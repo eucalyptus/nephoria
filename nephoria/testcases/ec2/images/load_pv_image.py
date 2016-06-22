@@ -36,6 +36,7 @@ from nephoria.testcases.euca2ools.euca2ools_image_utils import Euca2oolsImageUti
 from nephoria.testcontroller import TestController
 from nephoria.usercontext import UserContext
 from nephoria.aws.ec2.ec2ops import EC2ResourceNotFoundException
+from cloud_utils.log_utils import get_traceback, red
 import copy
 import os
 import time
@@ -232,6 +233,9 @@ class Load_Pv_Image(CliTestRunner):
     def image_utils(self):
         iu = getattr(self, '_image_utils', None)
         if iu is None:
+            if not self.user:
+                self.log.warning(red('Cant create image utils w/o user, create user first'))
+                return None
             # Create an ImageUtils helper from the arguments provided in this testcase...
             setattr(self.args, 'worker_machine', self.tc.sysadmin.clc_machine)
             setattr(self.args, 'user_context', self.user)
@@ -241,13 +245,16 @@ class Load_Pv_Image(CliTestRunner):
 
     @property
     def user(self):
-        if not self._user:
-            if self.args.access_key and self.args.secret_key and self.args.region:
-                self._user = UserContext(aws_access_key=self.args.access_key,
-                                   aws_secret_key=self.args.secret_key,
-                                   region=self.args.region)
-            if (self.args.clc or self.args.environment_file) and self.tc:
-                self._user = self.tc.user
+        try:
+            if not self._user:
+                if self.args.access_key and self.args.secret_key and self.args.region:
+                    self._user = UserContext(aws_access_key=self.args.access_key,
+                                             aws_secret_key=self.args.secret_key,
+                                             region=self.args.region)
+                if (self.args.clc or self.args.environment_file) and self.tc:
+                    self._user = self.tc.user
+        except Exception as UE:
+            self.log.error('{0}\nFailed to create user: {1}'.format(get_traceback(), UE))
         return self._user
 
     def test1_do_kernel_image(self):
