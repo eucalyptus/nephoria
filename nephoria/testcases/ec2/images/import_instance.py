@@ -53,8 +53,8 @@ import types
 
 class ImportInstanceTests(CliTestRunner):
     _DEFAULT_CLI_ARGS = copy.copy(CliTestRunner._DEFAULT_CLI_ARGS)
-    _DEFAULT_CLI_ARGS['url'] = {
-        'args': ['--url'],
+    _DEFAULT_CLI_ARGS['image_url'] = {
+        'args': ['--image-url'],
         'kwargs': {'default': None,
                    'help': 'URL containing remote image to create import instance task from'}}
 
@@ -329,8 +329,8 @@ class ImportInstanceTests(CliTestRunner):
         if not self._bucket:
             bucketname = self.args.bucketname
             if not bucketname:
-                if self.imagelocation or self.args.url:
-                    location = self.imagelocation or self.args.url
+                if self.imagelocation or self.args.image_url:
+                    location = self.imagelocation or self.args.image_url
                     image_name = os.path.basename(location)[0:15]
                 else:
                     image_name = str(self.args.platform or 'test')
@@ -443,7 +443,7 @@ class ImportInstanceTests(CliTestRunner):
                              .format(zone, type(zone)))
 
     def get_source_volume_image(self, url=None, img_utils=None):
-        url = url or self.args.url
+        url = url or self.args.image_url
         img_utils = img_utils or self.image_utils
         if self.args.imagelocation:
             imagelocation = self.args.imagelocation
@@ -589,8 +589,8 @@ class ImportInstanceTests(CliTestRunner):
         task = self.latest_task_dict['task']
         emi = self.user.ec2.get_emi(emi=task.image_id)
         try:
-            if self.args.url:
-                emi.add_tag('source', value=(str(self.args.url)))
+            if self.args.image_url:
+                emi.add_tag('source', value=(str(self.args.image_url)))
             emi.add_tag('eutester-created', value="import-instance-test")
         except Exception, te:
             self.log.debug('Could not add tags to image:' + str(emi.id) +
