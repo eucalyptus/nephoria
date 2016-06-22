@@ -378,6 +378,7 @@ class Euca2oolsImageUtils(object):
                      destination='/disk1/storage',
                      arch='x86_64',
                      debug=False,
+                     user_context=None,
                      interbundle_timeout=120,
                      time_per_gig=None):
         '''
@@ -390,6 +391,7 @@ class Euca2oolsImageUtils(object):
         image_size = machine.get_file_size(path)/self.gig or 1
         timeout = time_per_gig * image_size
         cbargs = [timeout, interbundle_timeout, time.time(), 0, True]
+        user_context = user_context or self.user_context
         if destination is None:
             destination = machine.sys('pwd')[0]
         freesize = machine.get_available(str(destination), (self.gig/self.kb))
@@ -397,9 +399,17 @@ class Euca2oolsImageUtils(object):
             raise Exception("Not enough free space at:" + str(destination))
         ec2cert = ec2cert or self.ec2_cert_path
         bootstrap_url = bootstrap_url or self.bootstrap_url
+        if not bootstrap_url and user_context:
+            bootstrap_url = user_context.bootstrap_url
         access_key = access_key or self.access_key
+        if not access_key and user_context:
+            access_key = user_context.access_key
         secret_key = secret_key or self.secret_key
+        if not secret_key and user_context:
+            secret_key = user_context.secret_key
         account_id = account_id or self.account_id
+        if not account_id and user_context:
+            account_id = user_context.account_id
 
         #build our tools bundle-image command...
         cmdargs = ""
@@ -467,9 +477,16 @@ class Euca2oolsImageUtils(object):
         '''
         self.status_log('Starting euca2ools_upload_bundle for manifest:"{0}"'.format(manifest))
         machine = machine or self.worker_machine
-        access_key = access_key or self.access_key
-        secret_key = secret_key or self.secret_key
+        user_context = user_context or self.user_context
         s3_url = s3_url or self.s3_url
+        if not s3_url and user_context:
+            s3_url = user_context.s3_url
+        access_key = access_key or self.access_key
+        if not access_key and user_context:
+            access_key = user_context.access_key
+        secret_key = secret_key or self.secret_key
+        if not secret_key and user_context:
+            secret_key = user_context.secret_key
         if not access_key:
             raise ValueError('Could not determine access key for euca2ools_upload_bundle')
         if not secret_key:
@@ -558,14 +575,21 @@ class Euca2oolsImageUtils(object):
                            virtualization_type=None,
                            platform=None,
                            machine=None,
-                           machine_credpath=None):
+                           machine_credpath=None,
+                           user_context=None):
         self.status_log('Starting euca2ools_register for manifest:"{0}", kernel:"{1}", ramdisk:"{2}"'
                     .format(manifest, kernel,ramdisk))
-
+        user_context = user_context or self.user_context
         machine = machine or self.worker_machine
         access_key = access_key or self.access_key
+        if not access_key and user_context:
+            access_key = user_context.access_key
         secret_key = secret_key or self.secret_key
+        if not secret_key and user_context:
+            secret_key = user_context.secret_key
         ec2_url = ec2_url or self.ec2_url
+        if not ec2_url and user_context:
+            ec2_url = user_context.ec2_url
         if not access_key:
             self.log.warning('Could not determine access key for euca2ools_register')
         if not secret_key:
