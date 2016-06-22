@@ -188,6 +188,12 @@ class ImportInstanceTests(CliTestRunner):
                    'default': False,
                    'help': 'Disable cleanup method upon exit to leave test resources behind'}}
 
+    _DEFAULT_CLI_ARGS['no_https'] = {
+        'args': ['--no-https'],
+        'kwargs': {'action': 'store_true',
+                   'default': False,
+                   'help': 'Use http instead of https'}}
+
     del _DEFAULT_CLI_ARGS['emi']
 
 
@@ -239,7 +245,8 @@ class ImportInstanceTests(CliTestRunner):
                                     password=self.args.password,
                                     clouduser_name=self.args.test_user,
                                     clouduser_account=self.args.test_account,
-                                    log_level=self.args.log_level)
+                                    log_level=self.args.log_level,
+                                    https=(not self.args.no_https))
             except Exception as E:
                 self.log.error("{0}\nError creating TestController obj:{1}"
                                .format(get_traceback(), E))
@@ -696,10 +703,16 @@ class ImportInstanceTests(CliTestRunner):
                 ins_attr = self.user.ec2.connection.get_instance_attribute(
                     task.instanceid, 'userData')
                 if 'userData' in ins_attr:
-                    ins_user_data = b64decode(ins_attr['userData'])
+                    if ins_attr['userData'] is None:
+                        ins_user_data = ins_attr['userData']
+                    else:
+                        ins_user_data = b64decode(ins_attr['userData'])
                 else:
                     ins_user_data = None
-                self.assertEquals(user_data, ins_user_data)
+                if not ins_user_data and not user_data:
+                    return
+                else:
+                    self.assertEquals(user_data, ins_user_data)
         except Exception as e:
             self.log.error('Error checking task user-data:\n"{0}'.format(get_traceback()))
             err_msg += str(e) + "\n"
