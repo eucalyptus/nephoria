@@ -223,6 +223,7 @@ disable_root: false"""
         if key_name is None:
             key_name = "keypair-" + str(int(time.time())) 
         self.log.debug("Looking up keypair " + key_name)
+        key = None
         try:
             key = self.connection.get_key_pair(key_name)
         except EC2ResponseError:
@@ -404,10 +405,11 @@ disable_root: false"""
     def add_group(self, group_name=None, description=None, vpc_id=None, fail_if_exists=False ):
         """
         Add a security group to the system with name group_name, if it exists dont create it
-
-        :param group_name: Name of the security group to create
-        :param fail_if_exists: IF set, will fail if group already exists, otherwise will return the existing group
-        :return: boto group object upon success or None for failure
+        Args:
+            group_name:  name of security group
+            description:  description of group
+            vpc_id: VPC id to use for sec
+            fail_if_exists: 
         """
         filters = {}
         if vpc_id:
@@ -3111,6 +3113,7 @@ disable_root: false"""
                   auto_create_eni=True,
                   network_interfaces=None,
                   timeout=480,
+                  systemconnection=None,
                   boto_debug_level=2,
                   **boto_run_args):
         """
@@ -3323,10 +3326,11 @@ disable_root: false"""
                             keypair=keypair,
                             password=password,
                             username=username,
-                            do_ssh_connect=False,
+                            auto_connect=False,
                             timeout=timeout,
                             private_addressing=private_addressing,
                             reservation=reservation,
+                            systemconnection=systemconnection,
                             cmdstart=cmdstart)
                     #set the connect flag in the euinstance object for future use
                     eu_instance.auto_connect = auto_connect
@@ -3978,6 +3982,14 @@ disable_root: false"""
                                 raise Exception('FAILED STATE:'+ dbgmsg )
 
                     self.log.debug("WAITING for "+dbgmsg)
+
+                except EC2ResponseError, e:
+                    if e.status == 400 and state == 'terminated':
+                        self.log.debug('Instance {0} no longer found on system, assuming '
+                                       'terminated. Elapsed:{1}/{2}'.format(instance.id,
+                                                                            elapsed,
+                                                                            timeout))
+                        good.append(instance)
                 except Exception, e:
                     failed.append(instance)
                     tb = get_traceback()
@@ -4160,6 +4172,7 @@ disable_root: false"""
     def convert_instance_to_euinstance(self, instance, keypair=None,
                                        username=None, password=None,
                                        reservation=None, auto_connect=True,
+                                       systemconnection=None,
                                        timeout=120):
         if isinstance(instance, basestring):
             ins = self.get_instances(idstring=instance)
@@ -4185,8 +4198,9 @@ disable_root: false"""
                                                                 keypair=keypair,
                                                                 password=password,
                                                                 username=username,
-                                                                do_ssh_connect=auto_connect,
+                                                                auto_connect=auto_connect,
                                                                 timeout=timeout,
+                                                                systemconnection=systemconnection,
                                                                 reservation=reservation)
         if 'instances' in self.test_resources:
             for x in xrange(0, len(self.test_resources['instances'])):
@@ -5426,6 +5440,10 @@ disable_root: false"""
     def show_images(self, images=None, verbose=False, basic_image=False, printmethod=None):
         printmethod = printmethod or self.log.info
         buf = "\n"
+        if isinstance(images, basestring):
+            images = self.get_images(emi=images, basic_image=basic_image, state=None)
+        if isinstance(images, Image):
+            images = [images]
         if not images:
             try:
                 images = self.get_images(emi='',basic_image=basic_image, state=None) or []
