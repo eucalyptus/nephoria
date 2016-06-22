@@ -391,7 +391,10 @@ class ImportInstanceTests(CliTestRunner):
     def _get_security_group(self, group_name=None):
         group_name = group_name or 'import_instance_test_group'
         user = self.user
-        group = user.ec2.add_group(group_name=group_name)
+        group = user.ec2.get_security_group(name=group_name)
+        if not group:
+            setattr(self, '_created_group', True)
+            group = user.ec2.add_group(group_name=group_name)
         #authorize group for ssh and icmp
         user.ec2.authorize_group(group, protocol='tcp', port=22)
         user.ec2.authorize_group(group, protocol='icmp', port='-1')
@@ -751,7 +754,8 @@ class ImportInstanceTests(CliTestRunner):
             err_buf += msg + "\n"
             self.log.error("{0}\n{1}".format(get_traceback(), msg))
         try:
-            if self._group:
+            # Delete the security group only if this test created it
+            if self._group and getattr(self, '_created_group', False):
                 self.user.ec2.delete_group(self._group)
         except Exception as E:
             msg = 'Error deleting security group, err: {0}'.format(E)
