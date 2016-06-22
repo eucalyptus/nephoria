@@ -1,7 +1,7 @@
 #!/bin/bash
 set -x
 venv="nephoria_venv"
-neph_branch="oldboto"
+neph_branch="master"
 adminapi_branch="master"
 gpg="--nogpg"
 NEPHORIA_REPO="https://github.com/eucalyptus/nephoria.git"

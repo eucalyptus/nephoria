@@ -1,0 +1,82 @@
+{
+
+    "AWSTemplateFormatVersion" : "2010-09-09",
+
+    "Description" : "Cloudformation Example => EUCA-9846 - honor stack timeout parameter",
+
+    "Parameters": {
+        "ImageId": {
+            "Description":"Ubuntu Image id",
+            "Type":"String",
+            "NoEcho":"False"
+        },
+
+        "InstanceType" : {
+            "Description" : "Type of EC2 instance to launch.",
+            "Type" : "String",
+            "Default" : "m1.xlarge",
+            "AllowedValues" : [ "m1.small","t1.micro","m3.medium","c1.medium","m1.large","m1.xlarge","c1.xlarge","m2.xlarge","m3.xlarge","m2.2xlarge","m3.2xlarge", "cc1.4xlarge","m2.4xlarge","hi1.4xlarge", "cc2.8xlarge", "cg1.4xlarge", "cr1.8xlarge", "hs1.8xlarge"],
+            "ConstraintDescription" : "must be a valid EC2 instance type."
+        },
+
+        "KeyName": {
+            "Description":"Name of an existing EC2 KeyPair to enable SSH access to the instances",
+            "Type":"AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription": "The name of an existing EC2 KeyPair",
+            "NoEcho":"True"
+        }
+    },
+
+    "Resources" : {
+        "DockerSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+                "Properties": {
+                    "GroupDescription" : "Security Group with Ingress Rule for DockerInstance",
+                    "SecurityGroupIngress" : [
+                        {
+                            "IpProtocol" : "tcp",
+                            "FromPort" : "22",
+                            "ToPort" : "22",
+                            "CidrIp" : "0.0.0.0/0"
+                        }
+                    ]
+                }
+        },
+
+        "DockerInstance": {
+            "Type": "AWS::EC2::Instance",
+                "Properties": {
+                    "ImageId" : { "Ref":"ImageId" },
+                    "InstanceType" : { "Ref": "InstanceType" },
+                    "UserData" : { "Fn::Base64" : "#include https://get.docker.io" },
+                    "SecurityGroups" : [
+                        { "Ref" : "DockerSecurityGroup" }
+                    ],
+            "KeyName" : { "Ref" : "KeyName" }
+            }
+        },
+
+        "MyEBSVolume1" : {
+            "Type" : "AWS::EC2::Volume",
+                "Properties" : {
+                    "Size" : "10",
+                    "AvailabilityZone" : "one"
+            }
+        }
+    },
+
+    "Outputs" : {
+        "InstanceId" : {
+            "Description" : "InstanceId of the newly created EC2 instance",
+            "Value" : { "Ref" : "DockerInstance" }
+        },
+        "AZ" : {
+            "Description" : "Availability Zone of the newly created EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "DockerInstance", "AvailabilityZone" ] }
+        },
+        "PublicIP" : {
+            "Description" : "Public IP address of the newly created EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "DockerInstance", "PublicIp" ] }
+        }
+    }
+}

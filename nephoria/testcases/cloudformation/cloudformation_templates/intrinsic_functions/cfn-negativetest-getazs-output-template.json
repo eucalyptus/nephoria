@@ -1,0 +1,35 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Cloudformation Example => Negative Test (Error: All outputs must be strings) - Create a volume; list availability zones using intrinsic function Fn::GetAZs",
+  "Parameters" : {
+    "Zone": {
+        "Description": "Availability zone",
+        "Type": "String"
+    }
+  },
+  "Resources" : {
+     "MyEBSVolume" : {
+         "Type" : "AWS::EC2::Volume",
+         "Properties" : {
+             "Size" : "5",
+             "AvailabilityZone" : { "Ref": "Zone" }
+         },
+         "DeletionPolicy" : "Snapshot"
+     }
+  },
+  "Outputs": {
+     "VolumeId": {
+          "Value": {
+              "Ref": "MyEBSVolume"
+          },
+          "Description": "ID of Volume Created"
+     },
+     "AvailabilityZones": {
+          "Value": {
+               "Fn::GetAZs" : { "Ref" : "AWS::Region" }
+          },
+          "Description": "List of availability zones in a given region"
+      }
+  }
+}
