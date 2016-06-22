@@ -1,0 +1,71 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "AutoScaling Scaling Policy Test - Minimum Required Properties",
+    "Parameters": {
+        "ImageId": {
+            "Description":"Image Id",
+            "Type":"String"
+        },
+        "InstanceType": {
+            "Description":"Instance Type",
+            "Type":"String",
+            "Default" : "m1.medium",
+            "AllowedValues" : [ "m1.small","t1.micro","m1.medium","c1.medium","m1.large", "m1.xlarge", "c1.xlarge", "m2.xlarge", "m3.xlarge", "m2.2xlarge", "m3.2xlarge", "cc1.4xlarge", "m2.4xlarge", "hi1.4xlarge", "cc2.8xlarge", "cg1.4xlarge", "cr1.8xlarge", "hs1.8xlarge" ],
+            "ConstraintDescription" : "must be a valid EC2 instance type."
+        },
+        "AdjustmentType": {
+            "Description":"Specifies whether the ScalingAdjustment is an absolute number or a percentage of the current capacity.",
+            "Type":"String",
+            "ConstraintDescription": "Must be a valid ScalingAdjustment value.",
+            "AllowedValues": [ "ChangeInCapacity", "ExactCapacity", "PercentChangeInCapacity" ]
+        },
+        "MinSize" : {
+            "Description" : "Minimum number of EC2 instances.",
+            "Type" : "Number",
+            "Default" : "1"
+        },
+
+        "MaxSize" : {
+            "Description" : "Maximum number of EC2 instances.",
+            "Type" : "Number",
+            "Default" : "1"
+        }
+    },
+    "Resources": {
+        "LaunchConfig": {
+            "Type" : "AWS::AutoScaling::LaunchConfiguration",
+                "Properties" : {
+                    "ImageId": { "Ref" : "ImageId" },
+                    "InstanceType": { "Ref" : "InstanceType" }
+                }
+        },
+        "ScalingPolicy": {
+            "Type": "AWS::AutoScaling::ScalingPolicy",
+            "Properties": {
+                "AdjustmentType": { "Ref": "AdjustmentType" },
+                "AutoScalingGroupName": { "Ref": "AutoScalingGroup" },
+                "ScalingAdjustment": "1"
+            }
+        },
+        "AutoScalingGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "AvailabilityZones" : { "Fn::GetAZs" : { "Ref" : "AWS::Region" } },
+                "MaxSize": {"Ref" : "MaxSize"},
+                "MinSize": {"Ref" : "MinSize"},
+                "LaunchConfigurationName": {"Ref": "LaunchConfig"},
+                "Tags": [{"Key": "Name", "Value": {"Ref": "AWS::StackName"}, "PropagateAtLaunch" : true}]
+            }
+        }
+    },
+    "Outputs": {
+        "AutoScalingGroup": {
+            "Value": { "Ref": "AutoScalingGroup" },
+            "Description": "Name of Auto Scaling Group"
+        },
+        "ScalingPolicy": {
+            "Value": { "Ref": "ScalingPolicy" },
+            "Description": "Name of Scaling Policy"
+        }
+    }
+}
