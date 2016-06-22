@@ -683,6 +683,7 @@ class NetTestsClassic(CliTestRunner):
                                              zone=zone,
                                              auto_connect=False,
                                              subnet_id=self.subnet_id,
+                                             systemconnection=self.sysadmin,
                                              monitor_to_running=False)[0]
             self.group1_instances.append(instance)
         self.user.ec2.monitor_euinstances_to_running(self.group1_instances)
@@ -750,6 +751,7 @@ class NetTestsClassic(CliTestRunner):
                                              zone=zone,
                                              subnet_id = self.subnet_id,
                                              auto_connect=auto_connect,
+                                             systemconnection=self.sysadmin,
                                              monitor_to_running=False)[0]
             self.group2_instances.append(instance)
         self.user.ec2.monitor_euinstances_to_running(self.group2_instances)
@@ -1761,6 +1763,7 @@ class NetTestsClassic(CliTestRunner):
                                                  keypair=self.keypair,
                                                  subnet_id = self.subnet_id,
                                                  group=revoke_group,
+                                                 systemconnection=self.sysadmin,
                                                  zone=zone)[0]
             self.user.ec2.revoke_security_group(revoke_group, from_port=22, protocol='tcp')
             self.log.debug('Sleeping for 60 seconds before retrying group')

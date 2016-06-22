@@ -63,7 +63,7 @@ class UserContext(AutoCreds):
     def __init__(self,  aws_access_key=None, aws_secret_key=None, aws_account_name=None,
                  aws_user_name=None, port=8773, credpath=None, string=None, region=None,
                  machine=None, keysdir=None, logger=None, service_connection=None,
-                 eucarc=None, existing_certs=False, boto_debug=0, log_level=None):
+                 eucarc=None, existing_certs=False, boto_debug=0, https=True, log_level=None):
         if log_level is None:
             if service_connection:
                 log_level = service_connection.log.stdout_level
@@ -79,7 +79,7 @@ class UserContext(AutoCreds):
                                           logger=logger, log_level=log_level,
                                           existing_certs=existing_certs,
                                           service_connection=service_connection,
-                                          auto_create=False)
+                                          https=https, auto_create=False)
         self._user_info = {}
         self._session = None
         self._connections = {}

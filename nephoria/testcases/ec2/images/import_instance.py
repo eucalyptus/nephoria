@@ -215,8 +215,11 @@ class ImportInstanceTests(CliTestRunner):
         self._group = None
         self._imagelocation = None
         self._keypair = None
+        self._created_keypairs = []
         self._zone = None
         self.args_check = None
+        self.current_task = None
+
 
     @property
     def imagelocation(self):
@@ -399,6 +402,7 @@ class ImportInstanceTests(CliTestRunner):
             try:
                 self._keypair = self.user.ec2.create_keypair_and_localcert(
                     "{0}_key_{1}".format(self.name, time.time()))
+                self._created_keypairs.append(self._keypair)
             except Exception, ke:
                 self.log.error("Failed to find/create a keypair, error:" + str(ke))
                 raise ke
@@ -512,8 +516,10 @@ class ImportInstanceTests(CliTestRunner):
                   'platform':self.args.platform,
                   'user_context': self.user,
                   'user_data':self.args.task_user_data}
-        task = img_utils.euca2ools_import_instance(**params)
+        taskid = img_utils.euca2ools_import_instance(**params)
+        task = user.ec2.get_conversion_task(taskid=taskid)
         assert isinstance(task,ConversionTask)
+        self.current_task = task
         user.ec2.monitor_conversion_tasks(task,
                                         base_timeout=base_timout,
                                         time_per_gig=time_per_gig)
@@ -527,10 +533,11 @@ class ImportInstanceTests(CliTestRunner):
         if inst:
             inst = inst[0]
             username = self.args.instance_user
-            euinst = user.ec2.convert_instance_to_euisntance(instance=inst,
-                                                           keypair=self.keypair,
-                                                           username=username,
-                                                           auto_connect=False)
+            euinst = user.ec2.convert_instance_to_euinstance(instance=inst,
+                                                             keypair=self.keypair,
+                                                             username=username,
+                                                             systemconnection=self.tc.sysadmin,
+                                                             auto_connect=False)
             user.ec2.monitor_euinstances_to_running(euinst)
             if euinst.platform == 'windows':
                 euinst.connect_to_instance(wait_for_boot=180, timeout=300)
@@ -591,7 +598,7 @@ class ImportInstanceTests(CliTestRunner):
                 self.log.debug('Checking task for bucket...')
                 #todo put bucket checks here
         except Exception as e:
-            self.log.error(get_traceback())
+            self.log.error('Error checking task bucket:\n"{0}'.format(get_traceback()))
             err_msg += str(e) + "\n"
 
         try:
@@ -603,7 +610,7 @@ class ImportInstanceTests(CliTestRunner):
                     self.assertEquals(volume.zone, zone)
                     self.assertEquals(task.instance.placement, zone)
         except Exception as e:
-            self.log.error(get_traceback())
+            self.log.error('Error checking task zone:\n"{0}'.format(get_traceback()))
             err_msg += str(e) + "\n"
 
         try:
@@ -614,7 +621,7 @@ class ImportInstanceTests(CliTestRunner):
                 for im_volume in task.importvolumes:
                     self.assertEquals(str(im_volume.volume.size), str(size))
         except Exception as e:
-            self.log.error(get_traceback())
+            self.log.error('Error checking task size:\n"{0}'.format(get_traceback()))
             err_msg += str(e) + "\n"
 
         try:
@@ -625,7 +632,7 @@ class ImportInstanceTests(CliTestRunner):
                         self.assertEquals(str(volume.image.format).upper(),
                                           str(image_format).upper())
         except Exception as e:
-            self.log.error(get_traceback())
+            self.log.error('Error checking task format:\n"{0}'.format(get_traceback()))
             err_msg += str(e) + "\n"
 
         try:
@@ -634,7 +641,7 @@ class ImportInstanceTests(CliTestRunner):
                 self.log.debug('Checking task for instance_type:' + str(instance_type))
                 self.assertEquals(task.instance.instance_type, instance_type)
         except Exception as e:
-            self.log.error(get_traceback())
+            self.log.error('Error checking task instance-type:\n"{0}'.format(get_traceback()))
             err_msg += str(e) + "\n"
 
         try:
@@ -644,7 +651,7 @@ class ImportInstanceTests(CliTestRunner):
                 emi = self.user.ec2.get_emi(emi=task.image_id)
                 self.assertEquals(emi.architecture, arch)
         except Exception as e:
-            self.log.error(get_traceback())
+            self.log.error('Error checking task arch:\n"{0}'.format(get_traceback()))
             err_msg += str(e) + "\n"
 
         try:
@@ -653,20 +660,20 @@ class ImportInstanceTests(CliTestRunner):
                 self.log.debug('Checking task for keypair:' + str(keypair))
                 self.assertEquals(keypair, task.instance.key_name)
         except Exception as e:
-            self.log.error(get_traceback())
+            self.log.error('Error checking task keypair:\n"{0}'.format(get_traceback()))
             err_msg += str(e) + "\n"
 
         try:
             if params.has_key('group'):
                 group = params['group']
                 self.log.debug('Checking task for group:' + str(group))
-                ins = self.user.ec2.convert_instance_to_euisntance(task.instance,
-                                                                 auto_connect=False)
+                ins = self.user.ec2.convert_instance_to_euinstance(
+                    task.instance, systemconnection=self.tc.sysadmin, auto_connect=False)
                 groups = self.user.ec2.get_instance_security_groups(ins)
                 sec_group = groups[0]
                 self.assertEquals(sec_group.name, group)
         except Exception as e:
-            self.log.error(get_traceback())
+            self.log.error('Error checking task group:\n"{0}'.format(get_traceback()))
             err_msg += str(e) + "\n"
 
         try:
@@ -678,14 +685,12 @@ class ImportInstanceTests(CliTestRunner):
                     platform = None
                 self.assertEquals(platform, task.instance.platform)
         except Exception as e:
+            self.log.error('Error checking task platform:\n"{0}'.format(get_traceback()))
             err_msg += str(e) + "\n"
 
-        if err_msg:
-            raise Exception("Failures in param validation detected:n\n"
-                            + str(err_msg))
         try:
             if hasattr(task, 'instanceid') and task.instanceid and \
-                    params.has_key('user_data'):
+                    params.has_key('user_data') and params['user_data'] is not None:
                 user_data = params['user_data']
                 self.log.debug('Checking task for user_data: ' + str(user_data))
                 ins_attr = self.user.ec2.connection.get_instance_attribute(
@@ -696,6 +701,7 @@ class ImportInstanceTests(CliTestRunner):
                     ins_user_data = None
                 self.assertEquals(user_data, ins_user_data)
         except Exception as e:
+            self.log.error('Error checking task user-data:\n"{0}'.format(get_traceback()))
             err_msg += str(e) + "\n"
 
         if err_msg:
@@ -703,7 +709,47 @@ class ImportInstanceTests(CliTestRunner):
                             + str(err_msg))
 
     def clean_method(self):
-        raise NotImplementedError('No cleanup method implemented for import tests !?!')
+        if self.args.no_clean_on_exit:
+            self.log.info('"no_clean_on_exit" set. Skipping Clean method')
+            return
+        task = self.current_task
+        err_buf = ""
+        if not task:
+            return
+        try:
+            if task.instance:
+                self.user.ec2.terminate_single_instance(task.instance)
+        except Exception as E:
+            msg = 'Error terminating task instance, err: {0}'.format(E)
+            err_buf += msg + "\n"
+            self.log.error("{0}\n{1}".format(get_traceback(), msg))
+        try:
+            if task.volumes:
+                self.user.ec2.delete_volumes(task.volumes)
+        except Exception as E:
+            msg = 'Error deleting task volumes, err: {0}'.format(E)
+            err_buf += msg + "\n"
+            self.log.error("{0}\n{1}".format(get_traceback(), msg))
+        try:
+            for keypair in self._created_keypairs:
+                self.user.ec2.delete_keypair(keypair)
+        except Exception as E:
+            msg = 'Error deleting keypair, err: {0}'.format(E)
+            err_buf += msg + "\n"
+            self.log.error("{0}\n{1}".format(get_traceback(), msg))
+        try:
+            if self._group:
+                self.user.ec2.delete_group(self._group)
+        except Exception as E:
+            msg = 'Error deleting security group, err: {0}'.format(E)
+            err_buf += msg + "\n"
+            self.log.error("{0}\n{1}".format(get_traceback(), msg))
+        if err_buf:
+            raise RuntimeError(err_buf)
+        else:
+            self.log.info('Clean method completed')
+
+
 
 
 if __name__ == "__main__":

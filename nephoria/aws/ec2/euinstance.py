@@ -48,6 +48,7 @@ Sample usage:
 from boto.ec2.instance import Instance, InstanceState
 from boto.ec2.networkinterface import NetworkInterface
 from boto.exception import EC2ResponseError
+from cloud_admin.systemconnection import SystemConnection
 from cloud_utils.log_utils import eulogger, printinfo, markup
 from nephoria.aws.ec2.euvolume import EuVolume
 from nephoria.euca.taggedresource import TaggedResource
@@ -71,11 +72,12 @@ class EuInstance(Instance, TaggedResource, Machine):
     @classmethod
     def make_euinstance_from_instance(cls, instance, ec2ops, debugmethod=None, keypair=None,
                                       keypath=None, password=None, username="root",
-                                      do_ssh_connect=True, verbose=True, timeout=120,
+                                      auto_connect=True, verbose=True, timeout=120,
                                       private_addressing=False, reservation=None, cmdstart=None,
-                                      try_non_root_exec=True, exec_password=None, ssh_retry=2,
+                                      try_non_root_exec=False, exec_password=None, ssh_retry=2,
                                       distro=None, distro_ver=None, arch=None, proxy_hostname=None,
                                       proxy_username='root', proxy_password=None,
+                                      systemconnection=None,
                                       proxy_keypath=None):
 
         '''
@@ -118,6 +120,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         newins.security_groups = []
 
         newins.ec2ops = ec2ops
+        newins._systemconnection = systemconnection
         newins.debugmethod = debugmethod
         if newins.debugmethod is None:
             newins.log = eulogger.Eulogger(identifier=str(instance.id))
@@ -146,7 +149,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             newins.security_groups = None
         newins.laststate = newins.state
         newins.cmdstart = cmdstart
-        newins._do_ssh_connect = do_ssh_connect
+        newins.auto_connect = auto_connect
         newins.set_last_status()
         if newins.state != 'terminated':
             newins.update_vm_type_info()
@@ -160,17 +163,16 @@ class EuInstance(Instance, TaggedResource, Machine):
             except:
                 pass
 
-        if newins._do_ssh_connect and newins.state == 'running':
+        if newins.auto_connect and newins.state == 'running':
             newins.connect_to_instance(timeout=timeout)
         # Allow non-root access to try sudo if available else su -c to execute privileged commands
         newins.try_non_root_exec = try_non_root_exec
         if newins.try_non_root_exec:
             if username.strip() != 'root':
-                if newins.has_sudo():
+                if newins.has_sudo(newins):
                     newins.use_sudo = True
                 else:
                     newins.use_sudo = False
-
         return newins
 
     def __eq__(self, other):
@@ -192,6 +194,16 @@ class EuInstance(Instance, TaggedResource, Machine):
         # return the elapsed time in seconds
         return (time.mktime(datetime.utcnow().utctimetuple()) -
                 time.mktime(launchtime.utctimetuple()))
+
+    @property
+    def systemconnection(self):
+        return getattr(self, '_systemconnection', None)
+
+    @systemconnection.setter
+    def systemconnection(self, connection):
+        if connection is None or isinstance(connection, SystemConnection):
+            setattr(self, '_systemconnection', connection)
+
 
     def update(self, validate=False, dry_run=False, err_state='terminated', err_code=-1):
         ret = None
@@ -552,13 +564,14 @@ class EuInstance(Instance, TaggedResource, Machine):
             self.log.debug("keypath or username/password need to be populated "
                        "for ssh connection")
 
-    def get_connection_debug(self):
+    def get_connection_debug(self, systemconnection=None):
         # Add network debug/diag info here...
         # First show arp cache from local machine
         # todo Consider getting info from relevant euca components:
         # - iptables info
         # - route info
         # - instance xml
+        systemconnection = systemconnection or self.systemconnection
         self.log.debug(markup('Dumping Connection debug info for Instance:"{0}, pub:{1}, '
                                       'priv:{2}"'
                                       .format(self.id, self.ip_address, self.private_ip_address),
@@ -574,37 +587,40 @@ class EuInstance(Instance, TaggedResource, Machine):
         except Exception as AE:
             self.log.debug('Failed to get arp info:' + str(AE))
         self.get_cloud_init_info_from_console()
-        try:
-            node = None
-            node = self.ec2ops.service_manager.get_all_node_controllers(instance_id=self.id)[0]
-            node.sys('ip addr list')
-        except Exception as NE:
-            self.log.debug('Was unable to gather debug for the node hosting this VM, err: {0}'
-                       .format(NE))
-            pass
-        try:
-            nodes = self.ec2ops.service_manager.get_all_node_controllers()
-            if node and (node in nodes):
-                nodes.remove(node)
-            self.log.debug('Ip addrs for node:"{0}" which is hosting:"{1}"...'
-                       .format(node.hostname, self.id))
-            for node in nodes:
-                try:
-                    self.log.debug('Node "NOT" hosting instance:"{0}"...'.format(self.id))
-                    node.sys('ip addr list')
-                except:
-                    pass
-        except Exception as IPL:
-            self.log.debug('Failed gathering ip addr list debug info from all nodes, err: "{0}"'
-                       .format(IPL))
-            pass
+        if systemconnection:
+            my_node = None
+            try:
+                my_node = systemconnection.get_hosts_for_node_controllers(instanceid=self.id)[0]
+                self.log.debug('Ip addrs for node:"{0}" which is hosting:"{1}"...'
+                               .format(my_node.hostname, self.id))
+                my_node.sys('ip addr list')
+            except Exception as NE:
+                self.log.debug('Was unable to gather debug for the node hosting this VM, err: {0}'
+                           .format(NE))
+                pass
+            try:
+                self.log.debug('Checking other nodes for possible conflicts...')
+                nodes = systemconnection.get_hosts_for_node_controllers()
+                if my_node and (my_node in nodes):
+                    nodes.remove(my_node)
+
+                for node in nodes:
+                    try:
+                        self.log.debug('Node "NOT" hosting instance:"{0}"...'.format(self.id))
+                        node.sys('ip addr list')
+                    except:
+                        pass
+            except Exception as IPL:
+                self.log.debug('Failed gathering ip addr list debug info from all nodes, err: "{0}"'
+                           .format(IPL))
+                pass
         self.log.debug(markup('DONE Dumping Connection debug info for Instance:"{0}"'
                                       .format(self.id), markups=[1, 4, 95]))
 
     def get_cloud_init_info_from_console(self):
         ret_buf = ""
         try:
-            c_output = self.ec2ops.get_console_output(self, debug=False)
+            c_output = self.connection.get_console_output(self)
             if c_output:
                 output = c_output.output
                 ci_lines = []
