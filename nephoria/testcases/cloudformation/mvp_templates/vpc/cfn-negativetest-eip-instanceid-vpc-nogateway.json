@@ -1,0 +1,82 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "Elastic IP Test - EIP association to instance in VPC",
+    "Parameters" : {
+        "ImageId": {
+            "Description":"Image Id",
+            "Type":"String"
+        },
+
+        "VPC": {
+            "Description":"VPC ID (Must Use CIDR 10.0.0.0/16)",
+            "Type":"AWS::EC2::VPC::Id",
+            "ConstraintDescription" : "must be a valid VPC ID."
+        },
+
+        "InstanceType": {
+            "Description":"Instance Type",
+            "Type":"String",
+            "Default" : "m3.medium",
+            "AllowedValues" : [ "m1.small","t1.micro","m3.medium","c1.medium","m1.large", "m1.xlarge", "c1.xlarge", "m2.xlarge", "m3.xlarge", "m2.2xlarge", "m3.2xlarge", "cc1.4xlarge", "m2.4xlarge", "hi1.4xlarge", "cc2.8xlarge", "cg1.4xlarge", "cr1.8xlarge", "hs1.8xlarge" ],
+            "ConstraintDescription" : "must be a valid EC2 instance type."
+        }
+    },
+    "Resources" : {
+        "Subnet": {
+            "Type" : "AWS::EC2::Subnet",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VPC" },
+                "CidrBlock" : "172.30.5.0/24",
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "EIP": {
+            "Type" : "AWS::EC2::EIP",
+                "Properties" : {
+                    "Domain": "vpc",
+                    "InstanceId": { "Ref": "Instance" }
+                }
+        },
+
+        "NetworkInterface" :{
+            "Type": "AWS::EC2::NetworkInterface",
+            "Properties": {
+                "Description": "Network Interface for Elastic IP",
+                "SubnetId": { "Ref": "Subnet" },
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "Instance": {
+            "Type": "AWS::EC2::Instance",
+                "Properties": {
+                    "ImageId" : { "Ref":"ImageId" },
+                    "InstanceType" : { "Ref":"InstanceType"},
+                    "NetworkInterfaces" : [{
+                        "DeviceIndex"  : "0",
+                        "Description" : "Default interface for instance",
+                        "NetworkInterfaceId" : { "Ref": "NetworkInterface" }
+                    }],
+                    "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+         }
+    },
+
+    "Outputs": {
+        "InstanceId" : {
+            "Description" : "InstanceId of the newly created EC2 instance",
+            "Value" : { "Ref" : "Instance" }
+        },
+
+        "ElasticIP": {
+            "Description" : "Elastic IP",
+            "Value" : { "Ref" : "EIP" }
+        },
+
+        "AllocationID": {
+            "Description" : "Allocation ID of the Elastic IP",
+            "Value" : { "Fn::GetAtt" : [ "EIP" , "AllocationId" ] }
+        }
+    }
+}

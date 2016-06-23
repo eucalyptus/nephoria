@@ -284,19 +284,24 @@ class GenericTemplateRun(CliTestRunner):
             """
             stacks = self.tc.user.cloudformation.describe_stacks(
                                    resp.stack_name)
+            events_list = stacks[0].describe_events()
+            events = '\n'.join(map(str, events_list[len(events_list)::-1]))
             if stacks[0].stack_status == 'CREATE_COMPLETE':
                 self.log.debug("Stack deployment complete.")
+                self.log.debug("Stack events:\n" + events)
                 break
             elif stacks[0].stack_status == 'CREATE_FAILED':
-                self.log.error("Stack deployment failed: "
-                               + str(stacks[0].stack_status_reason)) 
-                raise RuntimeError("Stack deployment failed: "
-                                   + str(stacks[0].stack_status_reason)) 
+                self.log.error("Stack deployment failed: " +
+                               str(stacks[0].stack_status_reason))
+                self.log.error("Stack events:\n" + events)
+                raise RuntimeError("Stack deployment failed: " +
+                                   str(stacks[0].stack_status_reason))
             elif int(time.time()) > timeout:
                 self.log.error("Stack deployment failed "
                                "to complete in provided stack "
                                "timeout: " + str(self.args.timeout) +
                                " min.")
+                self.log.error("Stack events:\n" + events)
                 raise RuntimeError("Stack failed to deploy "
                                    "within timeout: " +
                                    str(self.args.timeout) +

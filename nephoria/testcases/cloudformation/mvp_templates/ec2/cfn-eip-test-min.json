@@ -1,0 +1,17 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "Elastic IP Test - Minimum Required Properties",
+    "Resources" : {
+        "EIP": {
+            "Type" : "AWS::EC2::EIP",
+                "Properties" : {
+                }
+        }
+    },
+    "Outputs": {
+        "ElasticIP": {
+            "Description" : "Elastic IP",
+            "Value" : { "Ref" : "EIP" }
+        }
+    }
+}
