@@ -2481,7 +2481,7 @@ disable_root: false"""
                 filters['tag-value'] = tagvalue
 
         # if emi is None and not platform:
-        if basic_image is None and not _args_dict.get('kwargs', None):
+        if basic_image is None and _args_dict and not _args_dict.get('kwargs', None):
             # If a specific EMI was not provided, set some sane defaults for
             # fetching a test image to work with...
             basic_image = True
@@ -2575,7 +2575,7 @@ disable_root: false"""
         # If no criteria was provided for filter an image, use 'basic_image'
         # flag to provide some sane defaults
         if basic_image is None:
-            if not _args_dict.get('kwargs', None):
+            if _args_dict and not _args_dict.get('kwargs', None):
                 basic_image = True
             else:
                 basic_image = False
