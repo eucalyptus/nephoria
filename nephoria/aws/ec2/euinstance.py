@@ -620,7 +620,7 @@ class EuInstance(Instance, TaggedResource, Machine):
     def get_cloud_init_info_from_console(self):
         ret_buf = ""
         try:
-            c_output = self.connection.get_console_output(self)
+            c_output = self.connection.get_console_output(self.id)
             if c_output:
                 output = c_output.output
                 ci_lines = []
