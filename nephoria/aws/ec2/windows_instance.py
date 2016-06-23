@@ -36,16 +36,6 @@
 extension of the boto instance class, with added convenience methods + objects
 Add common instance test routines to this class
 
-Examples:
-from eucaops import Eucaops
-from nephoria.windows_instance import WinInstance
-tester = Eucaops(credpath='eucarc-10.111.5.80-eucalyptus-admin')
-wins = WinInstance.make_euinstance_from_instance(tester.get_instances(idstring='i-89E13DA8')[0], tester=tester, keypair='test')
-vol = tester.get_volume(status='available', zone=wins.placement)
-wins.attach_volume(vol)
-
-
-
 '''
 
 import socket
@@ -60,6 +50,9 @@ from boto.ec2.instance import Instance
 from nephoria.aws.ec2.euvolume import EuVolume
 from cloud_utils.log_utils import eulogger, get_line, markup
 from nephoria.euca.taggedresource import TaggedResource
+from nephoria.testcase_utils import wait_for_result
+from cloud_utils.log_utils import get_traceback, red
+from cloud_utils.net_utils import test_port_status
 from boto.ec2.instance import InstanceState
 from datetime import datetime
 from cloud_utils.net_utils import winrm_connection
@@ -215,7 +208,7 @@ class WinInstanceDiskDrive(WinInstanceDiskType):
                         self.ebs_volume = vol.id
                         break
         if not self.ebs_cloud_dev and self.ebs_volume:
-            volume = self.win_instance.tester.get_volume(volume_id=self.ebs_volume)
+            volume = self.win_instance.ec2ops.get_volume(volume_id=self.ebs_volume)
             if hasattr(volume,'attach_data') and volume.attach_data:
                 self.ebs_cloud_dev = volume.attach_data.device
         self.update_md5_info_from_ebs()
@@ -387,7 +380,7 @@ class WinInstance(Instance, TaggedResource):
     @classmethod
     def make_euinstance_from_instance(cls,
                                       instance,
-                                      tester,
+                                      ec2ops,
                                       debugmethod = None,
                                       keypair=None,
                                       keypath=None,
@@ -429,7 +422,7 @@ class WinInstance(Instance, TaggedResource):
         '''
         newins = WinInstance(instance.connection)
         newins.__dict__ = instance.__dict__
-        newins.tester = tester
+        newins.ec2ops = ec2ops
         newins.winrm_port = winrm_port
         newins.rdp_port = rdp_port
         newins.bdm_root_vol = None
@@ -442,7 +435,7 @@ class WinInstance(Instance, TaggedResource):
         if (keypair is not None):
             if isinstance(keypair,types.StringTypes):
                 keyname = keypair
-                keypair = tester.get_keypair(keyname)
+                keypair = ec2ops.get_keypair(keyname)
             else:
                 keyname = keypair.name
             newins.keypath = keypath or os.getcwd() + "/" + keyname + ".pem"
@@ -461,7 +454,7 @@ class WinInstance(Instance, TaggedResource):
         newins.private_addressing = private_addressing
         newins.reservation = reservation or newins.get_reservation()
         if newins.reservation:
-            newins.security_groups = newins.tester.get_instance_security_groups(newins)
+            newins.security_groups = newins.ec2ops.get_instance_security_groups(newins)
         else:
             newins.security_groups = None
         newins.laststate = newins.state
@@ -478,8 +471,11 @@ class WinInstance(Instance, TaggedResource):
         #newins.set_block_device_prefix()
         if newins.root_device_type == 'ebs':
             try:
-                volume = newins.tester.get_volume(volume_id = newins.block_device_mapping.get(newins.root_device_name).volume_id)
-                newins.bdm_root_vol = EuVolume.make_euvol_from_vol(volume, tester=newins.tester,cmdstart=newins.cmdstart)
+                volume = newins.ec2ops.get_volume(
+                    volume_id=newins.block_device_mapping.get(newins.root_device_name).volume_id)
+                    newins.bdm_root_vol = EuVolume.make_euvol_from_vol(volume,
+                                                                   ec2ops=newins.ec2ops,
+                                                                   cmdstart=newins.cmdstart)
             except:pass
         newins.winrm = None
         if newins.auto_connect and newins.state == 'running':
@@ -488,7 +484,7 @@ class WinInstance(Instance, TaggedResource):
 
     @property
     def age(self):
-        launchtime = self.tester.get_datetime_from_resource_string(self.launch_time)
+        launchtime = self.ec2ops.get_datetime_from_resource_string(self.launch_time)
         # return the elapsed time in seconds
         return (time.mktime(datetime.utcnow().utctimetuple()) -
                 time.mktime(launchtime.utctimetuple()))
@@ -507,7 +503,7 @@ class WinInstance(Instance, TaggedResource):
             except ValueError:
                 if validate:
                     raise
-                tb = self.tester.get_traceback()
+                tb = get_traceback()
                 self.debug('Failed to update instance. Attempt:{0}/{1}'
                            .format(x, retries))
         if not ret:
@@ -524,14 +520,14 @@ class WinInstance(Instance, TaggedResource):
 
 
     def update_vm_type_info(self):
-        self.vmtype_info =  self.tester.get_vm_type_from_zone(self.placement,self.instance_type)
+        self.vmtype_info =  self.ec2ops.get_vm_type_from_zone(self.placement,self.instance_type)
         return self.vmtype_info
 
 
     def set_last_status(self,status=None):
         self.laststate = self.state
         self.laststatetime = time.time()
-        self.age_at_state = self.tester.get_instance_time_launched(self)
+        self.age_at_state = self.ec2ops.get_instance_time_launched(self)
         #Also record age from user's perspective, ie when they issued the run instance request (if this is available)
         if self.cmdstart:
             self.age_from_run_cmd = "{0:.2f}".format(time.time() - self.cmdstart)
@@ -598,7 +594,7 @@ class WinInstance(Instance, TaggedResource):
                   "{0}".format(markup("ACCOUNT ID:")), owner_id]
         id_string, idlen = multi_line(idlist)
         try:
-            emi = self.tester.get_emi(self.image_id)
+            emi = self.ec2ops.get_emi(self.image_id)
             emi_name = str(emi.name[0:18]) + ".."
         except:
             emi_name = ""
@@ -714,7 +710,7 @@ class WinInstance(Instance, TaggedResource):
         :return: decrypted password
         '''
         if self.password is None or force_update:
-            self.password = self.tester.get_windows_instance_password(
+            self.password = self.ec2ops.get_windows_instance_password(
                 self,
                 private_key_path=private_key_path,
                 key=key,
@@ -766,7 +762,7 @@ class WinInstance(Instance, TaggedResource):
     def get_reservation(self):
         res = None
         try:
-            res = self.tester.get_reservation_for_instance(self)
+            res = self.ec2ops.get_reservation_for_instance(self)
         except Exception, e:
             self.update()
             self.debug('Could not get reservation for instance in state:' +
@@ -806,7 +802,7 @@ class WinInstance(Instance, TaggedResource):
                 self.debug('Try some sys...')
                 self.sys("whoami")
             except Exception, se:
-                tb = self.tester.get_traceback()
+                tb = get_traceback()
                 self.debug('Caught exception attempting to connect '
                            'winrm shell:\n'+ str(tb) + str(se))
                 elapsed = int(time.time()-start)
@@ -854,7 +850,7 @@ class WinInstance(Instance, TaggedResource):
         except Exception as AE:
             self.log.debug('Failed to get arp info:' + str(AE))
         try:
-            self.tester.get_console_output(self)
+            self.ec2ops.get_console_output(self)
         except Exception as CE:
             self.log.debug('Failed to get console output:' + str(CE))
 
@@ -869,9 +865,9 @@ class WinInstance(Instance, TaggedResource):
                             if not disk.md5:
                                 disk.update_md5_info_from_ebs()
                             return
-                    volume = self.tester.get_volume(volume_id=disk.ebs_volume)
+                    volume = self.ec2ops.get_volume(volume_id=disk.ebs_volume)
                     if not isinstance(volume, EuVolume):
-                        volume = EuVolume.make_euvol_from_vol(volume, self.tester)
+                        volume = EuVolume.make_euvol_from_vol(volume, self.ec2ops)
                     volume.guestdev = disk.deviceid
                     volume.md5len = 1024
                     volume.md5 = self.get_dev_md5(disk.cygwin_scsi_drive, volume.md5len)
@@ -894,7 +890,7 @@ class WinInstance(Instance, TaggedResource):
         try:
             self.update_system_info()
         except Exception, sie:
-            tb = self.tester.get_traceback()
+            tb = get_traceback()
             self.debug(str(tb) + "\nError updating system info:" + str(sie))
         try:
             self.update_disk_info()
@@ -903,7 +899,7 @@ class WinInstance(Instance, TaggedResource):
             self.print_logicaldisk_summary()
             self.print_diskdrive_summary()
         except Exception, ude:
-            tb = self.tester.get_traceback()
+            tb = get_traceback()
             self.debug(str(tb) + "\nError updating disk info:" + str(ude))
 
 
@@ -944,14 +940,14 @@ class WinInstance(Instance, TaggedResource):
 
     def test_port_status(self, port, ip=None, timeout=5, tcp=True, verbose=True):
         ip = ip or self.ip_address
-        return self.tester.test_port_status(ip, int(port), timeout=timeout, tcp=tcp, verbose=verbose)
+        return test_port_status(ip, int(port), timeout=timeout, tcp=tcp, verbose=verbose)
 
     def poll_for_port_status_with_boot_delay(self, interval=15, ports=[], socktimeout=5,timeout=180, waitforboot=300):
         '''
         Make sure some time has passed before we test on the guest side before running guest test...
 
         '''
-        launch_seconds = self.tester.get_instance_time_launched(self)
+        launch_seconds = self.ec2ops.get_instance_time_launched(self)
         sleeptime =  0 if launch_seconds > waitforboot else (waitforboot - launch_seconds)
         self.debug("Instance was launched "+str(launch_seconds)+" seconds ago, waiting:"+str(sleeptime)+" for instance to boot")
         time.sleep(sleeptime)
@@ -965,7 +961,7 @@ class WinInstance(Instance, TaggedResource):
         '''
         When using larger instance store images, this can allow for the delays caused by image size/transfer.
         '''
-        boot_seconds = self.tester.get_instance_time_launched(self)
+        boot_seconds = self.ec2ops.get_instance_time_launched(self)
         sleeptime =  0 if boot_seconds > waitforboot else (waitforboot - boot_seconds)
         self.debug("Instance was launched "+str(boot_seconds)+"/"+str(waitforboot) + " seconds ago, waiting:"+str(sleeptime)+" for instance to boot")
         start = time.time()
@@ -999,7 +995,7 @@ class WinInstance(Instance, TaggedResource):
                         if ecode == socket.errno.ETIMEDOUT or ecode == "timed out":
                             self.debug("test_poll_for_ports_status: Connect "+str(ip)+":" +str(port)+ " timed out retrying. Time remaining("+str(timeout-elapsed)+")")
                     except Exception, e:
-                        tb = self.tester.get_traceback()
+                        tb = get_traceback()
                         self.debug(tb)
                         self.debug('test_poll_for_ports_status:'+str(ip)+':'+str(port)+' FAILED after attempts:'+str(attempt)+', elapsed:'+str(elapsed)+', err:'+str(e) )
             elapsed = int(time.time() -start)
@@ -1026,7 +1022,7 @@ class WinInstance(Instance, TaggedResource):
         errors = []
         ret = {'errors':errors, 'badvols':badvols}
         #Get a list of volumes that the cloud believes are currently attached
-        cloud_volumes = self.tester.get_volumes(attached_instance=self.id)
+        cloud_volumes = self.ec2ops.get_volumes(attached_instance=self.id)
         #Make a copy of a list of volumes this instance thinks are currenlty attached
         locallist = copy.copy(self.attached_vols)
         self.debug('Cloud list:' + str(cloud_volumes))
@@ -1037,7 +1033,7 @@ class WinInstance(Instance, TaggedResource):
                 if local_vol.id == vol.id:
                     locallist.remove(local_vol)
             if not isinstance(vol, EuVolume):
-                vol = EuVolume.make_euvol_from_vol(vol, self.tester)
+                vol = EuVolume.make_euvol_from_vol(vol, self.ec2ops)
             try:
                 self.update_volume_guest_info(volume=vol)
             except Exception, e:
@@ -1119,9 +1115,9 @@ class WinInstance(Instance, TaggedResource):
                 return self.sys("curl --connect-timeout 10 http://169.254.169.254/"+str(prefix)+str(element_path), code=0)
         except:
             if use_cygwin:
-                return self.cygwin_curl("http://" + self.tester.get_ec2_ip()  + ":8773/"+str(prefix) + str(element_path))
+                return self.cygwin_curl("http://" + self.ec2ops.get_ec2_ip()  + ":8773/"+str(prefix) + str(element_path))
             else:
-                return self.sys("curl http://" + self.tester.get_ec2_ip()  + ":8773/"+str(prefix) + str(element_path), code=0)
+                return self.sys("curl http://" + self.ec2ops.get_ec2_ip()  + ":8773/"+str(prefix) + str(element_path), code=0)
 
 
     def print_diskdrive_summary(self,printmethod=None):
@@ -1189,7 +1185,7 @@ class WinInstance(Instance, TaggedResource):
             try:
                 diskdrives.append(WinInstanceDiskDrive(self,disk_dict))
             except Exception, e:
-                tb = self.tester.get_traceback()
+                tb = get_traceback()
                 self.debug('Error attempting to create WinInstanceDiskDrive from following dict:')
                 self.print_dict(dict=disk_dict)
                 raise Exception(str(tb) + "\n Error attempting to create WinInstanceDiskDrive:" + str(e))
@@ -1213,7 +1209,7 @@ class WinInstance(Instance, TaggedResource):
             try:
                 disk_partitions.append(WinInstanceDiskPartition(self,part_dict))
             except Exception, e:
-                tb = self.tester.get_traceback()
+                tb = get_traceback()
                 self.debug('Error attempting to create WinInstanceDiskPartition from following dict:')
                 self.print_dict(dict=part_dict)
                 raise Exception(str(tb) + "\n Error attempting to create WinInstanceDiskPartition:" + str(e))
@@ -1229,7 +1225,7 @@ class WinInstance(Instance, TaggedResource):
             try:
                 logicaldisks.append(WinInstanceLogicalDisk(self,part_dict))
             except Exception, e:
-                tb = self.tester.get_traceback()
+                tb = get_traceback()
                 self.debug('Error attempting to create WinInstanceLogicalDisk from following dict:')
                 self.print_dict(dict=part_dict)
                 raise Exception(str(tb) + "\n Error attempting to create WinInstanceLogicalDisk:" + str(e))
@@ -1256,7 +1252,7 @@ class WinInstance(Instance, TaggedResource):
                     try:
                         drive_id =  str(line.split()[0].split('=')[1]).replace('"','').strip()
                     except Exception, e:
-                        tb = self.tester.get_traceback()
+                        tb = get_traceback()
                         self.debug(str(tb)+ "\nError getting logical drive info:" + str(e))
                     if drive_id:
                         for disk in self.logicaldisks:
@@ -1387,10 +1383,11 @@ class WinInstance(Instance, TaggedResource):
         '''
         Method used to attach a volume to an instance and track it's use by that instance
         required - euvolume - the euvolume object being attached
-        required - tester - the eucaops/nephoria object/connection for this cloud
+        required - ec2ops - the eucaops/nephoria object/connection for this cloud
         optional - dev - string to specify the dev path to 'request' when attaching the volume to
         optional - timeout - integer- time allowed before failing
-        optional - overwrite - flag to indicate whether to overwrite head data of a non-zero filled volume upon attach for md5
+        optional - overwrite - flag to indicate whether to overwrite head data of a non-zero
+        filled volume upon attach for md5
         '''
         if not isinstance(volume, EuVolume):
             volume = EuVolume.make_euvol_from_vol(volume)
@@ -1401,7 +1398,7 @@ class WinInstance(Instance, TaggedResource):
         '''
         Method used to attach a volume to an instance and track it's use by that instance
         required - euvolume - the euvolume object being attached
-        required - tester - the eucaops/nephoria object/connection for this cloud
+        required - ec2ops - the eucaops/nephoria object/connection for this cloud
         optional - dev - string to specify the dev path to 'request' when attaching the volume to
         optional - timeout - integer- time allowed before failing
         optional - overwrite - flag to indicate whether to overwrite head data of a non-zero filled volume upon attach for md5
@@ -1426,7 +1423,7 @@ class WinInstance(Instance, TaggedResource):
         if dev is None:
             #update our block device prefix
             dev = self.get_free_scsi_dev()
-        if (self.tester.attach_volume(self, euvolume, dev, pause=10,timeout=timeout)):
+        if (self.ec2ops.attach_volume(self, euvolume, dev, pause=10,timeout=timeout)):
             if euvolume.attach_data.device != dev:
                 raise Exception('Attached device:' + str(euvolume.attach_data.device) +
                                 ", does not equal requested dev:" + str(dev))
@@ -1498,7 +1495,7 @@ class WinInstance(Instance, TaggedResource):
                 break
 
         if not isinstance(volume, EuVolume):
-            volume = EuVolume.make_euvol_from_vol(volume=volume, tester=self.tester)
+            volume = EuVolume.make_euvol_from_vol(volume, self.ec2ops)
 
 
     def get_disk_drive_by_id(self, deviceid):
@@ -1530,7 +1527,7 @@ class WinInstance(Instance, TaggedResource):
         dev = None
         if prefix is None:
             prefix = self.block_device_prefix
-        cloudlist=self.tester.get_volumes(attached_instance=self.id)
+        cloudlist=self.ec2ops.get_volumes(attached_instance=self.id)
 
         for x in xrange(0,maxdevs):
             inuse=False
@@ -1573,7 +1570,7 @@ class WinInstance(Instance, TaggedResource):
         for vol in self.attached_vols:
             if vol.id == euvolume.id:
                 dev = vol.guestdev
-                if (self.tester.detach_volume(euvolume,timeout=timeout)):
+                if (self.ec2ops.detach_volume(euvolume,timeout=timeout)):
                     if waitfordev:
                         self.debug("Cloud has detached" + str(vol.id) + ", Wait for device:"+str(dev)+" to be removed on guest...")
                         while (elapsed < timeout):
@@ -1796,7 +1793,7 @@ class WinInstance(Instance, TaggedResource):
         command timeout as the default.
         param timeout: integer. Seconds to wait on command before failing
         '''
-        scriptname = 'eutester_diskpart_script'
+        scriptname = 'nephoria_diskpart_script'
         self.sys('(echo rescan && echo list disk ) > ' + str(scriptname), code=0)
         self.sys('diskpart /s ' + str(scriptname), code=0, timeout=timeout)
 
@@ -1822,7 +1819,7 @@ class WinInstance(Instance, TaggedResource):
         if not force_check and not self.is_volume_attached_to_this_instance(volume):
             return None
         if not isinstance(volume, EuVolume):
-            volume = EuVolume.make_euvol_from_vol(volume=volume,tester=self.tester)
+            volume = EuVolume.make_euvol_from_vol(volume=volume, ec2ops=self.ec2ops)
         md5 = md5 or volume.md5
         if not md5:
             return None
@@ -1954,7 +1951,7 @@ class WinInstance(Instance, TaggedResource):
             except: pass
             return uptime
         self.debug('Attempting to reboot instance:'+str(self.id)+', check attached volume state first')
-        uptime = self.tester.wait_for_result( get_safe_uptime, None, oper=operator.ne)
+        uptime = wait_for_result( get_safe_uptime, None, oper=operator.ne)
         elapsed = 0
         start = time.time()
         if checkvolstatus:
@@ -1975,7 +1972,7 @@ class WinInstance(Instance, TaggedResource):
         while (elapsed < timeout):
             self.connect_to_instance(timeout=timeout)
             #Wait for the system to provide a valid response for uptime, early connections may not
-            newuptime = self.tester.wait_for_result( get_safe_uptime, None, oper=operator.ne)
+            newuptime = wait_for_result( get_safe_uptime, None, oper=operator.ne)
             elapsed = int(time.time()-start)
             #Check to see if new uptime is at least 'pad' less than before, allowing for some pad
             if (newuptime - (uptime+elapsed)) > pad:
@@ -2006,7 +2003,7 @@ class WinInstance(Instance, TaggedResource):
         elif hasattr(self.system_info, 'system_up_time'):
             return self._get_uptime_from_system_up_time()
         else:
-            tb = self.tester.get_traceback()
+            tb = get_traceback()
             raise Exception(str(tb) + '\nCould not get system boot or up time from system_info')
 
     def _get_uptime_from_system_boot_time(self):
@@ -2126,7 +2123,7 @@ class WinInstance(Instance, TaggedResource):
                         raise Exception(str(self.id) + ', Volume ' + str(volume.id) + ':' + str(volume.status)
                                         + ' state did not remain in-use during stop'  )
         self.debug("\n"+ str(self.id) + ": Printing Instance 'attached_vol' list:\n")
-        self.tester.show_volumes(self.attached_vols)
+        self.ec2ops.show_volumes(self.attached_vols)
         msg=""
         start = time.time()
         elapsed = 0
