@@ -1,0 +1,22 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "Elastic IP Test - VPC domain",
+    "Resources" : {
+        "EIP": {
+            "Type" : "AWS::EC2::EIP",
+                "Properties" : {
+                    "Domain": "vpc"
+                }
+        }
+    },
+    "Outputs": {
+        "ElasticIP": {
+            "Description" : "Elastic IP",
+            "Value" : { "Ref" : "EIP" }
+        },
+        "AllocationID": {
+            "Description" : "Allocation ID of the Elastic IP",
+            "Value" : { "Fn::GetAtt" : [ "EIP" , "AllocationId" ] }
+        }
+    }
+}
