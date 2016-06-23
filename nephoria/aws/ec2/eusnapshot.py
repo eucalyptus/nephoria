@@ -70,7 +70,7 @@ class EuSnapshot(Snapshot, TaggedResource):
         newsnap.eutest_failmsg = None
         newsnap.eutest_laststatus = newsnap.status
         newsnap.eutest_ageatstatus = 0 
-        newsnap.eutest_cmdstart = cmdstart
+        newsnap.eutest_cmdstart = cmdstart or 0
         newsnap.eutest_createorder = None
         newsnap.eutest_cmdtime = None
         newsnap.eutest_polls = 0
