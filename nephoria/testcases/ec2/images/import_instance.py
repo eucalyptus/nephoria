@@ -236,9 +236,9 @@ class ImportInstanceTests(CliTestRunner):
     @property
     def tc(self):
         if not self._tc:
-            if not self.args.clc:
-                self.log.error('Must provide --clc flag to run this test')
-                raise ValueError('Must provide --clc flag to run this test')
+            if not self.args.clc and not self.args.environment_file:
+                self.log.error('Must provide --clc or --environment_file arg to run this test')
+                raise ValueError('Must provide --clc or --environment_file arg to run this test')
             try:
                 self._tc = TestController(hostname=self.args.clc,
                                     environment_file=self.args.environment_file,
