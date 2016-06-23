@@ -58,10 +58,10 @@ class EuVolume(Volume, TaggedResource):
 
         
     @classmethod
-    def make_euvol_from_vol(cls,volume, tester=None, cmdstart=None):
+    def make_euvol_from_vol(cls, volume, ec2ops=None, cmdstart=None):
         newvol = EuVolume(volume.connection)
         newvol.__dict__ = volume.__dict__
-        newvol.tester = tester
+        newvol.ec2ops = ec2ops
         newvol.guestdev = "" #the guest device name in use by this attached volume
         newvol.clouddev = "" #the device name given to the cloud as a request to be used.
         newvol.md5 = None

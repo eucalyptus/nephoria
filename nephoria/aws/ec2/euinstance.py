@@ -157,8 +157,8 @@ class EuInstance(Instance, TaggedResource, Machine):
             try:
                 volume = newins.ec2ops.get_volume(
                     volume_id=newins.block_device_mapping.get(newins.root_device_name).volume_id)
-                newins.bdm_root_vol = EuVolume.make_euvol_from_vol(volume,
-                                                                   tester=newins.ec2ops,
+                newins.bdm_root_vol = EuVolume.make_euvol_from_vol(volume, volume=newins.ec2ops,
+                                                                   ec2ops=newins.ec2ops,
                                                                    cmdstart=newins.cmdstart)
             except:
                 pass
