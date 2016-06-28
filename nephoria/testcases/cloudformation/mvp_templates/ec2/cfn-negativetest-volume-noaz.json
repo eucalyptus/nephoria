@@ -1,0 +1,22 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Volume Test - Negative Test - Create volume without AvailabilityZone attribute",
+
+  "Resources" : {
+     "Volume" : {
+         "Type" : "AWS::EC2::Volume",
+         "Properties" : {
+         }
+     }
+  },
+
+  "Outputs" : {
+      "VolumeId": {
+          "Value": {
+              "Ref": "Volume"
+          },
+          "Description": "ID of Volume Created"
+      }
+  }
+}
