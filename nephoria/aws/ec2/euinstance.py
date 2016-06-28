@@ -50,13 +50,14 @@ from boto.ec2.networkinterface import NetworkInterface
 from boto.exception import EC2ResponseError
 from cloud_admin.systemconnection import SystemConnection
 from cloud_utils.log_utils import eulogger, printinfo, markup
-from nephoria.aws.ec2.euvolume import EuVolume
-from nephoria.euca.taggedresource import TaggedResource
-from nephoria.testcase_utils import wait_for_result
+from cloud_utils.net_utils import get_network_info_for_cidr, test_port_status
 from cloud_utils.net_utils.sshconnection import SshConnection, CommandExitCodeException, \
     CommandTimeoutException
 from cloud_utils.system_utils.machine import Machine
 from cloud_utils.log_utils import get_traceback
+from nephoria.aws.ec2.euvolume import EuVolume
+from nephoria.euca.taggedresource import TaggedResource
+from nephoria.testcase_utils import wait_for_result
 from random import randint
 from prettytable import PrettyTable, ALL
 from datetime import datetime
@@ -2105,3 +2106,123 @@ class EuInstance(Instance, TaggedResource, Machine):
                            "' --> Metadata device value:'" + \
                            str(meta_devices.get(meta_dev)) + "' (Not found in Instance's BDM)"
             raise Exception(err_buf)
+
+    def open_remote_file(self, filepath, mode):
+        f = self.ssh.sftp.file(filepath, mode)
+        return f
+
+    def sync_enis_sysconfig(self, prefix='eth'):
+        enis = self.ec2ops.connection.get_all_network_interfaces(
+            filters={'attachment.instance-id': self.id})
+        # Make sure we can fetch the subnet for each eni first...
+        subnets = {}
+        for eni in enis:
+            subnet = self.ec2ops.get_subnet(eni.subnet_id)
+            subnets[subnet.id] = subnet
+
+        # Add interface ifcfg files...
+        eni_ifcfg_files = ['/etc/sysconfig/network-scripts/ifcfg-{0}0'.format(prefix)]
+        for eni in enis:
+            if eni.attachment.device_index != 0:
+                attachment = eni.attachment
+                dev_name = '{0}{1}'.format(prefix, attachment.device_index)
+                net_script= ('DEVICE="{0}"\nBOOTPROTO="dhcp"\nONBOOT="yes"\n'
+                             'TYPE="Ethernet"\nUSERCTL="yes"\nPEERDNS="yes"\nIPV6INIT="no"\n'
+                             'PERSISTENT_DHCLIENT="1"'.format(dev_name))
+                if_file = '/etc/sysconfig/network-scripts/ifcfg-{0}'.format(dev_name)
+                f = None
+                self.log.debug('Attempting to write network-script for: {0}'.format(if_file))
+                try:
+                    f = self.open_remote_file(if_file, 'w')
+                    f.write(net_script)
+                    f.flush()
+                    eni_ifcfg_files.append(if_file)
+                finally:
+                    f.close()
+        # Add interface route files...
+        eni_route_files = ['/etc/sysconfig/network-scripts/route-{0}0'.format(prefix)]
+        for eni in enis:
+            if eni.attachment.device_index != 0:
+                attachment = eni.attachment
+                dev_name = '{0}{1}'.format(prefix, attachment.device_index)
+                subnet = subnets.get(eni.subnet_id)
+                net_info = get_network_info_for_cidr(subnet.cidr_block)
+                # todo find out what to use for the gateway here...
+                # Assume the gateway is the first available address...
+                gw = net_info.get('network').split('.')
+                gw = ".".join(str(x) for x in gw.append(int(gw.pop()) + 1))
+
+                route_script = ("default via {0} dev {1} table {2}\n"
+                                "{3} dev {1} src {3} table {2}\n"
+                                .format(gw, dev_name, attachment.device_index, subnet.cidr_block,
+                                        eni.private_ip_address))
+                route_file = '/etc/sysconfig/network-scripts/route-{0}'.format(dev_name)
+                f = None
+                self.log.debug('Attempting to write network-script for: {0}'.format(route_file))
+                try:
+                    f = self.open_remote_file(route_file, 'w')
+                    f.write(route_script)
+                    f.flush()
+                    eni_route_files.append(route_file)
+                finally:
+                    f.close()
+        # Add interface rule files...
+        eni_rule_files = ['/etc/sysconfig/network-scripts/rule-{0}0'.format(prefix)]
+        for eni in enis:
+            if eni.attachment.device_index != 0:
+                attachment = eni.attachment
+                dev_name = '{0}{1}'.format(prefix, attachment.device_index)
+                rule_script = "from {0}/32 table {1}\n".format(eni.private_ip_address,
+                                                               attachment.device_index)
+                rule_file = '/etc/sysconfig/network-scripts/route-{0}'.format(dev_name)
+                f = None
+                self.log.debug('Attempting to write network-script for: {0}'.format(rule_file))
+                try:
+                    f = self.open_remote_file(rule_file, 'w')
+                    f.write(rule_script)
+                    f.flush()
+                    eni_route_files.append(rule_file)
+                finally:
+                    f.close()
+        def remove_old_scripts(existing_list, current_eni_list):
+            for existing_script in existing_list:
+                existing_script = existing_script.strip()
+                found = False
+                for eni_file_name in current_eni_list:
+                    if re.search('^{0}$'.format(existing_script), eni_file_name) or \
+                            re.search('{0}\.\d+$'.format(eni_file_name), existing_script):
+                        found = True
+                        break
+                if not found:
+                    if self.is_file(existing_script):
+                        self.log.debug('No corresponding ENI found. Removing file:"{0}"'
+                                       .format(existing_script))
+                        self.sys('rm -f {0}'.format(existing_script))
+
+            
+        # Remove any old files, files for detached ENIs, etc..
+        existing_ifcfg_files = self.sys('ls /etc/sysconfig/network-scripts/ifcfg-{0}*'
+                                        .format(prefix))
+        remove_old_scripts(existing_ifcfg_files, eni_ifcfg_files)
+        existing_route_files = self.sys('ls /etc/sysconfig/network-scripts/route-{0}*'
+                                        .format(prefix))
+        remove_old_scripts(existing_route_files, eni_route_files)
+        existing_rule_files = self.sys('ls /etc/sysconfig/network-scripts/rule-{0}*'
+                                       .format(prefix))
+        remove_old_scripts(existing_rule_files, eni_rule_files)
+
+        self.log.info('Restarting network service for instance:{0}'.format(self.id))
+        self.sys('service network restart')
+        for x in range(20):
+            try:
+                test_port_status(self.ip_address, port=22)
+                break
+            except Exception as PE:
+                self.log.debug('{0}, Test Port Status. {1}:{2}. Elapsed:{3}. Result: {4}'
+                               .format(self.id, self.ip_address, 22, x, PE))
+                time.sleep(1)
+            self.refresh_ssh()
+        
+
+
+
