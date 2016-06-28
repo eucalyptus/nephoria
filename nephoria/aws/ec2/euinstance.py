@@ -2221,8 +2221,9 @@ class EuInstance(Instance, TaggedResource, Machine):
                 self.log.debug('{0}, Test Port Status. {1}:{2}. Elapsed:{3}. Result: {4}'
                                .format(self.id, self.ip_address, 22, x, PE))
                 time.sleep(1)
-            self.refresh_ssh()
-        
+        self.log.debug('Attempting to refresh ssh connection after syncing ENIs...')
+        self.refresh_ssh()
+
 
 
 
