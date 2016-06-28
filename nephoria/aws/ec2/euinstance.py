@@ -2120,16 +2120,54 @@ class EuInstance(Instance, TaggedResource, Machine):
             subnet = self.ec2ops.get_subnet(eni.subnet_id)
             subnets[subnet.id] = subnet
 
+        # Get network devices on the guest
+        devs = self.get_network_interfaces().keys() or []
+        if "{0}0".format(prefix) not in devs:
+            raise ValueError('Dev {0} not found in host devs:"{1}"'.format("{0}0".format(prefix),
+                                                                           ",".join(devs)))
+        # First force the default gateway to be device at index 0...
+        network_file_path = ' /etc/sysconfig/network'
+        new_buf = "GATEWAYDEV={0}0\n".format(prefix)
+        if self.is_present(network_file_path):
+            lines = self.sys('cat {0}'.format(network_file_path), code=0)
+            for line in lines:
+                if not re.search('GATEWAYDEV', line):
+                    new_buf += str(line) + "\n"
+        self.log.debug('Attempting to update gw info in: {0}:\n{1}'
+                       .format(network_file_path, new_buf))
+        backup_network_file_path = "{0}_backup".format(network_file_path).strip()
+        temp_network_file_path = "{0}_temp".format(network_file_path).strip()
+        f = None
+        if self.is_present(backup_network_file_path):
+            self.sys('rm -f {0}'.format(backup_network_file_path))
+        self.sys('cp {0} {1}'.format(network_file_path, backup_network_file_path))
+        self.ssh.open_sftp()
+        try:
+            f = self.open_remote_file(temp_network_file_path, 'w+')
+            f.write(new_buf)
+            f.flush()
+        except Exception as FE:
+            self.log.error('Error attempting to write to file:"{0}"'
+                           .format(temp_network_file_path))
+            raise
+        finally:
+            if f:
+                f.close()
+        self.sys('mv {0} {1}'.format(temp_network_file_path, network_file_path), code=0)
+        self.debug('Finished writing: {0}'.format(network_file_path))
         # Add interface ifcfg files...
         eni_ifcfg_files = ['/etc/sysconfig/network-scripts/ifcfg-{0}0'.format(prefix)]
         for eni in enis:
             if eni.attachment.device_index != 0:
                 attachment = eni.attachment
                 dev_name = '{0}{1}'.format(prefix, attachment.device_index)
+                if dev_name not in devs:
+                    raise ValueError(
+                        'Dev {0} not found in host devs:"{1}"'.format(dev_name, ",".join(devs)))
                 net_script= ('DEVICE="{0}"\nBOOTPROTO="dhcp"\nONBOOT="yes"\n'
                              'TYPE="Ethernet"\nUSERCTL="yes"\nPEERDNS="yes"\nIPV6INIT="no"\n'
                              'PERSISTENT_DHCLIENT="1"'.format(dev_name))
-                if_file = '/etc/sysconfig/network-scripts/ifcfg-{0}'.format(dev_name)
+                if_file = '/etc/sysconfig/network-scripts/ifcfg-{0}'.format(dev_name).strip()
                 f = None
                 self.log.debug('Attempting to write network-script for: {0}'.format(if_file))
                 try:
@@ -2138,52 +2176,72 @@ class EuInstance(Instance, TaggedResource, Machine):
                     f.flush()
                     eni_ifcfg_files.append(if_file)
                 finally:
-                    f.close()
+                    if f:
+                        f.close()
         # Add interface route files...
         eni_route_files = ['/etc/sysconfig/network-scripts/route-{0}0'.format(prefix)]
         for eni in enis:
             if eni.attachment.device_index != 0:
                 attachment = eni.attachment
                 dev_name = '{0}{1}'.format(prefix, attachment.device_index)
+                if dev_name not in devs:
+                    raise ValueError(
+                        'Dev {0} not found in host devs:"{1}"'.format(dev_name, ",".join(devs)))
                 subnet = subnets.get(eni.subnet_id)
+                self.log.debug('Getting route info for subnet:')
+                self.ec2ops.show_subnet(subnet)
                 net_info = get_network_info_for_cidr(subnet.cidr_block)
+                buf = "Network Info for subnet: {0}\n".format(subnet.id)
+                for key, value in net_info.iteritems():
+                    buf += "{0}:\t{1}\n".format(key, value)
+                self.log.debug(buf)
                 # todo find out what to use for the gateway here...
                 # Assume the gateway is the first available address...
                 gw = net_info.get('network').split('.')
-                gw = ".".join(str(x) for x in gw.append(int(gw.pop()) + 1))
+                last_octet = gw.pop()
+                last_octet = int(last_octet) + 1
+                gw.append(last_octet)
+                gw = ".".join(str(x) for x in gw)
 
                 route_script = ("default via {0} dev {1} table {2}\n"
                                 "{3} dev {1} src {3} table {2}\n"
                                 .format(gw, dev_name, attachment.device_index, subnet.cidr_block,
                                         eni.private_ip_address))
-                route_file = '/etc/sysconfig/network-scripts/route-{0}'.format(dev_name)
+                self.log.debug('Route info for eni: {0}, dev:{1}\n{2}'.format(eni.id, dev_name,
+                                                                              route_script))
+                route_file = '/etc/sysconfig/network-scripts/route-{0}'.format(dev_name).strip()
                 f = None
                 self.log.debug('Attempting to write network-script for: {0}'.format(route_file))
                 try:
-                    f = self.open_remote_file(route_file, 'w')
+                    f = self.open_remote_file(route_file, 'w+')
                     f.write(route_script)
                     f.flush()
                     eni_route_files.append(route_file)
                 finally:
-                    f.close()
+                    if f:
+                        f.close()
         # Add interface rule files...
         eni_rule_files = ['/etc/sysconfig/network-scripts/rule-{0}0'.format(prefix)]
         for eni in enis:
             if eni.attachment.device_index != 0:
                 attachment = eni.attachment
                 dev_name = '{0}{1}'.format(prefix, attachment.device_index)
+                if dev_name not in devs:
+                    raise ValueError(
+                        'Dev {0} not found in host devs:"{1}"'.format(dev_name, ",".join(devs)))
                 rule_script = "from {0}/32 table {1}\n".format(eni.private_ip_address,
                                                                attachment.device_index)
-                rule_file = '/etc/sysconfig/network-scripts/route-{0}'.format(dev_name)
+                rule_file = '/etc/sysconfig/network-scripts/route-{0}'.format(dev_name).strip()
                 f = None
                 self.log.debug('Attempting to write network-script for: {0}'.format(rule_file))
                 try:
-                    f = self.open_remote_file(rule_file, 'w')
+                    f = self.open_remote_file(rule_file, 'w+')
                     f.write(rule_script)
                     f.flush()
                     eni_route_files.append(rule_file)
                 finally:
-                    f.close()
+                    if f:
+                        f.close()
         def remove_old_scripts(existing_list, current_eni_list):
             for existing_script in existing_list:
                 existing_script = existing_script.strip()
@@ -2201,13 +2259,14 @@ class EuInstance(Instance, TaggedResource, Machine):
 
             
         # Remove any old files, files for detached ENIs, etc..
-        existing_ifcfg_files = self.sys('ls /etc/sysconfig/network-scripts/ifcfg-{0}*'
+
+        existing_ifcfg_files = self.sys('ls /etc/sysconfig/network-scripts/ | grep "^ifcfg-{0}"'
                                         .format(prefix))
         remove_old_scripts(existing_ifcfg_files, eni_ifcfg_files)
-        existing_route_files = self.sys('ls /etc/sysconfig/network-scripts/route-{0}*'
+        existing_route_files = self.sys('ls /etc/sysconfig/network-scripts/ | grep "^route-{0}"'
                                         .format(prefix))
         remove_old_scripts(existing_route_files, eni_route_files)
-        existing_rule_files = self.sys('ls /etc/sysconfig/network-scripts/rule-{0}*'
+        existing_rule_files = self.sys('ls /etc/sysconfig/network-scripts/ | grep "^rule-{0}"'
                                        .format(prefix))
         remove_old_scripts(existing_rule_files, eni_rule_files)
 

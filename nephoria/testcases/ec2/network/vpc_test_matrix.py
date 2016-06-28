@@ -71,6 +71,11 @@ class VpcBasics(CliTestRunner):
         'kwargs': {'help': 'Cidr network range for VPC(s) created in this test',
                    'default': "172.{0}.0.0/16"}}
 
+    _DEFAULT_CLI_ARGS['proxy_vmtype'] = {
+        'args': ['--proxy-vmtype'],
+        'kwargs': {'help': 'Vm type to use for proxy test instance',
+                   'default': 'm1.large'}}
+
     def post_init(self):
         self.test_id = randint(0, 100000)
         self.id = str(int(time.time()))
@@ -118,7 +123,9 @@ class VpcBasics(CliTestRunner):
                                  .format(zone))
             subnet = subnet[0]
             pi = self.user.ec2.run_image(image=self.emi, keypair=self.keypair, group=self.group,
-                                         subnet_id = subnet.id, zone=zone)[0]
+                                         subnet_id = subnet.id, zone=zone,
+                                         type=self.args.proxy_vmtype,
+                                         systemconnection=self.tc.sysadmin)[0]
             proxy_instances[zone] = pi
             self._proxy_instances = proxy_instances
         return pi
@@ -157,7 +164,8 @@ class VpcBasics(CliTestRunner):
         if count and len(enis) < count:
             for x in xrange(0, (count-len(enis))):
                 eni = self.user.ec2.connection.create_network_interface(subnet_id=subnet.id)
-                self.user.ec2.create_tags(eni.id, {self.test_tag_name, self.id})
+                self.user.ec2.create_tags(eni.id, {self.test_tag_name: self.id})
+                eni.update()
                 enis.append(eni)
         return enis
 
@@ -562,7 +570,8 @@ class VpcBasics(CliTestRunner):
                                             subnet_id=subnet_id,
                                             max=count,
                                             auto_connect=auto_connect,
-                                            monitor_to_running=False)
+                                            monitor_to_running=False,
+                                            systemconnection=self.tc.sysadmin)
         for instance in instances:
             instance.add_tag(key=self.test_name, value=self.test_id)
         if monitor_to_running:
