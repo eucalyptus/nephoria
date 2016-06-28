@@ -1416,7 +1416,10 @@ disable_root: false"""
         volume_id = volume_id
         while elapsed < timeout:
             try:
-                chk_volume = self.get_volume(volume_id=volume_id)
+                try:
+                    chk_volume = self.get_volume(volume_id=volume_id)
+                except EC2ResourceNotFoundException:
+                    chk_volume = None
                 if not chk_volume:
                     self.log.debug(str(volume_id) + ', Volume no longer exists on system, deleted')
                     break
