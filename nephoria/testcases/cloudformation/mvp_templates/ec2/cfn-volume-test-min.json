@@ -1,0 +1,31 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Volume Test - Create volume in given availability zone",
+
+  "Parameters": {
+      "Zone": {
+          "Description": "Availability zone",
+          "Type": "AWS::EC2::AvailabilityZone::Name"
+      }
+  },  
+
+  "Resources" : {
+     "Volume" : {
+         "Type" : "AWS::EC2::Volume",
+         "Properties" : {
+             "Size" : "5",
+             "AvailabilityZone" : { "Ref": "Zone" }
+         }
+     }
+  },
+
+  "Outputs" : {
+      "VolumeId": {
+          "Value": {
+              "Ref": "Volume"
+          },
+          "Description": "ID of Volume Created"
+      }
+  }
+}
