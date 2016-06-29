@@ -217,7 +217,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             except ValueError:
                 if validate:
                     raise
-                tb = self.ec2ops.get_traceback()
+                tb = get_traceback()
                 self.log.debug('Failed to update instance. Attempt:{0}/{1}'
                            .format(x, retries))
         if not ret:
@@ -978,7 +978,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 self.vol_write_random_data_get_md5(euvolume, overwrite=overwrite)
                 return True
             except:
-                self.log.debug("\n" + str(self.ec2ops.get_traceback()) +
+                self.log.debug("\n" + str(get_traceback()) +
                            "\nError caught in try_to_write_to_disk")
                 return False
 
@@ -1399,7 +1399,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 euvolume.md5 = md5
                 euvolume.md5len = length
         except Exception, e:
-            tb = self.ec2ops.get_traceback()
+            tb = get_traceback()
             print str(tb)
             raise Exception(str(self.id) + ": Failed to md5 attached volume: " + str(e))
         return md5
