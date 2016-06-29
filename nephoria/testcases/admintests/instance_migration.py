@@ -1,9 +1,10 @@
 #!/usr/bin/env python
-from nephoria.testcase_utils import wait_for_result
-from nephoria.testcase_utils.cli_test_runner import CliTestRunner
-from nephoria.testcontroller import TestController
 import copy
 import time
+from nephoria.testcase_utils import wait_for_result
+from nephoria.testcase_utils.cli_test_runner import CliTestRunner, \
+    SkipTestException
+from nephoria.testcontroller import TestController
 
 
 class InstanceMigration(CliTestRunner):
@@ -83,7 +84,7 @@ class InstanceMigration(CliTestRunner):
                     return node
         return ret_node
 
-    def test_instance_migration_basic(self, emi=None, volume=False):
+    def test1_basic_instance_migration(self, emi=None, volume=False):
         """
         Test Coverage:
             a) Runs an instance and migrates the instance using euserve-migrate-instances
@@ -96,9 +97,13 @@ class InstanceMigration(CliTestRunner):
 
         for zone in zones:
             if len(zone.node_controller_services) < 2:
-                self.log.debug("Not enough Node Controllers found in cluster to continue instance migration testing.")
+                self.log.debug("Not enough Node Controllers found in cluster "
+                               "to continue instance migration testing.")
                 continue
-            euinstances = self.tc.admin.ec2.run_image(image=emi, keypair=self.keypair, group=self.group, zone=zone.name)
+            euinstances = self.tc.admin.ec2.run_image(image=emi,
+                                                      keypair=self.keypair,
+                                                      group=self.group,
+                                                      zone=zone.name)
             self.tc.test_resources['_instances'].append(euinstances[0])
             test_instance = euinstances[0]
 
@@ -123,17 +128,35 @@ class InstanceMigration(CliTestRunner):
 
             if volume_device:
                 test_instance.sys("ls " + volume_device, code=0)
+            self.tc.admin.ec2.terminate_instances(euinstances[0])
+            if volume_device:
+                try:
+                    self.tc.admin.ec2.delete_volume(euvol)
+                except:
+                    raise Exception("Failed to delete volume: " + str(euvol.id))
 
-    def test_instance_migration_with_volume(self):
-        self.test_instance_migration_basic(volume=True)
+    def test2_basic_instance_with_volume(self):
+        self.test1_basic_instance_migration(volume=True)
 
-    def test_ebs_backed_instance_migration(self):
+    def test3_ebs_backed_instance_migration(self, volume=False):
         ebs_emi = self.tc.admin.ec2.get_emi(root_device_type="ebs")
-        self.test_instance_migration_basic(emi=ebs_emi)
+        if ebs_emi is None:
+            raise SkipTestException('Skipping test. EBS emi not found.')
+        else:
+            self.test1_basic_instance_migration(emi=ebs_emi, volume=volume)
 
-    def test_ebs_instance_migration_with_volume(self):
-        ebs_emi = self.tc.admin.ec2.get_emi(root_device_type="ebs")
-        self.test_instance_migration_basic(emi=ebs_emi, volume=True)
+    def test4_ebs_instance_with_volume(self):
+        self.test3_ebs_backed_instance_migration(volume=True)
+
+    def test5_pv_instance_migration(self, volume=False):
+        pv_emi = self.tc.admin.ec2.get_emi(virtualization_type="paravirtual")
+        if pv_emi is None:
+            raise SkipTestException('Skipping test. '
+                                    'Paravirtual emi not found.')
+        self.test1_basic_instance_migration(emi=pv_emi, volume=volume)
+
+    def test6_pv_instance_with_volume(self):
+        self.test5_pv_instance_migration(volume=True)
 
     def clean_method(self):
         # instances = getattr(self, 'instances', [])
