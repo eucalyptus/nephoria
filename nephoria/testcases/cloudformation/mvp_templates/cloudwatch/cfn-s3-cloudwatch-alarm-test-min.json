@@ -1,0 +1,62 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "S3 Alarm Test - Create S3 Alarms for supported metrics off a given Comparison Operator and Statistic",
+
+  "Parameters" : {
+        "ComparisonOperator": {
+            "Description":"Comparison Operator for Alarm",
+            "Type":"String",
+            "Default" : "GreaterThanOrEqualToThreshold",
+            "AllowedValues" : [ "GreaterThanOrEqualToThreshold","GreaterThanThreshold","LessThanThreshold","LessThanOrEqualToThreshold" ],
+            "ConstraintDescription" : "must be a valid arithmetic operation to use when comparing the specified Statistic and Threshold. The specified Statistic value is used as the first operand."
+        },
+        "Statistic": {
+            "Description":"The statistic to apply to the alarm's associated metric",
+            "Type":"String",
+            "Default" : "Minimum",
+            "AllowedValues" : [ "SampleCount","Average","Sum","Minimum","Maximum" ],
+            "ConstraintDescription" : "must be a valid statistic that can be applied to the alarm's associated metric."
+        }
+  },
+  
+  "Resources" : {
+      "BucketSizeBytes": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for S3 BucketSizeBytes Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "BucketSizeBytes",
+              "Namespace": "AWS/S3",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "NumberOfObjects": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for S3 NumberOfObjects Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "NumberOfObjects",
+              "Namespace": "AWS/S3",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      }
+  },
+
+  "Outputs" : {
+      "BucketSizeBytes": {
+          "Value": { "Ref": "BucketSizeBytes" },
+          "Description": "ID of Cloudwatch Alarm based off of S3 BucketSizeBytes Metric"
+      },
+      "NumberOfObjects": {
+          "Value": { "Ref": "NumberOfObjects" },
+          "Description": "ID of Cloudwatch Alarm based off of S3 NumberOfObjects Metric"
+      }
+  }
+}
