@@ -1,0 +1,215 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "EC2 EBS Alarm Test - Create Alarms for supported metrics off a given Comparison Operator and Statistic",
+
+  "Parameters" : {
+        "ComparisonOperator": {
+            "Description":"Comparison Operator for Alarm",
+            "Type":"String",
+            "Default" : "GreaterThanOrEqualToThreshold",
+            "AllowedValues" : [ "GreaterThanOrEqualToThreshold","GreaterThanThreshold","LessThanThreshold","LessThanOrEqualToThreshold" ],
+            "ConstraintDescription" : "must be a valid arithmetic operation to use when comparing the specified Statistic and Threshold. The specified Statistic value is used as the first operand."
+        },
+        "Statistic": {
+            "Description":"The statistic to apply to the alarm's associated metric",
+            "Type":"String",
+            "Default" : "Minimum",
+            "AllowedValues" : [ "SampleCount","Average","Sum","Minimum","Maximum" ],
+            "ConstraintDescription" : "must be a valid statistic that can be applied to the alarm's associated metric."
+        }
+  },
+  
+  "Resources" : {
+      "VolumeReadBytes": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 EBS VolumeReadBytes Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "VolumeReadBytes",
+              "Namespace": "AWS/EBS",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "VolumeWriteBytes": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 EBS VolumeWriteBytes Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "VolumeWriteBytes",
+              "Namespace": "AWS/EBS",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "VolumeReadOps": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 EBS VolumeReadOps Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "VolumeReadOps",
+              "Namespace": "AWS/EBS",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "VolumeWriteOps": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 EBS VolumeWriteOps Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "VolumeWriteOps",
+              "Namespace": "AWS/EBS",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "VolumeTotalReadTime": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 EBS VolumeTotalReadTime Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "VolumeTotalReadTime",
+              "Namespace": "AWS/EBS",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "VolumeTotalWriteTime": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 EBS VolumeTotalWriteTime Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "VolumeTotalWriteTime",
+              "Namespace": "AWS/EBS",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "VolumeIdleTime": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 EBS VolumeIdleTime Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "VolumeIdleTime",
+              "Namespace": "AWS/EBS",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "VolumeQueueLength": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 EBS VolumeQueueLength Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "VolumeQueueLength",
+              "Namespace": "AWS/EBS",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "VolumeThroughputPercentage": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 EBS VolumeThroughputPercentage Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "VolumeThroughputPercentage",
+              "Namespace": "AWS/EBS",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "VolumeConsumedReadWriteOps": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 EBS VolumeConsumedReadWriteOps Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "VolumeConsumedReadWriteOps",
+              "Namespace": "AWS/EBS",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "BurstBalance": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 EBS BurstBalance Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "BurstBalance",
+              "Namespace": "AWS/EBS",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      }
+  },
+
+  "Outputs" : {
+      "VolumeReadBytes": {
+          "Value": { "Ref": "VolumeReadBytes" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 EBS VolumeReadBytes Metric"
+      },
+      "VolumeWriteBytes": {
+          "Value": { "Ref": "VolumeWriteBytes" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 EBS VolumeWriteBytes Metric"
+      },
+      "VolumeReadOps": {
+          "Value": { "Ref": "VolumeReadOps" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 EBS VolumeReadOps Metric"
+      },
+      "VolumeWriteOps": {
+          "Value": { "Ref": "VolumeWriteOps" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 EBS VolumeWriteOps Metric"
+      },
+      "VolumeTotalReadTime": {
+          "Value": { "Ref": "VolumeTotalReadTime" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 EBS VolumeTotalReadTime Metric"
+      },
+      "VolumeTotalWriteTime": {
+          "Value": { "Ref": "VolumeTotalWriteTime" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 EBS VolumeTotalWriteTime Metric"
+      },
+      "VolumeIdleTime": {
+          "Value": { "Ref": "VolumeIdleTime" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 EBS VolumeIdleTime Metric"
+      },
+      "VolumeQueueLength": {
+          "Value": { "Ref": "VolumeQueueLength" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 EBS VolumeQueueLength Metric"
+      },
+      "VolumeThroughputPercentage": {
+          "Value": { "Ref": "VolumeThroughputPercentage" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 EBS VolumeThroughputPercentage Metric"
+      },
+      "VolumeConsumedReadWriteOps": {
+          "Value": { "Ref": "VolumeConsumedReadWriteOps" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 EBS VolumeConsumedReadWriteOps Metric"
+      },
+      "BurstBalance": {
+          "Value": { "Ref": "BurstBalance" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 EBS BurstBalance Metric"
+      }
+  }
+}

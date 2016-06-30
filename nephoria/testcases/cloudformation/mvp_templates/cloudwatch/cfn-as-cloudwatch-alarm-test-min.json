@@ -1,7 +1,7 @@
 {
   "AWSTemplateFormatVersion" : "2010-09-09",
 
-  "Description" : "Alarm Test - Create Alarm off a given Comparison Operator and Statistic",
+  "Description" : "Auto Scaling Alarm Test - Create supported metric alarms off a given Comparison Operator and Statistic",
 
   "Parameters" : {
         "ComparisonOperator": {
