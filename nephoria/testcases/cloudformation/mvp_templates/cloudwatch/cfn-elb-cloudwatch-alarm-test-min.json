@@ -1,0 +1,249 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Elastic Load Balancing Alarm Test - Create ELB Alarms for supported metrics off a given Comparison Operator and Statistic",
+
+  "Parameters" : {
+        "ComparisonOperator": {
+            "Description":"Comparison Operator for Alarm",
+            "Type":"String",
+            "Default" : "GreaterThanOrEqualToThreshold",
+            "AllowedValues" : [ "GreaterThanOrEqualToThreshold","GreaterThanThreshold","LessThanThreshold","LessThanOrEqualToThreshold" ],
+            "ConstraintDescription" : "must be a valid arithmetic operation to use when comparing the specified Statistic and Threshold. The specified Statistic value is used as the first operand."
+        },
+        "Statistic": {
+            "Description":"The statistic to apply to the alarm's associated metric",
+            "Type":"String",
+            "Default" : "Minimum",
+            "AllowedValues" : [ "SampleCount","Average","Sum","Minimum","Maximum" ],
+            "ConstraintDescription" : "must be a valid statistic that can be applied to the alarm's associated metric."
+        }
+  },
+  
+  "Resources" : {
+      "HealthyHostCount": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for ELB HealthyHostCount Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "HealthyHostCount",
+              "Namespace": "AWS/ELB",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "UnHealthyHostCount": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for ELB UnHealthyHostCount Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "UnHealthyHostCount",
+              "Namespace": "AWS/ELB",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "RequestCount": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for ELB RequestCount Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "RequestCount",
+              "Namespace": "AWS/ELB",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "Latency": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for ELB Latency Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "Latency",
+              "Namespace": "AWS/ELB",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "SurgeQueueLength": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for ELB SurgeQueueLength Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "SurgeQueueLength",
+              "Namespace": "AWS/ELB",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "SpilloverCount": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for ELB SpilloverCount Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "SpilloverCount",
+              "Namespace": "AWS/ELB",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "HTTPCodeELB4XX": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for ELB HTTPCode_ELB_4XX Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "HTTPCode_ELB_4XX",
+              "Namespace": "AWS/ELB",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "HTTPCodeELB5XX": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for ELB HTTPCode_ELB_5XX Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "HTTPCode_ELB_5XX",
+              "Namespace": "AWS/ELB",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "HTTPCodeBackend2XX": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for ELB HTTPCode_Backend_2XX Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "HTTPCode_Backend_2XX",
+              "Namespace": "AWS/ELB",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "HTTPCodeBackend3XX": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for ELB HTTPCode_Backend_3XX Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "HTTPCode_Backend_3XX",
+              "Namespace": "AWS/ELB",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "HTTPCodeBackend4XX": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for ELB HTTPCode_Backend_4XX Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "HTTPCode_Backend_4XX",
+              "Namespace": "AWS/ELB",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "HTTPCodeBackend5XX": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for ELB HTTPCode_Backend_5XX Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "HTTPCode_Backend_5XX",
+              "Namespace": "AWS/ELB",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "BackendConnectionErrors": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for ELB BackendConnectionErrors Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "BackendConnectionErrors",
+              "Namespace": "AWS/ELB",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      }
+  },
+
+  "Outputs" : {
+      "HealthyHostCount": {
+          "Value": { "Ref": "HealthyHostCount" },
+          "Description": "ID of Cloudwatch Alarm based off of ELB HealthyHostCount Metric"
+      },
+      "UnHealthyHostCount": {
+          "Value": { "Ref": "UnHealthyHostCount" },
+          "Description": "ID of Cloudwatch Alarm based off of ELB UnHealthyHostCount Metric"
+      },
+      "RequestCount": {
+          "Value": { "Ref": "RequestCount" },
+          "Description": "ID of Cloudwatch Alarm based off of ELB RequestCount Metric"
+      },
+      "Latency": {
+          "Value": { "Ref": "Latency" },
+          "Description": "ID of Cloudwatch Alarm based off of ELB Latency Metric"
+      },
+      "SurgeQueueLength": {
+          "Value": { "Ref": "SurgeQueueLength" },
+          "Description": "ID of Cloudwatch Alarm based off of ELB SurgeQueueLength Metric"
+      },
+      "SpilloverCount": {
+          "Value": { "Ref": "SpilloverCount" },
+          "Description": "ID of Cloudwatch Alarm based off of ELB SpilloverCount Metric"
+      },
+      "HTTPCodeELB4XX": {
+          "Value": { "Ref": "HTTPCodeELB4XX" },
+          "Description": "ID of Cloudwatch Alarm based off of ELB HTTPCode_ELB_4XX Metric"
+      },
+      "HTTPCodeELB5XX": {
+          "Value": { "Ref": "HTTPCodeELB5XX" },
+          "Description": "ID of Cloudwatch Alarm based off of ELB HTTPCode_ELB_5XX Metric"
+      },
+      "HTTPCodeBackend2XX": {
+          "Value": { "Ref": "HTTPCodeBackend2XX" },
+          "Description": "ID of Cloudwatch Alarm based off of ELB HTTPCode_Backend_2XX Metric"
+      },
+      "HTTPCodeBackend3XX": {
+          "Value": { "Ref": "HTTPCodeBackend3XX" },
+          "Description": "ID of Cloudwatch Alarm based off of ELB HTTPCode_Backend_3XX Metric"
+      },
+      "HTTPCodeBackend4XX": {
+          "Value": { "Ref": "HTTPCodeBackend4XX" },
+          "Description": "ID of Cloudwatch Alarm based off of ELB HTTPCode_Backend_4XX Metric"
+      },
+      "HTTPCodeBackend5XX": {
+          "Value": { "Ref": "HTTPCodeBackend5XX" },
+          "Description": "ID of Cloudwatch Alarm based off of ELB HTTPCode_Backend_5XX Metric"
+      },
+      "BackendConnectionErrors": {
+          "Value": { "Ref": "BackendConnectionErrors" },
+          "Description": "ID of Cloudwatch Alarm based off of ELB BackendConnectionErrors Metric"
+      }
+  }
+}
