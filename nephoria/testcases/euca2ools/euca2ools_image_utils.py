@@ -470,7 +470,7 @@ class Euca2oolsImageUtils(object):
                       timeout=0,
                       image_check_timeout=300,
                       uniquebucket=True,
-                      retry=True):
+                      retry=False):
         '''
         Bundle an image on a 'machine'.
         where credpath to creds on machine
