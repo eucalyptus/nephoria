@@ -1,0 +1,266 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "EC2 Alarm Test - Create EC2 Alarms for supported metrics off a given Comparison Operator and Statistic",
+
+  "Parameters" : {
+        "ComparisonOperator": {
+            "Description":"Comparison Operator for Alarm",
+            "Type":"String",
+            "Default" : "GreaterThanOrEqualToThreshold",
+            "AllowedValues" : [ "GreaterThanOrEqualToThreshold","GreaterThanThreshold","LessThanThreshold","LessThanOrEqualToThreshold" ],
+            "ConstraintDescription" : "must be a valid arithmetic operation to use when comparing the specified Statistic and Threshold. The specified Statistic value is used as the first operand."
+        },
+        "Statistic": {
+            "Description":"The statistic to apply to the alarm's associated metric",
+            "Type":"String",
+            "Default" : "Minimum",
+            "AllowedValues" : [ "SampleCount","Average","Sum","Minimum","Maximum" ],
+            "ConstraintDescription" : "must be a valid statistic that can be applied to the alarm's associated metric."
+        }
+  },
+  
+  "Resources" : {
+      "CPUCreditUsage": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 CPUCreditUsage Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "CPUCreditUsage",
+              "Namespace": "AWS/EC2",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "CPUCreditBalance": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 CPUCreditBalance Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "CPUCreditBalance",
+              "Namespace": "AWS/EC2",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "CPUUtilization": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 CPUUtilization Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "CPUUtilization",
+              "Namespace": "AWS/EC2",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "DiskReadOps": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 DiskReadOps Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "DiskReadOps",
+              "Namespace": "AWS/EC2",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "DiskWriteOps": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 DiskWriteOps Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "DiskWriteOps",
+              "Namespace": "AWS/EC2",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "DiskReadBytes": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 DiskReadBytes Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "DiskReadBytes",
+              "Namespace": "AWS/EC2",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "DiskWriteBytes": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 DiskWriteBytes Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "DiskWriteBytes",
+              "Namespace": "AWS/EC2",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "NetworkIn": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 NetworkIn Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "NetworkIn",
+              "Namespace": "AWS/EC2",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "NetworkOut": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 NetworkOut Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "NetworkOut",
+              "Namespace": "AWS/EC2",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "NetworkPacketsIn": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 NetworkPacketsIn Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "NetworkPacketsIn",
+              "Namespace": "AWS/EC2",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "NetworkPacketsOut": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 NetworkPacketsOut Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "NetworkPacketsOut",
+              "Namespace": "AWS/EC2",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "StatusCheckFailed": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 StatusCheckFailed Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "StatusCheckFailed",
+              "Namespace": "AWS/EC2",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "StatusCheckFailedInstance": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 StatusCheckFailed_Instance Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "StatusCheckFailed_Instance",
+              "Namespace": "AWS/EC2",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "StatusCheckFailedSystem": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for EC2 StatusCheckFailed_System Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "StatusCheckFailed_System",
+              "Namespace": "AWS/EC2",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      }
+  },
+
+  "Outputs" : {
+      "CPUCreditUsage": {
+          "Value": { "Ref": "CPUCreditUsage" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 CPUCreditUsage Metric"
+      },
+      "CPUCreditBalance": {
+          "Value": { "Ref": "CPUCreditBalance" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 CPUCreditBalance Metric"
+      },
+      "CPUUtilization": {
+          "Value": { "Ref": "CPUUtilization" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 CPUUtilization Metric"
+      },
+      "DiskReadOps": {
+          "Value": { "Ref": "DiskReadOps" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 DiskReadOps Metric"
+      },
+      "DiskWriteOps": {
+          "Value": { "Ref": "DiskWriteOps" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 DiskWriteOps Metric"
+      },
+      "DiskReadBytes": {
+          "Value": { "Ref": "DiskReadBytes" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 DiskReadBytes Metric"
+      },
+      "DiskWriteBytes": {
+          "Value": { "Ref": "DiskWriteBytes" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 DiskWriteBytes Metric"
+      },
+      "NetworkIn": {
+          "Value": { "Ref": "NetworkIn" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 NetworkIn Metric"
+      },
+      "NetworkOut": {
+          "Value": { "Ref": "NetworkOut" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 NetworkOut Metric"
+      },
+      "NetworkPacketsIn": {
+          "Value": { "Ref": "NetworkPacketsIn" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 NetworkPacketsIn Metric"
+      },
+      "NetworkPacketsOut": {
+          "Value": { "Ref": "NetworkPacketsOut" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 NetworkPacketsOut Metric"
+      },
+      "StatusCheckFailed": {
+          "Value": { "Ref": "StatusCheckFailed" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 StatusCheckFailed Metric"
+      },
+      "StatusCheckFailedInstance": {
+          "Value": { "Ref": "StatusCheckFailedInstance" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 StatusCheckFailed_Instance Metric"
+      },
+      "StatusCheckFailedSystem": {
+          "Value": { "Ref": "StatusCheckFailedSystem" },
+          "Description": "ID of Cloudwatch Alarm based off of EC2 StatusCheckFailed_System Metric"
+      }
+  }
+}
