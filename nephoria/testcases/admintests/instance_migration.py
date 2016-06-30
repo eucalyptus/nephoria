@@ -36,7 +36,7 @@ class InstanceMigration(CliTestRunner):
                 except:
                     pass
                 if not emi:
-                    emi = self.tc.admin.ec2.get_emi()
+                    emi = self.tc.admin.ec2.get_emi(basic_image=True)
             setattr(self, '__emi', emi)
         return emi
 
