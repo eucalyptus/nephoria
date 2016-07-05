@@ -226,6 +226,8 @@ class GenericTemplateRun(CliTestRunner):
         """
         if self.args.capabilities:
             capabilities = self.args.capabilities.split()
+        else:
+            capabilities = None
 
         """
         Make sure timeout is set to minutes.
@@ -256,6 +258,7 @@ class GenericTemplateRun(CliTestRunner):
                                    template_body=temp_body,
                                    parameters=parameters,
                                    disable_rollback=self.disable_rollback,
+                                   capabilities=capabilities,
                                    tags=tags,
                                    on_failure=self.on_failure)
             except BotoServerError as e:
@@ -269,6 +272,7 @@ class GenericTemplateRun(CliTestRunner):
                                    template_url=url,
                                    parameters=parameters,
                                    disable_rollback=self.disable_rollback,
+                                   capabilities=capabilities,
                                    tags=tags,
                                    on_failure=self.on_failure)
             except BotoServerError as e:

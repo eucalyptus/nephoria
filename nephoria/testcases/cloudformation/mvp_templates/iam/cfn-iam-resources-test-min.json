@@ -1,0 +1,110 @@
+{
+    "AWSTemplateFormatVersion":"2010-09-09",
+
+    "Description":"IAM Resources - MVP for supported IAM resources",
+
+    "Resources" : {
+        "User" : {
+            "Type": "AWS::IAM::User"
+        },
+
+        "AccessKey" : {
+            "Type": "AWS::IAM::AccessKey",
+            "Properties" : {
+                "UserName" : { "Ref" : "User" }
+            }
+        },
+   
+        "Group" : {
+            "Type": "AWS::IAM::Group"
+        },
+
+        "UserToGroupAddition" : {
+            "Type": "AWS::IAM::UserToGroupAddition",
+            "Properties": {
+                "GroupName" : { "Ref" : "Group" },
+                "Users" : [ { "Ref" : "User" } ]
+            }
+        },
+
+        "Policy" : {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "Roles" : [ { "Ref" : "Role" } ],
+                "PolicyName" : "root",
+                "PolicyDocument": {
+                    "Version" : "2012-10-17",
+                    "Statement": [
+                        { "Effect": "Allow", "Action": "*", "Resource": "*" }
+                    ]
+                }
+            }
+        },
+ 
+        "Role" : {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                   "Version" : "2012-10-17",
+                   "Statement": [ {
+                      "Effect": "Allow",
+                      "Principal": {
+                         "Service": [ "ec2.amazonaws.com" ]
+                      },
+                      "Action": [ "sts:AssumeRole" ]
+                   } ]
+                }
+            }
+        },
+
+        "InstanceProfile" : {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties" : {
+                "Path" : "/",
+                "Roles": [ { "Ref" : "Role" } ]
+            }
+        }
+    },
+
+    "Outputs" : {
+        "UserId" : {
+            "Description" : "ARN of User",
+            "Value" : { "Fn::GetAtt": [ "User", "Arn" ] }
+        },
+
+        "AccessKeyId" : {
+            "Description" : "Access Key ID ",
+            "Value" : { "Ref" : "AccessKey" }
+        },
+
+        "AccessKeySecretKeyId" : {
+            "Description" : "Secret Access Key",
+            "Value" : { "Fn::GetAtt" : [ "AccessKey", "SecretAccessKey" ] }
+        },
+
+        "GroupId" : {
+            "Description" : "ARN of Group",
+            "Value" : { "Fn::GetAtt": [ "Group", "Arn" ] }
+        },
+
+        "UserToGroupAdditionId" : {
+            "Description" : "ID of UserToGroupAddition",
+            "Value" : { "Ref" : "UserToGroupAddition" }
+        },
+
+        "PolicyId" : {
+            "Description" : "ID of Policy",
+            "Value" : { "Ref" : "Policy" }
+        },
+
+        "RoleId" : {
+            "Description" : "ARN of Role",
+            "Value" : { "Fn::GetAtt": [ "Role", "Arn" ] }
+        },
+
+        "InstanceProfileId" : {
+            "Description" : "ARN of Instance Profile",
+            "Value" : { "Fn::GetAtt": [ "InstanceProfile", "Arn" ] }
+        }
+    }
+}
