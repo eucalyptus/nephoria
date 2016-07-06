@@ -116,6 +116,19 @@ class VpcBasics(CliTestRunner):
             raise ValueError('Must provide zone for get_proxy_instance. Got:"{0}"'.format(zone))
         proxy_instances = getattr(self, '_proxy_instances', {})
         pi =  proxy_instances.get(zone, None)
+        if pi:
+            try:
+                pi.update()
+                if pi.status != "running":
+                    try:
+                        pi.terminate()
+                    except:
+                        pass
+                    pi = None
+            except Exception as E:
+                self.log.debug('{0}\nIgnoring error caught while fetching proxy instance '
+                               'status:"{1}'.format(get_traceback(), E))
+                pi = None
         if not pi:
             subnet = self.user.ec2.get_default_subnets(zone=zone)
             if not subnet:
@@ -163,7 +176,8 @@ class VpcBasics(CliTestRunner):
         enis = self.user.ec2.connection.get_all_network_interfaces(filters=filters) or []
         if count and len(enis) < count:
             for x in xrange(0, (count-len(enis))):
-                eni = self.user.ec2.connection.create_network_interface(subnet_id=subnet.id)
+                eni = self.user.ec2.connection.create_network_interface(
+                    subnet_id=subnet.id, description='This was created by: {0}'.format(self.id))
                 self.user.ec2.create_tags(eni.id, {self.test_tag_name: self.id})
                 eni.update()
                 enis.append(eni)
@@ -358,7 +372,7 @@ class VpcBasics(CliTestRunner):
         ret_list = existing + new_vpcs
         return ret_list
 
-    def get_test_subnets_for_vpc(self, vpc, count=1):
+    def get_test_subnets_for_vpc(self, vpc, zone=None, count=1):
         """
         Fetch a given number of subnets within the provided VPC by either finding existing
         or creating new subnets to meet the count requested.
@@ -366,8 +380,10 @@ class VpcBasics(CliTestRunner):
         :param count: number of subnets requested
         :return: list of subnets
         """
-        existing = self.user.ec2.get_all_subnets(filters={'vpc-id': vpc.id,
-                                                          'tag-key': self.test_tag_name})
+        filters = {'vpc-id': vpc.id, 'tag-key': self.test_tag_name}
+        if zone:
+            filters['availabilityZone'] = zone
+        existing = self.user.ec2.get_all_subnets(filters=filters)
         if len(existing) >= count:
             return  existing[0:count]
         needed = count - len(existing)

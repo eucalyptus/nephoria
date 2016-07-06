@@ -67,7 +67,8 @@ from nephoria import CleanTestResourcesException
 from nephoria.baseops.botobaseops import BotoBaseOps
 from nephoria.testcase_utils import wait_for_result
 from cloud_utils.net_utils import sshconnection, ping, is_address_in_network
-from cloud_utils.log_utils import printinfo, get_traceback, markup, red
+from cloud_utils.log_utils import printinfo, get_traceback
+from cloud_utils.log_utils import markup, red, TextStyle, ForegroundColor, BackGroundColor
 from nephoria.aws.ec2.euinstance import EuInstance
 from nephoria.aws.ec2.windows_instance import WinInstance
 from nephoria.aws.ec2.euvolume import EuVolume
@@ -392,9 +393,12 @@ disable_root: false"""
         finally:
             if popen:
                 try:
-                    popen.stdin.close()
-                    popen.stdout.close()
-                    popen.stderr.close()
+                    if popen.stdin:
+                        popen.stdin.close()
+                    if popen.stdout:
+                        popen.stdout.close()
+                    if popen.stderr:
+                        popen.stderr.close()
                 except Exception as FDE:
                     self.log.warning('get_windows_instance_password, err closing fds:"{0}"'
                                      .format(FDE))
@@ -586,34 +590,6 @@ disable_root: false"""
         self.log.debug('AFTER removing all rules...')
         self.show_security_group(group)
         return group
-
-    def show_security_group(self, group):
-        try:
-            from prettytable import PrettyTable, ALL
-        except ImportError as IE:
-            self.log.info('No pretty table import failed:' + str(IE))
-            return
-        group = self.get_security_group(id=group.id)
-        if not group:
-            raise ValueError('Show sec group failed. Could not fetch group:'
-                             + str(group))
-        header = PrettyTable(["Security Group:" + group.name + "/" + group.id])
-        table = PrettyTable(["CIDR_IP", "SRC_GRP_NAME",
-                             "SRC_GRP_ID", "OWNER_ID", "PORT",
-                             "END_PORT", "PROTO"])
-        table.align["CIDR_IP"] = 'l'
-        table.padding_width = 1
-        for rule in group.rules:
-            port = rule.from_port
-            end_port = rule.to_port
-            proto = rule.ip_protocol
-            for grant in rule.grants:
-                table.add_row([grant.cidr_ip, grant.name,
-                               grant.group_id, grant.owner_id, port,
-                               end_port, proto])
-        table.hrules = ALL
-        header.add_row([str(table)])
-        self.log.info("\n{0}".format(str(header)))
 
     def revoke_security_group(self, group, from_port, to_port=None, protocol="tcp",
                               src_security_group_name=None, src_security_group_owner_id=None,
@@ -839,13 +815,30 @@ disable_root: false"""
         if not isinstance(subnet, BotoSubnet):
              raise ValueError('show_subnet passed on non Subnet type: "{0}:{1}"'
                               .format(subnet, type(subnet)))
-        title = markup('  SUBNET SUMMARY: "{0}"'.format(subnet.id), markups=[1,94])
+        title = '  {0} "{1}"'.format(markup('SUBNET SUMMARY:', markups=[TextStyle.BOLD]),
+                                     markup(subnet.id, markups=[TextStyle.BOLD,
+                                                                ForegroundColor.BLUE,
+                                                                BackGroundColor.BG_WHITE]))
         main_pt = PrettyTable([title])
         main_pt.align[title] = 'l'
         main_pt.padding_width = 0
         mainbuf = ""
-        summary_pt = PrettyTable(["VPC ID", "CIDR BLOCK", "AVAIL IP CNT", "MAP PUB IP",
-                                  "STATE", "ZONE", "ZONE DEFAULT"])
+        vpc_header = "VPC ID".ljust(12)
+        cidr_header = "CIDR BLOCK".ljust(20)
+        avail_ip_cnt_header = "AVAIL ADDRS"
+        map_pub_ip_header = "MAP PUB IP"
+        state_header = "STATE".ljust(12)
+        try:
+            z_len = 0
+            for zone in self.get_zone_names():
+                if len(zone) > z_len:
+                    z_len = len(zone)
+            zone_header = "ZONE".ljust(z_len)
+        except:
+            zone_header = "ZONE"
+        zone_def_header = "ZONE DEFAULT"
+        summary_pt = PrettyTable([vpc_header, cidr_header, avail_ip_cnt_header, map_pub_ip_header,
+                      state_header, zone_header, zone_def_header])
         summary_pt.padding_width = 0
         if subnet:
             summary_pt.add_row([subnet.vpc_id, subnet.cidr_block,
@@ -866,7 +859,8 @@ disable_root: false"""
 
     def show_subnets(self, subnets=None, printmethod=None, verbose=None,
                      show_tags=True, printme=True):
-        ret_buf = markup('--------------SUBNET LIST--------------', markups=[1,4,94])
+        ret_buf = markup('--------------SUBNET LIST--------------',
+                         markups=[TextStyle.BOLD, ForegroundColor.BLUE, BackGroundColor.BG_WHITE])
         if verbose is None:
             verbose = self._use_verbose_requests
         if not subnets:
@@ -3362,6 +3356,7 @@ disable_root: false"""
                                             auto_eip=False,
                                             groups=None,
                                             eip_domain=None,
+                                            delete_on_termination=True,
                                             description='Nephoria Test ENI',
                                             network_interface_collection=None):
         """
@@ -3443,7 +3438,7 @@ disable_root: false"""
         # Create the interface specification
         interface = NetworkInterfaceSpecification(device_index=device_index,
                                                   network_interface_id=eni.id,
-                                                  delete_on_termination=True,
+                                                  delete_on_termination=delete_on_termination,
                                                   associate_public_ip_address=associate_public_ip_address,
                                                   description=description)
         network_interface_collection = network_interface_collection or NetworkInterfaceCollection()
@@ -5905,6 +5900,8 @@ disable_root: false"""
         title = markup("Security Group: {0}/{1}, VPC: {2}"
                             .format(group.name, group.id, group.vpc_id))
         maintable = PrettyTable([title])
+        maintable.border = False
+        maintable.align = "l"
         table = PrettyTable(["CIDR_IP", "SRC_GRP_NAME",
                              "SRC_GRP_ID", "OWNER_ID", "PORT",
                              "END_PORT", "PROTO"])

@@ -50,6 +50,9 @@ from boto.ec2.instance import Instance
 from nephoria.aws.ec2.euvolume import EuVolume
 from cloud_utils.log_utils import eulogger, get_line, markup
 from nephoria.euca.taggedresource import TaggedResource
+from cloud_utils.log_utils import get_traceback, markup, TextStyle, ForegroundColor, \
+    BackGroundColor
+from boto.ec2.networkinterface import NetworkInterface
 from nephoria.testcase_utils import wait_for_result
 from cloud_utils.log_utils import get_traceback, red
 from cloud_utils.net_utils import test_port_status
@@ -2164,6 +2167,61 @@ class WinInstance(Instance, TaggedResource):
                     raise Exception("Missing volumes post reboot:" + str(msg) +
                                     "\n")
         self.debug(self.id+" start_instance_and_verify Success")
+
+    def show_enis(self, printme=True):
+        buf = ""
+        try:
+            self.update()
+        except Exception as UE:
+            self.log.warning('{0}\nError while updating instance:{1}'.format(get_traceback(), UE))
+        for eni in self.interfaces:
+            if isinstance(eni, NetworkInterface):
+                dev_index = 'NA'
+                if eni.attachment:
+                    dev_index = "Index:{0}".format(eni.attachment.device_index)
+                attached_status = "?"
+                if eni.attachment:
+                    dot = eni.attachment.delete_on_termination
+                    attached_status = eni.attachment.status
+                title = " {0}, DESC:{1}, STATUS:{2} ({3})" \
+                    .format(markup("{0}, {1}".format(dev_index, eni.id),
+                                   markups=[TextStyle.BOLD, ForegroundColor.WHITE,
+                                            BackGroundColor.BG_BLUE]),
+                            eni.description, eni.status, attached_status)
+                enipt = PrettyTable([title])
+                enipt.align[title] = 'l'
+                enipt.padding_width = 0
+                dot = "?"
+
+                pt = PrettyTable(['ENI ID', 'PRIV_IPS', 'PUB IP', 'VPC', 'SUBNET',
+                                  'OWNER', 'DOT'])
+                pt.padding_width = 0
+                if eni.private_ip_addresses:
+                    private_ips = ",".join(str("{0} ({1})".format(x.private_ip_address,
+                                                                  x.primary).center(20))
+                                           for x in eni.private_ip_addresses)
+                else:
+                    private_ips = None
+
+                pt.add_row([eni.id, private_ips,
+                            getattr(eni, 'publicIp', None),
+                            getattr(eni, 'vpc_id', None),
+                            getattr(eni, 'subnet_id', None),
+                            getattr(eni, 'owner_id', None),
+                            dot])
+                enipt.add_row([(str(pt))])
+                sec_group_buf = "Security Groups For ENI {0}:".format(eni.id)
+                if eni.groups:
+                    sec_group_buf += self.ec2ops.show_security_groups(eni.groups, printme=False)
+                else:
+                    sec_group_buf += "\nNO SECURITY GROUPS FOR THIS ENI "
+                enipt.add_row([sec_group_buf])
+                buf += "\n{0}\n".format(enipt)
+        if printme:
+            self.log.info(buf)
+        else:
+            return buf
+
 
 
 

@@ -54,7 +54,8 @@ from cloud_utils.net_utils import get_network_info_for_cidr, test_port_status
 from cloud_utils.net_utils.sshconnection import SshConnection, CommandExitCodeException, \
     CommandTimeoutException
 from cloud_utils.system_utils.machine import Machine
-from cloud_utils.log_utils import get_traceback
+from cloud_utils.log_utils import get_traceback, markup, TextStyle, ForegroundColor, \
+    BackGroundColor
 from nephoria.aws.ec2.euvolume import EuVolume
 from nephoria.euca.taggedresource import TaggedResource
 from nephoria.testcase_utils import wait_for_result
@@ -435,19 +436,31 @@ class EuInstance(Instance, TaggedResource, Machine):
 
     def show_enis(self, printme=True):
         buf = ""
+        try:
+            self.update()
+        except Exception as UE:
+            self.log.warning('{0}\nError while updating instance:{1}'.format(get_traceback(), UE))
         for eni in self.interfaces:
             if isinstance(eni, NetworkInterface):
-                title = " ENI ID: {0}, DESCRIPTION:{1}".format(eni.id, eni.description)
-                enipt = PrettyTable([title])
-                enipt.align[title] = 'l'
-                enipt.padding_width = 0
-                dot = "?"
+                dev_index = 'NA'
+                if eni.attachment:
+                    dev_index = "Index:{0}".format(eni.attachment.device_index)
                 attached_status = "?"
                 if eni.attachment:
                     dot = eni.attachment.delete_on_termination
                     attached_status = eni.attachment.status
-                pt = PrettyTable(['ENI ID', 'PRIV_IP (PRIMARY)', 'PUB IP', 'VPC', 'SUBNET',
-                                  'OWNER', 'DOT', 'STATUS'])
+                title = " {0}, DESC:{1}, STATUS:{2} ({3})"\
+                    .format(markup("{0}, {1}".format(dev_index, eni.id),
+                                   markups=[TextStyle.BOLD, ForegroundColor.WHITE,
+                                            BackGroundColor.BG_BLUE]),
+                            eni.description, eni.status, attached_status)
+                enipt = PrettyTable([title])
+                enipt.align[title] = 'l'
+                enipt.padding_width = 0
+                dot = "?"
+
+                pt = PrettyTable(['ENI ID', 'PRIV_IPS', 'PUB IP', 'VPC', 'SUBNET',
+                                  'OWNER', 'DOT'])
                 pt.padding_width = 0
                 if eni.private_ip_addresses:
                     private_ips = ",".join(str("{0} ({1})".format(x.private_ip_address,
@@ -455,15 +468,21 @@ class EuInstance(Instance, TaggedResource, Machine):
                                            for x in eni.private_ip_addresses)
                 else:
                     private_ips = None
+
                 pt.add_row([eni.id, private_ips,
                             getattr(eni, 'publicIp', None),
                             getattr(eni, 'vpc_id', None),
                             getattr(eni, 'subnet_id', None),
                             getattr(eni, 'owner_id', None),
-                            dot,
-                            "{0} ({1})".format(eni.status, attached_status)])
+                            dot])
                 enipt.add_row([(str(pt))])
-                buf += str(enipt)
+                sec_group_buf = "Security Groups For ENI {0}:".format(eni.id)
+                if eni.groups:
+                    sec_group_buf += self.ec2ops.show_security_groups(eni.groups, printme=False)
+                else:
+                    sec_group_buf += "\nNO SECURITY GROUPS FOR THIS ENI "
+                enipt.add_row([sec_group_buf])
+                buf += "\n{0}\n".format(enipt)
         if printme:
             self.log.info(buf)
         else:
@@ -2107,11 +2126,15 @@ class EuInstance(Instance, TaggedResource, Machine):
                            str(meta_devices.get(meta_dev)) + "' (Not found in Instance's BDM)"
             raise Exception(err_buf)
 
-    def open_remote_file(self, filepath, mode):
-        f = self.ssh.sftp.file(filepath, mode)
-        return f
-
-    def sync_enis_sysconfig(self, prefix='eth'):
+    def sync_enis_etc_sysconfig(self, prefix='eth'):
+        """
+        Helper method to sync the guests networking services with 1 or more cloud ENIs.
+        This method should setup local device for each ENI including; ip addresses, rules and
+        routes in a RHEL/CENTOS based system using sysconfig.
+        (For DEBIAN/UBUNTU systems see 'sync_enis_etc_default')
+        Args:
+            prefix: string, default network dev name ie: eth, em, etc..
+        """
         enis = self.ec2ops.connection.get_all_network_interfaces(
             filters={'attachment.instance-id': self.id})
         # Make sure we can fetch the subnet for each eni first...
@@ -2128,6 +2151,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         # First force the default gateway to be device at index 0...
         network_file_path = ' /etc/sysconfig/network'
         new_buf = "GATEWAYDEV={0}0\n".format(prefix)
+        # If the file exists replace or add the GATEWAYDEV value in it...
         if self.is_present(network_file_path):
             lines = self.sys('cat {0}'.format(network_file_path), code=0)
             for line in lines:
@@ -2138,9 +2162,12 @@ class EuInstance(Instance, TaggedResource, Machine):
         backup_network_file_path = "{0}_backup".format(network_file_path).strip()
         temp_network_file_path = "{0}_temp".format(network_file_path).strip()
         f = None
+        # Create a backup of the existing file...
         if self.is_present(backup_network_file_path):
             self.sys('rm -f {0}'.format(backup_network_file_path))
         self.sys('cp {0} {1}'.format(network_file_path, backup_network_file_path))
+        # Write the new contents from new_buf into a temporary file to be swapped in to protect
+        # from errors during write.
         self.ssh.open_sftp()
         try:
             f = self.open_remote_file(temp_network_file_path, 'w+')
@@ -2153,9 +2180,11 @@ class EuInstance(Instance, TaggedResource, Machine):
         finally:
             if f:
                 f.close()
+        # Finally swap in the temp file and overwrite the working copy.
         self.sys('mv {0} {1}'.format(temp_network_file_path, network_file_path), code=0)
         self.debug('Finished writing: {0}'.format(network_file_path))
-        # Add interface ifcfg files...
+
+        # Add interface ifcfg files for all interfaces other than the non-primary ENI...
         eni_ifcfg_files = ['/etc/sysconfig/network-scripts/ifcfg-{0}0'.format(prefix)]
         for eni in enis:
             if eni.attachment.device_index != 0:
@@ -2178,7 +2207,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 finally:
                     if f:
                         f.close()
-        # Add interface route files...
+        # Add interface route files for all interfaces other than the non-primary ENI...
         eni_route_files = ['/etc/sysconfig/network-scripts/route-{0}0'.format(prefix)]
         for eni in enis:
             if eni.attachment.device_index != 0:
@@ -2220,7 +2249,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 finally:
                     if f:
                         f.close()
-        # Add interface rule files...
+        # Add interface rule files for all interfaces other than the non-primary ENI....
         eni_rule_files = ['/etc/sysconfig/network-scripts/rule-{0}0'.format(prefix)]
         for eni in enis:
             if eni.attachment.device_index != 0:
@@ -2242,6 +2271,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 finally:
                     if f:
                         f.close()
+        # Helper method to remove any non-primary interface scripts no longer in use by an ENI
         def remove_old_scripts(existing_list, current_eni_list):
             for existing_script in existing_list:
                 existing_script = existing_script.strip()
@@ -2257,9 +2287,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                                        .format(existing_script))
                         self.sys('rm -f {0}'.format(existing_script))
 
-            
         # Remove any old files, files for detached ENIs, etc..
-
         existing_ifcfg_files = self.sys('ls /etc/sysconfig/network-scripts/ | grep "^ifcfg-{0}"'
                                         .format(prefix))
         remove_old_scripts(existing_ifcfg_files, eni_ifcfg_files)
@@ -2269,7 +2297,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         existing_rule_files = self.sys('ls /etc/sysconfig/network-scripts/ | grep "^rule-{0}"'
                                        .format(prefix))
         remove_old_scripts(existing_rule_files, eni_rule_files)
-
+        # Now restart the network service to make use of the config and scripts created...
         self.log.info('Restarting network service for instance:{0}'.format(self.id))
         self.sys('service network restart')
         for x in range(20):
@@ -2280,8 +2308,12 @@ class EuInstance(Instance, TaggedResource, Machine):
                 self.log.debug('{0}, Test Port Status. {1}:{2}. Elapsed:{3}. Result: {4}'
                                .format(self.id, self.ip_address, 22, x, PE))
                 time.sleep(1)
+        # Finally refresh the ssh connection in case it was lost in the network restart...
         self.log.debug('Attempting to refresh ssh connection after syncing ENIs...')
         self.refresh_ssh()
+
+    def sync_enis_etc_default(self, prefix='eth'):
+        pass
 
 
 

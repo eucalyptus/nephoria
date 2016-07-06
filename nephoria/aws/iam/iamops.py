@@ -38,6 +38,7 @@ import re
 import urllib
 from prettytable import PrettyTable
 from nephoria.baseops.botobaseops import BotoBaseOps
+from cloud_utils.log_utils import markup, ForegroundColor, BackGroundColor, TextStyle
 
 
 class IAMops(BotoBaseOps):
@@ -219,7 +220,7 @@ class IAMops(BotoBaseOps):
         else:
             re_meth = re.match
         if delegate_account:
-            params['DelegateAccount'] = delegate_account         
+            params['DelegateAccount'] = delegate_account
         response = self.get_response_items('ListUsers', params, item_marker='users',
                                                list_marker='Users')
         for user in response:
@@ -231,6 +232,92 @@ class IAMops(BotoBaseOps):
                 continue
             retlist.append(user)
         return retlist
+
+    def get_all_roles_from_account(self, path_prefix=None, delegate_account=None, markers=None,
+                                   search_string=None):
+        self.log.debug('Attempting to fetch all roles at path:"{0}" for account:"{1}"'
+                       .format(path_prefix, delegate_account))
+        try:
+            params = {}
+            if delegate_account:
+                params['DelegateAccount'] = delegate_account
+            if path_prefix is not None:
+                params['PathPrefix'] = path_prefix
+            response = self.get_response_items('ListRoles', params, item_marker='roles',
+                                               list_marker='Roles') or []
+            roles = []
+            if search_string:
+                for role in response:
+                    if re.search(search_string, str(role)):
+                        roles.append(role)
+            else:
+                roles = response
+        except:
+            self.log.error('Error attempt to fetch roles using delegate_account:{0}, path:{1}, ')
+        return roles
+
+    def show_all_roles_for_account(self, roles=None, path_prefix=None, delegate_account=None,
+                                   search_string=None, printme=True, print_method=None):
+        roles = roles or self.get_all_roles_from_account(path_prefix=path_prefix,
+                                                         delegate_account=delegate_account,
+                                                         search_string=search_string)
+        if not roles:
+            return None
+        print_method = print_method or self.log.info
+        account = delegate_account or ", ".join(self.get_account_aliases())
+        header_len = 20
+        value_len = 80
+        pt = PrettyTable([markup('ROLES FOR ACCOUNT: {0}'.format(account),
+                                 markups=[TextStyle.BOLD, BackGroundColor.BG_WHITE,
+                                          ForegroundColor.BLUE])])
+        pt.align = "l"
+        pt.border = False
+        pt.padding_width = 0
+        name_header = 'ROLE NAME'.ljust(header_len)
+        path_header = 'PATH'.ljust(header_len)
+        id_header = 'ROLE ID'.ljust(header_len)
+        date_header = 'CREATE DATE'.ljust(header_len)
+        policy_header = 'POLICY DOC'.ljust(header_len)
+        arn_header = 'ARN'
+        for role in roles:
+            p_header = 'param'.ljust(header_len)
+            v_header = 'value'.ljust(value_len)
+            long_pt = PrettyTable([p_header, v_header])
+            long_pt.align = 'l'
+            long_pt.max_width[p_header] = len(p_header)
+            long_pt.max_width[v_header] = len(v_header)
+            long_pt.header = False
+            #long_pt.border = False
+            long_pt.vrules = 0
+            long_pt.hrules = 0
+            long_pt.padding_width = 0
+            long_pt.add_row([name_header, role.get('role_name', "").ljust(value_len)])
+            long_pt.add_row([id_header, role.get('role_id', "")])
+            long_pt.add_row([path_header, role.get('path', "")])
+            long_pt.add_row([date_header, role.get('create_date', "")])
+            long_pt.add_row([arn_header, role.get('arn', "")])
+            long_pt.add_row([policy_header, role.get('assume_role_policy_document', "")])
+            pt.add_row([str(long_pt)])
+        if printme:
+            print_method("\n{0}\n".format(pt))
+        else:
+            return pt
+
+    def show_all_roles(self, account_search=None, role_search=None, print_method=None):
+        print_method = print_method or self.log.info
+        accounts = self.get_all_accounts(account_name=account_search, search=True) or []
+        buf = ""
+        pt = PrettyTable(["ROLES"])
+        pt.header = False
+        pt.border = False
+        for account in accounts:
+            account_name= account.get('account_name')
+            account_pt = self.show_all_roles_for_account(delegate_account=account_name,
+                                                         search_string=role_search,
+                                                         printme=False)
+            if account_pt:
+                pt.add_row(["\n{0}".format(account_pt)])
+        print_method("\n{0}\n".format(pt))
 
     def show_all_accounts(self, account_name=None, account_id=None, search=False,
                           print_table=True):
