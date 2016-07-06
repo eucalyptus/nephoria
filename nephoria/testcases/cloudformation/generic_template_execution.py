@@ -291,8 +291,12 @@ class GenericTemplateRun(CliTestRunner):
             events_list = stacks[0].describe_events()
             events = '\n'.join(map(str, events_list[len(events_list)::-1]))
             if stacks[0].stack_status == 'CREATE_COMPLETE':
+                outputs_list = stacks[0].outputs
+                outputs = '\n'.join(map(str,
+                                        outputs_list[len(outputs_list)::-1]))
                 self.log.debug("Stack deployment complete.")
-                self.log.debug("Stack events:\n" + events)
+                self.log.debug("\nStack events:\n" + events)
+                self.log.debug("\nStack outputs:\n" + outputs)
                 break
             elif stacks[0].stack_status == 'CREATE_FAILED':
                 self.log.error("Stack deployment failed: " +
