@@ -731,7 +731,7 @@ disable_root: false"""
         main_pt.add_row([".".ljust(table_width, ".")])
         main_pt.add_row([igw_line])
         if not igws:
-            main_pt.add_row(['\t(NONE)'])
+            main_pt.add_row(['    (NONE)'])
         else:
             for igw in igws:
                 main_pt.add_row([str(self.show_internet_gateway(igw, printme=False))])
@@ -752,28 +752,30 @@ disable_root: false"""
             if verbose:
                 all_vpcs = self.get_all_vpcs(verbose=True)
                 not_owned = []
-                for myvpc in vpcs:
+                for vpc in all_vpcs:
                     mine = False
-                    for vpc in all_vpcs:
+                    for myvpc in vpcs:
                         if myvpc.id == vpc.id:
                             mine = True
+                            break
                     if not mine:
                         not_owned.append(vpc)
                 if not_owned:
                     all_vpcs_pt = self.show_vpcs(vpcs=not_owned, printme=False)
-            ret_buf = markup('VPCS OWNED BY THIS ACCOUNT:\n', [TextStyle.BOLD,
+            ret_buf = "\n"
+            ret_buf += markup('VPCS OWNED BY THIS ACCOUNT:\n', [TextStyle.BOLD,
                                                                TextStyle.UNDERLINE])
             ret_buf += str(vpcs_pt)
             if all_vpcs_pt:
-                ret_buf = markup('\n\nVPCS OWNED BY OTHER ACCOUNTS:\n',
+                ret_buf += markup('\n\n\nVPCS OWNED BY OTHER ACCOUNTS:\n',
                                  [TextStyle.BOLD, TextStyle.UNDERLINE])
                 ret_buf += str(all_vpcs_pt)
-
-        if not isinstance(vpcs, list):
-            vpcs = [vpcs]
-        for vpc in vpcs:
-            vpt = str(self.show_vpc(vpc, show_tags=show_tags, printme=False))
-            ret_buf += "\n{0}\n\n{1}\n".format(vpt, "#".ljust(len(vpt.splitlines()[0]), "#"))
+        else:
+            if not isinstance(vpcs, list):
+                vpcs = [vpcs]
+            for vpc in vpcs:
+                vpt = str(self.show_vpc(vpc, show_tags=show_tags, printme=False))
+                ret_buf += "\n{0}\n\n{1}\n".format(vpt, "#".ljust(len(vpt.splitlines()[0]), "#"))
         if printme:
             printmethod = printmethod or self.log.info
             printmethod( "\n" + str(ret_buf) + "\n")
