@@ -34,6 +34,9 @@ class STSops(BotoBaseOps):
     EUCARC_URL_NAME = 'sts_url'
     CONNECTION_CLASS = STSConnection
 
+    def setup_resource_trackers(self):
+        pass
+
     def get_session_token( self, duration=None ):
         """
         Get a possibly cached session token, if getting a new token request the given duration
@@ -49,4 +52,6 @@ class STSops(BotoBaseOps):
             duration - The desired duration for the token in seconds (None for default duration)
         """
         return self.connection.get_session_token( duration, force_new=True )
+
+
 

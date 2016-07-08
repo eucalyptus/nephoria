@@ -33,6 +33,7 @@ import re
 import os
 import copy
 import socket
+import string
 import hmac
 import hashlib
 import base64
@@ -58,7 +59,7 @@ from boto.ec2.address import Address
 from boto.ec2.tag import TagSet
 from boto.ec2.zone import Zone
 from boto.vpc.subnet import Subnet as BotoSubnet
-from boto.vpc import VPCConnection, VPC, Subnet
+from boto.vpc import VPCConnection, VPC, Subnet, InternetGateway, RouteTable, DhcpOptions
 from boto.ec2.networkinterface import NetworkInterfaceSpecification, NetworkInterfaceCollection
 from boto.ec2.networkinterface import NetworkInterface
 
@@ -67,7 +68,8 @@ from nephoria import CleanTestResourcesException
 from nephoria.baseops.botobaseops import BotoBaseOps
 from nephoria.testcase_utils import wait_for_result
 from cloud_utils.net_utils import sshconnection, ping, is_address_in_network
-from cloud_utils.log_utils import printinfo, get_traceback, markup, red
+from cloud_utils.log_utils import printinfo, get_traceback
+from cloud_utils.log_utils import markup, red, TextStyle, ForegroundColor, BackGroundColor
 from nephoria.aws.ec2.euinstance import EuInstance
 from nephoria.aws.ec2.windows_instance import WinInstance
 from nephoria.aws.ec2.euvolume import EuVolume
@@ -392,9 +394,12 @@ disable_root: false"""
         finally:
             if popen:
                 try:
-                    popen.stdin.close()
-                    popen.stdout.close()
-                    popen.stderr.close()
+                    if popen.stdin:
+                        popen.stdin.close()
+                    if popen.stdout:
+                        popen.stdout.close()
+                    if popen.stderr:
+                        popen.stderr.close()
                 except Exception as FDE:
                     self.log.warning('get_windows_instance_password, err closing fds:"{0}"'
                                      .format(FDE))
@@ -587,34 +592,6 @@ disable_root: false"""
         self.show_security_group(group)
         return group
 
-    def show_security_group(self, group):
-        try:
-            from prettytable import PrettyTable, ALL
-        except ImportError as IE:
-            self.log.info('No pretty table import failed:' + str(IE))
-            return
-        group = self.get_security_group(id=group.id)
-        if not group:
-            raise ValueError('Show sec group failed. Could not fetch group:'
-                             + str(group))
-        header = PrettyTable(["Security Group:" + group.name + "/" + group.id])
-        table = PrettyTable(["CIDR_IP", "SRC_GRP_NAME",
-                             "SRC_GRP_ID", "OWNER_ID", "PORT",
-                             "END_PORT", "PROTO"])
-        table.align["CIDR_IP"] = 'l'
-        table.padding_width = 1
-        for rule in group.rules:
-            port = rule.from_port
-            end_port = rule.to_port
-            proto = rule.ip_protocol
-            for grant in rule.grants:
-                table.add_row([grant.cidr_ip, grant.name,
-                               grant.group_id, grant.owner_id, port,
-                               end_port, proto])
-        table.hrules = ALL
-        header.add_row([str(table)])
-        self.log.info("\n{0}".format(str(header)))
-
     def revoke_security_group(self, group, from_port, to_port=None, protocol="tcp",
                               src_security_group_name=None, src_security_group_owner_id=None,
                               cidr_ip="0.0.0.0/0"):
@@ -712,49 +689,439 @@ disable_root: false"""
                 return vpc
         return None
 
-    def show_vpc(self, vpc, printmethod=None, show_tags=True, printme=True):
+    def show_vpc(self, vpc, brief=False, printmethod=None, printme=True):
+        table_width = 110
         if isinstance(vpc, str):
             vpcs = self.get_all_vpcs(vpc)
             if vpcs:
                 vpc = vpcs[0]
         if not isinstance(vpc, VPC):
              raise ValueError('show_vpc passed on non VPC type: "{0}:{1}"'.format(vpc, type(vpc)))
-        title = markup('  VPC SUMMARY: "{0}"'.format(vpc.id), markups=[1, 94])
+        title = markup('  VPC SUMMARY: "{0}"'.format(vpc.id), markups=[1, 94]).ljust(table_width)
         main_pt = PrettyTable([title])
         main_pt.align[title] = 'l'
         main_pt.padding_width = 0
         mainbuf = ""
-        summary_pt = PrettyTable(["CIDR BLOCK", "DHCP OPT ID", "INS TENANCY", "STATE",
-                                  "IS DEFAULT"])
+        ip_len = 20
+        tl = (table_width - ip_len) / 4
+        cidr_hdr = markup("CIDR BLOCK", [ForegroundColor.BLUE]).ljust(ip_len)
+        dhcp_hdr = markup("DHCP OPT ID", [ForegroundColor.BLUE]).ljust(tl)
+        ins_hdr = markup("INS TENANCY", [ForegroundColor.BLUE]).ljust(tl)
+        state_hdr = markup("STATE", [ForegroundColor.BLUE]).ljust(tl)
+        def_hdr = markup("IS DEFAULT", [ForegroundColor.BLUE]).ljust(tl)
+        summary_pt = PrettyTable([cidr_hdr, dhcp_hdr, ins_hdr, state_hdr, def_hdr])
         summary_pt.padding_width = 0
-        summary_pt.add_row([vpc.cidr_block, vpc.dhcp_options_id, vpc.instance_tenancy, vpc.state,
-                            vpc.is_default])
-        mainbuf += str(summary_pt)
-        if show_tags and vpc.tags:
-            mainbuf += markup('\nVPC "{0}" TAGS:\n'.format(vpc.id), markups=[1,4])
-            mainbuf += str(self.show_tags(vpc.tags, printme=False)) + "\n"
+        summary_pt.align = 'l'
+        summary_pt.hrules = 0
+        summary_pt.vrules = 1
+        summary_pt.horizontal_char = '.'
+        summary_pt.border = False
+
+        summary_pt.add_row([str(vpc.cidr_block).ljust(ip_len), str(vpc.dhcp_options_id).ljust(tl),
+                            str(vpc.instance_tenancy).ljust(tl), str(vpc.state).ljust(tl),
+                            str(vpc.is_default).ljust(tl)])
+        mainbuf += "\n".join(str(x).strip('|')
+                             for x in str(summary_pt).translate(string.maketrans("", "", ),
+                                                                '+|').splitlines())
         main_pt.add_row([mainbuf])
+        if not brief:
+            dhcp_line = markup("DHCP OPTION SET FOR {0}:".format(vpc.id),
+                               markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
+            main_pt.add_row([".".ljust(table_width, ".")])
+            main_pt.add_row([dhcp_line])
+            if vpc.dhcp_options_id:
+                dopts = self.connection.get_all_dhcp_options([vpc.dhcp_options_id])
+                if dopts:
+                    dopt = dopts[0]
+                main_pt.add_row([str(self.show_dhcp_option_set(dopt, printme=False))])
+            igws = self.connection.get_all_internet_gateways(filters={'attachment.vpc-id': vpc.id})
+            igw_line = markup("INTERNET GATEWAYS FOR {0}:".format(vpc.id),
+                              markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
+            main_pt.add_row([".".ljust(table_width, ".")])
+            main_pt.add_row([igw_line])
+            if not igws:
+                main_pt.add_row(['    (NONE)'])
+            else:
+                for igw in igws:
+                    main_pt.add_row([str(self.show_internet_gateway(igw, printme=False))])
+            # Add tag entries in sub-table...
+            tag_pt = ""
+            if igw.tags:
+                tag_key_len = 30
+                tag_value_len = table_width - tag_key_len - 3
+                tag_key_hdr = markup('TAG KEY', [TextStyle.BOLD, ForegroundColor.BLUE])
+                tag_value_hdr = markup('TAG VALUE', [TextStyle.BOLD, ForegroundColor.BLUE])
+                tag_pt = PrettyTable([tag_key_hdr, tag_value_hdr])
+                tag_pt.align = 'l'
+                tag_pt.max_width[tag_key_hdr] = tag_key_len
+                tag_pt.max_width[tag_value_hdr] = tag_value_len
+                tag_pt.header = True
+                tag_pt.padding_width = 0
+                tag_pt.vrules = 1
+                tag_pt.hrules = 1
+                for key, value in igw.tags.iteritems():
+                    tag_pt.add_row([str(key).ljust(tag_key_len), str(value).ljust(tag_value_len)])
+            tag_pt = "\n".join(str(x).strip('|')
+                               for x in str(tag_pt).translate(string.maketrans("", "", ),
+                                                              '+|').splitlines())
+            tag_line = markup("TAGS FOR {0}:".format(vpc.id),
+                               markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
+
+            main_pt.add_row([".".ljust(table_width, ".")])
+            main_pt.add_row([tag_line])
+            main_pt.add_row([str(tag_pt)])
         if printme:
             printmethod = printmethod or self.log.info
             printmethod( "\n" + str(main_pt) + "\n")
         else:
             return main_pt
 
-    def show_vpcs(self, vpcs=None, printmethod=None, show_tags=True, verbose=None, printme=True):
+    def show_vpcs_brief(self, vpcs=None, printmethod=None, verbose=None, printme=True):
+        return self.show_vpcs(vpcs=vpcs, brief=True, printmethod=printmethod, verbose=verbose,
+                              printme=printme)
+
+    def show_vpcs(self, vpcs=None, brief=False, printmethod=None, verbose=None, printme=True):
         ret_buf = markup('--------------VPC LIST--------------', markups=[1, 94])
         if verbose is None:
             verbose = self._use_verbose_requests
         if not vpcs:
-            vpcs = self.get_all_vpcs(verbose=verbose)
-        for vpc in vpcs:
-            ret_buf += "\n" + str(self.show_vpc(vpc, show_tags=show_tags, printme=False))
+            all_vpcs_pt = None
+            vpcs = self.get_all_vpcs(verbose=False)
+            vpcs_pt = self.show_vpcs(vpcs=vpcs, brief=brief, printme=False)
+            if verbose:
+                all_vpcs = self.get_all_vpcs(verbose=True)
+                not_owned = []
+                for vpc in all_vpcs:
+                    mine = False
+                    for myvpc in vpcs:
+                        if myvpc.id == vpc.id:
+                            mine = True
+                            break
+                    if not mine:
+                        not_owned.append(vpc)
+                if not_owned:
+                    all_vpcs_pt = self.show_vpcs(vpcs=not_owned, brief=brief, printme=False)
+            ret_buf = "\n"
+            ret_buf += markup('VPCS OWNED BY THIS ACCOUNT:\n', [TextStyle.BOLD,
+                                                               TextStyle.UNDERLINE])
+            ret_buf += str(vpcs_pt)
+            if all_vpcs_pt:
+                ret_buf += markup('\n\n\nVPCS OWNED BY OTHER ACCOUNTS:\n',
+                                 [TextStyle.BOLD, TextStyle.UNDERLINE])
+                ret_buf += str(all_vpcs_pt)
+        else:
+            if not isinstance(vpcs, list):
+                vpcs = [vpcs]
+            for vpc in vpcs:
+                if brief:
+                    ret_buf += "\n{0}".format(str(self.show_vpc(vpc,
+                                                                  brief=brief,
+                                                                  printme=False)))
+                else:
+                    vpt = str(self.show_vpc(vpc, brief=brief, printme=False))
+                    ret_buf += "\n{0}\n\n{1}\n".format(vpt, "#".ljust(len(vpt.splitlines()[0]),
+                                                                      "#"))
         if printme:
             printmethod = printmethod or self.log.info
             printmethod( "\n" + str(ret_buf) + "\n")
         else:
             return ret_buf
 
-    def get_all_subnets(self, subnet_ids=None, zone=None, filters=None, dry_run=False, verbose=None):
+    def show_internet_gateway(self, igw, printmethod=None, printme=True):
+        if isinstance(igw, basestring):
+            igws = self.connection.get_all_internet_gateways([igw])
+            if igws:
+                igw = igws[0]
+            else:
+                raise ValueError('InternetGateway not found for: "{0}"'.format(igw))
+        if not isinstance(igw, InternetGateway):
+            raise ValueError('Uknown type for internet gateway: "{0}/{1}"'.format(igw, type(igw)))
+        printmethod = printmethod or self.log.info
+        table_width = 110
+        key_len = 14
+        val_len = table_width - key_len - 3
+        key_hdr = 'ATTRIBUTE'.ljust(key_len)
+        val_hdr = 'VALUE'.ljust(val_len)
+        pt = PrettyTable([key_hdr, val_hdr])
+        pt.max_width[val_hdr] = len(val_hdr)
+        pt.max_width[key_hdr] = len(key_hdr)
+        pt.align = 'l'
+        pt.header = False
+        pt.padding_width = 0
+        pt.add_row(["ID:".ljust(key_len), markup(igw.id, TextStyle.BOLD).ljust(val_len)])
+        region = ""
+        if igw.region:
+            region = "{0}{1}, {2}{3}".format(markup('NAME:',[TextStyle.BOLD,
+                                                                       ForegroundColor.BLUE]),
+                                               igw.region.name,
+                                               markup('ENDPOINT:', [TextStyle.BOLD,
+                                                               ForegroundColor.BLUE]),
+                                               igw.region.endpoint)
+        pt.add_row(["REGION:", region.ljust(val_len)])
+        # Add attachment entries
+        att = ""
+        if isinstance(igw.attachments, list):
+            for a in igw.attachments:
+                att += "{0} {1}, {2} {3}\n".format(markup("STATE:", [TextStyle.BOLD,
+                                                                       ForegroundColor.BLUE]),
+                                                   a.state,
+                                                   markup("VPC ID:", [TextStyle.BOLD,
+                                                                       ForegroundColor.BLUE]),
+                                                   a.vpc_id).ljust(val_len)
+        att = att.strip()
+        pt.add_row(["ATTACHMENTS:", att.ljust(val_len)])
+        # Show any route tables referencing this gateway...
+        route_tables = "(NO REFERENCES)"
+        rts = self.connection.get_all_route_tables(filters={'route.gateway-id': igw.id})
+        if rts:
+            route_tables = "{0} {1}".format(markup("IGW Referenced By:", [TextStyle.BOLD,
+                                                                          ForegroundColor.BLUE]),
+                                            ", ".join(str(x.id) for x in rts))
+        pt.add_row(["ROUTE TABLES:", route_tables])
+        # Add tag entries in sub-table...
+        tag_pt = ""
+        if igw.tags:
+            tag_key_len = 30
+            tag_value_len = val_len - tag_key_len - 2
+            tag_key_hdr = markup('TAG KEY', [TextStyle.BOLD, ForegroundColor.BLUE])
+            tag_value_hdr = markup('TAG VALUE', [TextStyle.BOLD, ForegroundColor.BLUE])
+            tag_pt = PrettyTable([tag_key_hdr, tag_value_hdr])
+            tag_pt.align = 'l'
+            tag_pt.max_width[tag_key_hdr] = tag_key_len
+            tag_pt.max_width[tag_value_hdr] = tag_value_len
+            tag_pt.header = True
+            tag_pt.padding_width = 0
+            tag_pt.vrules = 1
+            tag_pt.hrules = 1
+            for key, value in igw.tags.iteritems():
+                tag_pt.add_row([str(key).ljust(tag_key_len), str(value).ljust(tag_value_len)])
+        tag_pt = "\n".join(str(x).strip('|')
+                           for x in str(tag_pt).translate(string.maketrans("", "", ),
+                                                          '+|').splitlines())
+        pt.add_row(['TAGS:', str(tag_pt)])
+
+        if printme:
+            printmethod("\n{0}\n".format(pt))
+        else:
+            return pt
+
+    def show_internet_gateways(self, igws=None, printmethod=None, printme=True):
+        igws = igws or self.connection.get_all_internet_gateways()
+        buf = "\n"
+        printmethod = printmethod or self.log.info
+        for igw in igws:
+            buf += "{0}\n".format(self.show_internet_gateway(igw, printme=False))
+        if printme:
+            printmethod(buf)
+        else:
+            return buf
+
+    def show_route_table(self, route_table, printmethod=None, printme=True):
+        if isinstance(route_table, basestring):
+            route_tables = self.connection.get_all_route_tables([route_table])
+            if route_tables:
+                route_table = route_tables[0]
+            else:
+                raise ValueError('Route Table not found for: {0}'.format(route_table))
+        if not isinstance(route_table, RouteTable):
+            raise ValueError('Unknown type for route table: "{0}/{1}"'.format(route_table,
+                                                                              type(route_table)))
+        printmethod = printmethod or self.log.info
+        table_width = 110
+        key_hdr_len =  18
+        value_hdr_len = table_width - key_hdr_len - 3
+        key_hdr = 'key'.ljust(key_hdr_len)
+        value_hdr = 'value'.ljust(value_hdr_len)
+        # Create main table and add basic/single item entries first...
+        pt = PrettyTable([key_hdr, value_hdr])
+        pt.header = False
+        pt.align = 'l'
+        pt.add_row(["ID:", markup(route_table.id, [TextStyle.BOLD]).ljust(value_hdr_len)])
+        pt.add_row(["VPC ID:", str(route_table.vpc_id).ljust(value_hdr_len)])
+        region = ""
+        if route_table.region:
+            region = "({0}, {1})".format(route_table.region.name, route_table.region.endpoint)
+        pt.add_row(["REGION:", region.ljust(value_hdr_len)])
+        pt.add_row(["PropagatingVgwSet:", route_table.propagatingVgwSet])
+        assoc = ""
+        # Add associations in sub-table...
+        if route_table.associations:
+            al = value_hdr_len/3
+            assoc_pt = PrettyTable(['ID:'.ljust(al),
+                                    'MAIN:'.ljust(6),
+                                    'SUBNET_ID:'.ljust(al)])
+            assoc_pt.border = False
+            assoc_pt.header = False
+            assoc_pt.padding_width = 1
+
+            for ass in route_table.associations:
+                assoc_pt.add_row(['ID: {0}'.format(ass.id).ljust(al),
+                                  'MAIN: {0}'.format(ass.main).ljust(6),
+                                  'SUBNET_ID: {0}'.format(ass.subnet_id).ljust(al)])
+        pt.add_row(["ASSOCIATIONS", str(assoc_pt)])
+        # Add Route Entries in sub-table...
+        route_pt = "(NONE)"
+        if route_table.routes:
+            ip_len = 20
+            rl = (value_hdr_len - ip_len) / 5
+            route_pt = PrettyTable([markup('DEST', [TextStyle.BOLD,
+                                                    ForegroundColor.BLUE]).ljust(ip_len),
+                                    markup('GW', [TextStyle.BOLD,
+                                                    ForegroundColor.BLUE]).ljust(rl),
+                                    markup('INSTANCE', [TextStyle.BOLD,
+                                                    ForegroundColor.BLUE]).ljust(rl),
+                                    markup('INTERFACE', [TextStyle.BOLD,
+                                                    ForegroundColor.BLUE]).ljust(rl),
+                                    markup('STATE', [TextStyle.BOLD,
+                                                    ForegroundColor.BLUE]).ljust(rl),
+                                    markup('VPC_PEER', [TextStyle.BOLD,
+                                                    ForegroundColor.BLUE]).ljust(rl)])
+            route_pt.align = 'l'
+            route_pt.padding_width = 0
+            for route in route_table.routes:
+                route_pt.add_row([str(route.destination_cidr_block).ljust(ip_len),
+                                  str(route.gateway_id).ljust(rl),
+                                  str(route.instance_id).ljust(rl),
+                                  str(route.interface_id).ljust(rl),
+                                  str(route.state).ljust(rl),
+                                  str(route.vpc_peering_connection_id).ljust(rl)])
+        route_pt = "\n".join(str(x).strip('|')
+                             for x in str(route_pt).translate(string.maketrans("", "", ),
+                                                              '+|').splitlines())
+        pt.add_row(['ROUTES:', str(route_pt)])
+        # Add tag entries in sub-table...
+        tag_pt = ""
+        if route_table.tags:
+            tag_key_len = 30
+            tag_value_len = value_hdr_len - tag_key_len - 2
+            tag_key_hdr = markup('TAG KEY', [TextStyle.BOLD, ForegroundColor.BLUE])
+            tag_value_hdr = markup('TAG VALUE', [TextStyle.BOLD, ForegroundColor.BLUE])
+            tag_pt = PrettyTable([tag_key_hdr, tag_value_hdr])
+            tag_pt.align = 'l'
+            tag_pt.max_width[tag_key_hdr] = tag_key_len
+            tag_pt.max_width[tag_value_hdr] = tag_value_len
+            tag_pt.header = True
+            tag_pt.padding_width = 0
+            tag_pt.vrules = 1
+            tag_pt.hrules = 1
+            for key, value in route_table.tags.iteritems():
+                tag_pt.add_row([str(key).ljust(tag_key_len), str(value).ljust(tag_value_len)])
+        tag_pt = "\n".join(str(x).strip('|')
+                           for x in str(tag_pt).translate(string.maketrans("", "", ),
+                                                          '+|').splitlines())
+        pt.add_row(['TAGS:', str(tag_pt)])
+
+        if printme:
+            printmethod('\n{0}\n'.format(pt))
+        else:
+            return pt
+
+    def show_route_tables(self, route_tables=None, printmethod=None, printme=True):
+        route_tables = route_tables or self.connection.get_all_route_tables()
+        if not isinstance(route_tables, list):
+            route_tables = [route_tables]
+        ret_buf = ""
+        for route_table in route_tables:
+            rpt = str(self.show_route_table(route_table, printme=False))
+            ret_buf += "\n{0}\n\n{1}\n".format(rpt, "#".ljust(len(rpt.splitlines()[0]), "#"))
+        if printme:
+            printmethod = printmethod or self.log.info
+            printmethod("\n" + str(ret_buf) + "\n")
+        else:
+            return ret_buf
+
+    def show_dhcp_option_set(self, dopt, printmethod=None, printme=True):
+        if isinstance(dopt, basestring):
+            dopts = self.connection.get_all_dhcp_options([dopt])
+            if dopts:
+                dopt = dopts[0]
+            else:
+                raise ValueError('No DHCP Option Set found for id:"{0}"'.format(dopt))
+        assert isinstance(dopt, DhcpOptions), 'Expected DhcpOptions class, got: "{0}/{1}"'\
+            .format(dopt, type(dopt))
+        printmethod = printmethod or self.log.info
+        table_width = 110
+        key_len = 14
+        val_len = table_width - key_len - 3
+        pt = PrettyTable(['key', 'value'])
+        pt.align = 'l'
+        pt.padding_width = 0
+        pt.header = False
+        pt.add_row(['DHCP OPT ID:'.ljust(key_len), str(dopt.id).ljust(val_len)])
+        region = ""
+        if dopt.region:
+            region = "{0}{1}, {2}{3}".format(markup('NAME:', [TextStyle.BOLD,
+                                                              ForegroundColor.BLUE]),
+                                             dopt.region.name,
+                                             markup('ENDPOINT:', [TextStyle.BOLD,
+                                                                  ForegroundColor.BLUE]),
+                                             dopt.region.endpoint)
+        pt.add_row(["REGION:", region.ljust(val_len)])
+        # Add option entries in sub-table...
+        opt_pt = ""
+        if dopt.options:
+            opt_key_len = 30
+            opt_value_len = val_len - opt_key_len - 2
+            opt_key_hdr = markup('OPTION', [TextStyle.BOLD, ForegroundColor.BLUE])
+            opt_value_hdr = markup('OPTION VALUE', [TextStyle.BOLD, ForegroundColor.BLUE])
+            opt_pt = PrettyTable([opt_key_hdr, opt_value_hdr])
+            opt_pt.align = 'l'
+            opt_pt.max_width[opt_key_hdr] = opt_key_len
+            opt_pt.max_width[opt_value_hdr] = opt_value_len
+            opt_pt.header = True
+            opt_pt.padding_width = 0
+            opt_pt.vrules = 1
+            opt_pt.hrules = 1
+            for key, value in dopt.options.iteritems():
+                opt_pt.add_row([str(key).ljust(opt_key_len), str(value).ljust(opt_value_len)])
+        opt_pt = "\n".join(str(x).strip('|')
+                           for x in str(opt_pt).translate(string.maketrans("", "", ),
+                                                          '+|').splitlines())
+        pt.add_row(['OPTIONS:', str(opt_pt)])
+
+        # Add tag entries in sub-table...
+        tag_pt = ""
+        if dopt.tags:
+            tag_key_len = 30
+            tag_value_len = val_len - tag_key_len - 2
+            tag_key_hdr = markup('TAG KEY', [TextStyle.BOLD, ForegroundColor.BLUE])
+            tag_value_hdr = markup('TAG VALUE', [TextStyle.BOLD, ForegroundColor.BLUE])
+            tag_pt = PrettyTable([tag_key_hdr, tag_value_hdr])
+            tag_pt.align = 'l'
+            tag_pt.max_width[tag_key_hdr] = tag_key_len
+            tag_pt.max_width[tag_value_hdr] = tag_value_len
+            tag_pt.header = True
+            tag_pt.padding_width = 0
+            tag_pt.vrules = 1
+            tag_pt.hrules = 1
+            for key, value in dopt.tags.iteritems():
+                tag_pt.add_row([str(key).ljust(tag_key_len), str(value).ljust(tag_value_len)])
+        tag_pt = "\n".join(str(x).strip('|')
+                           for x in str(tag_pt).translate(string.maketrans("", "", ),
+                                                          '+|').splitlines())
+        pt.add_row(['TAGS:', str(tag_pt)])
+
+        if printme:
+            printmethod("\n{0}\n".format(pt))
+        else:
+            return pt
+
+    def show_dhcp_option_sets(self, dopts=None, printmethod=None, printme=True):
+        dopts = dopts or self.connection.get_all_dhcp_options()
+        if not isinstance(dopts, list):
+            dopts = [dopts]
+        ret_buf = ""
+        for dopt in dopts:
+            dpt = str(self.show_dhcp_option_set(dopt, printme=False))
+            ret_buf += "\n{0}\n\n{1}\n".format(dpt, "#".ljust(len(dpt.splitlines()[0]), "#"))
+        if printme:
+            printmethod = printmethod or self.log.info
+            printmethod("\n" + str(ret_buf) + "\n")
+        else:
+            return ret_buf
+
+    def get_all_subnets(self, subnet_ids=None, zone=None, filters=None, dry_run=False,
+                        verbose=None):
         ret_list = []
         filters = filters or {}
         if zone:
@@ -839,13 +1206,30 @@ disable_root: false"""
         if not isinstance(subnet, BotoSubnet):
              raise ValueError('show_subnet passed on non Subnet type: "{0}:{1}"'
                               .format(subnet, type(subnet)))
-        title = markup('  SUBNET SUMMARY: "{0}"'.format(subnet.id), markups=[1,94])
+        title = '  {0} "{1}"'.format(markup('SUBNET SUMMARY:', markups=[TextStyle.BOLD]),
+                                     markup(subnet.id, markups=[TextStyle.BOLD,
+                                                                ForegroundColor.BLUE,
+                                                                BackGroundColor.BG_WHITE]))
         main_pt = PrettyTable([title])
         main_pt.align[title] = 'l'
         main_pt.padding_width = 0
         mainbuf = ""
-        summary_pt = PrettyTable(["VPC ID", "CIDR BLOCK", "AVAIL IP CNT", "MAP PUB IP",
-                                  "STATE", "ZONE", "ZONE DEFAULT"])
+        vpc_header = "VPC ID".ljust(12)
+        cidr_header = "CIDR BLOCK".ljust(20)
+        avail_ip_cnt_header = "AVAIL ADDRS"
+        map_pub_ip_header = "MAP PUB IP"
+        state_header = "STATE".ljust(12)
+        try:
+            z_len = 0
+            for zone in self.get_zone_names():
+                if len(zone) > z_len:
+                    z_len = len(zone)
+            zone_header = "ZONE".ljust(z_len)
+        except:
+            zone_header = "ZONE"
+        zone_def_header = "ZONE DEFAULT"
+        summary_pt = PrettyTable([vpc_header, cidr_header, avail_ip_cnt_header, map_pub_ip_header,
+                      state_header, zone_header, zone_def_header])
         summary_pt.padding_width = 0
         if subnet:
             summary_pt.add_row([subnet.vpc_id, subnet.cidr_block,
@@ -866,7 +1250,8 @@ disable_root: false"""
 
     def show_subnets(self, subnets=None, printmethod=None, verbose=None,
                      show_tags=True, printme=True):
-        ret_buf = markup('--------------SUBNET LIST--------------', markups=[1,4,94])
+        ret_buf = markup('--------------SUBNET LIST--------------',
+                         markups=[TextStyle.BOLD, ForegroundColor.BLUE, BackGroundColor.BG_WHITE])
         if verbose is None:
             verbose = self._use_verbose_requests
         if not subnets:
@@ -3367,6 +3752,7 @@ disable_root: false"""
                                             auto_eip=False,
                                             groups=None,
                                             eip_domain=None,
+                                            delete_on_termination=True,
                                             description='Nephoria Test ENI',
                                             network_interface_collection=None):
         """
@@ -3448,7 +3834,7 @@ disable_root: false"""
         # Create the interface specification
         interface = NetworkInterfaceSpecification(device_index=device_index,
                                                   network_interface_id=eni.id,
-                                                  delete_on_termination=True,
+                                                  delete_on_termination=delete_on_termination,
                                                   associate_public_ip_address=associate_public_ip_address,
                                                   description=description)
         network_interface_collection = network_interface_collection or NetworkInterfaceCollection()
@@ -5910,6 +6296,8 @@ disable_root: false"""
         title = markup("Security Group: {0}/{1}, VPC: {2}"
                             .format(group.name, group.id, group.vpc_id))
         maintable = PrettyTable([title])
+        maintable.border = False
+        maintable.align = "l"
         table = PrettyTable(["CIDR_IP", "SRC_GRP_NAME",
                              "SRC_GRP_ID", "OWNER_ID", "PORT",
                              "END_PORT", "PROTO"])

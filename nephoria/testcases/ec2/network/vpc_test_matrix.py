@@ -71,6 +71,11 @@ class VpcBasics(CliTestRunner):
         'kwargs': {'help': 'Cidr network range for VPC(s) created in this test',
                    'default': "172.{0}.0.0/16"}}
 
+    _DEFAULT_CLI_ARGS['proxy_vmtype'] = {
+        'args': ['--proxy-vmtype'],
+        'kwargs': {'help': 'Vm type to use for proxy test instance',
+                   'default': 'm1.large'}}
+
     def post_init(self):
         self.test_id = randint(0, 100000)
         self.id = str(int(time.time()))
@@ -111,6 +116,19 @@ class VpcBasics(CliTestRunner):
             raise ValueError('Must provide zone for get_proxy_instance. Got:"{0}"'.format(zone))
         proxy_instances = getattr(self, '_proxy_instances', {})
         pi =  proxy_instances.get(zone, None)
+        if pi:
+            try:
+                pi.update()
+                if pi.status != "running":
+                    try:
+                        pi.terminate()
+                    except:
+                        pass
+                    pi = None
+            except Exception as E:
+                self.log.debug('{0}\nIgnoring error caught while fetching proxy instance '
+                               'status:"{1}'.format(get_traceback(), E))
+                pi = None
         if not pi:
             subnet = self.user.ec2.get_default_subnets(zone=zone)
             if not subnet:
@@ -118,7 +136,9 @@ class VpcBasics(CliTestRunner):
                                  .format(zone))
             subnet = subnet[0]
             pi = self.user.ec2.run_image(image=self.emi, keypair=self.keypair, group=self.group,
-                                         subnet_id = subnet.id, zone=zone)[0]
+                                         subnet_id = subnet.id, zone=zone,
+                                         type=self.args.proxy_vmtype,
+                                         systemconnection=self.tc.sysadmin)[0]
             proxy_instances[zone] = pi
             self._proxy_instances = proxy_instances
         return pi
@@ -156,8 +176,10 @@ class VpcBasics(CliTestRunner):
         enis = self.user.ec2.connection.get_all_network_interfaces(filters=filters) or []
         if count and len(enis) < count:
             for x in xrange(0, (count-len(enis))):
-                eni = self.user.ec2.connection.create_network_interface(subnet_id=subnet.id)
-                self.user.ec2.create_tags(eni.id, {self.test_tag_name, self.id})
+                eni = self.user.ec2.connection.create_network_interface(
+                    subnet_id=subnet.id, description='This was created by: {0}'.format(self.id))
+                self.user.ec2.create_tags(eni.id, {self.test_tag_name: self.id})
+                eni.update()
                 enis.append(eni)
         return enis
 
@@ -350,7 +372,7 @@ class VpcBasics(CliTestRunner):
         ret_list = existing + new_vpcs
         return ret_list
 
-    def get_test_subnets_for_vpc(self, vpc, count=1):
+    def get_test_subnets_for_vpc(self, vpc, zone=None, count=1):
         """
         Fetch a given number of subnets within the provided VPC by either finding existing
         or creating new subnets to meet the count requested.
@@ -358,8 +380,10 @@ class VpcBasics(CliTestRunner):
         :param count: number of subnets requested
         :return: list of subnets
         """
-        existing = self.user.ec2.get_all_subnets(filters={'vpc-id': vpc.id,
-                                                          'tag-key': self.test_tag_name})
+        filters = {'vpc-id': vpc.id, 'tag-key': self.test_tag_name}
+        if zone:
+            filters['availabilityZone'] = zone
+        existing = self.user.ec2.get_all_subnets(filters=filters)
         if len(existing) >= count:
             return  existing[0:count]
         needed = count - len(existing)
@@ -562,7 +586,8 @@ class VpcBasics(CliTestRunner):
                                             subnet_id=subnet_id,
                                             max=count,
                                             auto_connect=auto_connect,
-                                            monitor_to_running=False)
+                                            monitor_to_running=False,
+                                            systemconnection=self.tc.sysadmin)
         for instance in instances:
             instance.add_tag(key=self.test_name, value=self.test_id)
         if monitor_to_running:
