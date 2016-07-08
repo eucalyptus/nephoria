@@ -1,0 +1,28 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+
+    "Description" : "Stack Resource => MVP test",
+
+    "Parameters" : {
+       "TemplateUrl" : {
+            "Description":"S3/OSG URL for Cloudformation Template",
+            "Type":"String",
+            "ConstraintDescription":"Must be URL to Cloudformation Template on S3/OSG",
+            "NoEcho":"False"
+       } 
+    },
+
+    "Resources" : {
+        "Stack" : {
+           "Type" : "AWS::CloudFormation::Stack",
+           "Properties" : {
+              "TemplateURL" : { "Ref" : "TemplateUrl" },
+              "TimeoutInMinutes" : 10
+           }
+        }
+    },
+
+    "Outputs": {
+       "StackRef": {"Value": { "Ref" : "Stack"}}
+    }
+}
