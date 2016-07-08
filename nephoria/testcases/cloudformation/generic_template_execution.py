@@ -24,12 +24,6 @@ class GenericTemplateRun(CliTestRunner):
                    'help': 'file location containing JSON template',
                    'default': None}}
 
-    _DEFAULT_CLI_ARGS['template_url'] = {
-        'args': ['--template-url'],
-        'kwargs': {'dest': 'template_url',
-                   'help': 'S3 URL for JSON template',
-                   'default': None}}
-
     _DEFAULT_CLI_ARGS['template_params'] = {
         'args': ['--template-parameters'],
         'kwargs': {
@@ -171,34 +165,23 @@ class GenericTemplateRun(CliTestRunner):
         self.log.debug("Validating Cloudformation Template.")
         """
         Confirm the following:
-            - if --template-file or --template-url is used.
+            - if --template-file is used.
             - if --template-file is used, confirm file exists.
-            - if --template-file is used, use it; if not, use
-              --template-url
         """
-        if self.args.template_file is None and self.args.template_url is None:
-            raise ValueError("Please pass either template-file/template-url.")
-        if (
+        if self.args.template_file is None:
+            raise ValueError("Please pass template-file.")
+        elif (
                self.args.template_file and
                os.path.exists(self.args.template_file) is False
            ):
             raise ValueError("File passed for template-file does not exist.")
-        if self.args.template_file:
+        else:
             temp = open(self.args.template_file)
             temp_body = temp.read()
             temp.close()
             try:
                 self.tc.user.cloudformation.validate_template(
                                                    template_body=temp_body)
-                self.log.debug("Template is valid.")
-            except BotoServerError as e:
-                self.log.error("Error validating template: " + e.error_message)
-                raise e
-        else:
-            url = self.args.template_url
-            try:
-                self.tc.user.cloudformation.validate_template(
-                                                   template_url=url)
                 self.log.debug("Template is valid.")
             except BotoServerError as e:
                 self.log.error("Error validating template: " + e.error_message)
@@ -248,36 +231,21 @@ class GenericTemplateRun(CliTestRunner):
         Create stack passing supported arguments.
         Stack information should be returned from create_stack
         """
-        if self.args.template_file:
-            temp = open(self.args.template_file)
-            temp_body = temp.read()
-            temp.close()
-            try:
-                resp = self.tc.user.cloudformation.create_stack(
-                                   self.stack_name,
-                                   template_body=temp_body,
-                                   parameters=parameters,
-                                   disable_rollback=self.disable_rollback,
-                                   capabilities=capabilities,
-                                   tags=tags,
-                                   on_failure=self.on_failure)
-            except BotoServerError as e:
-                self.log.error("Failed to create stack")
-                raise e
-        else:
-            url = self.args.template_url
-            try:
-                resp = self.tc.user.cloudformation.create_stack(
-                                   self.stack_name,
-                                   template_url=url,
-                                   parameters=parameters,
-                                   disable_rollback=self.disable_rollback,
-                                   capabilities=capabilities,
-                                   tags=tags,
-                                   on_failure=self.on_failure)
-            except BotoServerError as e:
-                self.log.error("Failed to create stack")
-                raise e
+        temp = open(self.args.template_file)
+        temp_body = temp.read()
+        temp.close()
+        try:
+            resp = self.tc.user.cloudformation.create_stack(
+                               self.stack_name,
+                               template_body=temp_body,
+                               parameters=parameters,
+                               disable_rollback=self.disable_rollback,
+                               capabilities=capabilities,
+                               tags=tags,
+                               on_failure=self.on_failure)
+        except BotoServerError as e:
+            self.log.error("Failed to create stack")
+            raise e
 
         while True:
             """
