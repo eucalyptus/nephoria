@@ -1,0 +1,164 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Auto Scaling Alarm Test - Create supported metric alarms off a given Comparison Operator and Statistic",
+
+  "Parameters" : {
+        "ComparisonOperator": {
+            "Description":"Comparison Operator for Alarm",
+            "Type":"String",
+            "Default" : "GreaterThanOrEqualToThreshold",
+            "AllowedValues" : [ "GreaterThanOrEqualToThreshold","GreaterThanThreshold","LessThanThreshold","LessThanOrEqualToThreshold" ],
+            "ConstraintDescription" : "must be a valid arithmetic operation to use when comparing the specified Statistic and Threshold. The specified Statistic value is used as the first operand."
+        },
+        "Statistic": {
+            "Description":"The statistic to apply to the alarm's associated metric",
+            "Type":"String",
+            "Default" : "Minimum",
+            "AllowedValues" : [ "SampleCount","Average","Sum","Minimum","Maximum" ],
+            "ConstraintDescription" : "must be a valid statistic that can be applied to the alarm's associated metric."
+        }
+  },
+
+  "Resources": {
+      "ASGroupMinSize": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for Auto Scaling Group Minimum Size Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "GroupMinSize",
+              "Namespace": "AWS/AutoScaling",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "ASGroupMaxSize": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for Auto Scaling Group Maximum Size Metric",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "GroupMaxSize",
+              "Namespace": "AWS/AutoScaling",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "ASGroupDesiredCapacity": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for Auto Scaling Group Metric for number of instances that the Auto Scaling group attempts to maintain",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "GroupDesiredCapacity",
+              "Namespace": "AWS/AutoScaling",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "ASGroupInServiceInstances": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for Auto Scaling Group Metric for number of instances that are running as part of the Auto Scaling group",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "GroupInServiceInstances",
+              "Namespace": "AWS/AutoScaling",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "ASGroupPendingInstances": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for Auto Scaling Group Metric for number of instances that are pending. A pending instance is not yet in service.",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "GroupPendingInstances",
+              "Namespace": "AWS/AutoScaling",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "ASGroupStandbyInstances": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for Auto Scaling Group Metric for number of instances that are in a Standby state",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "GroupStandbyInstances",
+              "Namespace": "AWS/AutoScaling",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "ASGroupTerminatingInstances": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for Auto Scaling Group Metric for number of instances that are in the process of terminating",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "GroupTerminatingInstances",
+              "Namespace": "AWS/AutoScaling",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      },
+      "ASGroupTotalInstances": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmDescription" : "Alarm for Auto Scaling Group Metric for total number of instances in the Auto Scaling group. This metric identifies the number of instances that are in service, pending, and terminating.",
+              "ComparisonOperator" : { "Ref": "ComparisonOperator" },
+              "EvaluationPeriods": "3",
+              "Statistic": { "Ref": "Statistic" },
+              "MetricName": "GroupTotalInstances",
+              "Namespace": "AWS/AutoScaling",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      }
+  },
+
+  "Outputs": {
+      "ASGroupMinSizeId": {
+          "Value": { "Ref": "ASGroupMinSize" },
+          "Description": "ID of Cloudwatch Alarm based off of Auto Scaling GroupMinSize Metric"
+      },
+      "ASGroupMaxSizeId": {
+          "Value": { "Ref": "ASGroupMaxSize" },
+          "Description": "ID of Cloudwatch Alarm based off of Auto Scaling GroupMaxSize Metric"
+      },
+      "ASGroupDesiredCapacityId": {
+          "Value": { "Ref": "ASGroupDesiredCapacity" },
+          "Description": "ID of Cloudwatch Alarm based off of Auto Scaling GroupDesiredCapacity Metric"
+      },
+      "ASGroupInServiceInstancesId": {
+          "Value": { "Ref": "ASGroupInServiceInstances" },
+          "Description": "ID of Cloudwatch Alarm based off of Auto Scaling GroupInServiceInstances Metric"
+      },
+      "ASGroupPendingInstancesId": {
+          "Value": { "Ref": "ASGroupPendingInstances" },
+          "Description": "ID of Cloudwatch Alarm based off of Auto Scaling GroupPendingInstances Metric"
+      },
+      "ASGroupStandbyInstancesId": {
+          "Value": { "Ref": "ASGroupStandbyInstances" },
+          "Description": "ID of Cloudwatch Alarm based off of Auto Scaling GroupStandbyInstances Metric"
+      },
+      "ASGroupTerminatingInstancesId": {
+          "Value": { "Ref": "ASGroupTerminatingInstances" },
+          "Description": "ID of Cloudwatch Alarm based off of Auto Scaling GroupTerminatingInstances Metric"
+      },
+      "ASGroupTotalInstancesId": {
+          "Value": { "Ref": "ASGroupTotalInstances" },
+          "Description": "ID of Cloudwatch Alarm based off of Auto Scaling GroupTotalInstances Metric"
+      }
+  }
+}

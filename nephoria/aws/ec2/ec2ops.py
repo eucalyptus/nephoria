@@ -1416,7 +1416,10 @@ disable_root: false"""
         volume_id = volume_id
         while elapsed < timeout:
             try:
-                chk_volume = self.get_volume(volume_id=volume_id)
+                try:
+                    chk_volume = self.get_volume(volume_id=volume_id)
+                except EC2ResourceNotFoundException:
+                    chk_volume = None
                 if not chk_volume:
                     self.log.debug(str(volume_id) + ', Volume no longer exists on system, deleted')
                     break
@@ -2538,22 +2541,22 @@ disable_root: false"""
 
     @printinfo
     def get_emi(self,
-                   emi=None,
-                   name=None,
-                   root_device_type=None,
-                   root_device_name=None,
-                   location=None,
-                   state="available",
-                   arch=None,
-                   owner_id=None,
-                   filters=None,
-                   basic_image=None,
-                   platform=None,
-                   not_platform=None,
-                   tagkey=None,
-                   tagvalue=None,
-                   _args_dict=None,
-                   ):
+                emi=None,
+                name=None,
+                root_device_type=None,
+                root_device_name=None,
+                location=None,
+                state="available",
+                arch=None,
+                owner_id=None,
+                filters=None,
+                basic_image=None,
+                platform=None,
+                not_platform=None,
+                tagkey=None,
+                tagvalue=None,
+                _args_dict=None,
+                virtualization_type=None):
         """
         Get an emi with name emi, or just grab any emi in the system. Additional 'optional' match criteria can be defined.
 
@@ -2600,6 +2603,7 @@ disable_root: false"""
                                    not_platform=not_platform,
                                    tagkey=tagkey,
                                    tagvalue=tagvalue,
+                                   virtualization_type=virtualization_type,
                                    max_count=1)[0]
             except:
                 filters = None
@@ -2617,6 +2621,7 @@ disable_root: false"""
                                not_platform=not_platform,
                                tagkey=tagkey,
                                tagvalue=tagvalue,
+                               virtualization_type=virtualization_type,
                                max_count=1)[0]
 
 
