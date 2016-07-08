@@ -59,7 +59,7 @@ from boto.ec2.address import Address
 from boto.ec2.tag import TagSet
 from boto.ec2.zone import Zone
 from boto.vpc.subnet import Subnet as BotoSubnet
-from boto.vpc import VPCConnection, VPC, Subnet, InternetGateway, RouteTable
+from boto.vpc import VPCConnection, VPC, Subnet, InternetGateway, RouteTable, DhcpOptions
 from boto.ec2.networkinterface import NetworkInterfaceSpecification, NetworkInterfaceCollection
 from boto.ec2.networkinterface import NetworkInterface
 
@@ -702,11 +702,13 @@ disable_root: false"""
         main_pt.align[title] = 'l'
         main_pt.padding_width = 0
         mainbuf = ""
-        cidr_hdr = "CIDR BLOCK".ljust(table_width/5)
-        dhcp_hdr = "DHCP OPT ID".ljust(table_width/5)
-        ins_hdr = "INS TENANCY".ljust(table_width/5)
-        state_hdr = "STATE".ljust(table_width/5)
-        def_hdr = "IS DEFAULT".ljust(table_width/5)
+        ip_len = 20
+        tl = (table_width - ip_len) / 4
+        cidr_hdr = markup("CIDR BLOCK", [ForegroundColor.BLUE]).ljust(ip_len)
+        dhcp_hdr = markup("DHCP OPT ID", [ForegroundColor.BLUE]).ljust(tl)
+        ins_hdr = markup("INS TENANCY", [ForegroundColor.BLUE]).ljust(tl)
+        state_hdr = markup("STATE", [ForegroundColor.BLUE]).ljust(tl)
+        def_hdr = markup("IS DEFAULT", [ForegroundColor.BLUE]).ljust(tl)
         summary_pt = PrettyTable([cidr_hdr, dhcp_hdr, ins_hdr, state_hdr, def_hdr])
         summary_pt.padding_width = 0
         summary_pt.align = 'l'
@@ -715,19 +717,29 @@ disable_root: false"""
         summary_pt.horizontal_char = '.'
         summary_pt.border = False
         summary_pt
-        summary_pt.add_row([vpc.cidr_block, vpc.dhcp_options_id, vpc.instance_tenancy, vpc.state,
-                            vpc.is_default])
+        summary_pt.add_row([str(vpc.cidr_block).ljust(ip_len), str(vpc.dhcp_options_id).ljust(tl),
+                            str(vpc.instance_tenancy).ljust(tl), str(vpc.state).ljust(tl),
+                            str(vpc.is_default).ljust(tl)])
         mainbuf += "\n".join(str(x).strip('|')
                              for x in str(summary_pt).translate(string.maketrans("", "", ),
                                                                 '+|').splitlines())
-        #mainbuf += str(summary_pt)
         if show_tags and vpc.tags:
             mainbuf += markup('\nVPC "{0}" TAGS:\n'.format(vpc.id), markups=[1,4])
             mainbuf += str(self.show_tags(vpc.tags, printme=False)) + "\n"
         igws = self.connection.get_all_internet_gateways(filters={'attachment.vpc-id': vpc.id})
         main_pt.add_row([mainbuf])
+        dhcp_line = markup("DHCP OPTION SET for {0}:".format(vpc.id),
+                           markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
+        main_pt.add_row([".".ljust(table_width, ".")])
+        main_pt.add_row([dhcp_line])
+        if vpc.dhcp_options_id:
+            dopts = self.connection.get_all_dhcp_options([vpc.dhcp_options_id])
+            if dopts:
+                dopt = dopts[0]
+            main_pt.add_row([str(self.show_dhcp_option_set(dopt, printme=False))])
+
         igw_line = markup("Internet Gateways for {0}:".format(vpc.id),
-                          markups=[TextStyle.BOLD]).ljust(table_width)
+                          markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
         main_pt.add_row([".".ljust(table_width, ".")])
         main_pt.add_row([igw_line])
         if not igws:
@@ -803,14 +815,37 @@ disable_root: false"""
         pt.align = 'l'
         pt.header = False
         pt.padding_width = 0
+        pt.add_row(["ID:".ljust(key_len), markup(igw.id, TextStyle.BOLD).ljust(val_len)])
+        region = ""
+        if igw.region:
+            region = "{0}{1}, {2}{3}".format(markup('NAME:',[TextStyle.BOLD,
+                                                                       ForegroundColor.BLUE]),
+                                               igw.region.name,
+                                               markup('ENDPOINT:', [TextStyle.BOLD,
+                                                               ForegroundColor.BLUE]),
+                                               igw.region.endpoint)
+        pt.add_row(["REGION:", region.ljust(val_len)])
+        # Add attachment entries
         att = ""
         if isinstance(igw.attachments, list):
             for a in igw.attachments:
-                att += "({0} {1}, {2} {3})\n".format(markup("STATE:", TextStyle.BOLD),
+                att += "{0} {1}, {2} {3}\n".format(markup("STATE:", [TextStyle.BOLD,
+                                                                       ForegroundColor.BLUE]),
                                                    a.state,
-                                                   markup("VPC ID:", TextStyle.BOLD),
+                                                   markup("VPC ID:", [TextStyle.BOLD,
+                                                                       ForegroundColor.BLUE]),
                                                    a.vpc_id).ljust(val_len)
         att = att.strip()
+        pt.add_row(["ATTACHMENTS:", att.ljust(val_len)])
+        # Show any route tables referencing this gateway...
+        route_tables = ""
+        rts = self.connection.get_all_route_tables(filters={'route.gateway-id': igw.id})
+        if rts:
+            route_tables = "{0} {1}".format(markup("IGW Referenced By:", [TextStyle.BOLD,
+                                                                          ForegroundColor.BLUE]),
+                                            ", ".join(str(x.id) for x in rts))
+        pt.add_row(["ROUTE TABLES:", route_tables])
+        # Add tag entries in sub-table...
         tag_pt = ""
         if igw.tags:
             tag_key_len = 30
@@ -830,12 +865,6 @@ disable_root: false"""
         tag_pt = "\n".join(str(x).strip('|')
                            for x in str(tag_pt).translate(string.maketrans("", "", ),
                                                           '+|').splitlines())
-        pt.add_row(["ID:".ljust(key_len), markup(igw.id, TextStyle.BOLD).ljust(val_len)])
-        region = ""
-        if igw.region:
-            region = "({0}, {1})".format(igw.region.name, igw.region.endpoint)
-        pt.add_row(["REGION:", region.ljust(val_len)])
-        pt.add_row(["ATTACHMENTS:", att.ljust(val_len)])
         pt.add_row(['TAGS:', str(tag_pt)])
 
         if printme:
@@ -870,6 +899,7 @@ disable_root: false"""
         value_hdr_len = table_width - key_hdr_len - 3
         key_hdr = 'key'.ljust(key_hdr_len)
         value_hdr = 'value'.ljust(value_hdr_len)
+        # Create main table and add basic/single item entries first...
         pt = PrettyTable([key_hdr, value_hdr])
         pt.header = False
         pt.align = 'l'
@@ -881,6 +911,7 @@ disable_root: false"""
         pt.add_row(["REGION:", region.ljust(value_hdr_len)])
         pt.add_row(["PropagatingVgwSet:", route_table.propagatingVgwSet])
         assoc = ""
+        # Add associations in sub-table...
         if route_table.associations:
             al = value_hdr_len/3
             assoc_pt = PrettyTable(['ID:'.ljust(al),
@@ -895,6 +926,37 @@ disable_root: false"""
                                   'MAIN: {0}'.format(ass.main).ljust(6),
                                   'SUBNET_ID: {0}'.format(ass.subnet_id).ljust(al)])
         pt.add_row(["ASSOCIATIONS", str(assoc_pt)])
+        # Add Route Entries in sub-table...
+        route_pt = "(NONE)"
+        if route_table.routes:
+            ip_len = 20
+            rl = (value_hdr_len - ip_len) / 5
+            route_pt = PrettyTable([markup('DEST', [TextStyle.BOLD,
+                                                    ForegroundColor.BLUE]).ljust(ip_len),
+                                    markup('GW', [TextStyle.BOLD,
+                                                    ForegroundColor.BLUE]).ljust(rl),
+                                    markup('INSTANCE', [TextStyle.BOLD,
+                                                    ForegroundColor.BLUE]).ljust(rl),
+                                    markup('INTERFACE', [TextStyle.BOLD,
+                                                    ForegroundColor.BLUE]).ljust(rl),
+                                    markup('STATE', [TextStyle.BOLD,
+                                                    ForegroundColor.BLUE]).ljust(rl),
+                                    markup('VPC_PEER', [TextStyle.BOLD,
+                                                    ForegroundColor.BLUE]).ljust(rl)])
+            route_pt.align = 'l'
+            route_pt.padding_width = 0
+            for route in route_table.routes:
+                route_pt.add_row([str(route.destination_cidr_block).ljust(ip_len),
+                                  str(route.gateway_id).ljust(rl),
+                                  str(route.instance_id).ljust(rl),
+                                  str(route.interface_id).ljust(rl),
+                                  str(route.state).ljust(rl),
+                                  str(route.vpc_peering_connection_id).ljust(rl)])
+        route_pt = "\n".join(str(x).strip('|')
+                             for x in str(route_pt).translate(string.maketrans("", "", ),
+                                                              '+|').splitlines())
+        pt.add_row(['ROUTES:', str(route_pt)])
+        # Add tag entries in sub-table...
         tag_pt = ""
         if route_table.tags:
             tag_key_len = 30
@@ -915,22 +977,7 @@ disable_root: false"""
                            for x in str(tag_pt).translate(string.maketrans("", "", ),
                                                           '+|').splitlines())
         pt.add_row(['TAGS:', str(tag_pt)])
-        route_pt = "(NONE)"
-        if route_table.routes:
-            rl = value_hdr_len / 6
-            route_pt = PrettyTable(['DEST'.ljust(rl), 'GW'.ljust(rl), 'INSTANCE'.ljust(rl),
-                                    'INTERFACE'.ljust(rl), 'STATE'.ljust(rl),
-                                    'VPC_PEER'.ljust(rl)])
-            route_pt.align = 'l'
-            route_pt.padding_width = 0
-            for route in route_table.routes:
-                route_pt.add_row([route.destination_cidr_block, route.gateway_id,
-                                  route.instance_id, route.interface_id, route.state,
-                                  route.vpc_peering_connection_id])
-        route_pt = "\n".join(str(x).strip('|')
-                             for x in str(route_pt).translate(string.maketrans("", "", ),
-                                                              '+|').splitlines())
-        pt.add_row(['ROUTES:', str(route_pt)])
+
         if printme:
             printmethod('\n{0}\n'.format(pt))
         else:
@@ -950,8 +997,98 @@ disable_root: false"""
         else:
             return ret_buf
 
+    def show_dhcp_option_set(self, dopt, printmethod=None, printme=True):
+        if isinstance(dopt, basestring):
+            dopts = self.connection.get_all_dhcp_options([dopt])
+            if dopts:
+                dopt = dopts[0]
+            else:
+                raise ValueError('No DHCP Option Set found for id:"{0}"'.format(dopt))
+        assert isinstance(dopt, DhcpOptions), 'Expected DhcpOptions class, got: "{0}/{1}"'\
+            .format(dopt, type(dopt))
+        printmethod = printmethod or self.log.info
+        table_width = 110
+        key_len = 14
+        val_len = table_width - key_len - 3
+        pt = PrettyTable(['key', 'value'])
+        pt.align = 'l'
+        pt.padding_width = 0
+        pt.header = False
+        pt.add_row(['DHCP OPT ID:'.ljust(key_len), str(dopt.id).ljust(val_len)])
+        region = ""
+        if dopt.region:
+            region = "{0}{1}, {2}{3}".format(markup('NAME:', [TextStyle.BOLD,
+                                                              ForegroundColor.BLUE]),
+                                             dopt.region.name,
+                                             markup('ENDPOINT:', [TextStyle.BOLD,
+                                                                  ForegroundColor.BLUE]),
+                                             dopt.region.endpoint)
+        pt.add_row(["REGION:", region.ljust(val_len)])
+        # Add option entries in sub-table...
+        opt_pt = ""
+        if dopt.options:
+            opt_key_len = 30
+            opt_value_len = val_len - opt_key_len - 2
+            opt_key_hdr = markup('OPTION', [TextStyle.BOLD, ForegroundColor.BLUE])
+            opt_value_hdr = markup('OPTION VALUE', [TextStyle.BOLD, ForegroundColor.BLUE])
+            opt_pt = PrettyTable([opt_key_hdr, opt_value_hdr])
+            opt_pt.align = 'l'
+            opt_pt.max_width[opt_key_hdr] = opt_key_len
+            opt_pt.max_width[opt_value_hdr] = opt_value_len
+            opt_pt.header = True
+            opt_pt.padding_width = 0
+            opt_pt.vrules = 1
+            opt_pt.hrules = 1
+            for key, value in dopt.options.iteritems():
+                opt_pt.add_row([str(key).ljust(opt_key_len), str(value).ljust(opt_value_len)])
+        opt_pt = "\n".join(str(x).strip('|')
+                           for x in str(opt_pt).translate(string.maketrans("", "", ),
+                                                          '+|').splitlines())
+        pt.add_row(['OPTIONS:', str(opt_pt)])
 
-    def get_all_subnets(self, subnet_ids=None, zone=None, filters=None, dry_run=False, verbose=None):
+        # Add tag entries in sub-table...
+        tag_pt = ""
+        if dopt.tags:
+            tag_key_len = 30
+            tag_value_len = val_len - tag_key_len - 2
+            tag_key_hdr = markup('TAG KEY', [TextStyle.BOLD, ForegroundColor.BLUE])
+            tag_value_hdr = markup('TAG VALUE', [TextStyle.BOLD, ForegroundColor.BLUE])
+            tag_pt = PrettyTable([tag_key_hdr, tag_value_hdr])
+            tag_pt.align = 'l'
+            tag_pt.max_width[tag_key_hdr] = tag_key_len
+            tag_pt.max_width[tag_value_hdr] = tag_value_len
+            tag_pt.header = True
+            tag_pt.padding_width = 0
+            tag_pt.vrules = 1
+            tag_pt.hrules = 1
+            for key, value in dopt.tags.iteritems():
+                tag_pt.add_row([str(key).ljust(tag_key_len), str(value).ljust(tag_value_len)])
+        tag_pt = "\n".join(str(x).strip('|')
+                           for x in str(tag_pt).translate(string.maketrans("", "", ),
+                                                          '+|').splitlines())
+        pt.add_row(['TAGS:', str(tag_pt)])
+
+        if printme:
+            printmethod("\n{0}\n".format(pt))
+        else:
+            return pt
+
+    def show_dhcp_option_sets(self, dopts=None, printmethod=None, printme=True):
+        dopts = dopts or self.connection.get_all_dhcp_options()
+        if not isinstance(dopts, list):
+            dopts = [dopts]
+        ret_buf = ""
+        for dopt in dopts:
+            dpt = str(self.show_dhcp_option_set(dopt, printme=False))
+            ret_buf += "\n{0}\n\n{1}\n".format(dpt, "#".ljust(len(dpt.splitlines()[0]), "#"))
+        if printme:
+            printmethod = printmethod or self.log.info
+            printmethod("\n" + str(ret_buf) + "\n")
+        else:
+            return ret_buf
+
+    def get_all_subnets(self, subnet_ids=None, zone=None, filters=None, dry_run=False,
+                        verbose=None):
         ret_list = []
         filters = filters or {}
         if zone:
