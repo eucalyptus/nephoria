@@ -689,7 +689,7 @@ disable_root: false"""
                 return vpc
         return None
 
-    def show_vpc(self, vpc, printmethod=None, show_tags=True, printme=True):
+    def show_vpc(self, vpc, brief=False, printmethod=None, printme=True):
         table_width = 110
         if isinstance(vpc, str):
             vpcs = self.get_all_vpcs(vpc)
@@ -716,51 +716,78 @@ disable_root: false"""
         summary_pt.vrules = 1
         summary_pt.horizontal_char = '.'
         summary_pt.border = False
-        summary_pt
+
         summary_pt.add_row([str(vpc.cidr_block).ljust(ip_len), str(vpc.dhcp_options_id).ljust(tl),
                             str(vpc.instance_tenancy).ljust(tl), str(vpc.state).ljust(tl),
                             str(vpc.is_default).ljust(tl)])
         mainbuf += "\n".join(str(x).strip('|')
                              for x in str(summary_pt).translate(string.maketrans("", "", ),
                                                                 '+|').splitlines())
-        if show_tags and vpc.tags:
-            mainbuf += markup('\nVPC "{0}" TAGS:\n'.format(vpc.id), markups=[1,4])
-            mainbuf += str(self.show_tags(vpc.tags, printme=False)) + "\n"
-        igws = self.connection.get_all_internet_gateways(filters={'attachment.vpc-id': vpc.id})
         main_pt.add_row([mainbuf])
-        dhcp_line = markup("DHCP OPTION SET for {0}:".format(vpc.id),
-                           markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
-        main_pt.add_row([".".ljust(table_width, ".")])
-        main_pt.add_row([dhcp_line])
-        if vpc.dhcp_options_id:
-            dopts = self.connection.get_all_dhcp_options([vpc.dhcp_options_id])
-            if dopts:
-                dopt = dopts[0]
-            main_pt.add_row([str(self.show_dhcp_option_set(dopt, printme=False))])
+        if not brief:
+            dhcp_line = markup("DHCP OPTION SET FOR {0}:".format(vpc.id),
+                               markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
+            main_pt.add_row([".".ljust(table_width, ".")])
+            main_pt.add_row([dhcp_line])
+            if vpc.dhcp_options_id:
+                dopts = self.connection.get_all_dhcp_options([vpc.dhcp_options_id])
+                if dopts:
+                    dopt = dopts[0]
+                main_pt.add_row([str(self.show_dhcp_option_set(dopt, printme=False))])
+            igws = self.connection.get_all_internet_gateways(filters={'attachment.vpc-id': vpc.id})
+            igw_line = markup("INTERNET GATEWAYS FOR {0}:".format(vpc.id),
+                              markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
+            main_pt.add_row([".".ljust(table_width, ".")])
+            main_pt.add_row([igw_line])
+            if not igws:
+                main_pt.add_row(['    (NONE)'])
+            else:
+                for igw in igws:
+                    main_pt.add_row([str(self.show_internet_gateway(igw, printme=False))])
+            # Add tag entries in sub-table...
+            tag_pt = ""
+            if igw.tags:
+                tag_key_len = 30
+                tag_value_len = table_width - tag_key_len - 3
+                tag_key_hdr = markup('TAG KEY', [TextStyle.BOLD, ForegroundColor.BLUE])
+                tag_value_hdr = markup('TAG VALUE', [TextStyle.BOLD, ForegroundColor.BLUE])
+                tag_pt = PrettyTable([tag_key_hdr, tag_value_hdr])
+                tag_pt.align = 'l'
+                tag_pt.max_width[tag_key_hdr] = tag_key_len
+                tag_pt.max_width[tag_value_hdr] = tag_value_len
+                tag_pt.header = True
+                tag_pt.padding_width = 0
+                tag_pt.vrules = 1
+                tag_pt.hrules = 1
+                for key, value in igw.tags.iteritems():
+                    tag_pt.add_row([str(key).ljust(tag_key_len), str(value).ljust(tag_value_len)])
+            tag_pt = "\n".join(str(x).strip('|')
+                               for x in str(tag_pt).translate(string.maketrans("", "", ),
+                                                              '+|').splitlines())
+            tag_line = markup("TAGS FOR {0}:".format(vpc.id),
+                               markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
 
-        igw_line = markup("Internet Gateways for {0}:".format(vpc.id),
-                          markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
-        main_pt.add_row([".".ljust(table_width, ".")])
-        main_pt.add_row([igw_line])
-        if not igws:
-            main_pt.add_row(['    (NONE)'])
-        else:
-            for igw in igws:
-                main_pt.add_row([str(self.show_internet_gateway(igw, printme=False))])
+            main_pt.add_row([".".ljust(table_width, ".")])
+            main_pt.add_row([tag_line])
+            main_pt.add_row([str(tag_pt)])
         if printme:
             printmethod = printmethod or self.log.info
             printmethod( "\n" + str(main_pt) + "\n")
         else:
             return main_pt
 
-    def show_vpcs(self, vpcs=None, printmethod=None, show_tags=True, verbose=None, printme=True):
+    def show_vpcs_brief(self, vpcs=None, printmethod=None, verbose=None, printme=True):
+        return self.show_vpcs(vpcs=vpcs, brief=True, printmethod=printmethod, verbose=verbose,
+                              printme=printme)
+
+    def show_vpcs(self, vpcs=None, brief=False, printmethod=None, verbose=None, printme=True):
         ret_buf = markup('--------------VPC LIST--------------', markups=[1, 94])
         if verbose is None:
             verbose = self._use_verbose_requests
         if not vpcs:
             all_vpcs_pt = None
             vpcs = self.get_all_vpcs(verbose=False)
-            vpcs_pt = self.show_vpcs(vpcs=vpcs, printme=False)
+            vpcs_pt = self.show_vpcs(vpcs=vpcs, brief=brief, printme=False)
             if verbose:
                 all_vpcs = self.get_all_vpcs(verbose=True)
                 not_owned = []
@@ -773,7 +800,7 @@ disable_root: false"""
                     if not mine:
                         not_owned.append(vpc)
                 if not_owned:
-                    all_vpcs_pt = self.show_vpcs(vpcs=not_owned, printme=False)
+                    all_vpcs_pt = self.show_vpcs(vpcs=not_owned, brief=brief, printme=False)
             ret_buf = "\n"
             ret_buf += markup('VPCS OWNED BY THIS ACCOUNT:\n', [TextStyle.BOLD,
                                                                TextStyle.UNDERLINE])
@@ -786,7 +813,7 @@ disable_root: false"""
             if not isinstance(vpcs, list):
                 vpcs = [vpcs]
             for vpc in vpcs:
-                vpt = str(self.show_vpc(vpc, show_tags=show_tags, printme=False))
+                vpt = str(self.show_vpc(vpc, brief=brief, printme=False))
                 ret_buf += "\n{0}\n\n{1}\n".format(vpt, "#".ljust(len(vpt.splitlines()[0]), "#"))
         if printme:
             printmethod = printmethod or self.log.info
@@ -838,7 +865,7 @@ disable_root: false"""
         att = att.strip()
         pt.add_row(["ATTACHMENTS:", att.ljust(val_len)])
         # Show any route tables referencing this gateway...
-        route_tables = ""
+        route_tables = "(NO REFERENCES)"
         rts = self.connection.get_all_route_tables(filters={'route.gateway-id': igw.id})
         if rts:
             route_tables = "{0} {1}".format(markup("IGW Referenced By:", [TextStyle.BOLD,
