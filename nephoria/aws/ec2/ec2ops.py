@@ -813,8 +813,14 @@ disable_root: false"""
             if not isinstance(vpcs, list):
                 vpcs = [vpcs]
             for vpc in vpcs:
-                vpt = str(self.show_vpc(vpc, brief=brief, printme=False))
-                ret_buf += "\n{0}\n\n{1}\n".format(vpt, "#".ljust(len(vpt.splitlines()[0]), "#"))
+                if brief:
+                    ret_buf += "\n{0}".format(str(self.show_vpc(vpc,
+                                                                  brief=brief,
+                                                                  printme=False)))
+                else:
+                    vpt = str(self.show_vpc(vpc, brief=brief, printme=False))
+                    ret_buf += "\n{0}\n\n{1}\n".format(vpt, "#".ljust(len(vpt.splitlines()[0]),
+                                                                      "#"))
         if printme:
             printmethod = printmethod or self.log.info
             printmethod( "\n" + str(ret_buf) + "\n")
