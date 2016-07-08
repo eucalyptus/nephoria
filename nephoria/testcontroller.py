@@ -107,13 +107,9 @@ class TestController(object):
 
     def __repr__(self):
         try:
-            myrepr = "{0}:{1}({2}:{3},{4}:{5})".format(
+            myrepr = "{0}:{1}(sysadmin+eucalyptus/admin)".format(
                 self.__class__.__name__,
-                self._system_connection_info.get('hostname', ""),
-                self._cloud_admin_connection_info.get('account_name', ""),
-                self._cloud_admin_connection_info.get('user_name', ""),
-                self._test_user_connection_info.get('aws_account_name', ""),
-                self._test_user_connection_info.get('aws_user_name', ""))
+                self._system_connection_info.get('hostname', ""))
             return myrepr
         except Exception as E:
             self.log.debug(E)
