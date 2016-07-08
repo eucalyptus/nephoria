@@ -36,9 +36,11 @@ import json
 import os
 import re
 import urllib
+import time
+from cloud_utils.log_utils import markup, ForegroundColor, BackGroundColor, TextStyle
 from prettytable import PrettyTable
 from nephoria.baseops.botobaseops import BotoBaseOps
-from cloud_utils.log_utils import markup, ForegroundColor, BackGroundColor, TextStyle
+
 
 
 class IAMops(BotoBaseOps):
@@ -318,6 +320,16 @@ class IAMops(BotoBaseOps):
             if account_pt:
                 pt.add_row(["\n{0}".format(account_pt)])
         print_method("\n{0}\n".format(pt))
+
+    def assume_role(self, arn, session_name=None, duration=3600):
+        session_name = session_name or 'nephoria_' + str(int(time.time()))
+        duration = duration or 0
+        params = {'DurationSeconds': duration,
+                  'RoleSessionName': session_name,
+                  'RoleArn': arn}
+        response = self.get_response_items(action='AssumeRole', params=params)
+
+
 
     def show_all_accounts(self, account_name=None, account_id=None, search=False,
                           print_table=True):
