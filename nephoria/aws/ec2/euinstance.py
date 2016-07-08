@@ -50,13 +50,15 @@ from boto.ec2.networkinterface import NetworkInterface
 from boto.exception import EC2ResponseError
 from cloud_admin.systemconnection import SystemConnection
 from cloud_utils.log_utils import eulogger, printinfo, markup
-from nephoria.aws.ec2.euvolume import EuVolume
-from nephoria.euca.taggedresource import TaggedResource
-from nephoria.testcase_utils import wait_for_result
+from cloud_utils.net_utils import get_network_info_for_cidr, test_port_status
 from cloud_utils.net_utils.sshconnection import SshConnection, CommandExitCodeException, \
     CommandTimeoutException
 from cloud_utils.system_utils.machine import Machine
-from cloud_utils.log_utils import get_traceback
+from cloud_utils.log_utils import get_traceback, markup, TextStyle, ForegroundColor, \
+    BackGroundColor
+from nephoria.aws.ec2.euvolume import EuVolume
+from nephoria.euca.taggedresource import TaggedResource
+from nephoria.testcase_utils import wait_for_result
 from random import randint
 from prettytable import PrettyTable, ALL
 from datetime import datetime
@@ -434,19 +436,31 @@ class EuInstance(Instance, TaggedResource, Machine):
 
     def show_enis(self, printme=True):
         buf = ""
+        try:
+            self.update()
+        except Exception as UE:
+            self.log.warning('{0}\nError while updating instance:{1}'.format(get_traceback(), UE))
         for eni in self.interfaces:
             if isinstance(eni, NetworkInterface):
-                title = " ENI ID: {0}, DESCRIPTION:{1}".format(eni.id, eni.description)
-                enipt = PrettyTable([title])
-                enipt.align[title] = 'l'
-                enipt.padding_width = 0
-                dot = "?"
+                dev_index = 'NA'
+                if eni.attachment:
+                    dev_index = "Index:{0}".format(eni.attachment.device_index)
                 attached_status = "?"
                 if eni.attachment:
                     dot = eni.attachment.delete_on_termination
                     attached_status = eni.attachment.status
-                pt = PrettyTable(['ENI ID', 'PRIV_IP (PRIMARY)', 'PUB IP', 'VPC', 'SUBNET',
-                                  'OWNER', 'DOT', 'STATUS'])
+                title = " {0}, DESC:{1}, STATUS:{2} ({3})"\
+                    .format(markup("{0}, {1}".format(dev_index, eni.id),
+                                   markups=[TextStyle.BOLD, ForegroundColor.WHITE,
+                                            BackGroundColor.BG_BLUE]),
+                            eni.description, eni.status, attached_status)
+                enipt = PrettyTable([title])
+                enipt.align[title] = 'l'
+                enipt.padding_width = 0
+                dot = "?"
+
+                pt = PrettyTable(['ENI ID', 'PRIV_IPS', 'PUB IP', 'VPC', 'SUBNET',
+                                  'OWNER', 'DOT'])
                 pt.padding_width = 0
                 if eni.private_ip_addresses:
                     private_ips = ",".join(str("{0} ({1})".format(x.private_ip_address,
@@ -454,15 +468,21 @@ class EuInstance(Instance, TaggedResource, Machine):
                                            for x in eni.private_ip_addresses)
                 else:
                     private_ips = None
+
                 pt.add_row([eni.id, private_ips,
                             getattr(eni, 'publicIp', None),
                             getattr(eni, 'vpc_id', None),
                             getattr(eni, 'subnet_id', None),
                             getattr(eni, 'owner_id', None),
-                            dot,
-                            "{0} ({1})".format(eni.status, attached_status)])
+                            dot])
                 enipt.add_row([(str(pt))])
-                buf += str(enipt)
+                sec_group_buf = "Security Groups For ENI {0}:".format(eni.id)
+                if eni.groups:
+                    sec_group_buf += self.ec2ops.show_security_groups(eni.groups, printme=False)
+                else:
+                    sec_group_buf += "\nNO SECURITY GROUPS FOR THIS ENI "
+                enipt.add_row([sec_group_buf])
+                buf += "\n{0}\n".format(enipt)
         if printme:
             self.log.info(buf)
         else:
@@ -2105,3 +2125,196 @@ class EuInstance(Instance, TaggedResource, Machine):
                            "' --> Metadata device value:'" + \
                            str(meta_devices.get(meta_dev)) + "' (Not found in Instance's BDM)"
             raise Exception(err_buf)
+
+    def sync_enis_etc_sysconfig(self, prefix='eth'):
+        """
+        Helper method to sync the guests networking services with 1 or more cloud ENIs.
+        This method should setup local device for each ENI including; ip addresses, rules and
+        routes in a RHEL/CENTOS based system using sysconfig.
+        (For DEBIAN/UBUNTU systems see 'sync_enis_etc_default')
+        Args:
+            prefix: string, default network dev name ie: eth, em, etc..
+        """
+        enis = self.ec2ops.connection.get_all_network_interfaces(
+            filters={'attachment.instance-id': self.id})
+        # Make sure we can fetch the subnet for each eni first...
+        subnets = {}
+        for eni in enis:
+            subnet = self.ec2ops.get_subnet(eni.subnet_id)
+            subnets[subnet.id] = subnet
+
+        # Get network devices on the guest
+        devs = self.get_network_interfaces().keys() or []
+        if "{0}0".format(prefix) not in devs:
+            raise ValueError('Dev {0} not found in host devs:"{1}"'.format("{0}0".format(prefix),
+                                                                           ",".join(devs)))
+        # First force the default gateway to be device at index 0...
+        network_file_path = ' /etc/sysconfig/network'
+        new_buf = "GATEWAYDEV={0}0\n".format(prefix)
+        # If the file exists replace or add the GATEWAYDEV value in it...
+        if self.is_present(network_file_path):
+            lines = self.sys('cat {0}'.format(network_file_path), code=0)
+            for line in lines:
+                if not re.search('GATEWAYDEV', line):
+                    new_buf += str(line) + "\n"
+        self.log.debug('Attempting to update gw info in: {0}:\n{1}'
+                       .format(network_file_path, new_buf))
+        backup_network_file_path = "{0}_backup".format(network_file_path).strip()
+        temp_network_file_path = "{0}_temp".format(network_file_path).strip()
+        f = None
+        # Create a backup of the existing file...
+        if self.is_present(backup_network_file_path):
+            self.sys('rm -f {0}'.format(backup_network_file_path))
+        self.sys('cp {0} {1}'.format(network_file_path, backup_network_file_path))
+        # Write the new contents from new_buf into a temporary file to be swapped in to protect
+        # from errors during write.
+        self.ssh.open_sftp()
+        try:
+            f = self.open_remote_file(temp_network_file_path, 'w+')
+            f.write(new_buf)
+            f.flush()
+        except Exception as FE:
+            self.log.error('Error attempting to write to file:"{0}"'
+                           .format(temp_network_file_path))
+            raise
+        finally:
+            if f:
+                f.close()
+        # Finally swap in the temp file and overwrite the working copy.
+        self.sys('mv {0} {1}'.format(temp_network_file_path, network_file_path), code=0)
+        self.debug('Finished writing: {0}'.format(network_file_path))
+
+        # Add interface ifcfg files for all interfaces other than the non-primary ENI...
+        eni_ifcfg_files = ['/etc/sysconfig/network-scripts/ifcfg-{0}0'.format(prefix)]
+        for eni in enis:
+            if eni.attachment.device_index != 0:
+                attachment = eni.attachment
+                dev_name = '{0}{1}'.format(prefix, attachment.device_index)
+                if dev_name not in devs:
+                    raise ValueError(
+                        'Dev {0} not found in host devs:"{1}"'.format(dev_name, ",".join(devs)))
+                net_script= ('DEVICE="{0}"\nBOOTPROTO="dhcp"\nONBOOT="yes"\n'
+                             'TYPE="Ethernet"\nUSERCTL="yes"\nPEERDNS="yes"\nIPV6INIT="no"\n'
+                             'PERSISTENT_DHCLIENT="1"'.format(dev_name))
+                if_file = '/etc/sysconfig/network-scripts/ifcfg-{0}'.format(dev_name).strip()
+                f = None
+                self.log.debug('Attempting to write network-script for: {0}'.format(if_file))
+                try:
+                    f = self.open_remote_file(if_file, 'w')
+                    f.write(net_script)
+                    f.flush()
+                    eni_ifcfg_files.append(if_file)
+                finally:
+                    if f:
+                        f.close()
+        # Add interface route files for all interfaces other than the non-primary ENI...
+        eni_route_files = ['/etc/sysconfig/network-scripts/route-{0}0'.format(prefix)]
+        for eni in enis:
+            if eni.attachment.device_index != 0:
+                attachment = eni.attachment
+                dev_name = '{0}{1}'.format(prefix, attachment.device_index)
+                if dev_name not in devs:
+                    raise ValueError(
+                        'Dev {0} not found in host devs:"{1}"'.format(dev_name, ",".join(devs)))
+                subnet = subnets.get(eni.subnet_id)
+                self.log.debug('Getting route info for subnet:')
+                self.ec2ops.show_subnet(subnet)
+                net_info = get_network_info_for_cidr(subnet.cidr_block)
+                buf = "Network Info for subnet: {0}\n".format(subnet.id)
+                for key, value in net_info.iteritems():
+                    buf += "{0}:\t{1}\n".format(key, value)
+                self.log.debug(buf)
+                # todo find out what to use for the gateway here...
+                # Assume the gateway is the first available address...
+                gw = net_info.get('network').split('.')
+                last_octet = gw.pop()
+                last_octet = int(last_octet) + 1
+                gw.append(last_octet)
+                gw = ".".join(str(x) for x in gw)
+
+                route_script = ("default via {0} dev {1} table {2}\n"
+                                "{3} dev {1} src {3} table {2}\n"
+                                .format(gw, dev_name, attachment.device_index, subnet.cidr_block,
+                                        eni.private_ip_address))
+                self.log.debug('Route info for eni: {0}, dev:{1}\n{2}'.format(eni.id, dev_name,
+                                                                              route_script))
+                route_file = '/etc/sysconfig/network-scripts/route-{0}'.format(dev_name).strip()
+                f = None
+                self.log.debug('Attempting to write network-script for: {0}'.format(route_file))
+                try:
+                    f = self.open_remote_file(route_file, 'w+')
+                    f.write(route_script)
+                    f.flush()
+                    eni_route_files.append(route_file)
+                finally:
+                    if f:
+                        f.close()
+        # Add interface rule files for all interfaces other than the non-primary ENI....
+        eni_rule_files = ['/etc/sysconfig/network-scripts/rule-{0}0'.format(prefix)]
+        for eni in enis:
+            if eni.attachment.device_index != 0:
+                attachment = eni.attachment
+                dev_name = '{0}{1}'.format(prefix, attachment.device_index)
+                if dev_name not in devs:
+                    raise ValueError(
+                        'Dev {0} not found in host devs:"{1}"'.format(dev_name, ",".join(devs)))
+                rule_script = "from {0}/32 table {1}\n".format(eni.private_ip_address,
+                                                               attachment.device_index)
+                rule_file = '/etc/sysconfig/network-scripts/route-{0}'.format(dev_name).strip()
+                f = None
+                self.log.debug('Attempting to write network-script for: {0}'.format(rule_file))
+                try:
+                    f = self.open_remote_file(rule_file, 'w+')
+                    f.write(rule_script)
+                    f.flush()
+                    eni_route_files.append(rule_file)
+                finally:
+                    if f:
+                        f.close()
+        # Helper method to remove any non-primary interface scripts no longer in use by an ENI
+        def remove_old_scripts(existing_list, current_eni_list):
+            for existing_script in existing_list:
+                existing_script = existing_script.strip()
+                found = False
+                for eni_file_name in current_eni_list:
+                    if re.search('^{0}$'.format(existing_script), eni_file_name) or \
+                            re.search('{0}\.\d+$'.format(eni_file_name), existing_script):
+                        found = True
+                        break
+                if not found:
+                    if self.is_file(existing_script):
+                        self.log.debug('No corresponding ENI found. Removing file:"{0}"'
+                                       .format(existing_script))
+                        self.sys('rm -f {0}'.format(existing_script))
+
+        # Remove any old files, files for detached ENIs, etc..
+        existing_ifcfg_files = self.sys('ls /etc/sysconfig/network-scripts/ | grep "^ifcfg-{0}"'
+                                        .format(prefix))
+        remove_old_scripts(existing_ifcfg_files, eni_ifcfg_files)
+        existing_route_files = self.sys('ls /etc/sysconfig/network-scripts/ | grep "^route-{0}"'
+                                        .format(prefix))
+        remove_old_scripts(existing_route_files, eni_route_files)
+        existing_rule_files = self.sys('ls /etc/sysconfig/network-scripts/ | grep "^rule-{0}"'
+                                       .format(prefix))
+        remove_old_scripts(existing_rule_files, eni_rule_files)
+        # Now restart the network service to make use of the config and scripts created...
+        self.log.info('Restarting network service for instance:{0}'.format(self.id))
+        self.sys('service network restart')
+        for x in range(20):
+            try:
+                test_port_status(self.ip_address, port=22)
+                break
+            except Exception as PE:
+                self.log.debug('{0}, Test Port Status. {1}:{2}. Elapsed:{3}. Result: {4}'
+                               .format(self.id, self.ip_address, 22, x, PE))
+                time.sleep(1)
+        # Finally refresh the ssh connection in case it was lost in the network restart...
+        self.log.debug('Attempting to refresh ssh connection after syncing ENIs...')
+        self.refresh_ssh()
+
+    def sync_enis_etc_default(self, prefix='eth'):
+        pass
+
+
+
+

@@ -167,10 +167,12 @@ class EuVolume(Volume, TaggedResource):
         pt = PrettyTable(['VOL_ID', 'ORDER', 'TESTSTATUS', 'AGE', 'SIZE',
                           'SRC_SNAP', 'MD5/(LEN)', 'ZONE', 'INSTANCE'])
         pt.padding_width=0
+        instance_id = None
+        if self.attach_data:
+           instance_id = self.attach_data.instance_id
         pt.add_row([self.id, self.eutest_createorder, self.eutest_laststatus or self.status,
                     self.eutest_ageatstatus, self.size, self.snapshot_id,
-                    "{0}/({1})".format(self.md5, self.md5len), self.zone,
-                   self.attach_data.instance_id])
+                    "{0}/({1})".format(self.md5, self.md5len), self.zone, instance_id])
         if printme:
             printmethod = printmethod or self.debug
             printmethod(str(pt))

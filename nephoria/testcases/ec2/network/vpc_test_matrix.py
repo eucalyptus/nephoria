@@ -71,17 +71,28 @@ class VpcBasics(CliTestRunner):
         'kwargs': {'help': 'Cidr network range for VPC(s) created in this test',
                    'default': "172.{0}.0.0/16"}}
 
+    _DEFAULT_CLI_ARGS['proxy_vmtype'] = {
+        'args': ['--proxy-vmtype'],
+        'kwargs': {'help': 'Vm type to use for proxy test instance',
+                   'default': 'm1.large'}}
+
     def post_init(self):
         self.test_id = randint(0, 100000)
-        self.id = str(self.__class__.__name__)
+        self.id = str(int(time.time()))
         self.test_name = self.__class__.__name__
-        self._zonelist = None
-        self._ssh_key = None
+        self._tc = None
+        self._group = None
+        self._zonelist = []
+        self._keypair = None
+        self._keypair_name = None
         self._emi = None
+        self._user = None
         self._addresses = []
         self._test_vpcs = []
+        self._proxy_instances = {}
         self._security_groups = {}
-        self.test_tag_name = '{0}_CREATED_NUMBER'.format(self.id)
+        self._test_enis = {}
+
 
     @property
     def tc(self):
@@ -95,6 +106,85 @@ class VpcBasics(CliTestRunner):
                                 log_level=self.args.log_level)
             setattr(self, '_tc', tc)
         return tc
+
+    @property
+    def test_tag_name(self):
+        return '{0}_CREATED_NUMBER'.format(self.__class__.__name__)
+
+    def get_proxy_instance(self, zone):
+        if not zone:
+            raise ValueError('Must provide zone for get_proxy_instance. Got:"{0}"'.format(zone))
+        proxy_instances = getattr(self, '_proxy_instances', {})
+        pi =  proxy_instances.get(zone, None)
+        if pi:
+            try:
+                pi.update()
+                if pi.status != "running":
+                    try:
+                        pi.terminate()
+                    except:
+                        pass
+                    pi = None
+            except Exception as E:
+                self.log.debug('{0}\nIgnoring error caught while fetching proxy instance '
+                               'status:"{1}'.format(get_traceback(), E))
+                pi = None
+        if not pi:
+            subnet = self.user.ec2.get_default_subnets(zone=zone)
+            if not subnet:
+                raise ValueError('No default subnet for zone:{0} to create proxy instance in'
+                                 .format(zone))
+            subnet = subnet[0]
+            pi = self.user.ec2.run_image(image=self.emi, keypair=self.keypair, group=self.group,
+                                         subnet_id = subnet.id, zone=zone,
+                                         type=self.args.proxy_vmtype,
+                                         systemconnection=self.tc.sysadmin)[0]
+            proxy_instances[zone] = pi
+            self._proxy_instances = proxy_instances
+        return pi
+
+    def get_test_enis_for_subnet(self, subnet, status='available', count=0):
+        """
+        Attempts to fetch enis for a given subnet which are tagged with self.test_tag_name and
+        self.id.
+        If a count is provided and the status filter value is 'available', then an existing
+        number of enis tagged with this test's tag in the available state will be returned.
+        If less than count are found, new enis will be created until 'count' number
+        of enis can be returned.
+
+        Args:
+            subnet: boto subnet obj or string subnet id
+            status: 'available', 'in-use', or None
+            count: Int, number of test ENIs to fetch
+            returns list of ENIs
+        """
+        if count and status != 'available':
+            raise ValueError('Count argument can only be used with status "available" got: '
+                             'count:{0}, status:{1}'.format(count, status))
+        if isinstance(subnet, basestring):
+            orig_sub = subnet
+            subnet = self.user.ec2.get_subnet(subnet)
+            if not subnet:
+                raise ValueError('get_eni_for_subnet: Could not find subnet for "{0}"'
+                                 .format(orig_sub))
+        if not isinstance(subnet, Subnet):
+            raise ValueError('Must provide type Subnet() or subnet id for get_eni_subnet. '
+                             'Got:"{0}"'.format(subnet))
+        filters = {'subnet-id': subnet.id, 'tag-key': self.test_tag_name, 'tag-value': self.id}
+        if status:
+            filters['status'] = status
+        enis = self.user.ec2.connection.get_all_network_interfaces(filters=filters) or []
+        if count and len(enis) < count:
+            for x in xrange(0, (count-len(enis))):
+                eni = self.user.ec2.connection.create_network_interface(
+                    subnet_id=subnet.id, description='This was created by: {0}'.format(self.id))
+                self.user.ec2.create_tags(eni.id, {self.test_tag_name: self.id})
+                eni.update()
+                enis.append(eni)
+        return enis
+
+    def add_subnet_interface_to_proxy_vm(self, subnet):
+        pass
 
     @property
     def keypair_name(self):
@@ -136,21 +226,26 @@ class VpcBasics(CliTestRunner):
         emi = getattr(self, '_emi', None)
         if not emi:
             if self.args.emi:
-                emi = self.user.ec2.get_emi(emi=self.args.emi)
+                emi = self.user.ec2.get_images(emi=self.args.emi)
+                if emi and isinstance(emi, list):
+                    emi = emi[0]
             else:
                 try:
-                    self.user.ec2.get_emi(basic_image=True)
+                    emi = self.user.ec2.get_emi(basic_image=True)
                 except:
                     pass
                 if not emi:
-                    emi = self.user.ec2.get_emi()
+                    emi = self.user.ec2.get_emi(basic_image=False)
+            emi = emi or None
             setattr(self, '_emi', emi)
         return emi
 
     @emi.setter
     def emi(self, value):
         if isinstance(value, basestring):
-            value = self.user.ec2.get_emi(emi=value)
+            value = self.user.ec2.get_images(emi=self.args.emi)
+            if value and isinstance(value, list):
+                value = value[0]
         if value is None or isinstance(value, Image):
             setattr(self, '_emi', value)
         else:
@@ -196,12 +291,12 @@ class VpcBasics(CliTestRunner):
         for vpc_count in xrange(0, count):
             # Make the new vpc cidr net in the private range based upon the number of existing VPCs
             net_octet = 1 + (250 % len(self.user.ec2.get_all_vpcs()))
-            new_vpc = self.user.ec2.create_vpc(cidr_block='172.{0}.0.0/16'.format(net_octet))
+            new_vpc = self.user.ec2.connection.create_vpc(cidr_block='172.{0}.0.0/16'.format(net_octet))
             self.user.ec2.create_tags(new_vpc.id, {self.test_tag_name: count})
             test_vpcs.append(new_vpc)
             for gw in xrange(0, gateways_per_vpc):
-                gw = self.user.ec2.create_internet_gateway()
-                self.user.ec2.attach_internet_gateway(internet_gateway_id=gw.id, vpc_id=new_vpc.id)
+                gw = self.user.ec2.connection.create_internet_gateway()
+                self.user.ec2.connection.attach_internet_gateway(internet_gateway_id=gw.id, vpc_id=new_vpc.id)
             self.user.log.info('Created the following VPC: {0}'.format(new_vpc.id))
             self.user.ec2.show_vpc(new_vpc)
         return test_vpcs
@@ -242,9 +337,9 @@ class VpcBasics(CliTestRunner):
                             subnet_cidr = None
                             break
                 try:
-                    subnet = self.user.ec2.create_subnet(vpc_id=vpc.id,
-                                                         cidr_block=subnet_cidr,
-                                                         availability_zone=zone)
+                    subnet = self.user.ec2.connection.create_subnet(vpc_id=vpc.id,
+                                                                    cidr_block=subnet_cidr,
+                                                                    availability_zone=zone)
                 except:
                     try:
                         self.log.error('Existing subnets during create request:')
@@ -277,7 +372,7 @@ class VpcBasics(CliTestRunner):
         ret_list = existing + new_vpcs
         return ret_list
 
-    def get_test_subnets_for_vpc(self, vpc, count=1):
+    def get_test_subnets_for_vpc(self, vpc, zone=None, count=1):
         """
         Fetch a given number of subnets within the provided VPC by either finding existing
         or creating new subnets to meet the count requested.
@@ -285,8 +380,10 @@ class VpcBasics(CliTestRunner):
         :param count: number of subnets requested
         :return: list of subnets
         """
-        existing = self.user.ec2.get_all_subnets(filters={'vpc-id': vpc.id,
-                                                          'tag-key': self.test_tag_name})
+        filters = {'vpc-id': vpc.id, 'tag-key': self.test_tag_name}
+        if zone:
+            filters['availabilityZone'] = zone
+        existing = self.user.ec2.get_all_subnets(filters=filters)
         if len(existing) >= count:
             return  existing[0:count]
         needed = count - len(existing)
@@ -328,7 +425,8 @@ class VpcBasics(CliTestRunner):
                                             len(self._security_groups[vpc]) + 1,
                                             self.test_id)
                 self._security_groups[vpc].append(
-                    self.user.ec2.create_security_group(name=name, description=name, vpc_id=vpc))
+                    self.user.ec2.connection.create_security_group(name=name, description=name,
+                                                                   vpc_id=vpc))
             ret_groups = self._security_groups[vpc]
         for group in ret_groups:
             self.user.ec2.revoke_all_rules(group)
@@ -355,11 +453,24 @@ class VpcBasics(CliTestRunner):
 
     @printinfo
     def get_test_instances(self, zone, group_id,  vpc_id=None, subnet_id=None,
-                           state='running', count=None, monitor_to_running=True):
+                           state='running', count=None, monitor_to_running=True, timeout=480):
         """
         Finds existing instances created by this test which match the criteria provided,
         or creates new ones to meet the count requested.
         returns list of instances.
+
+        Args:
+            zone:  String, zone name
+            group_id: String, security group id
+            vpc_id: String, vpc id
+            subnet_id: String subnet id
+            state: String, state of instances to
+            count: int, number of instances to fetch, will find existing and attempt to run new
+                   to fulfill this requested count.
+            monitor_to_running: monitor instances to a running state before returning them.
+                                error out if they do not go to running within timeout
+            timeout: int, number of seconds to monitor instances to running before erroring.
+            returns: list of instances which meet the provided criteria.
         """
         instances = []
         if zone is None or group_id is None:
@@ -390,19 +501,19 @@ class VpcBasics(CliTestRunner):
                     existing_instances.append(instance)
         for instance in existing_instances:
             euinstance = self.user.ec2.convert_instance_to_euinstance(instance,
-                                                                      keypair=self.ssh_key,
+                                                                      keypair=self.keypair,
                                                                       auto_connect=False)
             euinstance.log.set_stdout_loglevel(self.args.log_level)
             instances.append(euinstance)
         self.log.debug('existing_instances:{0}'.format(existing_instances))
         if not count:
             if monitor_to_running:
-                return self.user.ec2.monitor_euinstances_to_running(instances)
+                return self.user.ec2.monitor_euinstances_to_running(instances, timeout=timeout)
             return instances
         if len(instances) >= count:
             instances = instances[0:count]
             if monitor_to_running:
-                return self.user.ec2.monitor_euinstances_to_running(instances)
+                return self.user.ec2.monitor_euinstances_to_running(instances, timeout=timeout)
             return instances
         else:
             needed = count - len(instances)
@@ -446,22 +557,28 @@ class VpcBasics(CliTestRunner):
         """
         vpc_id = None
         subnet_id = None
-        subnet_obj = None
         if subnet:
+            if isinstance(subnet, basestring):
+                subnet = self.user.ec2.get_subnet(subnet)
             if not isinstance(subnet, Subnet):
-                subnet_obj = self.user.ec2.get_subnet(subnet)
-            if not subnet_obj:
                 raise ValueError('Failed to retrieve subnet with id "{0}" from cloud'
                                  .format(subnet))
-            vpc_id = subnet.vpc_id
-            subnet_id = subnet_obj.id
+        else:
+            subnets = self.get_test_subnets_for_vpc(vpc=self.default_vpc, count=1)
+            if not subnet:
+                raise ValueError('Failed to find subnet for default vpc:"{0}"'
+                                 .format(self.default_vpc.id))
+            subnet = subnets[0]
+        vpc_id = subnet.vpc_id
+        subnet_id = subnet.id
+
         if group:
             if not isinstance(group, SecurityGroup):
                 group = self.user.ec2.get_security_group(group)
         else:
             group = self.get_test_security_groups(vpc=vpc_id, count=1)[0]
         emi = emi or self.emi
-        key = key or self.ssh_key
+        key = key or self.keypair
         instances = self.user.ec2.run_image(image=emi,
                                             keypair=key,
                                             group=group,
@@ -469,7 +586,8 @@ class VpcBasics(CliTestRunner):
                                             subnet_id=subnet_id,
                                             max=count,
                                             auto_connect=auto_connect,
-                                            monitor_to_running=False)
+                                            monitor_to_running=False,
+                                            systemconnection=self.tc.sysadmin)
         for instance in instances:
             instance.add_tag(key=self.test_name, value=self.test_id)
         if monitor_to_running:
