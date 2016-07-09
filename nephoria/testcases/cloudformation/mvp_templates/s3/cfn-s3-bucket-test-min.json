@@ -7,7 +7,7 @@
         "Bucket" : {
             "Type" : "AWS::S3::Bucket",
             "Properties" : {
-                "Tags" : [ {"Key" : "Application", "Value" : "bucket-tagging-test" } ]
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
             }
         }
     },
