@@ -1,0 +1,107 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "NAT Gateway Test => MVP Test",
+    "Resources" : {
+        "VPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties" : {
+                "CidrBlock" : "10.0.0.0/16",
+                "EnableDnsSupport" : "True",
+                "EnableDnsHostnames" : "True",
+                "InstanceTenancy" : "default",
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ]
+            }
+        },
+
+        "Subnet": {
+            "Type" : "AWS::EC2::Subnet",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VPC" },
+                "CidrBlock" : "10.0.0.0/24",
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "InternetGateway" : {
+            "Type" : "AWS::EC2::InternetGateway",
+            "Properties" : {
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "VPCGatewayAttachment" : {
+            "Type" : "AWS::EC2::VPCGatewayAttachment",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VPC" },
+                "InternetGatewayId" : { "Ref" : "InternetGateway" }
+            }
+        },
+
+        "EIP": {
+            "Type" : "AWS::EC2::EIP",
+                "Properties" : {
+                    "Domain": "vpc"
+                }
+        },
+
+        "NatGateway" : {
+            "DependsOn" : "VPCGatewayAttachment",
+            "Type" : "AWS::EC2::NatGateway",
+            "Properties" : {
+                "AllocationId" : { "Fn::GetAtt" : ["EIP", "AllocationId"]},
+                "SubnetId" : { "Ref" : "Subnet"}
+            }
+        },
+
+        "RouteTable": {
+            "Type" : "AWS::EC2::RouteTable",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VPC" },
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "Route" : {
+            "Type" : "AWS::EC2::Route",
+            "DependsOn" : "VPCGatewayAttachment",
+            "Properties" : {
+                "RouteTableId" : { "Ref" : "RouteTable" },
+                "DestinationCidrBlock" : "0.0.0.0/0",
+                "NatGatewayId" : { "Ref" : "NatGateway" }
+            }
+        },
+
+        "NetworkAcl" : {
+            "Type" : "AWS::EC2::NetworkAcl",
+            "Properties" : {
+                "VpcId" : {"Ref" : "VPC"},
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "SubnetNetworkAclAssociation" : {
+            "Type" : "AWS::EC2::SubnetNetworkAclAssociation",
+            "Properties" : {
+                "SubnetId" : { "Ref" : "Subnet" },
+                "NetworkAclId" : { "Ref" : "NetworkAcl" }
+            }
+        }
+    },
+
+    "Outputs": {
+        "NatGatewayId" : {
+            "Description" : "Resource ID of NAT Gateway",
+            "Value" : { "Ref" : "NatGateway" }
+        },
+
+        "ElasticIP": {
+            "Description" : "Resource ID of Elastic IP",
+            "Value" : { "Ref" : "EIP" }
+        },
+
+        "EIPAllocationID": {
+            "Description" : "Allocation ID of the Elastic IP",
+            "Value" : { "Fn::GetAtt" : [ "EIP" , "AllocationId" ] }
+        }
+    }
+}
