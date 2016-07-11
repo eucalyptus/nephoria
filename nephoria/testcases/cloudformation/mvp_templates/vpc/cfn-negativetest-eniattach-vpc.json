@@ -1,6 +1,6 @@
 {
     "AWSTemplateFormatVersion" : "2010-09-09",
-    "Description" : "Elastic IP Test - EIP association to instance in VPC",
+    "Description" : "Elastic IP Test (Negative Test) - EIP association to instance in VPC using AWS::EC2::NetworkInterfaceAttachment resource (Error should be returned: Please specify an interface ID for the operation instead.)",
     "Parameters" : {
         "ImageId": {
             "Description":"Image Id",
@@ -102,6 +102,24 @@
             }
         },
 
+        "SecondaryNetworkInterface" :{
+            "Type": "AWS::EC2::NetworkInterface",
+            "Properties": {
+                "Description": "Secondary Network Interface",
+                "SubnetId": { "Ref": "Subnet" },
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "NetworkInterfaceAttachment" : {
+            "Type" : "AWS::EC2::NetworkInterfaceAttachment",
+            "Properties" : {
+                "InstanceId" : {"Ref" : "Instance"},
+                "NetworkInterfaceId" : {"Ref" : "SecondaryNetworkInterface"},
+                "DeviceIndex" : "1" 
+            }
+        },
+
         "Instance": {
             "Type": "AWS::EC2::Instance",
                 "Properties": {
@@ -141,6 +159,21 @@
         "NetworkInterfacePrivId" : {
             "Description" : "Private IP of Network Interface",
             "Value" : { "Fn::GetAtt" : [ "NetworkInterface", "PrimaryPrivateIpAddress" ] }
+        },
+
+        "SecondaryNetworkInterfaceId" : {
+            "Description" : "Resource ID of Secondary Network Interface",
+            "Value" : { "Ref" : "SecondaryNetworkInterface" }
+        },
+
+        "SecondaryNetworkInterfacePrivId" : {
+            "Description" : "Private IP of Secondary Network Interface",
+            "Value" : { "Fn::GetAtt" : [ "SecondaryNetworkInterface", "PrimaryPrivateIpAddress" ] }
+        },
+
+        "NetworkInterfaceAttachmentId" : {
+            "Description" : "Resource ID of NetworkInterfaceAttachment",
+            "Value" : { "Ref" : "NetworkInterfaceAttachment" }
         }
     }
 }
