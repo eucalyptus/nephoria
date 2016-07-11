@@ -464,6 +464,7 @@ class ImportInstanceTests(CliTestRunner):
                 worker.wget_remote_image(url=url, dest_file_name=src_img)
                 if re.search('\.tar|\.gz|\.xz', src_img):
                     src_img = self.unzip_image(image_path=src_img, img_utils=img_utils)
+                    self.log.debug('Got src image after unzip operation:"{0}"'.format(src_img))
             imagelocation = src_img
         return imagelocation
 
@@ -498,16 +499,17 @@ class ImportInstanceTests(CliTestRunner):
                 self.log.info('"tar" not found on worker:{0}, installing now...'.format(worker))
                 worker.package_manager.install('tar')
             if str(filename).endswith('tar.gz') or str(filename).endswith('tar.xz'):
-                dest_name = image_path.strip('tar.gz')
                 tar_flags = '-xvzf'
             elif str(filename).endswith('tar.gz') or str(filename).endswith('tar.xz'):
-                dest_name = image_path.strip('tar.xz')
                 tar_flags = '-xvJf'
             else:
-                dest_name = image_path.strip('tar')
                 tar_flags = '-xvf'
-            worker.sys('tar {0} {1} -C {2}'.format(tar_flags, image_path, dirname), code=0,
-                       timeout=timeout)
+            dest_name = worker.sys('tar {0} {1} -C {2}'.format(tar_flags, image_path, dirname),
+                                  code=0, timeout=timeout)
+            if dest_name:
+                dest_name = str(dest_name[0]).strip()
+            else:
+                raise ValueError('File resulting from tar operation not found?')
             dest_path = os.path.join(dirname, dest_name)
             return dest_path
         elif str(filename).endswith('.gz'):
