@@ -462,7 +462,7 @@ class ImportInstanceTests(CliTestRunner):
             except CommandExitCodeException:
                 #File not found at destpath download it...
                 worker.wget_remote_image(url=url, dest_file_name=src_img)
-                if re.search('\.tar|\.gz|\.xz', src_img)
+                if re.search('\.tar|\.gz|\.xz', src_img):
                     src_img = self.unzip_image(image_path=src_img, img_utils=img_utils)
             imagelocation = src_img
         return imagelocation
