@@ -454,7 +454,7 @@ class ImportInstanceTests(CliTestRunner):
         else:
             assert isinstance(img_utils, Euca2oolsImageUtils)
             worker = img_utils.worker_machine
-            src_img = os.path.basename(url)
+            src_img = str(os.path.basename(url)).lower()
             src_img = os.path.join(self.args.destpath, src_img)
             try:
                 #Looking for existing file at destpath
