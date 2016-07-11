@@ -1,0 +1,62 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Elastic Load Balancing Test => MVP test for internal AWS::ElasticLoadBalancing::LoadBalancer resource on VPC",
+
+  "Resources" : {
+     "VPC": {
+        "Type": "AWS::EC2::VPC",
+        "Properties" : {
+            "CidrBlock" : "10.0.0.0/16",
+            "EnableDnsSupport" : "True",
+            "EnableDnsHostnames" : "True",
+            "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ]
+        }
+    },
+
+    "Subnet": {
+        "Type" : "AWS::EC2::Subnet",
+        "Properties" : {
+            "VpcId" : { "Ref" : "VPC" },
+            "CidrBlock" : "10.0.0.0/24",
+            "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+        }
+    },
+
+    "LoadBalancer" : {
+      "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties" : {
+          "Subnets" : [{ "Ref" : "Subnet" }],
+          "Scheme" : "internal",
+          "Listeners" : [ {
+              "LoadBalancerPort" : "80",
+              "InstancePort" : "80",
+              "Protocol" : "HTTP"
+          } ]
+      }
+    }
+  },
+
+  "Outputs" : {
+      "LoadBalancerId" : {
+          "Description" : "Resource ID of LoadBalancer",
+          "Value" : { "Ref" : "LoadBalancer" }
+      },
+
+      "LoadBalancerDNSName" : {
+          "Description" : "DNS Name of LoadBalancer",
+          "Value" : { "Fn::GetAtt" : [ "LoadBalancer", "DNSName" ] }
+      },
+
+      "LoadBalancerSecurityGroupName" : {
+          "Description" : "Security Group Name of LoadBalancer",
+          "Value" : { "Fn::GetAtt" : [ "LoadBalancer", "SourceSecurityGroup.GroupName" ] }
+      },
+
+      "LoadBalancerSecurityGroupOwnerAlias" : {
+          "Description" : "Group Owner Alias of LoadBalancer",
+          "Value" : { "Fn::GetAtt" : [ "LoadBalancer", "SourceSecurityGroup.OwnerAlias" ] }
+      }
+  }
+
+}

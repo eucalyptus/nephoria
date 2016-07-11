@@ -1,0 +1,42 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Elastic Load Balancing Test => MVP test for AWS::ElasticLoadBalancing::LoadBalancer resource",
+
+  "Resources" : {
+    "LoadBalancer" : {
+      "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties" : {
+          "AvailabilityZones" : {"Fn::GetAZs" : {"Ref" : "AWS::Region"}},
+          "Listeners" : [ {
+              "LoadBalancerPort" : "80",
+              "InstancePort" : "80",
+              "Protocol" : "HTTP"
+          } ]
+      }
+    }
+  },
+
+  "Outputs" : {
+      "LoadBalancerId" : {
+          "Description" : "Resource ID of LoadBalancer",
+          "Value" : { "Ref" : "LoadBalancer" }
+      },
+
+      "LoadBalancerDNSName" : {
+          "Description" : "DNS Name of LoadBalancer",
+          "Value" : { "Fn::GetAtt" : [ "LoadBalancer", "DNSName" ] }
+      },
+
+      "LoadBalancerSecurityGroupName" : {
+          "Description" : "Security Group Name of LoadBalancer",
+          "Value" : { "Fn::GetAtt" : [ "LoadBalancer", "SourceSecurityGroup.GroupName" ] }
+      },
+
+      "LoadBalancerSecurityGroupOwnerAlias" : {
+          "Description" : "Group Owner Alias of LoadBalancer",
+          "Value" : { "Fn::GetAtt" : [ "LoadBalancer", "SourceSecurityGroup.OwnerAlias" ] }
+      }
+  }
+
+}
