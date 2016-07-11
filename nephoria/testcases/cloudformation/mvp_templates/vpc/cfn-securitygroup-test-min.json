@@ -1,0 +1,83 @@
+{
+
+    "AWSTemplateFormatVersion" : "2010-09-09",
+
+    "Description" : "Security Group Test => MVP for AWS::EC2::SecurityGroup, AWS::EC2::SecurityGroupIngress, and AWS::EC2::SecurityGroupEgress",
+
+
+    "Resources" : {
+        "VPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+                "CidrBlock": "10.0.0.0/16",
+                "InstanceTenancy": "default"
+            }
+        },
+
+        "SecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription" : "AWS::EC2::SecurityGroup Resource Test Example in VPC",
+                "VpcId": { "Ref" : "VPC" },
+                "Tags": [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ]
+            }
+        },
+
+        "SecurityGroupIngress22": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol" : "tcp",
+                "GroupId": { "Fn::GetAtt": [ "SecurityGroup", "GroupId" ] },
+                "FromPort" : "22",
+                "ToPort" : "22",
+                "SourceSecurityGroupId": { "Fn::GetAtt": [ "SecurityGroup", "GroupId" ] }
+            }
+        },
+
+        "SecurityGroupIngress443": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol" : "tcp",
+                "GroupId": { "Fn::GetAtt": [ "SecurityGroup", "GroupId" ] },
+                "FromPort" : "22",
+                "ToPort" : "22",
+                "CidrIp": "0.0.0.0/0"
+            }
+        },
+
+        "SecurityGroupEgress": {
+            "Type": "AWS::EC2::SecurityGroupEgress",
+            "Properties": {
+                "CidrIp": "0.0.0.0/0",
+                "FromPort": "0",
+                "GroupId": { "Fn::GetAtt": [ "SecurityGroup", "GroupId" ] },
+                "IpProtocol": "-1",
+                "ToPort": "65535"
+            }
+        }
+
+    },
+
+    "Outputs" : {
+        "VPCId" : {
+            "Description" : "Resource ID of VPC",
+            "Value" : { "Ref" : "VPC" }
+        },
+
+        "VPCCidrBlock" : {
+            "Description" : "CIDR Block of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "CidrBlock" ] }
+        },
+
+        "SecurityGroupRefId" : {
+            "Description" : "Resource ID of SecurityGroup Resource",
+            "Value" : { "Ref" : "SecurityGroup" }
+        },
+
+        "SecurityGroupId" : {
+            "Description" : "Group ID of SecurityGroup Resource",
+            "Value" : { "Fn::GetAtt" : [ "SecurityGroup", "GroupId" ] }
+       }
+    }
+
+}

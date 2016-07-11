@@ -8,31 +8,32 @@
     "Resources" : {
         "SecurityGroup": {
             "Type": "AWS::EC2::SecurityGroup",
-                "Properties": {
-                    "GroupDescription" : "AWS::EC2::SecurityGroup Resource Test Example"
-                 }
+            "Tags": [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ],
+            "Properties": {
+                "GroupDescription" : "AWS::EC2::SecurityGroup Resource Test Example"
+            }
         },
 
         "SecurityGroupIngress22": {
             "Type": "AWS::EC2::SecurityGroupIngress",
-                "Properties": {
-                            "IpProtocol" : "tcp",
-                            "GroupName": { "Ref" : "SecurityGroup" },
-                            "FromPort" : "22",
-                            "ToPort" : "22",
-                            "SourceSecurityGroupName" : { "Ref" : "SecurityGroup" }
-                }
+            "Properties": {
+                "IpProtocol" : "tcp",
+                "GroupName": { "Ref" : "SecurityGroup" },
+                "FromPort" : "22",
+                "ToPort" : "22",
+                "SourceSecurityGroupName" : { "Ref" : "SecurityGroup" }
+            }
         },
 
         "SecurityGroupIngress443": {
             "Type": "AWS::EC2::SecurityGroupIngress",
-                "Properties": {
-                            "IpProtocol" : "tcp",
-                            "GroupName": { "Ref" : "SecurityGroup" },
-                            "FromPort" : "22",
-                            "ToPort" : "22",
-                            "CidrIp": "0.0.0.0/0"
-                }
+            "Properties": {
+                "IpProtocol" : "tcp",
+                "GroupName": { "Ref" : "SecurityGroup" },
+                "FromPort" : "22",
+                "ToPort" : "22",
+                "CidrIp": "0.0.0.0/0"
+            }
         }
 
     },
