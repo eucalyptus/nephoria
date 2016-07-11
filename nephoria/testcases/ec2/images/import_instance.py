@@ -335,7 +335,7 @@ class ImportInstanceTests(CliTestRunner):
                     image_name = os.path.basename(location)[0:15]
                 else:
                     image_name = str(self.args.platform or 'test')
-                bucketname = 'eutester_import_' + str(image_name)
+                bucketname = 'eutester_import_' + str(image_name).lower()
             self._bucket = self.user.s3.create_bucket(bucketname)
         return self._bucket
 
