@@ -1,0 +1,52 @@
+{
+
+    "AWSTemplateFormatVersion" : "2010-09-09",
+
+    "Description" : "Security Group Test => MVP for AWS::EC2::SecurityGroup and AWS::EC2::SecurityGroupIngress",
+
+
+    "Resources" : {
+        "SecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+                "Properties": {
+                    "GroupDescription" : "AWS::EC2::SecurityGroup Resource Test Example"
+                 }
+        },
+
+        "SecurityGroupIngress22": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+                "Properties": {
+                            "IpProtocol" : "tcp",
+                            "GroupName": { "Ref" : "SecurityGroup" },
+                            "FromPort" : "22",
+                            "ToPort" : "22",
+                            "SourceSecurityGroupName" : { "Ref" : "SecurityGroup" }
+                }
+        },
+
+        "SecurityGroupIngress443": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+                "Properties": {
+                            "IpProtocol" : "tcp",
+                            "GroupName": { "Ref" : "SecurityGroup" },
+                            "FromPort" : "22",
+                            "ToPort" : "22",
+                            "CidrIp": "0.0.0.0/0"
+                }
+        }
+
+    },
+
+    "Outputs" : {
+        "SecurityGroupRefId" : {
+            "Description" : "Resource ID of SecurityGroup Resource",
+            "Value" : { "Ref" : "SecurityGroup" }
+        },
+
+        "SecurityGroupId" : {
+            "Description" : "Group ID of SecurityGroup Resource",
+            "Value" : { "Fn::GetAtt" : [ "SecurityGroup", "GroupId" ] }
+       }
+    }
+
+}
