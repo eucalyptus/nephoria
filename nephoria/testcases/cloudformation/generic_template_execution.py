@@ -14,7 +14,11 @@ import os.path
 class GenericTemplateRun(CliTestRunner):
 
     _CLI_DESCRIPTION = ("Test given Cloudformation template/URL"
-                        " against Eucalyptus Cloudformation."
+                        " against Eucalyptus Cloudformation. "
+                        "This script utilizes the following "
+                        "Cloudformation API calls: "
+                        "CreateStack, DeleteStack, DescribeStacks, "
+                        "and ValidateTemplate."
                         )
     _DEFAULT_CLI_ARGS = copy.copy(CliTestRunner._DEFAULT_CLI_ARGS)
 
