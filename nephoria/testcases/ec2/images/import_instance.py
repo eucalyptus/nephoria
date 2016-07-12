@@ -47,6 +47,7 @@ from subprocess import CalledProcessError
 from urllib2 import Request, urlopen, URLError
 from base64 import b64decode
 import os
+import re
 import time
 import types
 
@@ -334,7 +335,7 @@ class ImportInstanceTests(CliTestRunner):
                     image_name = os.path.basename(location)[0:15]
                 else:
                     image_name = str(self.args.platform or 'test')
-                bucketname = 'eutester_import_' + str(image_name)
+                bucketname = 'eutester_import_' + str(image_name).lower()
             self._bucket = self.user.s3.create_bucket(bucketname)
         return self._bucket
 
@@ -461,8 +462,72 @@ class ImportInstanceTests(CliTestRunner):
             except CommandExitCodeException:
                 #File not found at destpath download it...
                 worker.wget_remote_image(url=url, dest_file_name=src_img)
+            if re.search('\.tar|\.gz|\.xz', src_img):
+                src_img = self.unzip_image(image_path=src_img, img_utils=img_utils)
+                self.log.debug('Got src image after unzip operation:"{0}"'.format(src_img   ))
             imagelocation = src_img
         return imagelocation
+
+    def unzip_image(self, image_path, img_utils=None, timeout=300):
+        img_utils = img_utils or self.image_utils
+        worker = img_utils.worker_machine
+        filename = os.path.basename(image_path).strip()
+        dirname = os.path.dirname(image_path).strip()
+        if not dirname:
+            dirname = worker.sys('pwd')
+            if dirname:
+                dirname = dirname[0]
+        if re.search('.gz$', filename):
+            try:
+                worker.sys('which gzip', code=0)
+            except CommandExitCodeException:
+                self.log.info('"gzip" not found on worker:{0}, installing now...'.format(worker))
+                worker.package_manager.install('gzip')
+        if re.search('.xz$', filename):
+            try:
+                worker.sys('which xz', code=0)
+            except CommandExitCodeException:
+                self.log.info('"xz" not found on worker:{0}, installing now...'.format(worker))
+                if re.search('centos|rhel|redhat', worker.distro):
+                    worker.package_manager.install('xz')
+                else:
+                    worker.package_manager.install('xz-utils')
+        if re.search('.tar', filename):
+            try:
+                worker.sys('which tar', code=0)
+            except:
+                self.log.info('"tar" not found on worker:{0}, installing now...'.format(worker))
+                worker.package_manager.install('tar')
+            if str(filename).endswith('tar.gz') or str(filename).endswith('tar.xz'):
+                tar_flags = '-xvzf'
+            elif str(filename).endswith('tar.gz') or str(filename).endswith('tar.xz'):
+                tar_flags = '-xvJf'
+            else:
+                tar_flags = '-xvf'
+            dest_name = worker.sys('tar {0} {1} -C {2}'.format(tar_flags, image_path, dirname),
+                                  code=0, timeout=timeout)
+            if dest_name:
+                dest_name = str(dest_name[0]).strip()
+            else:
+                raise ValueError('File resulting from tar operation not found?')
+            dest_path = os.path.join(dirname, dest_name)
+            return dest_path
+        elif str(filename).endswith('.gz'):
+            dest_name = image_path.strip('.gz')
+            dest_path = os.path.join(dirname, dest_name)
+            worker.sys('gzip -dc < {0} > {1}'.format(image_path, dest_name))
+            return dest_path
+        elif str(filename).endswith('.xz'):
+            dest_name = image_path.strip('.xz')
+            dest_path = os.path.join(dirname, dest_name)
+            worker.sys('xz {0} -c > {1}'.format(image_path, dirname), code=0,
+                       timeout=timeout)
+            return dest_path
+        else:
+            raise ValueError('Unknown file type to unzip:"{0}"'.format(image_path))
+
+
+
 
     
 

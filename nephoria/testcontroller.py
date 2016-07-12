@@ -43,11 +43,11 @@ class TestController(object):
         """
         if isinstance(log_level, basestring):
             log_level = getattr(logging, log_level.upper(), logging.DEBUG)
-
+        self.log = Eulogger("TESTER:{0}".format(hostname), stdout_level=log_level)
         if not hostname and environment_file:
             component = self.get_component_from_topology(environment_file, 'clc-1')
             hostname = component['clc-1']
-
+        self.log.identifier = "TESTER:{0}".format(hostname)
         self.log = Eulogger("TESTER:{0}".format(hostname), stdout_level=log_level)
         self._region = region
         self._sysadmin = None
@@ -107,13 +107,9 @@ class TestController(object):
 
     def __repr__(self):
         try:
-            myrepr = "{0}:{1}({2}:{3},{4}:{5})".format(
+            myrepr = "{0}:{1}(sysadmin+eucalyptus/admin)".format(
                 self.__class__.__name__,
-                self._system_connection_info.get('hostname', ""),
-                self._cloud_admin_connection_info.get('account_name', ""),
-                self._cloud_admin_connection_info.get('user_name', ""),
-                self._test_user_connection_info.get('aws_account_name', ""),
-                self._test_user_connection_info.get('aws_user_name', ""))
+                self._system_connection_info.get('hostname', ""))
             return myrepr
         except Exception as E:
             self.log.debug(E)
