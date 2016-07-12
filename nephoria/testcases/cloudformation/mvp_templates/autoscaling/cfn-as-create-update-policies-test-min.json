@@ -1,0 +1,115 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "AutoScaling Create and Update Policy Test - MVP for CreationPolicy and UpdatePolicy with Resource Signals (Ubuntu 16.04 or Greater)",
+    "Parameters": {
+        "ImageId": {
+            "Description":"Ubuntu Image Id",
+            "Type":"String"
+        },
+        "InstanceType": {
+            "Description":"Instance Type",
+            "Type":"String",
+            "Default" : "m1.medium",
+            "AllowedValues" : [ "m1.small","t1.micro","m1.medium","c1.medium","m1.large", "m1.xlarge", "c1.xlarge", "m2.xlarge", "m3.xlarge", "m2.2xlarge", "m3.2xlarge", "cc1.4xlarge", "m2.4xlarge", "hi1.4xlarge", "cc2.8xlarge", "cg1.4xlarge", "cr1.8xlarge", "hs1.8xlarge" ],
+            "ConstraintDescription" : "must be a valid EC2 instance type."
+        },
+        "EndPoint": {
+            "Description": "Endpoint URL of Cloudformation (required for Eucalyptus)",
+            "Type": "String",
+            "ConstraintDescription": "must be an URL to Cloudformation service on Eucalyptus"
+        },
+        "MinSize" : {
+            "Description" : "Minimum number of EC2 instances.",
+            "Type" : "Number",
+            "Default" : "1"
+        },
+        "MaxSize" : {
+            "Description" : "Maximum number of EC2 instances.",
+            "Type" : "Number",
+            "Default" : "1"
+        }
+    },
+    "Resources": {
+        "CfnUser": {
+            "Type": "AWS::IAM::User",
+            "Properties": {
+                "Path": "/",
+                "Policies": [{
+                    "PolicyName": "root",
+                    "PolicyDocument": {
+                        "Statement": [{
+                            "Effect": "Allow",
+                            "NotAction": [
+                                "iam:*"
+                            ],
+                            "Resource": "*"
+                        }]
+                    }
+                }]
+            }
+        },
+        "CfnUserKey": {
+            "Type": "AWS::IAM::AccessKey",
+            "Properties": {
+                "UserName": {
+                    "Ref": "CfnUser"
+                }
+            }
+        },
+        "LaunchConfig": {
+            "Type" : "AWS::AutoScaling::LaunchConfiguration",
+            "Properties" : {
+                    "ImageId": { "Ref" : "ImageId" },
+                    "InstanceType": { "Ref" : "InstanceType" },
+                    "UserData" : {
+                        "Fn::Base64": {
+                            "Fn::Join" : [ "", [
+                                "#!/bin/bash -xe\n",
+                                "apt-get update\n",
+                                "apt-get install ntp -y\n",
+                                "ntpd -u pool.ntp.org\n",
+                                "timedatectl set-ntp yes\n",
+                                "hwclock --systohc\n",
+                                "/usr/local/bin/cfn-signal -e 0 --stack ", { "Ref": "AWS::StackName" },
+                                " --access-key ", { "Ref": "CfnUserKey" },
+                                " --secret-key ", { "Fn::GetAtt": ["CfnUserKey", "SecretAccessKey"] },
+                                " --resource AutoScalingGroup ",
+                                " --url ", { "Ref": "EndPoint" }, 
+                                " --region ", { "Ref" : "AWS::Region" }, "\n"
+                             ] ]
+                        }
+                    }
+            }
+        },
+        "AutoScalingGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "AvailabilityZones" : { "Fn::GetAZs" : { "Ref" : "AWS::Region" } },
+                "MaxSize": {"Ref" : "MaxSize"},
+                "MinSize": {"Ref" : "MinSize"},
+                "LaunchConfigurationName": {"Ref": "LaunchConfig"},
+                "Tags": [{"Key": "Name", "Value": {"Ref": "AWS::StackName"}, "PropagateAtLaunch" : true}]
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": "1",
+                    "Timeout": "PT10M"
+                }
+            },
+            "UpdatePolicy" : {
+                "AutoScalingRollingUpdate" : {
+                    "MinInstancesInService" : "1",
+                    "MaxBatchSize" : "1",
+                    "PauseTime" : "PT1M",
+                    "WaitOnResourceSignals" : "true"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "AutoScalingGroup": {
+            "Value": { "Ref": "AutoScalingGroup" },
+            "Description": "Name of Auto Scaling Group"
+        }
+    }
+}
