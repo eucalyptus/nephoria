@@ -469,12 +469,13 @@ class EuInstance(Instance, TaggedResource, Machine):
                 else:
                     private_ips = None
 
-                pt.add_row([eni.id, private_ips,
-                            getattr(eni, 'publicIp', None),
-                            getattr(eni, 'vpc_id', None),
-                            getattr(eni, 'subnet_id', None),
-                            getattr(eni, 'owner_id', None),
-                            dot])
+                pt.add_row([str(eni.id).ljust(13),
+                            str(private_ips).ljust(22),
+                            str(getattr(eni, 'publicIp', None)).ljust(16),
+                            str(getattr(eni, 'vpc_id', None)).ljust(12),
+                            str(getattr(eni, 'subnet_id', None)).ljust(15),
+                            str(getattr(eni, 'owner_id', None)).ljust(12),
+                            str(dot).ljust(5)])
                 enipt.add_row([(str(pt))])
                 sec_group_buf = "Security Groups For ENI {0}:".format(eni.id)
                 if eni.groups:
