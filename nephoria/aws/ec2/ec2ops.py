@@ -78,6 +78,36 @@ from nephoria.aws.ec2.euzone import EuZone
 from nephoria.aws.ec2.conversiontask import ConversionTask
 from boto3.session import Session
 
+class NephoriaNetworkInterfaceCollection(NetworkInterfaceCollection):
+
+    def add_eni(self, eni=None, device_index=None, subnet_id=None, description=None,
+                private_ip_address=None, groups=None, delete_on_termination=None,
+                private_ip_addresses=None, secondary_private_ip_address_count=None,
+                associate_public_ip_address=None):
+        if isinstance(eni, NetworkInterface):
+            eni = eni.id
+        if device_index is None:
+            dev_index_list = []
+            for ns in self:
+                dev_index_list.append(ns.device_index)
+            for device_index in range(0, 100):
+                if not device_index in dev_index_list:
+                    break
+            if device_index is None:
+                raise ValueError('Error could not find available device index in range 0-100')
+        new_spec = NetworkInterfaceSpecification(
+            network_interface_id=eni,
+            device_index=device_index,
+            subnet_id=subnet_id,
+            description=description,
+            private_ip_address=private_ip_address,
+            groups=groups,
+            delete_on_termination=delete_on_termination,
+            private_ip_addresses=private_ip_addresses,
+            secondary_private_ip_address_count=secondary_private_ip_address_count,
+            associate_public_ip_address=associate_public_ip_address)
+        self.append(new_spec)
+
 
 class EucaSubnet(BotoSubnet):
     def __init__(self, *args, **kwargs):
@@ -739,37 +769,38 @@ disable_root: false"""
                               markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
             main_pt.add_row([".".ljust(table_width, ".")])
             main_pt.add_row([igw_line])
+            igw = None
             if not igws:
                 main_pt.add_row(['    (NONE)'])
             else:
                 for igw in igws:
                     main_pt.add_row([str(self.show_internet_gateway(igw, printme=False))])
-            # Add tag entries in sub-table...
-            tag_pt = ""
-            if igw.tags:
-                tag_key_len = 30
-                tag_value_len = table_width - tag_key_len - 3
-                tag_key_hdr = markup('TAG KEY', [TextStyle.BOLD, ForegroundColor.BLUE])
-                tag_value_hdr = markup('TAG VALUE', [TextStyle.BOLD, ForegroundColor.BLUE])
-                tag_pt = PrettyTable([tag_key_hdr, tag_value_hdr])
-                tag_pt.align = 'l'
-                tag_pt.max_width[tag_key_hdr] = tag_key_len
-                tag_pt.max_width[tag_value_hdr] = tag_value_len
-                tag_pt.header = True
-                tag_pt.padding_width = 0
-                tag_pt.vrules = 1
-                tag_pt.hrules = 1
-                for key, value in igw.tags.iteritems():
-                    tag_pt.add_row([str(key).ljust(tag_key_len), str(value).ljust(tag_value_len)])
-            tag_pt = "\n".join(str(x).strip('|')
-                               for x in str(tag_pt).translate(string.maketrans("", "", ),
-                                                              '+|').splitlines())
-            tag_line = markup("TAGS FOR {0}:".format(vpc.id),
-                               markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
+                # Add tag entries in sub-table...
+                tag_pt = ""
+                if igw and igw.tags:
+                    tag_key_len = 30
+                    tag_value_len = table_width - tag_key_len - 3
+                    tag_key_hdr = markup('TAG KEY', [TextStyle.BOLD, ForegroundColor.BLUE])
+                    tag_value_hdr = markup('TAG VALUE', [TextStyle.BOLD, ForegroundColor.BLUE])
+                    tag_pt = PrettyTable([tag_key_hdr, tag_value_hdr])
+                    tag_pt.align = 'l'
+                    tag_pt.max_width[tag_key_hdr] = tag_key_len
+                    tag_pt.max_width[tag_value_hdr] = tag_value_len
+                    tag_pt.header = True
+                    tag_pt.padding_width = 0
+                    tag_pt.vrules = 1
+                    tag_pt.hrules = 1
+                    for key, value in igw.tags.iteritems():
+                        tag_pt.add_row([str(key).ljust(tag_key_len), str(value).ljust(tag_value_len)])
+                tag_pt = "\n".join(str(x).strip('|')
+                                   for x in str(tag_pt).translate(string.maketrans("", "", ),
+                                                                  '+|').splitlines())
+                tag_line = markup("TAGS FOR {0}:".format(vpc.id),
+                                   markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
 
-            main_pt.add_row([".".ljust(table_width, ".")])
-            main_pt.add_row([tag_line])
-            main_pt.add_row([str(tag_pt)])
+                main_pt.add_row([".".ljust(table_width, ".")])
+                main_pt.add_row([tag_line])
+                main_pt.add_row([str(tag_pt)])
         if printme:
             printmethod = printmethod or self.log.info
             printmethod( "\n" + str(main_pt) + "\n")
@@ -3778,6 +3809,8 @@ disable_root: false"""
         :return: boto NetworkInterfaceSpecification() obj
         """
         # If the subnet was not provided attempt to find the default subnet.
+        network_interface_collection = network_interface_collection or \
+                                       NephoriaNetworkInterfaceCollection()
         if device_index is None:
             if network_interface_collection:
                 device_index = len(network_interface_collection)
@@ -3837,7 +3870,7 @@ disable_root: false"""
                                                   delete_on_termination=delete_on_termination,
                                                   associate_public_ip_address=associate_public_ip_address,
                                                   description=description)
-        network_interface_collection = network_interface_collection or NetworkInterfaceCollection()
+
         network_interface_collection.append(interface)
         return network_interface_collection
 
@@ -5905,8 +5938,8 @@ disable_root: false"""
         pt.padding_width = 0
         pt.align = 'l'
         pt.hrules = 1
-        pt.max_width[name_header] = 20
-        pt.max_width[value_header] = 80
+        pt.max_width[name_header] = 35
+        pt.max_width[value_header] = 65
         for tag in tags:
             pt.add_row([str(tag), str(tags.get(tag, None))])
         if printme:

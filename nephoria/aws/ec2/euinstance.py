@@ -458,23 +458,39 @@ class EuInstance(Instance, TaggedResource, Machine):
                 enipt.align[title] = 'l'
                 enipt.padding_width = 0
                 dot = "?"
-
-                pt = PrettyTable(['ENI ID', 'PRIV_IPS', 'PUB IP', 'VPC', 'SUBNET',
-                                  'OWNER', 'DOT'])
-                pt.padding_width = 0
+                eni_info_pt = PrettyTable(['key', 'value'])
+                eni_info_pt.header = False
+                key_len = 8
+                val_len = 22
+                eni_info_pt.max_width['value'] = 22
+                eni_info_pt.padding_width = 1
+                eni_info_pt.border = False
+                eni_info_pt.align = 'l'
+                eni_info_pt.add_row(['ID:'.ljust(key_len), str(eni.id).ljust(val_len)])
+                eni_info_pt.add_row(['VPC:', getattr(eni, 'vpc_id', None)])
+                eni_info_pt.add_row(['SUBNET:', getattr(eni, 'subnet_id', None)])
+                region =  getattr(eni, 'region', None)
+                if region:
+                    region = region.name
+                eni_info_pt.add_row(['REGION:', str(region)])
+                eni_info_pt.add_row(['OWNER:', getattr(eni, 'owner_id', None)])
+                pt = PrettyTable(['ENI INFO', 'PRIV_IPS (Primary)', 'PUB IP', 'MAC ADDR', 'DOT'])
+                pt.align = 'l'
+                pt.padding_width = 1
+                pt.vertical_char = '.'
+                pt.max_width['ENI'] = 16
                 if eni.private_ip_addresses:
-                    private_ips = ",".join(str("{0} ({1})".format(x.private_ip_address,
-                                                                  x.primary).center(20))
+                    private_ips = ",".join(str("{0} ({1})"
+                                               .format(x.private_ip_address,
+                                                       "P" if x.primary else "").center(20))
                                            for x in eni.private_ip_addresses)
                 else:
                     private_ips = None
 
-                pt.add_row([str(eni.id).ljust(13),
-                            str(private_ips).ljust(22),
+                pt.add_row([str(eni_info_pt),
+                            str(private_ips).ljust(20),
                             str(getattr(eni, 'publicIp', None)).ljust(16),
-                            str(getattr(eni, 'vpc_id', None)).ljust(12),
-                            str(getattr(eni, 'subnet_id', None)).ljust(15),
-                            str(getattr(eni, 'owner_id', None)).ljust(12),
+                            str(getattr(eni, 'mac_address', None)).ljust(12),
                             str(dot).ljust(5)])
                 enipt.add_row([(str(pt))])
                 sec_group_buf = "Security Groups For ENI {0}:".format(eni.id)
