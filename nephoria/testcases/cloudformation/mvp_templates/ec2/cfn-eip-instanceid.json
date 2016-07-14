@@ -35,6 +35,26 @@
             "Description" : "InstanceId of the newly created EC2 instance",
             "Value" : { "Ref" : "Instance" }
         },
+        "InstanceAZ" : {
+            "Description" : "Availability Zone of EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "Instance", "AvailabilityZone" ]}
+        },
+        "InstancePrivateDNSName" : {
+            "Description" : "Private DNS Name of EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "Instance", "PrivateDnsName" ]}
+        },
+        "InstancePublicDNSName" : {
+            "Description" : "Public DNS Name of EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "Instance", "PublicDnsName" ]}
+        },
+        "InstancePrivateIP" : {
+            "Description" : "Private IP of EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "Instance", "PrivateIp" ]}
+        },
+        "InstancePublicIP" : {
+            "Description" : "Public IP of EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "Instance", "PublicIp" ]}
+        },
         "ElasticIP": {
             "Description" : "Elastic IP",
             "Value" : { "Ref" : "EIP" }
