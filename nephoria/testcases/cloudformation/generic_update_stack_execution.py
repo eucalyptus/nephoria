@@ -13,28 +13,48 @@ import os.path
 
 class GenericTemplateRun(CliTestRunner):
 
-    _CLI_DESCRIPTION = ("Test given Cloudformation template"
-                        " against Eucalyptus Cloudformation. "
+    _CLI_DESCRIPTION = ("Test update or update/cancel stack "
+                        "with given Cloudformation templates "
+                        "against Eucalyptus Cloudformation. "
                         "This script utilizes the following "
                         "Cloudformation API calls: "
                         "CreateStack, DeleteStack, DescribeStacks, "
-                        "and ValidateTemplate."
+                        "ValidateTemplate, UpdateStack, "
+                        "and CancelStack."
                         )
     _DEFAULT_CLI_ARGS = copy.copy(CliTestRunner._DEFAULT_CLI_ARGS)
 
-    _DEFAULT_CLI_ARGS['template_file'] = {
-        'args': ['--template-file'],
-        'kwargs': {'dest': 'template_file',
-                   'help': 'file location containing JSON template',
+    _DEFAULT_CLI_ARGS['initial_template_file'] = {
+        'args': ['--initial-template-file'],
+        'kwargs': {'dest': 'initial_template_file',
+                   'help': ("File location containing JSON template "
+                            "for initial Cloudformation stack"),
                    'default': None}}
 
-    _DEFAULT_CLI_ARGS['template_params'] = {
-        'args': ['--template-parameters'],
+    _DEFAULT_CLI_ARGS['update_template_file'] = {
+        'args': ['--update-template-file'],
+        'kwargs': {'dest': 'update_template_file',
+                   'help': ("File location containing JSON template "
+                            "for Cloudformation stack update"),
+                   'default': None}}
+
+    _DEFAULT_CLI_ARGS['initial_template_params'] = {
+        'args': ['--initial_template-parameters'],
         'kwargs': {
-                   'dest': 'template_params',
+                   'dest': 'initial_template_params',
                    'help': ("key=value parameters to use with "
-                            "stack's template. Multiple parameters "
-                            "should be space-delimited."),
+                            "initial stack's template. Multiple "
+                            "parameters should be space-delimited."),
+                   'nargs': '?',
+                   'default': None}}
+
+    _DEFAULT_CLI_ARGS['update_template_params'] = {
+        'args': ['--update_template-parameters'],
+        'kwargs': {
+                   'dest': 'update_template_params',
+                   'help': ("key=value parameters to use with "
+                            "update stack's template. Multiple "
+                            "parameters should be space-delimited."),
                    'nargs': '?',
                    'default': None}}
 
@@ -49,6 +69,15 @@ class GenericTemplateRun(CliTestRunner):
         'kwargs': {'dest': 'disable_rollback',
                    'help': ("Set to True to disable rollback of "
                             "the stack if stack creation failed. "
+                            "Default is False."),
+                   'action': 'store_true'}}
+
+    _DEFAULT_CLI_ARGS['cancel_stack'] = {
+        'args': ['--cancel-stack'],
+        'kwargs': {'dest': 'cancel_stack',
+                   'help': ("Set to True to cancel stack update of "
+                            "the stack when stack reaches "
+                            "UPDATE_IN_PROGRESS state. "
                             "Default is False."),
                    'action': 'store_true'}}
 
@@ -161,44 +190,84 @@ class GenericTemplateRun(CliTestRunner):
             disable_rollback = None
         return disable_rollback
 
-    def test_validate_template(self):
+    @property
+    def capabilities(self):
+        """
+        If capabilities, store in a list
+        Currently, only CAPABILITY_IAM should be in the list
+        """
+        if self.args.capabilities:
+            capabilities = self.args.capabilities.split()
+        else:
+            capabilities = None
+        return capabilities
+
+    @property
+    def timeout(self):
+        """
+        Make sure timeout is set to minutes.
+        Timeout will be used for stack creation.
+        """
+        timeout = int(time.time()) + 60*int(self.args.timeout)
+        return timeout
+
+    def test_validate_templates(self):
         """
         Test Coverage:
-            - validate provided template
+            - validate initial stack template
+            - validate stack update template
         """
-        self.log.debug("Validating Cloudformation Template.")
+        self.log.debug("Validating Initial and Update Stack Templates.")
         """
         Confirm the following:
-            - if --template-file is used.
-            - if --template-file is used, confirm file exists.
+            - if --initial-template-file and --update-template-file are passed,
+            - and onfirm the files exist.
         """
-        if self.args.template_file is None:
-            raise ValueError("Please pass template-file.")
-        elif (
-               self.args.template_file and
-               os.path.exists(self.args.template_file) is False
+        if (
+             self.args.initial_template_file is None or
+             self.args.update_template_file is None
            ):
-            raise ValueError("File passed for template-file does not exist.")
+            raise ValueError("Please pass initial-template-file and/or "
+                             "update-template-file.")
+        elif (
+               os.path.exists(self.args.initial_template_file) is False or
+               os.path.exists(self.args.update_template_file) is False
+             ):
+            raise ValueError("File passed for initial-template-file and/or "
+                             "update-template-file does not exist.")
         else:
-            temp = open(self.args.template_file)
-            temp_body = temp.read()
-            temp.close()
+            temp_init = open(self.args.initial_template_file)
+            init_body = temp_init.read()
+            temp_init.close()
             try:
                 self.tc.user.cloudformation.validate_template(
-                                                   template_body=temp_body)
-                self.log.debug("Template is valid.")
+                                                   template_body=init_body)
+                self.log.debug("Initial template is valid.")
             except BotoServerError as e:
-                self.log.error("Error validating template: " + e.error_message)
+                self.log.error("Error validating initial template: " +
+                               e.error_message)
                 raise e
 
-    def test_stack_deployment(self):
-        self.log.debug("Deploy Cloudformation Stack")
+            temp_update = open(self.args.update_template_file)
+            update_body = temp_update.read()
+            temp_update.close()
+            try:
+                self.tc.user.cloudformation.validate_template(
+                                                   template_body=update_body)
+                self.log.debug("Update template is valid.")
+            except BotoServerError as e:
+                self.log.error("Error validating update template: " +
+                               e.error_message)
+                raise e
+
+    def test_initial_stack_deployment(self):
+        self.log.debug("Deploy Initial Cloudformation Stack")
         """
         If template parameter(s), store them in a list
         """
         parameters = []
-        if self.args.template_params:
-            for param in self.args.template_params.split():
+        if self.args.initial_template_params:
+            for param in self.args.initial_template_params.split():
                 try:
                     k, v = param.split("=")
                     parameters.append((k, v))
@@ -208,43 +277,30 @@ class GenericTemplateRun(CliTestRunner):
         else:
             self.log.debug("No parameters passed.")
         """
-        If capabilities, store in a list
-        Currently, only CAPABILITY_IAM should be in the list
-        """
-        if self.args.capabilities:
-            capabilities = self.args.capabilities.split()
-        else:
-            capabilities = None
-
-        """
-        Make sure timeout is set to minutes.
-        Timeout will be used for stack creation.
-        """
-        timeout = int(time.time()) + 60*int(self.args.timeout)
-        """
         Create custom tags to associate test
         with resource(s)
         """
         nephoria_job_id = self.stack_name + str(time.time())
         tags = {
-                "Purpose": "nephoria test resource",
-                "Test Script": "generic_template_execution.py",
+                "Purpose": "nephoria update stack resource",
+                "Test Script": "generic_update_stack_execution.py",
                 "Nephoria Job ID": nephoria_job_id
                }
         """
         Create stack passing supported arguments.
         Stack information should be returned from create_stack
         """
-        temp = open(self.args.template_file)
-        temp_body = temp.read()
-        temp.close()
+        temp_init = open(self.args.initial_template_file)
+        init_body = temp_init.read()
+        temp_init.close()
         try:
             resp = self.tc.user.cloudformation.create_stack(
                                self.stack_name,
-                               template_body=temp_body,
+                               template_body=init_body,
                                parameters=parameters,
+                               timeout_in_minutes=self.timeout,
                                disable_rollback=self.disable_rollback,
-                               capabilities=capabilities,
+                               capabilities=self.capabilities,
                                tags=tags,
                                on_failure=self.on_failure)
         except BotoServerError as e:
@@ -269,6 +325,7 @@ class GenericTemplateRun(CliTestRunner):
                 self.log.debug("Stack deployment complete.")
                 self.log.debug("\nStack events:\n" + events)
                 self.log.debug("\nStack outputs:\n" + outputs)
+                self.log.debug("\nInitial stack ready for UpdateStack call")
                 break
             elif stacks[0].stack_status == 'CREATE_FAILED':
                 self.log.error("Stack deployment failed: " +
@@ -276,7 +333,7 @@ class GenericTemplateRun(CliTestRunner):
                 self.log.error("Stack events:\n" + events)
                 raise RuntimeError("Stack deployment failed: " +
                                    str(stacks[0].stack_status_reason))
-            elif int(time.time()) > timeout:
+            elif int(time.time()) > self.timeout:
                 self.log.error("Stack deployment failed "
                                "to complete in provided stack "
                                "timeout: " + str(self.args.timeout) +
@@ -291,6 +348,95 @@ class GenericTemplateRun(CliTestRunner):
             self.log.debug("Sleep " + str(sleep_time) +
                            " seconds before next request..")
             time.sleep(sleep_time)
+
+    def test_update_stack_deployment(self):
+        """
+        If initial stack deployment status is CREATE_COMPLETE,
+        execute UpdateStack API call
+        """
+        stack_id = self.stack_name
+        stacks = self.tc.user.cloudformation.describe_stacks(stack_id)
+        if stacks[0].stack_status == 'CREATE_COMPLETE':
+            self.log.debug("Run Update Stack")
+            """
+            If template parameter(s), store them in a list
+            """
+            parameters = []
+            if self.args.update_template_params:
+                for param in self.args.update_template_params.split():
+                    try:
+                        k, v = param.split("=")
+                        parameters.append((k, v))
+                    except ValueError as e:
+                        self.log.error("Parameter not in key=value format")
+                        raise e
+            else:
+                self.log.debug("No parameters passed.")
+            """
+            Update stack passing supported arguments.
+            Stack information should be returned from update_stack
+            """
+            temp_update = open(self.args.update_template_file)
+            update_body = temp_update.read()
+            temp_update.close()
+            try:
+                resp = self.tc.user.cloudformation.update_stack(
+                                   self.stack_name,
+                                   template_body=update_body,
+                                   parameters=parameters,
+                                   timeout_in_minutes=self.timeout,
+                                   disable_rollback=self.disable_rollback,
+                                   capabilities=self.capabilities,
+                                   on_failure=self.on_failure)
+            except BotoServerError as e:
+                self.log.error("Failed to update stack")
+                raise e
+
+            while True:
+                """
+                Confirm stack completed within timeout period
+                by using describe_stack leverging
+                decorrelated jitter exponential backoff for each
+                request. If stack failed to update, raise error
+                """
+                stacks = self.tc.user.cloudformation.describe_stacks(
+                                       resp.stack_name)
+                event_lst = stacks[0].describe_events()
+                event = '\n'.join(map(str, events_list[len(event_lst)::-1]))
+                if stacks[0].stack_status == 'UPDATE_COMPLETE':
+                    output_lst = stacks[0].outputs
+                    output = '\n'.join(map(str,
+                                           output_lst[len(output_lst)::-1]))
+                    self.log.debug("Stack update complete.")
+                    self.log.debug("\nStack events:\n" + event)
+                    self.log.debug("\nStack outputs:\n" + output)
+                    break
+                elif stacks[0].stack_status == 'UPDATE_ROLLBACK_COMPLETE':
+                    self.log.error("Stack update failed: " +
+                                   str(stacks[0].stack_status_reason))
+                    self.log.error("Stack events:\n" + event)
+                    raise RuntimeError("Stack update failed: " +
+                                       str(stacks[0].stack_status_reason))
+                elif int(time.time()) > self.timeout:
+                    self.log.error("Stack update failed "
+                                   "to complete in provided stack "
+                                   "timeout: " + str(self.args.timeout) +
+                                   " min.")
+                    self.log.error("Stack events:\n" + event)
+                    raise RuntimeError("Stack failed to update "
+                                       "within timeout: " +
+                                       str(self.args.timeout) +
+                                       " min.")
+                sleep_time = min(int(timeout),
+                                 random.uniform(2, 2*3))
+                self.log.debug("Sleep " + str(sleep_time) +
+                               " seconds before next request..")
+                time.sleep(sleep_time)
+        else:
+            self.log.error("Initial stack deployment failed "
+                           "therefore skipping update stack test")
+            raise RuntimeError("Initial stack deployment failed: " +
+                               str(stacks[0].stack_status_reason))
 
     def clean_method(self):
         """

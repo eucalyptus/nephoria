@@ -1,0 +1,105 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "EC2 Classic Update Stack Resources: Elastic IP Test - Update existing stack by swapping EIPs between both instances",
+    "Parameters" : {
+        "ImageId": {
+            "Description":"Image Id",
+            "Type":"String"
+        },
+        "InstanceType": {
+            "Description":"Instance Type",
+            "Type":"String",
+            "Default" : "m1.medium",
+            "AllowedValues" : [ "m1.small","t1.micro","m1.medium","c1.medium","m1.large", "m1.xlarge", "c1.xlarge", "m2.xlarge", "m3.xlarge", "m2.2xlarge", "m3.2xlarge", "cc1.4xlarge", "m2.4xlarge", "hi1.4xlarge", "cc2.8xlarge", "cg1.4xlarge", "cr1.8xlarge", "hs1.8xlarge" ],
+            "ConstraintDescription" : "must be a valid EC2 instance type."
+        }
+    },
+    "Resources" : {
+        "EIP1": {
+            "Type" : "AWS::EC2::EIP",
+                "Properties" : {
+                    "InstanceId": { "Ref": "Instance2" }
+                }
+        },
+        "Instance1": {
+            "Type": "AWS::EC2::Instance",
+                "Properties": {
+                    "ImageId" : { "Ref":"ImageId" },
+                    "InstanceType" : { "Ref":"InstanceType"},
+                    "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+        "EIP2": {
+            "Type" : "AWS::EC2::EIP",
+                "Properties" : {
+                    "InstanceId": { "Ref": "Instance1" }
+                }
+        },
+        "Instance2": {
+            "Type": "AWS::EC2::Instance",
+                "Properties": {
+                    "ImageId" : { "Ref":"ImageId" },
+                    "InstanceType" : { "Ref":"InstanceType"},
+                    "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        }
+    },
+    "Outputs": {
+        "Instance1Id" : {
+            "Description" : "InstanceId of the first newly created EC2 instance",
+            "Value" : { "Ref" : "Instance1" }
+        },
+        "Instance1AZ" : {
+            "Description" : "Availability Zone of first EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "Instance1", "AvailabilityZone" ]}
+        },
+        "Instance1PrivateDNSName" : {
+            "Description" : "Private DNS Name of first EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "Instance1", "PrivateDnsName" ]}
+        },
+        "Instance1PublicDNSName" : {
+            "Description" : "Public DNS Name of first EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "Instance1", "PublicDnsName" ]}
+        },
+        "Instance1PrivateIP" : {
+            "Description" : "Private IP of first EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "Instance1", "PrivateIp" ]}
+        },
+        "Instance1PublicIP" : {
+            "Description" : "Public IP of first EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "Instance1", "PublicIp" ]}
+        },
+        "ElasticIP1": {
+            "Description" : "First Elastic IP",
+            "Value" : { "Ref" : "EIP1" }
+        },
+        "Instance2Id" : {
+            "Description" : "InstanceId of the second newly created EC2 instance",
+            "Value" : { "Ref" : "Instance2" }
+        },
+        "Instance2AZ" : {
+            "Description" : "Availability Zone of second EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "Instance2", "AvailabilityZone" ]}
+        },
+        "Instance2PrivateDNSName" : {
+            "Description" : "Private DNS Name of second EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "Instance2", "PrivateDnsName" ]}
+        },
+        "Instance2PublicDNSName" : {
+            "Description" : "Public DNS Name of second EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "Instance2", "PublicDnsName" ]}
+        },
+        "Instance2PrivateIP" : {
+            "Description" : "Private IP of second EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "Instance1", "PrivateIp" ]}
+        },
+        "Instancer2PublicIP" : {
+            "Description" : "Public IP of second EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "Instance2", "PublicIp" ]}
+        },
+        "ElasticIP2": {
+            "Description" : "Second Elastic IP",
+            "Value" : { "Ref" : "EIP2" }
+        }
+    }
+}
