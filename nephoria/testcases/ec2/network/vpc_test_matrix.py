@@ -109,7 +109,7 @@ class VpcBasics(CliTestRunner):
 
     @property
     def test_tag_name(self):
-        return '{0}_CREATED_NUMBER'.format(self.__class__.__name__)
+        return '{0}_CREATED_TESTID'.format(self.__class__.__name__)
 
     def get_proxy_instance(self, zone):
         if not zone:

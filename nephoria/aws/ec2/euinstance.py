@@ -1075,7 +1075,6 @@ class EuInstance(Instance, TaggedResource, Machine):
                                     str(dev) + ") on (" + str(self.id) + ")")
         raise Exception("Detach Volume(" + str(euvolume.id) + ") not found on (" + str(self.id) +
                         ")")
-        return True
 
     def get_metadata(self, element_path, prefix='latest/meta-data/', timeout=10, staticmode=False):
         """
@@ -2159,7 +2158,22 @@ class EuInstance(Instance, TaggedResource, Machine):
         for eni in enis:
             subnet = self.ec2ops.get_subnet(eni.subnet_id)
             subnets[subnet.id] = subnet
-
+        # set dev to index mapping
+        index_mapping = []
+        for eni in enis:
+            if not index_mapping:
+                index_mapping.append(eni)
+            else:
+                placed = False
+                for imap in index_mapping:
+                    if eni.attachment.device_index < imap.attachment.device_index:
+                        index_mapping.insert(index_mapping.index(imap) + 1, eni)
+                        placed = True
+                        break
+                if not placed:
+                    index_mapping.append(eni)
+        for eni in index_mapping:
+            eni.local_dev_index = index_mapping.index(eni)
         # Get network devices on the guest
         devs = self.get_network_interfaces().keys() or []
         if "{0}0".format(prefix) not in devs:
@@ -2205,8 +2219,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         eni_ifcfg_files = ['/etc/sysconfig/network-scripts/ifcfg-{0}0'.format(prefix)]
         for eni in enis:
             if eni.attachment.device_index != 0:
-                attachment = eni.attachment
-                dev_name = '{0}{1}'.format(prefix, attachment.device_index)
+                dev_name = '{0}{1}'.format(prefix, eni.local_dev_index)
                 if dev_name not in devs:
                     raise ValueError(
                         'Dev {0} not found in host devs:"{1}"'.format(dev_name, ",".join(devs)))
@@ -2228,8 +2241,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         eni_route_files = ['/etc/sysconfig/network-scripts/route-{0}0'.format(prefix)]
         for eni in enis:
             if eni.attachment.device_index != 0:
-                attachment = eni.attachment
-                dev_name = '{0}{1}'.format(prefix, attachment.device_index)
+                dev_name = '{0}{1}'.format(prefix, eni.local_dev_index)
                 if dev_name not in devs:
                     raise ValueError(
                         'Dev {0} not found in host devs:"{1}"'.format(dev_name, ",".join(devs)))
@@ -2249,9 +2261,9 @@ class EuInstance(Instance, TaggedResource, Machine):
                 gw.append(last_octet)
                 gw = ".".join(str(x) for x in gw)
 
-                route_script = ("default via {0} dev {1} table {2}\n"
+                route_script = ("default via {0} dev {1} table 123{2}\n"
                                 "{3} dev {1} src {3} table {2}\n"
-                                .format(gw, dev_name, attachment.device_index, subnet.cidr_block,
+                                .format(gw, dev_name, eni.local_dev_index, subnet.cidr_block,
                                         eni.private_ip_address))
                 self.log.debug('Route info for eni: {0}, dev:{1}\n{2}'.format(eni.id, dev_name,
                                                                               route_script))
@@ -2271,12 +2283,12 @@ class EuInstance(Instance, TaggedResource, Machine):
         for eni in enis:
             if eni.attachment.device_index != 0:
                 attachment = eni.attachment
-                dev_name = '{0}{1}'.format(prefix, attachment.device_index)
+                dev_name = '{0}{1}'.format(prefix, eni.local_dev_index)
                 if dev_name not in devs:
                     raise ValueError(
                         'Dev {0} not found in host devs:"{1}"'.format(dev_name, ",".join(devs)))
                 rule_script = "from {0}/32 table {1}\n".format(eni.private_ip_address,
-                                                               attachment.device_index)
+                                                               eni.local_dev_index)
                 rule_file = '/etc/sysconfig/network-scripts/route-{0}'.format(dev_name).strip()
                 f = None
                 self.log.debug('Attempting to write network-script for: {0}'.format(rule_file))
@@ -2330,7 +2342,10 @@ class EuInstance(Instance, TaggedResource, Machine):
         self.refresh_ssh()
 
     def sync_enis_etc_default(self, prefix='eth'):
+        # For debian/ubuntu based systems
         pass
+
+
 
 
 

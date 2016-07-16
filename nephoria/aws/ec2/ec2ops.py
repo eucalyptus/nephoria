@@ -756,17 +756,35 @@ disable_root: false"""
         main_pt.add_row([mainbuf])
         if not brief:
             dhcp_line = markup("DHCP OPTION SET FOR {0}:".format(vpc.id),
-                               markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
+                               markups=[TextStyle.BOLD, TextStyle.UNDERLINE,
+                                        ForegroundColor.BLUE]).ljust(table_width)
             main_pt.add_row([".".ljust(table_width, ".")])
             main_pt.add_row([dhcp_line])
             if vpc.dhcp_options_id:
                 dopts = self.connection.get_all_dhcp_options([vpc.dhcp_options_id])
                 if dopts:
                     dopt = dopts[0]
-                main_pt.add_row([str(self.show_dhcp_option_set(dopt, printme=False))])
+                main_pt.add_row([self.show_dhcp_option_set(dopt,
+                                                           printme=False).get_string(border=False)])
+            main_rt_pt = ""
+            main_rt = self.connection.get_all_route_tables(filters={'association.main': 'true',
+                                                                    'vpc-id': vpc.id})
+
+            main_rt_line = markup("MAIN ROUTE TABLE ASSOCIATION FOR {0}:".format(vpc.id),
+                                  markups=[TextStyle.BOLD, TextStyle.UNDERLINE,
+                                           ForegroundColor.BLUE]).ljust(table_width)
+            main_pt.add_row([".".ljust(table_width, ".")])
+            main_pt.add_row([main_rt_line])
+            if main_rt:
+                main_rt = main_rt[0]
+                main_pt.add_row([self.show_route_table(main_rt,
+                                                       printme=False).get_string(border=False)])
+            else:
+                main_pt.add_row(['    (NONE)'])
             igws = self.connection.get_all_internet_gateways(filters={'attachment.vpc-id': vpc.id})
             igw_line = markup("INTERNET GATEWAYS FOR {0}:".format(vpc.id),
-                              markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
+                              markups=[TextStyle.BOLD, TextStyle.UNDERLINE,
+                                       ForegroundColor.BLUE]).ljust(table_width)
             main_pt.add_row([".".ljust(table_width, ".")])
             main_pt.add_row([igw_line])
             igw = None
@@ -774,7 +792,8 @@ disable_root: false"""
                 main_pt.add_row(['    (NONE)'])
             else:
                 for igw in igws:
-                    main_pt.add_row([str(self.show_internet_gateway(igw, printme=False))])
+                    main_pt.add_row([
+                        self.show_internet_gateway(igw, printme=False).get_string(border=False)])
                 # Add tag entries in sub-table...
                 tag_pt = ""
                 if igw and igw.tags:
@@ -791,12 +810,14 @@ disable_root: false"""
                     tag_pt.vrules = 1
                     tag_pt.hrules = 1
                     for key, value in igw.tags.iteritems():
-                        tag_pt.add_row([str(key).ljust(tag_key_len), str(value).ljust(tag_value_len)])
+                        tag_pt.add_row([str(key).ljust(tag_key_len),
+                                        str(value).ljust(tag_value_len)])
                 tag_pt = "\n".join(str(x).strip('|')
                                    for x in str(tag_pt).translate(string.maketrans("", "", ),
                                                                   '+|').splitlines())
                 tag_line = markup("TAGS FOR {0}:".format(vpc.id),
-                                   markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
+                                   markups=[TextStyle.BOLD, TextStyle.UNDERLINE,
+                                            ForegroundColor.BLUE]).ljust(table_width)
 
                 main_pt.add_row([".".ljust(table_width, ".")])
                 main_pt.add_row([tag_line])
@@ -967,29 +988,42 @@ disable_root: false"""
         pt = PrettyTable([key_hdr, value_hdr])
         pt.header = False
         pt.align = 'l'
+        pt.max_width[key_hdr] = key_hdr_len
+        pt.max_width[value_hdr] = value_hdr_len
         pt.add_row(["ID:", markup(route_table.id, [TextStyle.BOLD]).ljust(value_hdr_len)])
         pt.add_row(["VPC ID:", str(route_table.vpc_id).ljust(value_hdr_len)])
         region = ""
         if route_table.region:
-            region = "({0}, {1})".format(route_table.region.name, route_table.region.endpoint)
-        pt.add_row(["REGION:", region.ljust(value_hdr_len)])
+            region = "{0} {1}\n".format(markup('NAME:', [TextStyle.BOLD,ForegroundColor.BLUE]),
+                                       route_table.region.name)
+            region += "{0}{1}".format(markup('ENDPOINT:', [TextStyle.BOLD, ForegroundColor.BLUE]),
+                                      route_table.region.endpoint)
+
+        pt.add_row(["REGION:", region])
         pt.add_row(["PropagatingVgwSet:", route_table.propagatingVgwSet])
-        assoc = ""
+        assoc_pt = ""
         # Add associations in sub-table...
         if route_table.associations:
             al = value_hdr_len/3
-            assoc_pt = PrettyTable(['ID:'.ljust(al),
-                                    'MAIN:'.ljust(6),
-                                    'SUBNET_ID:'.ljust(al)])
+            assoc_pt = PrettyTable(['ASSOC ID:'.ljust(27),
+                                    'IS MAIN:'.ljust(15),
+                                    'ASSOC SUBNET_ID:'.ljust(32)])
             assoc_pt.border = False
             assoc_pt.header = False
+            assoc_pt.align = 'l'
             assoc_pt.padding_width = 1
 
             for ass in route_table.associations:
-                assoc_pt.add_row(['ID: {0}'.format(ass.id).ljust(al),
-                                  'MAIN: {0}'.format(ass.main).ljust(6),
-                                  'SUBNET_ID: {0}'.format(ass.subnet_id).ljust(al)])
-        pt.add_row(["ASSOCIATIONS", str(assoc_pt)])
+                assoc_pt.add_row(['{0} {1}'.format(markup('ASSOC ID:',
+                                                          [TextStyle.BOLD,ForegroundColor.BLUE]),
+                                                   ass.id).ljust(27),
+                                  '{0} {1}'.format(markup('IS MAIN:',
+                                                          [TextStyle.BOLD,ForegroundColor.BLUE]),
+                                                   ass.main).ljust(15),
+                                  '{0} {1}'.format(markup('SUBNET ID:',
+                                                          [TextStyle.BOLD,ForegroundColor.BLUE]),
+                                                   ass.subnet_id).ljust(32)])
+        pt.add_row(["ASSOCIATIONS:", str(assoc_pt)])
         # Add Route Entries in sub-table...
         route_pt = "(NONE)"
         if route_table.routes:
@@ -1075,26 +1109,28 @@ disable_root: false"""
         key_len = 14
         val_len = table_width - key_len - 3
         pt = PrettyTable(['key', 'value'])
+        pt.max_width['key'] = key_len
+        pt.max_width['value'] = val_len
         pt.align = 'l'
         pt.padding_width = 0
         pt.header = False
         pt.add_row(['DHCP OPT ID:'.ljust(key_len), str(dopt.id).ljust(val_len)])
         region = ""
         if dopt.region:
-            region = "{0}{1}, {2}{3}".format(markup('NAME:', [TextStyle.BOLD,
-                                                              ForegroundColor.BLUE]),
-                                             dopt.region.name,
-                                             markup('ENDPOINT:', [TextStyle.BOLD,
-                                                                  ForegroundColor.BLUE]),
+            region = "{0}{1}\n".format(markup('NAME:', [TextStyle.BOLD,
+                                                      ForegroundColor.BLUE]),
+                                             dopt.region.name)
+            region += "{0}{1}".format(markup('ENDPOINT:', [TextStyle.BOLD,
+                                                           ForegroundColor.BLUE]),
                                              dopt.region.endpoint)
-        pt.add_row(["REGION:", region.ljust(val_len)])
+        pt.add_row(["REGION:", region])
         # Add option entries in sub-table...
         opt_pt = ""
         if dopt.options:
             opt_key_len = 30
             opt_value_len = val_len - opt_key_len - 2
-            opt_key_hdr = markup('OPTION', [TextStyle.BOLD, ForegroundColor.BLUE])
-            opt_value_hdr = markup('OPTION VALUE', [TextStyle.BOLD, ForegroundColor.BLUE])
+            opt_key_hdr = markup('DHCP OPTIONS', [TextStyle.BOLD, ForegroundColor.BLUE])
+            opt_value_hdr = markup('DHCP OPTION VALUE', [TextStyle.BOLD, ForegroundColor.BLUE])
             opt_pt = PrettyTable([opt_key_hdr, opt_value_hdr])
             opt_pt.align = 'l'
             opt_pt.max_width[opt_key_hdr] = opt_key_len
@@ -1103,6 +1139,7 @@ disable_root: false"""
             opt_pt.padding_width = 0
             opt_pt.vrules = 1
             opt_pt.hrules = 1
+            opt_pt.border = False
             for key, value in dopt.options.iteritems():
                 opt_pt.add_row([str(key).ljust(opt_key_len), str(value).ljust(opt_value_len)])
         opt_pt = "\n".join(str(x).strip('|')
