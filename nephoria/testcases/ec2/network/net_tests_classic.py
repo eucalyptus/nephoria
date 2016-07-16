@@ -523,7 +523,7 @@ class NetTestsClassic(CliTestRunner):
             except Exception, ce:
                 tb = get_traceback()
                 if attempts >= retry:
-                    self.log.debug("\n" + tb,linebyline=False)
+                    self.log.debug("\n{0}".format(tb))
                 self.log.debug('Failed to connect error:' + str(ce))
             if attempts < retry:
                     time.sleep(next_retry_time)
