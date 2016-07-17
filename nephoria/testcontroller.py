@@ -74,7 +74,7 @@ class TestController(object):
                                         'euca_user': 'admin',
                                         'euca_account': 'eucalyptus',
                                         'https': https,
-                                        'region_domain': self.region}
+                                        'region_domain': region}
 
         self._cloud_admin_connection_info = {'aws_account_name': 'eucalyptus',
                                              'aws_user_name': 'admin',
