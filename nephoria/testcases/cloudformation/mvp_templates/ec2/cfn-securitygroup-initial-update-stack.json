@@ -2,26 +2,22 @@
 
     "AWSTemplateFormatVersion" : "2010-09-09",
 
-    "Description" : "Security Group Test => MVP for AWS::EC2::SecurityGroup and AWS::EC2::SecurityGroupIngress",
-
+    "Description" : "Security Group Update Stack Test => Initial Template for MVP for AWS::EC2::SecurityGroup and AWS::EC2::SecurityGroupIngress",
 
     "Resources" : {
         "SecurityGroup": {
             "Type": "AWS::EC2::SecurityGroup",
             "Properties": {
+                "GroupDescription" : "Initial AWS::EC2::SecurityGroup Resource For UpdateStack Test",
                 "Tags": [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ],
-                "GroupDescription" : "AWS::EC2::SecurityGroup Resource Test Example"
-            }
-        },
-
-        "SecurityGroupIngress22": {
-            "Type": "AWS::EC2::SecurityGroupIngress",
-            "Properties": {
-                "IpProtocol" : "tcp",
-                "GroupName": { "Ref" : "SecurityGroup" },
-                "FromPort" : "22",
-                "ToPort" : "22",
-                "SourceSecurityGroupName" : { "Ref" : "SecurityGroup" }
+                "SecurityGroupIngress" : [
+                    {
+                        "IpProtocol" : "tcp",
+                        "FromPort" : "22",
+                        "ToPort" : "22",
+                        "CidrIp" : "0.0.0.0/0"
+                    }
+                ]
             }
         },
 
@@ -30,8 +26,8 @@
             "Properties": {
                 "IpProtocol" : "tcp",
                 "GroupName": { "Ref" : "SecurityGroup" },
-                "FromPort" : "22",
-                "ToPort" : "22",
+                "FromPort" : "443",
+                "ToPort" : "443",
                 "CidrIp": "0.0.0.0/0"
             }
         }

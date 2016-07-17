@@ -1,0 +1,58 @@
+{
+
+    "AWSTemplateFormatVersion" : "2010-09-09",
+
+    "Description" : "Security Group Update Stack Test => Update inner SecurityGroupIngress rule, description and update tag (Group ID Update)",
+
+    "Resources" : {
+        "SecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "Tags": [ 
+                            {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}},
+                            {"Key" : "Purpose", "Value" : "Basic Security Group"}
+                        ],
+                "SecurityGroupIngress" : [
+                    {
+                        "IpProtocol" : "tcp",
+                        "FromPort" : "22",
+                        "ToPort" : "22",
+                        "CidrIp" : "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol" : "tcp",
+                        "FromPort" : "80",
+                        "ToPort" : "80",
+                        "CidrIp" : "0.0.0.0/0"
+                    }
+                ],
+                "GroupDescription" : "Update Description - AWS::EC2::SecurityGroup Resource For UpdateStack Test"
+            }
+        },
+
+        "SecurityGroupIngress443": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol" : "tcp",
+                "GroupName": { "Ref" : "SecurityGroup" },
+                "FromPort" : "8443",
+                "ToPort" : "8443",
+                "CidrIp": "0.0.0.0/0"
+            }
+        }
+
+    },
+
+    "Outputs" : {
+        "SecurityGroupRefId" : {
+            "Description" : "Resource ID of SecurityGroup Resource",
+            "Value" : { "Ref" : "SecurityGroup" }
+        },
+
+        "SecurityGroupId" : {
+            "Description" : "Group ID of SecurityGroup Resource",
+            "Value" : { "Fn::GetAtt" : [ "SecurityGroup", "GroupId" ] }
+       }
+    }
+
+}

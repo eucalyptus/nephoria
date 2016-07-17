@@ -16,6 +16,7 @@
         "AdjustmentType": {
             "Description":"Specifies whether the ScalingAdjustment is an absolute number or a percentage of the current capacity.",
             "Type":"String",
+            "Default": "ChangeInCapacity",
             "ConstraintDescription": "Must be a valid ScalingAdjustment value.",
             "AllowedValues": [ "ChangeInCapacity", "ExactCapacity", "PercentChangeInCapacity" ]
         },
