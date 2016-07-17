@@ -1,0 +1,77 @@
+{
+  "AWSTemplateFormatVersion":"2010-09-09",
+  "Description":"Volume Update Stack Test: Negative Test - change Volume Size, Instance ID, Volume ID in attachements (Should Fail)",
+  "Parameters":{
+    "ImageId":{
+      "Description":"Image Id",
+      "Type":"String"
+    }
+  },
+  "Resources":{
+    "Volume1":{
+      "Type":"AWS::EC2::Volume",
+      "Properties":{
+        "Size":"6",
+        "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
+        "AvailabilityZone":{
+          "Fn::GetAtt":[
+            "Instance1",
+            "AvailabilityZone"
+          ]
+        }
+      }
+    },
+    "Volume2":{
+      "Type":"AWS::EC2::Volume",
+      "Properties":{
+        "Size":"5",
+        "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
+        "AvailabilityZone":{
+          "Fn::GetAtt":[
+            "Instance1",
+            "AvailabilityZone"
+          ]
+        }
+      }
+    },
+    "MountPoint1":{
+      "Type":"AWS::EC2::VolumeAttachment",
+      "Properties":{
+        "InstanceId":{
+          "Ref":"Instance2"
+        },
+        "VolumeId":{
+          "Ref":"Volume1"
+        },
+        "Device":"/dev/sdc"
+      }
+    },
+    "Instance1":{
+      "Type":"AWS::EC2::Instance",
+      "Properties":{
+        "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
+        "ImageId":{
+          "Ref":"ImageId"
+        }
+      }
+    },
+    "Instance2":{
+      "Type":"AWS::EC2::Instance",
+      "Properties":{
+        "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
+        "ImageId":{
+          "Ref":"ImageId"
+        },
+        "Volumes":[
+          {
+            "VolumeId":{
+              "Ref":"Volume1"
+            },
+            "Device":"/dev/sde"
+          }
+        ]
+      }
+    }
+  }
+}
+
