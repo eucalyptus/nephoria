@@ -73,7 +73,8 @@ class TestController(object):
                                         'boto_debug_level': 0,
                                         'euca_user': 'admin',
                                         'euca_account': 'eucalyptus',
-                                        'https': https}
+                                        'https': https,
+                                        'region_domain': region}
 
         self._cloud_admin_connection_info = {'aws_account_name': 'eucalyptus',
                                              'aws_user_name': 'admin',
@@ -129,7 +130,7 @@ class TestController(object):
                         name = str(name)
                     self.region = name
             except Exception as RE:
-                self.log.error('{0}.\nError while fetching region info:{0}'.format(get_traceback(),
+                self.log.error('{0}.\nError while fetching region info:{1}'.format(get_traceback(),
                                                                                    RE))
         return self._region
 
