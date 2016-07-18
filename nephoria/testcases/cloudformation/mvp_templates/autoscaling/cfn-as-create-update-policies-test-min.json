@@ -65,8 +65,7 @@
                         "Fn::Base64": {
                             "Fn::Join" : [ "", [
                                 "#!/bin/bash -xe\n",
-                                "apt-get update\n",
-                                "apt-get install ntp -y\n",
+                                "apt-get update && apt-get install ntp -y\n",
                                 "ntpd -u pool.ntp.org\n",
                                 "timedatectl set-ntp yes\n",
                                 "hwclock --systohc\n",
