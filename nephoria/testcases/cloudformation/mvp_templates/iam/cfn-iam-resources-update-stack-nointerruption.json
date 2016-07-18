@@ -1,0 +1,152 @@
+{
+    "AWSTemplateFormatVersion":"2010-09-09",
+
+    "Description":"IAM Resources Update Stack Test - Updates to IAM resources that require no interruption",
+
+    "Resources" : {
+        "User" : {
+            "Type": "AWS::IAM::User",
+            "Properties": {
+                "LoginProfile": {
+                    "Password" : "1234password4m3!",
+                    "PasswordResetRequired" : "True"
+                }
+            }
+        },
+
+        "User2" : {
+            "Type": "AWS::IAM::User"
+        },
+
+        "AccessKey" : {
+            "Type": "AWS::IAM::AccessKey",
+            "Properties" : {
+               "Status" : "Inactive",
+                "UserName" : { "Ref" : "User" }
+            }
+        },
+   
+        "Group" : {
+            "Type": "AWS::IAM::Group",
+            "Properties" : {
+                "Policies" : [
+                    {
+                        "PolicyName" : "ec2-all",
+                        "PolicyDocument": {
+                            "Version" : "2012-10-17",
+                            "Statement": [
+                                { "Effect": "Allow", "Action": "ec2:*", "Resource": "*" }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+
+        "UserToGroupAddition" : {
+            "Type": "AWS::IAM::UserToGroupAddition",
+            "Properties": {
+                "GroupName" : { "Ref" : "Group" },
+                "Users" : [ 
+                              { "Ref" : "User" },
+                              { "Ref" : "User2" }
+                ]
+            }
+        },
+
+        "Policy" : {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "Roles" : [ { "Ref" : "Role" } ],
+                "Users" : [ { "Ref" : "User2" } ],
+                "PolicyName" : "ec2-s3-autoscaling-all",
+                "PolicyDocument": {
+                    "Version" : "2012-10-17",
+                    "Statement": [
+                        { "Effect": "Allow", "Action": "ec2:*", "Resource": "*" },
+                        { "Effect": "Allow", "Action": "s3:*", "Resource": "*" },
+                        { "Effect": "Allow", "Action": "autoscaling:*", "Resource": "*" }
+                    ]
+                }
+            }
+        },
+ 
+        "Role" : {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                   "Version" : "2012-10-17",
+                   "Statement": [ {
+                      "Effect": "Allow",
+                      "Principal": {
+                         "Service": [ "ec2.amazonaws.com" ]
+                      },
+                      "Action": [ "sts:AssumeRole" ]
+                   } ]
+                },
+                "Path": "/",
+                "Policies": [ {
+                    "PolicyName": "root",
+                    "PolicyDocument": {
+                        "Version" : "2012-10-17",
+                        "Statement": [ {
+                            "Effect": "Allow",
+                            "Action": "*",
+                            "Resource": "*"
+                        } ]
+                    }
+                } ]
+            }
+        },
+
+        "InstanceProfile" : {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties" : {
+                "Path" : "/",
+                "Roles": [ { "Ref" : "Role" } ]
+            }
+        }
+    },
+
+    "Outputs" : {
+        "UserId" : {
+            "Description" : "ARN of User",
+            "Value" : { "Fn::GetAtt": [ "User", "Arn" ] }
+        },
+
+        "AccessKeyId" : {
+            "Description" : "Access Key ID ",
+            "Value" : { "Ref" : "AccessKey" }
+        },
+
+        "AccessKeySecretKeyId" : {
+            "Description" : "Secret Access Key",
+            "Value" : { "Fn::GetAtt" : [ "AccessKey", "SecretAccessKey" ] }
+        },
+
+        "GroupId" : {
+            "Description" : "ARN of Group",
+            "Value" : { "Fn::GetAtt": [ "Group", "Arn" ] }
+        },
+
+        "UserToGroupAdditionId" : {
+            "Description" : "ID of UserToGroupAddition",
+            "Value" : { "Ref" : "UserToGroupAddition" }
+        },
+
+        "PolicyId" : {
+            "Description" : "ID of Policy",
+            "Value" : { "Ref" : "Policy" }
+        },
+
+        "RoleId" : {
+            "Description" : "ARN of Role",
+            "Value" : { "Fn::GetAtt": [ "Role", "Arn" ] }
+        },
+
+        "InstanceProfileId" : {
+            "Description" : "ARN of Instance Profile",
+            "Value" : { "Fn::GetAtt": [ "InstanceProfile", "Arn" ] }
+        }
+    }
+}
