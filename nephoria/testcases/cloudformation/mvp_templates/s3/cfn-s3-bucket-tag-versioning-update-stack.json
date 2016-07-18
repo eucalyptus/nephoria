@@ -1,0 +1,35 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+
+    "Description" : "S3 Bucket Update Stack - Update tags, remove LifecycleConfiguration, add Versioning Configuration (No Bucket ID Update)",
+
+    "Resources" : {
+        "Bucket" : {
+            "Type" : "AWS::S3::Bucket",
+            "Properties" : {
+                "BucketName" : "bucket1",
+                "AccessControl" : "AuthenticatedRead",
+                "VersioningConfiguration":{
+                    "Status":"Enabled"
+                },
+                "Tags" : [ 
+                             {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} },
+                             {"Key" : "Purpose", "Value" : "Additional Tag for UpdateStack Testing" }
+                ]
+            }
+        }
+    },
+
+    "Outputs" : {
+        "BucketId" : {
+            "Description" : "Resource ID of Bucket",
+            "Value" : { "Ref" : "Bucket" }
+        },
+    
+        "BucketDomain" : {
+            "Description" : "Domain Name of Bucket",
+            "Value" :  { "Fn::GetAtt" : [ "Bucket", "DomainName" ] }
+        }
+    }
+}
+  

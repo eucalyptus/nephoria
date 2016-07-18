@@ -1,0 +1,39 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+
+    "Description" : "S3 Bucket Update Stack - Update Bucket Name (New Bucket ID Should Be Returned)",
+
+    "Resources" : {
+        "Bucket" : {
+            "Type" : "AWS::S3::Bucket",
+            "Properties" : {
+                "BucketName" : "bucket2",
+                "AccessControl" : "AuthenticatedRead",
+                "LifecycleConfiguration" : {
+                    "Rules" : [
+                        {
+                            "Id" : "BucketLifeCycleTest",
+                            "Prefix": "bucketlifecycle",
+                            "Status": "Enabled",
+                            "ExpirationInDays": "365"
+                        }
+                    ]
+                },
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        }
+    },
+
+    "Outputs" : {
+        "BucketId" : {
+            "Description" : "Resource ID of Bucket",
+            "Value" : { "Ref" : "Bucket" }
+        },
+    
+        "BucketDomain" : {
+            "Description" : "Domain Name of Bucket",
+            "Value" :  { "Fn::GetAtt" : [ "Bucket", "DomainName" ] }
+        }
+    }
+}
+  
