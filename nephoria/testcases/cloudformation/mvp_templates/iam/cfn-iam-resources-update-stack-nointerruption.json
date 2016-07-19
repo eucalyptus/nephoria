@@ -114,6 +114,11 @@
             "Value" : { "Fn::GetAtt": [ "User", "Arn" ] }
         },
 
+        "UserId2" : {
+            "Description" : "ARN of User2",
+            "Value" : { "Fn::GetAtt": [ "User2", "Arn" ] }
+        },
+
         "AccessKeyId" : {
             "Description" : "Access Key ID ",
             "Value" : { "Ref" : "AccessKey" }
