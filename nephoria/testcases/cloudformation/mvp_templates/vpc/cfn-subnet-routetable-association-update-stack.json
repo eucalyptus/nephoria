@@ -1,0 +1,96 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "SubnetRouteTableAssociation UpdateStack Test - VPC - Update SubnetId and RouteTableId in AWS::EC2::SubnetRouteTableAssociation resource",
+
+    "Resources" : {
+        "RouteTable1" : {
+            "Type" : "AWS::EC2::RouteTable",
+            "Properties" : {
+                "VpcId" : {"Ref":"VPC"}
+            }
+        },
+        "RouteTable2" : {
+            "Type" : "AWS::EC2::RouteTable",
+            "Properties" : {
+                "VpcId" : {"Ref":"VPC"}
+            }
+        },
+        "Subnet1" : {
+            "Type" : "AWS::EC2::Subnet",
+            "Properties" : {
+                "CidrBlock" : "10.0.0.0/24",
+                "VpcId" : { "Ref" : "VPC" }
+            }
+        },
+        "Subnet2" : {
+            "Type" : "AWS::EC2::Subnet",
+            "Properties" : {
+                "CidrBlock" : "10.0.1.0/24",
+                "VpcId" : { "Ref" : "VPC" }
+            }
+        },
+        "VPC" : {
+            "Type" : "AWS::EC2::VPC",
+            "Properties" : {
+                "CidrBlock" : "10.0.0.0/16"
+            }
+        },
+        "Association" : {
+            "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties" : {
+                "SubnetId" : {"Ref":"Subnet2"},
+                "RouteTableId" : { "Ref":"RouteTable2" }
+            }
+        }
+    },
+  
+    "Outputs" : {
+        "VPCId" : {
+            "Description" : "Resource ID of VPC",
+            "Value" : { "Ref" : "VPC" }
+        },
+
+        "VPCCidrBlock" : {
+            "Description" : "CIDR Block of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "CidrBlock" ] }
+        },
+
+        "VPCDefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultNetworkAcl" ] }
+        },
+
+        "VPCDefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultSecurityGroup" ] }
+        },
+        "Subnet1Id" : {
+            "Description" : "Resource ID of Subnet1",
+            "Value" : { "Ref" : "Subnet1" }
+        },
+        "Subnet1AvailabilityZone" : {
+            "Description" : "Availability Zone of Subnet1",
+            "Value" : { "Fn::GetAtt" : [ "Subnet1", "AvailabilityZone" ] }
+        },
+        "Subnet2Id" : {
+            "Description" : "Resource ID of Subnet2",
+            "Value" : { "Ref" : "Subnet2" }
+        },
+        "Subnet2AvailabilityZone" : {
+            "Description" : "Availability Zone of Subnet2",
+            "Value" : { "Fn::GetAtt" : [ "Subnet2", "AvailabilityZone" ] }
+        },
+        "RouteTable1Id" : {
+            "Description" : "Resource ID of RouteTable1",
+            "Value" : { "Ref" : "RouteTable1" }
+        },
+        "RouteTable2Id" : {
+            "Description" : "Resource ID of RouteTable2",
+            "Value" : { "Ref" : "RouteTable2" }
+        },
+        "SubnetRouteTableAssociationId" : {
+            "Description" : "Resource ID of SubnetRouteTableAssociation",
+            "Value" : { "Ref" : "Association" }
+        }
+    }
+}
