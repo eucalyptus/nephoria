@@ -1,0 +1,101 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "SubnetNetworkAclAssociation UpdateStack Test - VPC - Change SubnetId and NetworkAclId in AWS::EC2::SubnetNetworkAclAssociation resource ",
+    "Resources" : {
+        "NetworkAcl1" : {
+            "Type" : "AWS::EC2::NetworkAcl",
+            "Properties" : {
+                "VpcId" : {"Ref":"VPC"}
+            }
+        },
+        "NetworkAcl2" : {
+            "Type" : "AWS::EC2::NetworkAcl",
+            "Properties" : {
+                "VpcId" : {"Ref":"VPC"}
+            }
+        },
+        "Subnet1" : {
+            "Type" : "AWS::EC2::Subnet",
+            "Properties" : {
+                "CidrBlock" : "10.0.0.0/24",
+                "VpcId" : { "Ref" : "VPC" }
+            }
+        },
+        "Subnet2" : {
+            "Type" : "AWS::EC2::Subnet",
+            "Properties" : {
+                "CidrBlock" : "10.0.1.0/24",
+                "VpcId" : { "Ref" : "VPC" }
+            }
+        },
+        "VPC" : {
+            "Type" : "AWS::EC2::VPC",
+            "Properties" : {
+                "CidrBlock" : "10.0.0.0/16"
+            }
+        },
+        "Association" : {
+            "Type" : "AWS::EC2::SubnetNetworkAclAssociation",
+            "Properties" : {
+                "SubnetId" : {"Ref":"Subnet2"},
+                "NetworkAclId" : { "Ref":"NetworkAcl2" }
+            }
+        }
+    },
+    "Outputs": {
+        "VPCId" : {
+            "Description" : "Resource ID of VPC",
+            "Value" : { "Ref" : "VPC" }
+        },
+
+        "VPCCidrBlock" : {
+            "Description" : "CIDR Block of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "CidrBlock" ] }
+        },
+
+        "VPCDefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultNetworkAcl" ] }
+        },
+
+        "VPCDefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultSecurityGroup" ] }
+        },
+
+        "Subnet1Id" : {
+            "Description" : "Resource ID of Subnet1",
+            "Value" : { "Ref" : "Subnet1" }
+        },
+
+        "Subnet1AvailabilityZone" : {
+            "Description" : "Availability Zone of Subnet1",
+            "Value" : { "Fn::GetAtt" : [ "Subnet1", "AvailabilityZone" ] }
+        },
+
+        "Subnet2Id" : {
+            "Description" : "Resource ID of Subnet2",
+            "Value" : { "Ref" : "Subnet2" }
+        },
+
+        "Subnet2AvailabilityZone" : {
+            "Description" : "Availability Zone of Subnet2",
+            "Value" : { "Fn::GetAtt" : [ "Subnet2", "AvailabilityZone" ] }
+        },
+
+        "NetworkAcl1Id" : {
+            "Description" : "Resource ID of NetworkAcl1",
+            "Value" : { "Ref" : "NetworkAcl1" }
+        },
+
+        "NetworkAcl2Id" : {
+            "Description" : "Resource ID of NetworkAcl2",
+            "Value" : { "Ref" : "NetworkAcl2" }
+        },
+
+        "SubnetNetworkAclAssociationId" : {
+            "Description" : "Resource ID of SubnetNetworkAclAssociation",
+            "Value" : { "Ref" : "Association" }
+        }
+    }
+}
