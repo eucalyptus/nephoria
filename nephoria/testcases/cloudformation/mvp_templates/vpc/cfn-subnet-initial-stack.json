@@ -1,0 +1,79 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "Subnet UpdateStack Test - VPC - Initial Stack setup ",
+    "Resources" : {
+        "Subnet" : {
+           "Type" : "AWS::EC2::Subnet",
+           "Properties" : {
+               "AvailabilityZone" : { "Fn::Select" : [ "0", { "Fn::GetAZs" : { "Ref" : "AWS::Region" } } ] },
+               "CidrBlock" : "10.0.0.0/24",
+               "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
+               "VpcId" : { "Ref" : "VPC1" }
+           }
+        },
+        "VPC1" : {
+           "Type" : "AWS::EC2::VPC",
+           "Properties" : {
+               "CidrBlock" : "10.0.0.0/16"
+           }
+        },
+        "VPC2" : {
+            "Type" : "AWS::EC2::VPC",
+            "Properties" : {
+                "CidrBlock" : "172.31.0.0/16"
+            }
+        }
+    },
+    
+    "Outputs" : {
+        "VPC1Id" : {
+            "Description" : "Resource ID of VPC1",
+            "Value" : { "Ref" : "VPC1" }
+        },
+
+        "VPC1CidrBlock" : {
+            "Description" : "CIDR Block of VPC1",
+            "Value" : { "Fn::GetAtt" : [ "VPC1", "CidrBlock" ] }
+        },
+
+        "VPC1DefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC1",
+            "Value" : { "Fn::GetAtt" : [ "VPC1", "DefaultNetworkAcl" ] }
+        },
+
+        "VPC1DefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC1",
+            "Value" : { "Fn::GetAtt" : [ "VPC1", "DefaultSecurityGroup" ] }
+        },
+
+        "VPC2Id" : {
+            "Description" : "Resource ID of VPC2",
+            "Value" : { "Ref" : "VPC2" }
+        },
+
+        "VPC2CidrBlock" : {
+            "Description" : "CIDR Block of VPC2",
+            "Value" : { "Fn::GetAtt" : [ "VPC2", "CidrBlock" ] }
+        },
+
+        "VPC2DefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC2",
+            "Value" : { "Fn::GetAtt" : [ "VPC2", "DefaultNetworkAcl" ] }
+        },
+
+        "VPC1DefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC1",
+            "Value" : { "Fn::GetAtt" : [ "VPC1", "DefaultSecurityGroup" ] }
+        },
+
+        "SubnetId" : {
+            "Description" : "Resource ID of Subnet",
+            "Value" : { "Ref" : "Subnet" }
+        },
+
+        "SubnetAvailabilityZone" : {
+            "Description" : "Availability Zone of Subnet",
+            "Value" : { "Fn::GetAtt" : [ "Subnet", "AvailabilityZone" ] }
+        }
+    }
+}
