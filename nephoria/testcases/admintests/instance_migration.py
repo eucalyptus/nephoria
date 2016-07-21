@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 import copy
 import time
+
+from boto.exception import EC2ResponseError
+
 from nephoria.testcase_utils import wait_for_result
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, \
     SkipTestException
@@ -165,7 +168,11 @@ class InstanceMigration(CliTestRunner):
         keypair = getattr(self, '__keypair', None)
         self.tc.admin.ec2.terminate_instances(instances)
         for v in volumes:
-            v.delete()
+            try:
+                v.delete()
+            except EC2ResponseError as ER:
+                if ER.status == 400 and ER.error_code == 'InvalidVolume.NotFound':
+                    pass
         if keypair:
             self.tc.admin.ec2.delete_keypair(self.keypair)
 
