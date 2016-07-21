@@ -1,0 +1,95 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "VPCGatewayAttachment UpdateStack Test - VPC - Initial Stack setup",
+    "Resources" : {
+
+        "IG1" : {
+            "Type" : "AWS::EC2::InternetGateway",
+            "Properties" : {
+            }
+        },
+
+        "IG2" : {
+            "Type" : "AWS::EC2::InternetGateway"
+        },
+
+        "VPC1" : {
+            "Type" : "AWS::EC2::VPC",
+            "Properties" : {
+                "CidrBlock" : "10.0.0.0/16"
+            }
+        },
+
+        "VPC2" : {
+            "Type" : "AWS::EC2::VPC",
+            "Properties" : {
+                "CidrBlock" : "172.31.0.0/16"
+            }
+        },
+
+        "Attachment" : {
+            "Type" : "AWS::EC2::VPCGatewayAttachment",
+            "Properties" : {
+                "InternetGatewayId" : {"Ref":"IG1" },
+                "VpcId" : { "Ref":"VPC1" }
+            }
+        }
+    },
+  
+    "Outputs" : {
+        "InternetGateway1Id" : {
+            "Description" : "Resource ID of InternetGateway1",
+            "Value" : { "Ref" : "IG1" }
+        },
+
+        "InternetGateway2Id" : {
+            "Description" : "Resource ID of InternetGateway2",
+            "Value" : { "Ref" : "IG2" }
+        },
+
+        "VPC1Id" : {
+            "Description" : "Resource ID of VPC1",
+            "Value" : { "Ref" : "VPC1" }
+        },
+
+        "VPC1CidrBlock" : {
+            "Description" : "CIDR Block of VPC1",
+            "Value" : { "Fn::GetAtt" : [ "VPC1", "CidrBlock" ] }
+        },
+
+        "VPC1DefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC1",
+            "Value" : { "Fn::GetAtt" : [ "VPC1", "DefaultNetworkAcl" ] }
+        },
+
+        "VPC1DefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC1",
+            "Value" : { "Fn::GetAtt" : [ "VPC1", "DefaultSecurityGroup" ] }
+        },
+
+        "VPC2Id" : {
+            "Description" : "Resource ID of VPC2",
+            "Value" : { "Ref" : "VPC2" }
+        },
+
+        "VPC2CidrBlock" : {
+            "Description" : "CIDR Block of VPC2",
+            "Value" : { "Fn::GetAtt" : [ "VPC2", "CidrBlock" ] }
+        },
+
+        "VPC2DefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC2",
+            "Value" : { "Fn::GetAtt" : [ "VPC2", "DefaultNetworkAcl" ] }
+        },
+
+        "VPC2DefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC2",
+            "Value" : { "Fn::GetAtt" : [ "VPC2", "DefaultSecurityGroup" ] }
+        },
+
+        "VPCGatewayAttachmentId" : {
+            "Description" : "Resource ID of VPCGatewayAttachment",
+            "Value" : { "Ref" : "Attachment" }
+        }
+    }
+}
