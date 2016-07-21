@@ -1,0 +1,24 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "DHCPOptions UpdateStack Test - VPC - Initial Stack setup",
+    "Resources" : {
+        "DhcpOptions" : {
+            "Type" : "AWS::EC2::DHCPOptions",
+            "Properties" : {
+                "DomainName" : "example.com",
+                "DomainNameServers" : [ "AmazonProvidedDNS" ],
+                "NtpServers" : [ "10.2.5.1" ],
+                "NetbiosNameServers" : [ "10.2.5.1" ],
+                "NetbiosNodeType" : 2,
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        }
+    },
+    
+    "Outputs" : {
+       "DhcpOptionsId" : {
+            "Description" : "Resource ID of DhcpOptions1",
+            "Value" : { "Ref" : "DhcpOptions" }
+        }
+    }
+}

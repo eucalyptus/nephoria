@@ -1,0 +1,24 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "DHCPOptions UpdateStack Test - VPC - Update DomainName, DomainNameServers, NetbiosNodeType in AWS::EC2::DHCPOptions resource",
+    "Resources" : {
+        "DhcpOptions" : {
+            "Type" : "AWS::EC2::DHCPOptions",
+            "Properties" : {
+                "DomainName" : "example-systems.com",
+                "DomainNameServers" : [ "10.0.0.1", "10.0.0.2" ],
+                "NtpServers" : [ "10.2.5.1" ],
+                "NetbiosNameServers" : [ "10.0.0.1", "10.0.0.2" ],
+                "NetbiosNodeType" : 8,
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        }
+    },
+    
+    "Outputs" : {
+       "DhcpOptionsId" : {
+            "Description" : "Resource ID of DhcpOptions1",
+            "Value" : { "Ref" : "DhcpOptions" }
+        }
+    }
+}
