@@ -1,6 +1,6 @@
 {
     "AWSTemplateFormatVersion" : "2010-09-09",
-    "Description" : "Elastic IP Test - EIP association to instance in VPC",
+    "Description" : "Elastic IP Association UpdateStack Test - Update InstanceId in AWS::EC2::EIPAssociation resource",
     "Parameters" : {
         "ImageId": {
             "Description":"Image Id",
@@ -95,12 +95,21 @@
         "EIPAssociation": {
             "Type" : "AWS::EC2::EIPAssociation",
             "Properties" : {
-                "InstanceId": { "Ref": "Instance" },
+                "InstanceId": { "Ref": "Instance2" },
                 "AllocationId" : { "Fn::GetAtt" : [ "EIP" , "AllocationId" ] }
             }
         },
 
         "NetworkInterface" :{
+            "Type": "AWS::EC2::NetworkInterface",
+            "Properties": {
+                "Description": "Network Interface for Elastic IP",
+                "SubnetId": { "Ref": "Subnet" },
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "NetworkInterface2" :{
             "Type": "AWS::EC2::NetworkInterface",
             "Properties": {
                 "Description": "Network Interface for Elastic IP",
@@ -121,13 +130,32 @@
                     }],
                     "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
             }
+         },
+
+        "Instance2": {
+            "Type": "AWS::EC2::Instance",
+                "Properties": {
+                    "ImageId" : { "Ref":"ImageId" },
+                    "InstanceType" : { "Ref":"InstanceType"},
+                    "NetworkInterfaces" : [{
+                        "DeviceIndex"  : "0",
+                        "Description" : "Default interface for instance",
+                        "NetworkInterfaceId" : { "Ref": "NetworkInterface2" }
+                    }],
+                    "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
          }
     },
 
     "Outputs": {
         "InstanceId" : {
-            "Description" : "InstanceId of the newly created EC2 instance",
+            "Description" : "InstanceId of first newly created EC2 instance",
             "Value" : { "Ref" : "Instance" }
+        },
+
+        "Instance2Id" : {
+            "Description" : "InstanceId of second newly created EC2 instance",
+            "Value" : { "Ref" : "Instance2" }
         },
 
         "ElasticIP": {
@@ -139,7 +167,7 @@
             "Description" : "Allocation ID of the Elastic IP",
             "Value" : { "Fn::GetAtt" : [ "EIP" , "AllocationId" ] }
         },
-
+  
         "NetworkInterfaceId" : {
             "Description" : "Resource ID for NetworkInterface",
             "Value" : { "Ref" : "NetworkInterface" }
@@ -149,7 +177,17 @@
             "Description" : "Private IP address of NetworkInterface",
             "Value" : { "Fn::GetAtt" : [ "NetworkInterface" , "PrimaryPrivateIpAddress" ] }
         },
+ 
+        "NetworkInterface2Id" : {
+            "Description" : "Resource ID for NetworkInterface2",
+            "Value" : { "Ref" : "NetworkInterface2" }
+        },
 
+        "NetworkInterface2PrimaryPrivateIP" : {
+            "Description" : "Private IP address of NetworkInterface2",
+            "Value" : { "Fn::GetAtt" : [ "NetworkInterface2" , "PrimaryPrivateIpAddress" ] }
+        },
+ 
         "EIPAssociationId": {
             "Description" : "Resource ID of EIPAssociation",
             "Value" : { "Ref" : "EIPAssociation" }
