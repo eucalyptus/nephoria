@@ -1,0 +1,38 @@
+{
+   "AWSTemplateFormatVersion" : "2010-09-09",
+   "Description" : "VPC UpdateStack Test: Update AWS::EC2::VPC resources which cause no replacement",
+   "Resources" : {
+      "VPC" : {
+         "Type" : "AWS::EC2::VPC",
+         "Properties" : {
+            "CidrBlock" : "10.0.0.0/16",
+            "EnableDnsSupport" : "true",
+            "EnableDnsHostnames" : "true",
+            "InstanceTenancy" : "dedicated",
+            "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+         }
+      }
+   },
+   
+   "Outputs" : {
+        "VPCId" : {
+            "Description" : "Resource ID of VPC",
+            "Value" : { "Ref" : "VPC" }
+        },
+
+        "VPCCidrBlock" : {
+            "Description" : "CIDR Block of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "CidrBlock" ] }
+        },
+
+        "VPCDefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultNetworkAcl" ] }
+        },
+
+        "VPCDefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultSecurityGroup" ] }
+        }
+   }
+}
