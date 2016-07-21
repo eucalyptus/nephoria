@@ -1,0 +1,19 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "InternetGateway UpdateStack Test - VPC - Initial Stack setup",
+    "Resources" : {
+        "InternetGateway" : {
+            "Type" : "AWS::EC2::InternetGateway",
+            "Properties" : {
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ]
+            }
+        }
+    },
+   
+    "Outputs" : {
+        "InternetGatewayId" : {
+            "Description" : "Resource ID of InternetGateway",
+            "Value" : { "Ref" : "InternetGateway" }
+        }
+    }
+}
