@@ -45,7 +45,7 @@ from nephoria.aws.sts.stsops import STSops
 from nephoria.aws.cloudformation.cfnops import CFNops
 from nephoria.aws.cloudwatch.cwops import CWops
 from nephoria.aws.autoscaling.asops import ASops
-
+from nephoria import __DEFAULT_API_VERSION__
 
 class UserContext(AutoCreds):
 
@@ -63,7 +63,8 @@ class UserContext(AutoCreds):
     def __init__(self,  aws_access_key=None, aws_secret_key=None, aws_account_name=None,
                  aws_user_name=None, port=8773, credpath=None, string=None, region=None,
                  machine=None, keysdir=None, logger=None, service_connection=None,
-                 eucarc=None, existing_certs=False, boto_debug=0, https=True, log_level=None):
+                 eucarc=None, existing_certs=False, boto_debug=0, https=True, api_version=None,
+                 log_level=None):
         if log_level is None:
             if service_connection:
                 log_level = service_connection.log.stdout_level
@@ -84,6 +85,7 @@ class UserContext(AutoCreds):
         self._session = None
         self._connections = {}
         self.region = region
+        self.api_version = api_version or __DEFAULT_API_VERSION__
 
         # Logging setup
         if not logger:
@@ -108,6 +110,7 @@ class UserContext(AutoCreds):
                                    'connection_debug': boto_debug,
                                    'user_context': self,
                                    'region': region,
+                                   'api_version': self.api_version,
                                    'log_level': log_level}
         self.log.identifier = str(self)
         self.log.debug('Successfully created User Context')

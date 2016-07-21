@@ -21,7 +21,7 @@ class BotoBaseOps(BaseOps):
         region = kwargs.get('region')
         service_url = kwargs.get('service_url')
         validate_certs = kwargs.get('validate_certs', None)
-        api_version = kwargs.get('api_version', "")
+        api_version = kwargs.get('api_version', None)
         is_secure = kwargs.get('is_secure', True)
         connection_debug = kwargs.get('connection_debug')
         region = self._get_region_info(host=self.service_host,
@@ -47,6 +47,7 @@ class BotoBaseOps(BaseOps):
                                    'verify': validate_certs,
                                    'validate_certs': validate_certs,
                                    'endpoint_url': self.service_url,
+                                   'api_version': api_version,
                                    'path': self.service_path}
         return self._connection_kwargs
 
