@@ -2972,7 +2972,7 @@ disable_root: false"""
             # Attempt to get a nephoria created image if it happens to meet
             # the other criteria provided. Otherwise remove filter and
             # return the image found without the imposed filters.
-            filters={'tag-key':'nephoria-created'}
+            filters={'tag-key':'nephoria-created', 'image-type': 'machine'}
             try:
                 return self.get_images(emi=emi,
                                    name=name,
@@ -2991,7 +2991,7 @@ disable_root: false"""
                                    virtualization_type=virtualization_type,
                                    max_count=1)[0]
             except:
-                filters = None
+                filters = {'image-type': 'machine'}
         return self.get_images(emi=emi,
                                name=name,
                                root_device_type=root_device_type,
