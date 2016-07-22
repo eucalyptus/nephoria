@@ -1,0 +1,111 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "Route UpdateStack Test - Initial Stack Setup",
+
+    "Resources" : {
+       "VPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties" : {
+                "CidrBlock" : "10.0.0.0/16",
+                "EnableDnsSupport" : "True",
+                "EnableDnsHostnames" : "True",
+                "InstanceTenancy" : "default",
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ]
+            }
+        },
+
+        "Subnet": {
+            "Type" : "AWS::EC2::Subnet",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VPC" },
+                "CidrBlock" : "10.0.0.0/24",
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "InternetGateway" : {
+            "Type" : "AWS::EC2::InternetGateway",
+            "Properties" : {
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "VPCGatewayAttachment" : {
+            "Type" : "AWS::EC2::VPCGatewayAttachment",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VPC" },
+                "InternetGatewayId" : { "Ref" : "InternetGateway" }
+            }
+        },
+
+        "RouteTable": {
+            "Type" : "AWS::EC2::RouteTable",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VPC" },
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "Route" : {
+            "Type" : "AWS::EC2::Route",
+            "DependsOn" : "VPCGatewayAttachment",
+            "Properties" : {
+                "RouteTableId" : { "Ref" : "RouteTable" },
+                "DestinationCidrBlock" : "0.0.0.0/0",
+                "GatewayId" : { "Ref" : "InternetGateway" }
+            }
+        }
+    },
+  
+    "Outputs" : {
+        "VPCId" : {
+            "Description" : "Resource ID of VPC",
+            "Value" : { "Ref" : "VPC" }
+        },
+
+        "VPCCidrBlock" : {
+            "Description" : "CIDR Block of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "CidrBlock" ] }
+        },
+
+        "VPCDefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultNetworkAcl" ] }
+        },
+
+        "VPCDefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultSecurityGroup" ] }
+        },
+
+        "SubnetId" : {
+            "Description" : "Resource ID of Subnet",
+            "Value" : { "Ref" : "Subnet" }
+        },
+
+        "SubnetAvailabilityZone" : {
+            "Description" : "Availability Zone of Subnet",
+            "Value" : { "Fn::GetAtt" : [ "Subnet", "AvailabilityZone" ] }
+        },
+
+        "InternetGatewayId" : {
+            "Description" : "Resource ID of InternetGateway",
+            "Value" : { "Ref" : "InternetGateway" }
+        },
+
+        "VPCGatewayAttachmentId" : {
+            "Description" : "Resource ID of VPCGatewayAttachment",
+            "Value" : { "Ref" : "VPCGatewayAttachment" }
+        },
+
+        "RouteTableId" : {
+            "Description" : "Resource ID of RouteTable",
+            "Value" : { "Ref" : "RouteTable" }
+        },
+
+        "RouteId" : {
+            "Description" : "Resource ID of Route",
+            "Value" : { "Ref" : "Route" }
+        }
+    }
+}
