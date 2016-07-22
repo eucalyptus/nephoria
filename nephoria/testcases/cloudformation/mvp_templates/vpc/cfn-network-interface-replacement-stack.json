@@ -1,0 +1,133 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "NetworkInterface UpdateStack Test - Update property attributes in AWS::EC2::NetworkInterface resource which cause replacement",
+
+    "Resources" : {
+       "VPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties" : {
+                "CidrBlock" : "10.0.0.0/16",
+                "EnableDnsSupport" : "True",
+                "EnableDnsHostnames" : "True",
+                "InstanceTenancy" : "default",
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ]
+            }
+        },
+
+        "Subnet": {
+            "Type" : "AWS::EC2::Subnet",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VPC" },
+                "CidrBlock" : "10.0.0.0/24",
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "Subnet2": {
+            "Type" : "AWS::EC2::Subnet",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VPC" },
+                "CidrBlock" : "10.0.1.0/24",
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "SecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription" : "AWS::EC2::SecurityGroup Resource - Security Group 1",
+                "VpcId": { "Ref" : "VPC" },
+                "Tags": [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ]
+            }
+        },
+
+        "SecurityGroup2": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription" : "AWS::EC2::SecurityGroup Resource - Security Group 2",
+                "VpcId": { "Ref" : "VPC" },
+                "Tags": [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ]
+            }
+        },
+
+        "NetworkInterface" :{
+            "Type": "AWS::EC2::NetworkInterface",
+            "Properties": {
+                "Description": "Network Interface for Elastic IP",
+                "GroupSet" : [
+                    { "Fn::GetAtt" : [ "SecurityGroup", "GroupId" ] },
+                    { "Fn::GetAtt" : [ "SecurityGroup2", "GroupId" ] }
+                ],
+                "SubnetId": { "Ref": "Subnet2" },
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        }
+    },
+
+    "Outputs" : {
+        "NetworkInterfaceId" : {
+            "Description" : "Resource ID for NetworkInterface",
+            "Value" : { "Ref" : "NetworkInterface" }
+        },
+
+        "VPCId" : {
+            "Description" : "Resource ID of VPC",
+            "Value" : { "Ref" : "VPC" }
+        },
+
+        "VPCCidrBlock" : {
+            "Description" : "CIDR Block of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "CidrBlock" ] }
+        },
+
+        "VPCDefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultNetworkAcl" ] }
+        },
+
+        "VPCDefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultSecurityGroup" ] }
+        },
+
+        "SubnetId" : {
+            "Description" : "Resource ID of Subnet",
+            "Value" : { "Ref" : "Subnet" }
+        },
+
+        "SubnetAvailabilityZone" : {
+            "Description" : "Availability Zone of Subnet",
+            "Value" : { "Fn::GetAtt" : [ "Subnet", "AvailabilityZone" ] }
+        },
+
+        "Subnet2Id" : {
+            "Description" : "Resource ID of Subnet2",
+            "Value" : { "Ref" : "Subnet2" }
+        },
+
+        "Subnet2AvailabilityZone" : {
+            "Description" : "Availability Zone of Subnet2",
+            "Value" : { "Fn::GetAtt" : [ "Subnet2", "AvailabilityZone" ] }
+        },
+
+        "SecurityGroupRefId" : {
+            "Description" : "Resource ID of SecurityGroup Resource",
+            "Value" : { "Ref" : "SecurityGroup" }
+        },
+
+        "SecurityGroupId" : {
+            "Description" : "Group ID of SecurityGroup Resource",
+            "Value" : { "Fn::GetAtt" : [ "SecurityGroup", "GroupId" ] }
+        },
+
+        "SecurityGroup2RefId" : {
+            "Description" : "Resource ID of SecurityGroup2 Resource",
+            "Value" : { "Ref" : "SecurityGroup2" }
+        },
+
+        "SecurityGroup2Id" : {
+            "Description" : "Group ID of SecurityGroup2 Resource",
+            "Value" : { "Fn::GetAtt" : [ "SecurityGroup2", "GroupId" ] }
+       }
+    }
+}

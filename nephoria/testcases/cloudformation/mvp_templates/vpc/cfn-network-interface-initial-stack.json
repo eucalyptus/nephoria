@@ -1,0 +1,72 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "NetworkInterface UpdateStack Test - Initial Stack Setup",
+
+    "Resources" : {
+       "VPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties" : {
+                "CidrBlock" : "10.0.0.0/16",
+                "EnableDnsSupport" : "True",
+                "EnableDnsHostnames" : "True",
+                "InstanceTenancy" : "default",
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ]
+            }
+        },
+
+        "Subnet": {
+            "Type" : "AWS::EC2::Subnet",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VPC" },
+                "CidrBlock" : "10.0.0.0/24",
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "NetworkInterface" :{
+            "Type": "AWS::EC2::NetworkInterface",
+            "Properties": {
+                "Description": "Network Interface for Elastic IP",
+                "SubnetId": { "Ref": "Subnet" },
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        }
+    },
+
+    "Outputs" : {
+        "NetworkInterfaceId" : {
+            "Description" : "Resource ID for NetworkInterface",
+            "Value" : { "Ref" : "NetworkInterface" }
+        },
+
+        "VPCId" : {
+            "Description" : "Resource ID of VPC",
+            "Value" : { "Ref" : "VPC" }
+        },
+
+        "VPCCidrBlock" : {
+            "Description" : "CIDR Block of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "CidrBlock" ] }
+        },
+
+        "VPCDefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultNetworkAcl" ] }
+        },
+
+        "VPCDefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultSecurityGroup" ] }
+        },
+
+        "SubnetId" : {
+            "Description" : "Resource ID of Subnet",
+            "Value" : { "Ref" : "Subnet" }
+        },
+
+        "SubnetAvailabilityZone" : {
+            "Description" : "Availability Zone of Subnet",
+            "Value" : { "Fn::GetAtt" : [ "Subnet", "AvailabilityZone" ] }
+        }
+    }
+}
