@@ -1,0 +1,83 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "RouteTable UpdateStack Test - Update VpcId in AWS::EC2::RouteTable resource",
+
+    "Resources" : {
+       "VPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties" : {
+                "CidrBlock" : "10.0.0.0/16",
+                "EnableDnsSupport" : "True",
+                "EnableDnsHostnames" : "True",
+                "InstanceTenancy" : "default",
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ]
+            }
+        },
+
+       "VPC2": {
+            "Type": "AWS::EC2::VPC",
+            "Properties" : {
+                "CidrBlock" : "172.31.0.0/16",
+                "EnableDnsSupport" : "True",
+                "EnableDnsHostnames" : "True",
+                "InstanceTenancy" : "default",
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ]
+            }
+        },
+
+        "RouteTable": {
+            "Type" : "AWS::EC2::RouteTable",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VPC2" },
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        }
+    },
+  
+    "Outputs" : {
+        "VPCId" : {
+            "Description" : "Resource ID of VPC",
+            "Value" : { "Ref" : "VPC" }
+        },
+
+        "VPCCidrBlock" : {
+            "Description" : "CIDR Block of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "CidrBlock" ] }
+        },
+
+        "VPCDefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultNetworkAcl" ] }
+        },
+
+        "VPCDefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultSecurityGroup" ] }
+        },
+
+        "VPC2Id" : {
+            "Description" : "Resource ID of VPC2",
+            "Value" : { "Ref" : "VPC2" }
+        },
+
+        "VPC2CidrBlock" : {
+            "Description" : "CIDR Block of VPC2",
+            "Value" : { "Fn::GetAtt" : [ "VPC2", "CidrBlock" ] }
+        },
+
+        "VPC2DefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC2",
+            "Value" : { "Fn::GetAtt" : [ "VPC2", "DefaultNetworkAcl" ] }
+        },
+
+        "VPC2DefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC2",
+            "Value" : { "Fn::GetAtt" : [ "VPC2", "DefaultSecurityGroup" ] }
+        },
+
+        "RouteTableId" : {
+            "Description" : "Resource ID of RouteTable",
+            "Value" : { "Ref" : "RouteTable" }
+        }
+    }
+}
