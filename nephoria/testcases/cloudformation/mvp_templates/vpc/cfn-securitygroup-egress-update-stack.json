@@ -1,0 +1,85 @@
+{
+
+    "AWSTemplateFormatVersion" : "2010-09-09",
+
+    "Description" : "Security Group Egress Update Stack Test => Update property attributes of AWS::EC2::SecurityGroupEgress resource to initiate a replacement",
+
+
+    "Resources" : {
+        "VPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+                "CidrBlock": "10.0.0.0/16",
+                "InstanceTenancy": "default"
+            }
+        },
+
+        "SecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription" : "AWS::EC2::SecurityGroup - Group One",
+                "VpcId": { "Ref" : "VPC" },
+                "Tags": [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ]
+            }
+        },
+
+        "SecurityGroup2": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription" : "AWS::EC2::SecurityGroup - Group Two",
+                "VpcId": { "Ref" : "VPC" },
+                "Tags": [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ]
+            }
+        },
+
+        "SecurityGroupEgress": {
+            "Type": "AWS::EC2::SecurityGroupEgress",
+            "Properties": {
+                "CidrIp": "172.31.0.0/0",
+                "FromPort": "0",
+                "GroupId": { "Fn::GetAtt": [ "SecurityGroup2", "GroupId" ] },
+                "IpProtocol": "-1",
+                "ToPort": "65535"
+            }
+        }
+
+    },
+
+    "Outputs" : {
+        "VPCId" : {
+            "Description" : "Resource ID of VPC",
+            "Value" : { "Ref" : "VPC" }
+        },
+
+        "VPCCidrBlock" : {
+            "Description" : "CIDR Block of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "CidrBlock" ] }
+        },
+
+        "SecurityGroupEgressId" : {
+            "Description" : "Resource ID of Security Group Egress",
+            "Value" : { "Ref" : "SecurityGroupEgress" }
+        },
+
+        "SecurityGroupRefId" : {
+            "Description" : "Resource ID of SecurityGroup Resource",
+            "Value" : { "Ref" : "SecurityGroup" }
+        },
+
+        "SecurityGroupId" : {
+            "Description" : "Group ID of SecurityGroup Resource",
+            "Value" : { "Fn::GetAtt" : [ "SecurityGroup", "GroupId" ] }
+       },
+
+        "SecurityGroup2RefId" : {
+            "Description" : "Resource ID of SecurityGroup2 Resource",
+            "Value" : { "Ref" : "SecurityGroup2" }
+        },
+
+        "SecurityGroup2Id" : {
+            "Description" : "Group ID of SecurityGroup2 Resource",
+            "Value" : { "Fn::GetAtt" : [ "SecurityGroup2", "GroupId" ] }
+       }
+    }
+
+}
