@@ -501,7 +501,7 @@ disable_root: false"""
         """
         filters = {}
         if vpc_id:
-            filters={'VpcId':vpc_id}
+            filters={'vpc-id':vpc_id}
         self.log.debug( "Looking up group " + group_name )
         if self._use_verbose_requests:
             group_names = ['verbose']
