@@ -7,6 +7,7 @@ import random
 import string
 
 __version__ = '2.2'
+__DEFAULT_API_VERSION__ = '2015-10-01'
 
 
 def handle_timeout(self, signum, frame):

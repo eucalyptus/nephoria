@@ -8,6 +8,7 @@ from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import get_traceback
 from cloud_utils.system_utils.machine import Machine
 from nephoria.usercontext import UserContext
+from nephoria import __DEFAULT_API_VERSION__
 from boto3 import set_stream_logger
 
 class SystemConnectionFailure(Exception):
@@ -22,7 +23,8 @@ class TestController(object):
                  clouduser_accesskey=None, clouduser_secretkey=None,
                  cloudadmin_credpath=None, cloudadmin_accesskey=None, cloudadmin_secretkey=None,
                  timeout=10, log_level='DEBUG', environment_file=None, https=True,
-                 cred_depot_hostname=None, cred_depot_username='root', cred_depot_password=None):
+                 cred_depot_hostname=None, cred_depot_username='root', cred_depot_password=None,
+                 api_version=None):
 
         """
 
@@ -58,6 +60,7 @@ class TestController(object):
         self._https = https
         self._cloud_admin_connection_info = {}
         self._test_user_connection_info = {}
+        api_version = api_version or __DEFAULT_API_VERSION__
         self._system_connection_info = {'hostname': hostname,
                                         'username': username,
                                         'password': password,
@@ -84,6 +87,7 @@ class TestController(object):
                                              'aws_secret_key': cloudadmin_secretkey,
                                              'service_connection': self,
                                              'log_level': log_level,
+                                             'api_version': api_version,
                                              'https': https}
 
         self._test_user_connection_info = {'aws_account_name': clouduser_account,
@@ -93,7 +97,9 @@ class TestController(object):
                                            'aws_secret_key': clouduser_secretkey,
                                            'region': self.region,
                                            'log_level': log_level,
+                                           'api_version': api_version,
                                            'https': https}
+
         self._cred_depot_connection_info = {'hostname': cred_depot_hostname,
                                             'username': cred_depot_username,
                                             'password': cred_depot_password or password,
@@ -196,11 +202,12 @@ class TestController(object):
 
     def get_user_by_name(self, aws_account_name, aws_user_name,
                          machine=None, service_connection=None, path='/',
-                         https=None, log_level=None):
+                         https=None, log_level=None, api_version=None):
         """
         Fetch an existing cloud user and convert into a usercontext object.
         For checking basic existence of a cloud user, use the iam interface instead.
         """
+        api_version = api_version or self._test_user_connection_info.get('api_version', None)
         try:
             user = self.admin.iam.get_user_info(user_name=aws_user_name,
                                                 delegate_account=aws_account_name)
@@ -213,7 +220,8 @@ class TestController(object):
                                                      aws_user_name=aws_user_name,
                                                      machine=machine,
                                                      service_connection=service_connection,
-                                                     path=path, https=https, log_level=log_level)
+                                                     path=path, https=https, log_level=log_level,
+                                                     api_version=api_version)
         else:
             raise ValueError('User info not returned for "account:{0}, user:{1}"'
                              .format(aws_account_name, aws_user_name))
@@ -223,13 +231,15 @@ class TestController(object):
                                      aws_access_key=None, aws_secret_key=None,
                                      credpath=None, eucarc=None,
                                      machine=None, service_connection=None, path='/',
-                                     region=None, https=None, log_level=None):
+                                     region=None, https=None, api_version=None,
+                                     log_level=None):
         if log_level is None:
             log_level = self.log.stdout_level or 'DEBUG'
         if region is None:
             region = self.region
         if https is None:
             https = self._https
+        api_version = api_version or self._test_user_connection_info.get('api_version', None)
         self.log.debug('Attempting to create user with params: account:{0}, name:{1}'
                           'access_key:{2}, secret_key:{3}, credpath:{4}, eucarc:{5}'
                           ', machine:{6}, service_connection:{7}, path:{8}, region:{9},'
@@ -250,7 +260,8 @@ class TestController(object):
             return UserContext(eucarc=eucarc,
                                service_connection=service_connection,
                                log_level=log_level,
-                               https=https)
+                               https=https,
+                               api_version=api_version)
         if aws_access_key and aws_secret_key:
             return UserContext(aws_access_key=aws_access_key,
                                aws_secret_key=aws_secret_key,
@@ -258,11 +269,13 @@ class TestController(object):
                                aws_user_name=aws_user_name,
                                service_connection=service_connection,
                                log_level=log_level,
+                               api_version=api_version,
                                https=https)
         if credpath:
             return UserContext(credpath=credpath,
                                machine=machine,
-                               log_level=log_level)
+                               log_level=log_level,
+                               api_version=api_version)
 
         info = self.admin.iam.create_account(account_name=aws_account_name,
                                                   ignore_existing=True)
@@ -299,6 +312,7 @@ class TestController(object):
                             machine=self.sysadmin.clc_machine,
                             service_connection=self.sysadmin,
                             log_level=log_level,
+                            api_version=api_version,
                             https=https)
         user._user_info = self.admin.iam.get_user_info(user_name=user.user_name,
                                                        delegate_account=user.account_id)
