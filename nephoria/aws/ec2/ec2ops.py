@@ -59,10 +59,11 @@ from boto.ec2.address import Address
 from boto.ec2.tag import TagSet
 from boto.ec2.zone import Zone
 from boto.vpc.subnet import Subnet as BotoSubnet
-from boto.vpc import VPCConnection, VPC, Subnet, InternetGateway, RouteTable, DhcpOptions
+from boto.vpc import VPCConnection, VPC, Subnet, InternetGateway, DhcpOptions
+from boto.vpc.routetable import RouteTable
+import boto.vpc.routetable as routetable
 from boto.ec2.networkinterface import NetworkInterfaceSpecification, NetworkInterfaceCollection
 from boto.ec2.networkinterface import NetworkInterface
-
 
 from nephoria import CleanTestResourcesException
 from nephoria.baseops.botobaseops import BotoBaseOps
@@ -76,8 +77,44 @@ from nephoria.aws.ec2.euvolume import EuVolume
 from nephoria.aws.ec2.eusnapshot import EuSnapshot
 from nephoria.aws.ec2.euzone import EuZone
 from nephoria.aws.ec2.conversiontask import ConversionTask
-from boto3.session import Session
 
+
+# Boto is lacking support for NatGateway...
+class EucaRoute(routetable.Route):
+    def __init__(self, connection=None):
+        self.destination_cidr_block = None
+        self.gateway_id = None
+        self.natgateway_id = None
+        self.instance_id = None
+        self.interface_id = None
+        self.vpc_peering_connection_id = None
+        self.state = None
+
+    def __repr__(self):
+        return 'Route:%s' % self.destination_cidr_block
+
+    def startElement(self, name, attrs, connection):
+        return None
+
+    def endElement(self, name, value, connection):
+        if name == 'destinationCidrBlock':
+            self.destination_cidr_block = value
+        elif name == 'gatewayId':
+            self.gateway_id = value
+        elif name == 'instanceId':
+            self.instance_id = value
+        elif name == 'networkInterfaceId':
+            self.interface_id = value
+        elif name == 'vpcPeeringConnectionId':
+            self.vpc_peering_connection_id = value
+        elif name == 'state':
+            self.state = value
+        elif name == 'natGatewayId':
+            self.natgateway_id = value
+        else:
+            setattr(self, name, value)
+
+routetable.Route = EucaRoute
 
 class EucaSubnet(BotoSubnet):
     def __init__(self, *args, **kwargs):
@@ -964,28 +1001,29 @@ disable_root: false"""
         route_pt = "(NONE)"
         if route_table.routes:
             ip_len = 20
-            rl = (value_hdr_len - ip_len) / 5
+            target_len = 22
+            ins_len = 13
+            state_len = 10
+            vpc_len = 13
             route_pt = PrettyTable([markup('DEST', [TextStyle.BOLD,
                                                     ForegroundColor.BLUE]).ljust(ip_len),
-                                    markup('GW', [TextStyle.BOLD,
-                                                    ForegroundColor.BLUE]).ljust(rl),
+                                    markup('Target GW', [TextStyle.BOLD,
+                                                    ForegroundColor.BLUE]).ljust(target_len),
                                     markup('INSTANCE', [TextStyle.BOLD,
-                                                    ForegroundColor.BLUE]).ljust(rl),
-                                    markup('INTERFACE', [TextStyle.BOLD,
-                                                    ForegroundColor.BLUE]).ljust(rl),
+                                                    ForegroundColor.BLUE]).ljust(ins_len),
                                     markup('STATE', [TextStyle.BOLD,
-                                                    ForegroundColor.BLUE]).ljust(rl),
+                                                    ForegroundColor.BLUE]).ljust(state_len),
                                     markup('VPC_PEER', [TextStyle.BOLD,
-                                                    ForegroundColor.BLUE]).ljust(rl)])
+                                                    ForegroundColor.BLUE]).ljust(vpc_len)])
             route_pt.align = 'l'
-            route_pt.padding_width = 0
+            route_pt.padding_width = 1
             for route in route_table.routes:
+                target = route.gateway_id or route.natgateway_id or route.interface_id
                 route_pt.add_row([str(route.destination_cidr_block).ljust(ip_len),
-                                  str(route.gateway_id).ljust(rl),
-                                  str(route.instance_id).ljust(rl),
-                                  str(route.interface_id).ljust(rl),
-                                  str(route.state).ljust(rl),
-                                  str(route.vpc_peering_connection_id).ljust(rl)])
+                                  str(target).ljust(target_len),
+                                  str(route.instance_id).ljust(ins_len),
+                                  str(route.state).ljust(state_len),
+                                  str(route.vpc_peering_connection_id).ljust(vpc_len)])
         route_pt = "\n".join(str(x).strip('|')
                              for x in str(route_pt).translate(string.maketrans("", "", ),
                                                               '+|').splitlines())
