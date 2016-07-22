@@ -945,6 +945,7 @@ disable_root: false"""
         pt.add_row(["PropagatingVgwSet:", route_table.propagatingVgwSet])
         assoc = ""
         # Add associations in sub-table...
+        assoc_pt = ""
         if route_table.associations:
             al = value_hdr_len/3
             assoc_pt = PrettyTable(['ID:'.ljust(al),
