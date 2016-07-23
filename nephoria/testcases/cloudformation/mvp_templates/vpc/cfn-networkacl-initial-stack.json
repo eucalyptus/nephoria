@@ -1,0 +1,75 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "NetworkAcl UpdateStack Test - VPC - Initial Stack ",
+    "Resources" : {
+        "NetworkAcl" : {
+            "Type" : "AWS::EC2::NetworkAcl",
+            "Properties" : {
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
+                "VpcId" : {"Ref":"VPC"}
+            }
+        },
+
+        "VPC" : {
+            "Type" : "AWS::EC2::VPC",
+            "Properties" : {
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
+                "CidrBlock" : "10.0.0.0/16"
+            }
+        },
+
+        "VPC2" : {
+            "Type" : "AWS::EC2::VPC",
+            "Properties" : {
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
+                "CidrBlock" : "172.31.0.0/16"
+            }
+        }
+    },
+    "Outputs": {
+        "VPCId" : {
+            "Description" : "Resource ID of VPC",
+            "Value" : { "Ref" : "VPC" }
+        },
+
+        "VPCCidrBlock" : {
+            "Description" : "CIDR Block of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "CidrBlock" ] }
+        },
+
+        "VPCDefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultNetworkAcl" ] }
+        },
+
+        "VPCDefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultSecurityGroup" ] }
+        },
+
+        "VPC2Id" : {
+            "Description" : "Resource ID of VPC2",
+            "Value" : { "Ref" : "VPC2" }
+        },
+
+        "VPC2CidrBlock" : {
+            "Description" : "CIDR Block of VPC2",
+            "Value" : { "Fn::GetAtt" : [ "VPC2", "CidrBlock" ] }
+        },
+
+        "VPC2DefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC2",
+            "Value" : { "Fn::GetAtt" : [ "VPC2", "DefaultNetworkAcl" ] }
+        },
+
+        "VPC2DefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC2",
+            "Value" : { "Fn::GetAtt" : [ "VPC2", "DefaultSecurityGroup" ] }
+        },
+
+        "NetworkAclId" : {
+            "Description" : "Resource ID of NetworkAcl",
+            "Value" : { "Ref" : "NetworkAcl" }
+        }
+    }
+}
