@@ -1,0 +1,78 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "NetworkAcl Entry UpdateStack Test - VPC - Update property attributes of AWS::EC2::NetworkAclEntry which will cause replacement ",
+    "Resources" : {
+        "NetworkAcl" : {
+            "Type" : "AWS::EC2::NetworkAcl",
+            "Properties" : {
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
+                "VpcId" : {"Ref":"VPC"}
+            }
+        },
+
+        "NetworkAcl2" : {
+            "Type" : "AWS::EC2::NetworkAcl",
+            "Properties" : {
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
+                "VpcId" : {"Ref":"VPC"}
+            }
+        },
+
+        "NetworkAclEntry" : {
+            "Type" : "AWS::EC2::NetworkAclEntry",
+            "Properties" : {
+                "NetworkAclId" : { "Ref" : "NetworkAcl2" },
+                "RuleNumber" : "99",
+                "Protocol" : "-1",
+                "RuleAction" : "allow",
+                "Egress" : "false",
+                "CidrBlock" : "10.0.0.0/24",
+                "Icmp" : { "Code" : "-1", "Type" : "-1" }
+            }
+        },
+
+        "VPC" : {
+            "Type" : "AWS::EC2::VPC",
+            "Properties" : {
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
+                "CidrBlock" : "10.0.0.0/16"
+            }
+        }
+    },
+    "Outputs": {
+        "VPCId" : {
+            "Description" : "Resource ID of VPC",
+            "Value" : { "Ref" : "VPC" }
+        },
+
+        "VPCCidrBlock" : {
+            "Description" : "CIDR Block of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "CidrBlock" ] }
+        },
+
+        "VPCDefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultNetworkAcl" ] }
+        },
+
+        "VPCDefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultSecurityGroup" ] }
+        },
+
+        "NetworkAclEntryId" : {
+            "Description" : "Resource ID of NetworkAclEntry",
+            "Value" : { "Ref" : "NetworkAclEntry" }
+        },
+
+        "NetworkAclId" : {
+            "Description" : "Resource ID of NetworkAcl",
+            "Value" : { "Ref" : "NetworkAcl" }
+        },
+
+        "NetworkAcl2Id" : {
+            "Description" : "Resource ID of NetworkAcl2",
+            "Value" : { "Ref" : "NetworkAcl2" }
+        }
+    }
+}
