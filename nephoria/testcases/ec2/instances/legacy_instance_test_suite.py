@@ -315,7 +315,7 @@ class LegacyInstanceTestSuite(CliTestRunner):
                 except CommandExitCodeException as CE:
                     self.log.error(red("Did not find ephemeral storage at " +
                                        paravirtual_ephemeral))
-            elif instance.virtualization_type == "hvm" and instance.ins1.root_device_type != 'ebs':
+            elif instance.virtualization_type == "hvm" and instance.root_device_type != 'ebs':
                 hvm_ephemeral = "/dev/" + instance.block_device_prefix + "b"
                 try:
                     instance.sys("ls -1 " + hvm_ephemeral, code=0)
