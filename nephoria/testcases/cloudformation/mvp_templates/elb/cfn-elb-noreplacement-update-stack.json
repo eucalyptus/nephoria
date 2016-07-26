@@ -1,7 +1,7 @@
 {
   "AWSTemplateFormatVersion" : "2010-09-09",
 
-  "Description" : "Elastic Load Balancing Test => MVP test for AWS::ElasticLoadBalancing::LoadBalancer resource",
+  "Description" : "Elastic Load Balancing Test => Update property attributes in AWS::ElasticLoadBalancing::LoadBalancer resource that does not cause resource replacement",
 
   "Resources" : {
     "LoadBalancer" : {
@@ -9,11 +9,18 @@
       "Properties" : {
           "AvailabilityZones" : {"Fn::GetAZs" : {"Ref" : "AWS::Region"}},
           "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
+          "CrossZone" : "True",
           "Listeners" : [ {
               "LoadBalancerPort" : "80",
               "InstancePort" : "80",
               "Protocol" : "HTTP"
-          } ]
+          },
+          {
+              "LoadBalancerPort" : "8080",
+              "InstancePort" : "8080",
+              "Protocol" : "HTTP"
+          }
+          ]
       }
     }
   },
