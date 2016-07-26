@@ -29,7 +29,7 @@
           "Subnets" : [{ "Ref" : "Subnet" }],
           "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
           "Scheme" : "internal",
-          "LoadBalancerName" : "UpdatedELB",
+          "LoadBalancerName" : "InternalUpdatedELB",
           "HealthCheck" : {
               "Target": "HTTP:80/",
               "HealthyThreshold": "3",

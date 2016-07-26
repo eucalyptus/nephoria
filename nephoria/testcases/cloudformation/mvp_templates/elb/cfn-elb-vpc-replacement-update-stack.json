@@ -111,7 +111,7 @@
       "Properties" : {
           "Subnets" : [{ "Ref" : "Subnet" }],
           "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
-          "LoadBalancerName" : "UpdatedELB",
+          "LoadBalancerName" : "ExternalUpdatedELB",
           "HealthCheck" : {
               "Target": "HTTP:80/",
               "HealthyThreshold": "3",
