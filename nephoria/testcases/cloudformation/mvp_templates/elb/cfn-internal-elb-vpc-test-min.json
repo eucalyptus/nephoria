@@ -27,6 +27,7 @@
       "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
       "Properties" : {
           "Subnets" : [{ "Ref" : "Subnet" }],
+          "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
           "Scheme" : "internal",
           "Listeners" : [ {
               "LoadBalancerPort" : "80",

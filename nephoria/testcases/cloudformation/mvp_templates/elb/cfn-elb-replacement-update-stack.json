@@ -1,7 +1,7 @@
 {
   "AWSTemplateFormatVersion" : "2010-09-09",
 
-  "Description" : "Elastic Load Balancing Test => MVP test for AWS::ElasticLoadBalancing::LoadBalancer resource",
+  "Description" : "Elastic Load Balancing Test => Update property attributes in AWS::ElasticLoadBalancing::LoadBalancer resource that results in resource replacement",
 
   "Resources" : {
     "LoadBalancer" : {
@@ -9,6 +9,14 @@
       "Properties" : {
           "AvailabilityZones" : {"Fn::GetAZs" : {"Ref" : "AWS::Region"}},
           "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
+          "LoadBalancerName" : "UpdatedELB",
+          "HealthCheck" : {
+              "Target": "HTTP:80/",
+              "HealthyThreshold": "3",
+              "UnhealthyThreshold": "5",
+              "Interval": "30",
+              "Timeout": "5"
+          },
           "Listeners" : [ {
               "LoadBalancerPort" : "80",
               "InstancePort" : "80",

@@ -61,9 +61,9 @@
             "Value" : { "Fn::GetAtt" : [ "VPC2", "DefaultNetworkAcl" ] }
         },
 
-        "VPC1DefaultSecurityGroup" : {
-            "Description" : "Default Security Group of VPC1",
-            "Value" : { "Fn::GetAtt" : [ "VPC1", "DefaultSecurityGroup" ] }
+        "VPC2DefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC2",
+            "Value" : { "Fn::GetAtt" : [ "VPC2", "DefaultSecurityGroup" ] }
         },
 
         "SubnetId" : {
