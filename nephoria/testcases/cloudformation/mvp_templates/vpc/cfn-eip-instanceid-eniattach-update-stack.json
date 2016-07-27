@@ -1,0 +1,250 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "NetworkInterfaceAttachment UpdateStack Test - Associate NetworkInterfaceAttachment to new instance (shouldn't cause any updates to NetworkInterfaceAttachment resource)",
+    "Parameters" : {
+        "ImageId": {
+            "Description":"Image Id",
+            "Type":"String"
+        },
+
+        "InstanceType": {
+            "Description":"Instance Type",
+            "Type":"String",
+            "Default" : "m1.medium",
+            "AllowedValues" : [ "m1.small","t1.micro","m1.medium","c1.medium","m1.large", "m1.xlarge", "c1.xlarge", "m2.xlarge", "m3.xlarge", "m2.2xlarge", "m3.2xlarge", "cc1.4xlarge", "m2.4xlarge", "hi1.4xlarge", "cc2.8xlarge", "cg1.4xlarge", "cr1.8xlarge", "hs1.8xlarge" ],
+            "ConstraintDescription" : "must be a valid EC2 instance type."
+        }
+    },
+    "Resources" : {
+        "VPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties" : {
+                "CidrBlock" : "10.0.0.0/16",
+                "EnableDnsSupport" : "True",
+                "EnableDnsHostnames" : "True",
+                "InstanceTenancy" : "default",
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ]
+            }
+        },
+
+        "Subnet": {
+            "Type" : "AWS::EC2::Subnet",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VPC" },
+                "CidrBlock" : "10.0.0.0/24",
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "InternetGateway" : {
+            "Type" : "AWS::EC2::InternetGateway",
+            "Properties" : {
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "AttachGateway" : {
+            "Type" : "AWS::EC2::VPCGatewayAttachment",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VPC" },
+                "InternetGatewayId" : { "Ref" : "InternetGateway" }
+            }
+        },
+
+        "RouteTable": {
+            "Type" : "AWS::EC2::RouteTable",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VPC" },
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "Route" : {
+            "Type" : "AWS::EC2::Route",
+            "DependsOn" : "AttachGateway",
+            "Properties" : {
+                "RouteTableId" : { "Ref" : "RouteTable" },
+                "DestinationCidrBlock" : "0.0.0.0/0",
+                "GatewayId" : { "Ref" : "InternetGateway" }
+            }
+        },
+
+        "NetworkAcl" : {
+            "Type" : "AWS::EC2::NetworkAcl",
+            "Properties" : {
+                "VpcId" : {"Ref" : "VPC"},
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "SubnetNetworkAclAssociation" : {
+            "Type" : "AWS::EC2::SubnetNetworkAclAssociation",
+            "Properties" : {
+                "SubnetId" : { "Ref" : "Subnet" },
+                "NetworkAclId" : { "Ref" : "NetworkAcl" }
+            }
+        },
+
+        "EIP": {
+            "Type" : "AWS::EC2::EIP",
+                "Properties" : {
+                    "Domain": "vpc"
+                }
+        },
+
+        "EIPAssociation": {
+            "Type" : "AWS::EC2::EIPAssociation",
+            "Properties" : {
+                "NetworkInterfaceId": { "Ref": "NetworkInterface" },
+                "AllocationId" : { "Fn::GetAtt" : [ "EIP" , "AllocationId" ] }
+            }
+        },
+
+        "NetworkInterface" :{
+            "Type": "AWS::EC2::NetworkInterface",
+            "Properties": {
+                "Description": "Network Interface for Elastic IP",
+                "SubnetId": { "Ref": "Subnet" },
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "EIP2": {
+            "Type" : "AWS::EC2::EIP",
+                "Properties" : {
+                    "Domain": "vpc"
+                }
+        },
+
+        "EIP2Association": {
+            "Type" : "AWS::EC2::EIPAssociation",
+            "Properties" : {
+                "NetworkInterfaceId": { "Ref": "NetworkInterface2" },
+                "AllocationId" : { "Fn::GetAtt" : [ "EIP2" , "AllocationId" ] }
+            }
+        },
+
+        "NetworkInterface2" :{
+            "Type": "AWS::EC2::NetworkInterface",
+            "Properties": {
+                "Description": "Network Interface for Elastic IP",
+                "SubnetId": { "Ref": "Subnet" },
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "SecondaryNetworkInterface" :{
+            "Type": "AWS::EC2::NetworkInterface",
+            "Properties": {
+                "Description": "Secondary Network Interface",
+                "SubnetId": { "Ref": "Subnet" },
+                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "NetworkInterfaceAttachment" : {
+            "Type" : "AWS::EC2::NetworkInterfaceAttachment",
+            "Properties" : {
+                "InstanceId" : {"Ref" : "Instance2"},
+                "NetworkInterfaceId" : {"Ref" : "SecondaryNetworkInterface"},
+                "DeleteOnTermination" : "False",
+                "DeviceIndex" : "1" 
+            }
+        },
+
+        "Instance": {
+            "Type": "AWS::EC2::Instance",
+                "Properties": {
+                    "ImageId" : { "Ref":"ImageId" },
+                    "InstanceType" : { "Ref":"InstanceType"},
+                    "NetworkInterfaces" : [{
+                        "DeviceIndex"  : "0",
+                        "Description" : "Default interface for instance",
+                        "NetworkInterfaceId" : { "Ref": "NetworkInterface" }
+                    }],
+                    "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+        },
+
+        "Instance2": {
+            "Type": "AWS::EC2::Instance",
+                "Properties": {
+                    "ImageId" : { "Ref":"ImageId" },
+                    "InstanceType" : { "Ref":"InstanceType"},
+                    "NetworkInterfaces" : [{
+                        "DeviceIndex"  : "0",
+                        "Description" : "Default interface for instance",
+                        "NetworkInterfaceId" : { "Ref": "NetworkInterface2" }
+                    }],
+                    "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+            }
+         }
+    },
+
+    "Outputs": {
+        "InstanceId" : {
+            "Description" : "InstanceId of the newly created EC2 instance",
+            "Value" : { "Ref" : "Instance" }
+        },
+
+        "ElasticIP": {
+            "Description" : "Elastic IP",
+            "Value" : { "Ref" : "EIP" }
+        },
+
+        "AllocationID": {
+            "Description" : "Allocation ID of the Elastic IP",
+            "Value" : { "Fn::GetAtt" : [ "EIP" , "AllocationId" ] }
+        },
+
+        "NetworkInterfaceId" : {
+            "Description" : "Resource ID of Network Interface",
+            "Value" : { "Ref" : "NetworkInterface" }
+        },
+
+        "NetworkInterfacePrivId" : {
+            "Description" : "Private IP of Network Interface",
+            "Value" : { "Fn::GetAtt" : [ "NetworkInterface", "PrimaryPrivateIpAddress" ] }
+        },
+
+        "Instance2Id" : {
+            "Description" : "InstanceId of the newly created second EC2 instance",
+            "Value" : { "Ref" : "Instance2" }
+        },
+
+        "ElasticIP2": {
+            "Description" : "2nd Elastic IP",
+            "Value" : { "Ref" : "EIP2" }
+        },
+
+        "Allocation2ID": {
+            "Description" : "Allocation ID of the 2nd Elastic IP",
+            "Value" : { "Fn::GetAtt" : [ "EIP2" , "AllocationId" ] }
+        },
+
+        "NetworkInterface2Id" : {
+            "Description" : "Resource ID of 2nd Network Interface",
+            "Value" : { "Ref" : "NetworkInterface2" }
+        },
+
+        "NetworkInterface2PrivId" : {
+            "Description" : "Private IP of 2nd Network Interface",
+            "Value" : { "Fn::GetAtt" : [ "NetworkInterface2", "PrimaryPrivateIpAddress" ] }
+        },
+
+        "SecondaryNetworkInterfaceId" : {
+            "Description" : "Resource ID of Secondary Network Interface",
+            "Value" : { "Ref" : "SecondaryNetworkInterface" }
+        },
+
+        "SecondaryNetworkInterfacePrivId" : {
+            "Description" : "Private IP of Secondary Network Interface",
+            "Value" : { "Fn::GetAtt" : [ "SecondaryNetworkInterface", "PrimaryPrivateIpAddress" ] }
+        },
+
+        "NetworkInterfaceAttachmentId" : {
+            "Description" : "Resource ID of NetworkInterfaceAttachment",
+            "Value" : { "Ref" : "NetworkInterfaceAttachment" }
+        }
+    }
+}
