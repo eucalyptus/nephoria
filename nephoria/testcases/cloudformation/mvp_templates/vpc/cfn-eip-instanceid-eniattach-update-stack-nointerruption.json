@@ -1,6 +1,6 @@
 {
     "AWSTemplateFormatVersion" : "2010-09-09",
-    "Description" : "Elastic IP Test - EIP association to instance in VPC using AWS::EC2::NetworkInterfaceAttachment resource",
+    "Description" : "NetworkInterfaceAttachment UpdateStack Test - Add DeleteOnTermination property attribute on AWS::EC2::NetworkInterfaceAttachment resource",
     "Parameters" : {
         "ImageId": {
             "Description":"Image Id",
@@ -122,6 +122,7 @@
             "Type" : "AWS::EC2::NetworkInterfaceAttachment",
             "Properties" : {
                 "InstanceId" : {"Ref" : "Instance"},
+                "DeleteOnTermination" : "False",
                 "NetworkInterfaceId" : {"Ref" : "SecondaryNetworkInterface"},
                 "DeviceIndex" : "1" 
             }
