@@ -9,6 +9,8 @@ import copy
 import re
 import threading
 import time
+
+from boto.exception import EC2ResponseError
 from concurrent.futures import ThreadPoolExecutor
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 from cloud_utils.net_utils import ping
@@ -246,9 +248,13 @@ class LegacyInstanceTestSuite(CliTestRunner):
             if self.volumes:
                 delete = []
                 for volume in self.volumes:
-                    volume.update()
-                    if volume.status != 'deleted':
-                        delete.append(volume)
+                    try:
+                        volume.update()
+                        if volume.status != 'deleted':
+                            delete.append(volume)
+                    except EC2ResponseError as ER:
+                        if ER.status == 400 and ER.error_code == 'InvalidVolume.NotFound':
+                            pass
                 if delete:
                     self.user.ec2.delete_volumes(delete)
         except Exception as E:
