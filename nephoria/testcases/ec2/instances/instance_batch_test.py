@@ -101,6 +101,7 @@ class InstanceBatchTest():
         self.pt = PrettyTable(['RUN', 'START', 'TOTAL', 'NEW', 'ELAPSED'])
         self.last_kill_sig = 0
         self.kill = False
+        self.test_id = 'INSTANCE_BATCHTEST_{0}'.format(int(time.time()))
 
 
     def add_result(self, start_date, run_number, total, added, elapsed):
@@ -117,7 +118,8 @@ class InstanceBatchTest():
         self.log.info('Test start. Terminating all instances for user:{0}/{1}'
                       .format(self.tc.user.account_name, self.tc.user.user_name))
         if not self.args.no_clean:
-            self.tc.user.ec2.connection.terminate_instances()
+            ins = self.tc.user.ec2.get_instances(filters={'tag-key': self.test_id})
+            self.tc.user.ec2.terminate_instances(ins)
             #Monitor to terminated state
             self.tc.user.ec2.terminate_instances()
 
@@ -143,6 +145,8 @@ class InstanceBatchTest():
                                                  group=self.group,
                                                  timeout=self.args.instance_timeout,
                                                  )
+                ids = [ x.id for x in ins ]
+                self.tc.user.create_tags(ins, {self.test_id, ''})
                 elapsed = time.time() - start_time
                 added = len(ins)
                 total = len(self.tc.admin.ec2.get_instances(state='running'))
@@ -182,9 +186,13 @@ class InstanceBatchTest():
 
     def clean_method(self):
         if not self.args.no_clean:
-            self.log.info('Terminating all instances for user:{0}/{1}'
-                          .format(self.tc.user.account_name, self.tc.user.user_name))
-            self.tc.user.ec2.terminate_instances()
+            self.log.info('Terminating all created instances for user:{0}/{1}, with tag id:{2}'
+                          .format(self.tc.user.account_name, self.tc.user.user_name, self.test_id))
+            ins = self.tc.user.ec2.get_instances(filters={'tag-key': self.test_id})
+            self.tc.user.ec2.terminate_instances(ins)
+            if not self.args.keypair:
+                self.tc.user.ec2.delete_keypair(self.key)
+
 
 if __name__ == "__main__":
 
