@@ -964,8 +964,8 @@ disable_root: false"""
             raise ValueError('Unknown type for route table: "{0}/{1}"'.format(route_table,
                                                                               type(route_table)))
         printmethod = printmethod or self.log.info
-        table_width = 110
-        key_hdr_len =  18
+        table_width = 100
+        key_hdr_len =  12
         value_hdr_len = table_width - key_hdr_len - 3
         key_hdr = 'key'.ljust(key_hdr_len)
         value_hdr = 'value'.ljust(value_hdr_len)
@@ -977,9 +977,10 @@ disable_root: false"""
         pt.add_row(["VPC ID:", str(route_table.vpc_id).ljust(value_hdr_len)])
         region = ""
         if route_table.region:
-            region = "({0}, {1})".format(route_table.region.name, route_table.region.endpoint)
+            region = "Region Name: {0}\nRegion Endpoint:{1}"\
+                .format(route_table.region.name, route_table.region.endpoint)
         pt.add_row(["REGION:", region.ljust(value_hdr_len)])
-        pt.add_row(["PropagatingVgwSet:", route_table.propagatingVgwSet])
+        pt.add_row(["VgwSet:", route_table.propagatingVgwSet])
         assoc = ""
         # Add associations in sub-table...
         assoc_pt = ""
@@ -1000,9 +1001,9 @@ disable_root: false"""
         # Add Route Entries in sub-table...
         route_pt = "(NONE)"
         if route_table.routes:
-            ip_len = 20
+            ip_len = 19
             target_len = 22
-            ins_len = 13
+            ins_len = 11
             state_len = 10
             vpc_len = 13
             route_pt = PrettyTable([markup('DEST', [TextStyle.BOLD,
@@ -1062,7 +1063,10 @@ disable_root: false"""
         ret_buf = ""
         for route_table in route_tables:
             rpt = str(self.show_route_table(route_table, printme=False))
-            ret_buf += "\n{0}\n\n{1}\n".format(rpt, "#".ljust(len(rpt.splitlines()[0]), "#"))
+            if len(route_tables) > 1:
+                ret_buf += "\n{0}\n\n{1}\n".format(rpt, "#".ljust(len(rpt.splitlines()[0]), "#"))
+            else:
+                ret_buf += "\n{0}\n".format(rpt)
         if printme:
             printmethod = printmethod or self.log.info
             printmethod("\n" + str(ret_buf) + "\n")
@@ -1236,7 +1240,9 @@ disable_root: false"""
                                                                      mapPublicIpAtLaunch))
         return ret
 
-    def show_subnet(self, subnet, printmethod=None, show_tags=True, printme=True):
+    def show_subnet(self, subnet, show_routes=True, printmethod=None, show_tags=True,
+                    printme=True):
+        table_width = 105
         subnet_id = subnet
         if isinstance(subnet, basestring):
             subnet = self.get_subnet(subnet_id)
@@ -1245,10 +1251,10 @@ disable_root: false"""
         if not isinstance(subnet, BotoSubnet):
              raise ValueError('show_subnet passed on non Subnet type: "{0}:{1}"'
                               .format(subnet, type(subnet)))
-        title = '  {0} "{1}"'.format(markup('SUBNET SUMMARY:', markups=[TextStyle.BOLD]),
-                                     markup(subnet.id, markups=[TextStyle.BOLD,
-                                                                ForegroundColor.BLUE,
-                                                                BackGroundColor.BG_WHITE]))
+        title = 'SUBNET SUMMARY: {0}'.format(subnet.id).ljust(table_width)
+        title = markup(title, markups=[TextStyle.BOLD,
+                                       ForegroundColor.BLUE,
+                                       BackGroundColor.BG_WHITE])
         main_pt = PrettyTable([title])
         main_pt.align[title] = 'l'
         main_pt.padding_width = 0
@@ -1268,15 +1274,26 @@ disable_root: false"""
             zone_header = "ZONE"
         zone_def_header = "ZONE DEFAULT"
         summary_pt = PrettyTable([vpc_header, cidr_header, avail_ip_cnt_header, map_pub_ip_header,
-                      state_header, zone_header, zone_def_header])
+                      state_header, zone_def_header, zone_header])
         summary_pt.padding_width = 0
-        if subnet:
-            summary_pt.add_row([subnet.vpc_id, subnet.cidr_block,
-                                subnet.available_ip_address_count, subnet.mapPublicIpOnLaunch,
-                                subnet.state, subnet.availability_zone, subnet.defaultForAz])
-        else:
-            summary_pt.add_row([subnet_id, 'Not Found', "N/A", "N/A", "N/A", "N/A", "N/A"])
-        mainbuf += str(summary_pt)
+        summary_pt.hrules = 3
+        summary_pt.add_row([str(subnet.vpc_id).ljust(13),
+                            str(subnet.cidr_block).ljust(19),
+                            str(subnet.available_ip_address_count).ljust(7),
+                            str(subnet.mapPublicIpOnLaunch).ljust(6),
+                            str(subnet.state).ljust(10),
+                            str(subnet.defaultForAz).ljust(6),
+                            str(subnet.availability_zone).ljust(20)])
+
+        mainbuf += "{0}\n".format(summary_pt)
+        if show_routes:
+            mainbuf += markup('\n"{0}" ROUTE TABLES:\n'.format(subnet.id), markups=[1,4])
+            route_tables = self.connection.get_all_route_tables(
+                filters={'association.subnet-id': subnet.id}) or []
+            if route_tables:
+                mainbuf += "{0}\n".format(self.show_route_tables(route_tables, printme=False))
+            else:
+                mainbuf += "NO ROUTE TABLES\n"
         if show_tags and subnet.tags:
             mainbuf += markup('\nSUBNET "{0}" TAGS:\n'.format(subnet.id), markups=[1,4])
             mainbuf += str(self.show_tags(subnet.tags, printme=False)) + "\n"
@@ -1298,7 +1315,7 @@ disable_root: false"""
         for subnet in subnets:
             subnet_pt = self.show_subnet(subnet, show_tags=show_tags, printme=False)
             if subnet_pt:
-                ret_buf += "\n" + str(subnet_pt)
+                ret_buf += "\n\n" + str(subnet_pt)
         if printme:
             printmethod = printmethod or self.log.info
             printmethod( "\n" + str(ret_buf) + "\n")
@@ -4046,7 +4063,7 @@ disable_root: false"""
             elapsed = int(time.time()-start)
             for instance in waiting:
                 self.log.debug('Checking instance:'+str(instance.id)+" ...")
-                if instance.auto_connect:
+                if instance.auto_connect and instance.ip_address:
                     try:
                         if isinstance(instance, WinInstance):
                             #First try checking the RDP and WINRM ports for access...
@@ -4093,6 +4110,9 @@ disable_root: false"""
                         self.log.warn(err)
                         pass
                 else:
+                    self.log.info(red('Not attempting to connect to {0}. IP:{1}, AutoConnect:{2}'
+                                  .format(instance.id, instance.ip_address,
+                                          instance.auto_connect)))
                     good.append(instance)
             for instance in good:
                 if instance in waiting:
@@ -4130,9 +4150,12 @@ disable_root: false"""
             if not src_group and not src_addr:
                 #Use the local test machine's addr
                 if not self.local_machine_source_ip:
+                    if not instance.ip_address:
+                        raise ValueError('instance.ip_address can not be used to derive the local '
+                                         'source ip used to reach the VM')
                     # Try to get the outgoing addr used to connect to this instance
                     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,socket.IPPROTO_UDP)
-                    s.connect((instance.ip_address,1))
+                    s.connect((instance.ip_address, 1))
                     # set the tester's global source_ip, assuming it can re-used (at least until
                     # another method sets it to None again)
                     self.local_machine_source_ip = s.getsockname()[0]
@@ -5944,10 +5967,10 @@ disable_root: false"""
         pt.padding_width = 0
         pt.align = 'l'
         pt.hrules = 1
-        pt.max_width[name_header] = 20
-        pt.max_width[value_header] = 80
+        pt.max_width[name_header] = 35
+        pt.max_width[value_header] = 65
         for tag in tags:
-            pt.add_row([str(tag), str(tags.get(tag, None))])
+            pt.add_row([str(tag).ljust(35), str(tags.get(tag, None)).ljust(65)])
         if printme:
             printmethod = printmethod or self.log.info
             printmethod( "\n" + str(pt) + "\n")
