@@ -1,0 +1,19 @@
+{
+ "Statement": [
+   {
+      "Action": "s3:*",
+      "Effect": "Allow",
+      "Resource": "*"
+   },
+   {
+     "Action": [
+        "s3:PutObject",
+        "s3:PutObjectAcl",
+        "s3:PutObjectVersionAcl"
+      ],
+     "Effect": "Limit",
+     "Resource": "*",
+     "Condition": { "NumericLessThanEquals":{"s3:quota-buckettotalsize": "45"}}
+   }
+ ]
+}
