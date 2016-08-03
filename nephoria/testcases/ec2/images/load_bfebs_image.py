@@ -17,6 +17,7 @@ class LoadBfebsImage(CliTestRunner):
                                       }
     def post_init(self):
         self.created_image = None
+        self._zone = None
 
     @property
     def tc(self):
@@ -111,9 +112,16 @@ class LoadBfebsImage(CliTestRunner):
         if not self.args.image_url:
             raise Exception("No image url passed to run BFEBS tests")
 
-        zones = self.tc.sysadmin.get_all_clusters()
-        zone = zones[random.randint(0, len(zones) - 1)]
-        instances = self.user.ec2.run_image(image=self.emi, keypair=self.keypair, zone=zone.name, group=self.group)
+        zone = self.args.zone
+        zones = self.tc.sysadmin.get_all_cluster_names() or []
+        if not zone:
+            zone = zones[random.randint(0, len(zones) - 1)]
+        else:
+            if zone not in zones:
+                raise ValueError('Requested Zone: {0} not found in available zones:"{1}"'
+                                 .format(zone, ", ".join(zones)))
+        instances = self.user.ec2.run_image(image=self.emi, keypair=self.keypair,
+                                            zone=zone, group=self.group)
         for instance in instances:
             self.tc.test_resources['_instances'].append(instance)
             volume_1 = self.user.ec2.create_volume(zone=zone.name, size=3)
