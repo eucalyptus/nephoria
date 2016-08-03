@@ -1,0 +1,10 @@
+{
+ "Statement": [
+   {
+     "Action": ["*" ],
+     "Effect": "Limit",
+     "Resource": "*",
+     "Condition": { "NumericLessThanEquals":{"autoscaling:quota-autoscalinggroupnumber": "3"}}
+   }
+ ]
+}
