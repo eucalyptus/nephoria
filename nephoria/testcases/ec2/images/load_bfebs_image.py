@@ -17,7 +17,6 @@ class LoadBfebsImage(CliTestRunner):
                                       }
     def post_init(self):
         self.created_image = None
-        self._zone = None
 
     @property
     def tc(self):
@@ -124,7 +123,7 @@ class LoadBfebsImage(CliTestRunner):
                                             zone=zone, group=self.group)
         for instance in instances:
             self.tc.test_resources['_instances'].append(instance)
-            volume_1 = self.user.ec2.create_volume(zone=zone.name, size=3)
+            volume_1 = self.user.ec2.create_volume(zone=zone, size=3)
             self.tc.test_resources['_volumes'].append(volume_1)
             volume_device = instance.attach_volume(volume_1)
             instance.sys("curl " + self.args.image_url + " > " + volume_device, timeout=800, code=0)
