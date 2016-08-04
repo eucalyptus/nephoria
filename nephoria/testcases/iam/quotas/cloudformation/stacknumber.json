@@ -1,0 +1,10 @@
+{
+ "Statement": [
+   {
+     "Action": ["*" ],
+     "Effect": "Limit",
+     "Resource": "*",
+     "Condition": { "NumericLessThanEquals":{"cloudformation:quota-stacknumber": "3"}}
+   }
+ ]
+}
