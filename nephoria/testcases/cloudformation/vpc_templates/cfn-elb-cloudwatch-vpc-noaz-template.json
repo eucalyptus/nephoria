@@ -334,14 +334,10 @@
 						"Fn::Join": ["", [
 							"#cloud-config", "\n",
 							"apt_update: true", "\n",
-							"apt_upgrade: true", "\n",
 							"disable_root: true", "\n",
 							"packages:", "\n",
 							" - less", "\n",
 							"runcmd:", "\n",
-							" - [ apt-get, install, -y, --force-yes, dnsutils ]", "\n",
-							" - [ apt-get, install, -y, --force-yes, bind9utils ]", "\n",
-							" - [ apt-get, install, -y, --force-yes, mlocate ]", "\n",
 							" - [ apt-get, install, -y, --force-yes, nginx ]", "\n"
 						]]
 					}
@@ -365,9 +361,6 @@
 			},
 			"Type": "AWS::AutoScaling::AutoScalingGroup",
 			"Properties": {
-				"AvailabilityZones": [{
-					"Fn::GetAtt": ["NginxSubnet", "AvailabilityZone"]
-				}],
 				"VPCZoneIdentifier": [{
 					"Ref": "NginxSubnet"
 				}],
