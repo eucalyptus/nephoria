@@ -31,6 +31,7 @@
 # Author: matt.clark@eucalyptus.com
 
 import sys
+from cloud_utils.log_utils.eulogger import Eulogger
 from boto.resultset import ResultSet
 from boto.ec2.tag import Tag
 from boto.ec2.ec2object import TaggedEC2Object, EC2Object
@@ -54,6 +55,7 @@ class ConversionTask(TaggedEC2Object):
         self._snapshots = None
         self.tags = None
         self.notfound = False
+        self.log = Eulogger('ConversionTask:{0}'.format(self.id))
 
     def __repr__(self):
         volumes = ",".join([vol.id for vol in self.volumes])
@@ -94,10 +96,14 @@ class ConversionTask(TaggedEC2Object):
     @property
     def instance(self):
         if not self._instance and self.instanceid:
-            ins = self._instance = self.connection.get_only_instances(
-                instance_ids=[self.instanceid])
-            if ins:
-                self._instance = ins[0]
+            try:
+                ins = self._instance = self.connection.get_only_instances(
+                    instance_ids=[self.instanceid])
+                if ins:
+                    self._instance = ins[0]
+            except Exception as E:
+                self.log.warning('Failed to fetch instance:{0} for conversiontask:{1} err:'
+                                 .format(self.instanceid, self.id, E))
         return self._instance
 
     @property
