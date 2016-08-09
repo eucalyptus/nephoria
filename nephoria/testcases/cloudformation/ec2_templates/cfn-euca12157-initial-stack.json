@@ -1,0 +1,70 @@
+{
+
+	"AWSTemplateFormatVersion": "2010-09-09",
+
+	"Description": "Initial for Continue Update Rollback Test - https://eucalyptus.atlassian.net/browse/EUCA-12157",
+
+
+	"Resources": {
+		"VPC": {
+			"Type": "AWS::EC2::VPC",
+			"Properties": {
+				"CidrBlock": "10.0.0.0/16",
+				"InstanceTenancy": "default"
+			}
+		},
+
+		"SecurityGroup": {
+			"Type": "AWS::EC2::SecurityGroup",
+			"Properties": {
+				"GroupDescription": "AWS::EC2::SecurityGroup Resource Test Example in VPC",
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"SecurityGroupIngress": [{
+					"IpProtocol": "tcp",
+					"FromPort": "443",
+					"ToPort": "443",
+					"CidrIp": "0.0.0.0/0"
+				}],
+				"Tags": [{
+					"Key": "Application",
+					"Value": {
+						"Ref": "AWS::StackId"
+					}
+				}]
+			}
+		}
+	},
+
+	"Outputs": {
+		"VPCId": {
+			"Description": "Resource ID of VPC",
+			"Value": {
+				"Ref": "VPC"
+			}
+		},
+
+		"VPCCidrBlock": {
+			"Description": "CIDR Block of VPC",
+			"Value": {
+				"Fn::GetAtt": ["VPC", "CidrBlock"]
+			}
+		},
+
+		"SecurityGroupRefId": {
+			"Description": "Resource ID of SecurityGroup Resource",
+			"Value": {
+				"Ref": "SecurityGroup"
+			}
+		},
+
+		"SecurityGroupId": {
+			"Description": "Group ID of SecurityGroup Resource",
+			"Value": {
+				"Fn::GetAtt": ["SecurityGroup", "GroupId"]
+			}
+		}
+	}
+
+}

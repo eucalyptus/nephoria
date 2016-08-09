@@ -1,0 +1,10 @@
+{
+ "Statement": [
+   {
+     "Action": ["*" ],
+     "Effect": "Limit",
+     "Resource": "*",
+     "Condition": { "NumericLessThanEquals":{"ec2:quota-volumetotalsize": "25"}}
+   }
+ ]
+}

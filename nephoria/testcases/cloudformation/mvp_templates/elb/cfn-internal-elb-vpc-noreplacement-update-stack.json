@@ -1,19 +1,45 @@
 {
   "AWSTemplateFormatVersion" : "2010-09-09",
 
-  "Description" : "Elastic Load Balancing Test => MVP test for AWS::ElasticLoadBalancing::LoadBalancer resource",
+  "Description" : "Internal Elastic Load Balancing Test => Update property attributes in AWS::ElasticLoadBalancing::LoadBalancer resource on VPC that does not cause resource replacement",
 
   "Resources" : {
+     "VPC": {
+        "Type": "AWS::EC2::VPC",
+        "Properties" : {
+            "CidrBlock" : "10.0.0.0/16",
+            "EnableDnsSupport" : "True",
+            "EnableDnsHostnames" : "True",
+            "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"}} ]
+        }
+    },
+
+    "Subnet": {
+        "Type" : "AWS::EC2::Subnet",
+        "Properties" : {
+            "VpcId" : { "Ref" : "VPC" },
+            "CidrBlock" : "10.0.0.0/24",
+            "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+        }
+    },
+
     "LoadBalancer" : {
       "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
       "Properties" : {
-          "AvailabilityZones" : {"Fn::GetAZs" : {"Ref" : "AWS::Region"}},
+          "Subnets" : [{ "Ref" : "Subnet" }],
           "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
+          "Scheme" : "internal",
           "Listeners" : [ {
               "LoadBalancerPort" : "80",
               "InstancePort" : "80",
               "Protocol" : "HTTP"
-          } ]
+          },
+          {
+              "LoadBalancerPort" : "8080",
+              "InstancePort" : "8080",
+              "Protocol" : "HTTP"
+          }
+          ]
       }
     }
   },

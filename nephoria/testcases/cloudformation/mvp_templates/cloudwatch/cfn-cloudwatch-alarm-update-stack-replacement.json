@@ -1,0 +1,27 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "UpdateStack Alarm Test - Add AlarmName for AWS::CloudWatch::Alarm resource",
+  "Resources" : {
+      "Alarm": {
+          "Type" : "AWS::CloudWatch::Alarm",
+          "Properties" : {
+              "AlarmName" : "ec2-disk-writes-ops",
+              "AlarmDescription" : "A Generic Cloudwatch Alarm",
+              "ComparisonOperator" : "GreaterThanOrEqualToThreshold",
+              "EvaluationPeriods": "3",
+              "Statistic": "Average",
+              "MetricName": "DiskWriteOps",
+              "Namespace": "AWS/EC2",
+              "Period": "60",
+              "Threshold": "90"
+          }
+      }
+  },
+  "Outputs" : {
+      "Alarm": {
+          "Value": { "Ref": "Alarm" },
+          "Description": "ID of Cloudwatch Alarm"
+      }
+  }
+}

@@ -1,6 +1,6 @@
 {
     "AWSTemplateFormatVersion" : "2010-09-09",
-    "Description" : "NAT Gateway Test => MVP test for AWS::EC2::NatGateway resource",
+    "Description" : "NAT Gateway UpdateStack Test => Update AllocationId property attribute of AWS::EC2::NatGateway resource",
     "Resources" : {
         "VPC": {
             "Type": "AWS::EC2::VPC",
@@ -44,11 +44,18 @@
                 }
         },
 
+        "EIP2": {
+            "Type" : "AWS::EC2::EIP",
+                "Properties" : {
+                    "Domain": "vpc"
+                }
+        },
+
         "NatGateway" : {
             "DependsOn" : "VPCGatewayAttachment",
             "Type" : "AWS::EC2::NatGateway",
             "Properties" : {
-                "AllocationId" : { "Fn::GetAtt" : ["EIP", "AllocationId"]},
+                "AllocationId" : { "Fn::GetAtt" : ["EIP2", "AllocationId"]},
                 "SubnetId" : { "Ref" : "Subnet"}
             }
         },
@@ -102,6 +109,16 @@
         "EIPAllocationID": {
             "Description" : "Allocation ID of the Elastic IP",
             "Value" : { "Fn::GetAtt" : [ "EIP" , "AllocationId" ] }
+        },
+
+        "ElasticIP2": {
+            "Description" : "Resource ID of 2nd Elastic IP",
+            "Value" : { "Ref" : "EIP2" }
+        },
+
+        "EIP2AllocationID": {
+            "Description" : "Allocation ID of the 2nd Elastic IP",
+            "Value" : { "Fn::GetAtt" : [ "EIP2" , "AllocationId" ] }
         }
     }
 }

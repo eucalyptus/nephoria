@@ -1,8 +1,9 @@
 {
     "AWSTemplateFormatVersion" : "2010-09-09",
-    "Description" : "NAT Gateway Test => MVP test for AWS::EC2::NatGateway resource",
+    "Description" : "Route UpdateStack Test - Initial Stack Setup",
+
     "Resources" : {
-        "VPC": {
+       "VPC": {
             "Type": "AWS::EC2::VPC",
             "Properties" : {
                 "CidrBlock" : "10.0.0.0/16",
@@ -37,22 +38,6 @@
             }
         },
 
-        "EIP": {
-            "Type" : "AWS::EC2::EIP",
-                "Properties" : {
-                    "Domain": "vpc"
-                }
-        },
-
-        "NatGateway" : {
-            "DependsOn" : "VPCGatewayAttachment",
-            "Type" : "AWS::EC2::NatGateway",
-            "Properties" : {
-                "AllocationId" : { "Fn::GetAtt" : ["EIP", "AllocationId"]},
-                "SubnetId" : { "Ref" : "Subnet"}
-            }
-        },
-
         "RouteTable": {
             "Type" : "AWS::EC2::RouteTable",
             "Properties" : {
@@ -67,41 +52,60 @@
             "Properties" : {
                 "RouteTableId" : { "Ref" : "RouteTable" },
                 "DestinationCidrBlock" : "0.0.0.0/0",
-                "NatGatewayId" : { "Ref" : "NatGateway" }
-            }
-        },
-
-        "NetworkAcl" : {
-            "Type" : "AWS::EC2::NetworkAcl",
-            "Properties" : {
-                "VpcId" : {"Ref" : "VPC"},
-                "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
-            }
-        },
-
-        "SubnetNetworkAclAssociation" : {
-            "Type" : "AWS::EC2::SubnetNetworkAclAssociation",
-            "Properties" : {
-                "SubnetId" : { "Ref" : "Subnet" },
-                "NetworkAclId" : { "Ref" : "NetworkAcl" }
+                "GatewayId" : { "Ref" : "InternetGateway" }
             }
         }
     },
-
-    "Outputs": {
-        "NatGatewayId" : {
-            "Description" : "Resource ID of NAT Gateway",
-            "Value" : { "Ref" : "NatGateway" }
+  
+    "Outputs" : {
+        "VPCId" : {
+            "Description" : "Resource ID of VPC",
+            "Value" : { "Ref" : "VPC" }
         },
 
-        "ElasticIP": {
-            "Description" : "Resource ID of Elastic IP",
-            "Value" : { "Ref" : "EIP" }
+        "VPCCidrBlock" : {
+            "Description" : "CIDR Block of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "CidrBlock" ] }
         },
 
-        "EIPAllocationID": {
-            "Description" : "Allocation ID of the Elastic IP",
-            "Value" : { "Fn::GetAtt" : [ "EIP" , "AllocationId" ] }
+        "VPCDefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultNetworkAcl" ] }
+        },
+
+        "VPCDefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC",
+            "Value" : { "Fn::GetAtt" : [ "VPC", "DefaultSecurityGroup" ] }
+        },
+
+        "SubnetId" : {
+            "Description" : "Resource ID of Subnet",
+            "Value" : { "Ref" : "Subnet" }
+        },
+
+        "SubnetAvailabilityZone" : {
+            "Description" : "Availability Zone of Subnet",
+            "Value" : { "Fn::GetAtt" : [ "Subnet", "AvailabilityZone" ] }
+        },
+
+        "InternetGatewayId" : {
+            "Description" : "Resource ID of InternetGateway",
+            "Value" : { "Ref" : "InternetGateway" }
+        },
+
+        "VPCGatewayAttachmentId" : {
+            "Description" : "Resource ID of VPCGatewayAttachment",
+            "Value" : { "Ref" : "VPCGatewayAttachment" }
+        },
+
+        "RouteTableId" : {
+            "Description" : "Resource ID of RouteTable",
+            "Value" : { "Ref" : "RouteTable" }
+        },
+
+        "RouteId" : {
+            "Description" : "Resource ID of Route",
+            "Value" : { "Ref" : "Route" }
         }
     }
 }

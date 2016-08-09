@@ -1,0 +1,15 @@
+{
+ "Statement": [
+   {
+      "Action": "*",
+      "Effect": "Allow",
+      "Resource": "*"
+   },
+   {
+     "Action": ["*" ],
+     "Effect": "Limit",
+     "Resource": "*",
+     "Condition": { "NumericLessThanEquals":{"ec2:quota-imagenumber": "3"}}
+   }
+ ]
+}
