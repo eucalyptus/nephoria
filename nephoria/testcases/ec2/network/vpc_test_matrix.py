@@ -41,6 +41,7 @@ from nephoria.usercontext import UserContext
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner
 from cloud_utils.net_utils import packet_test, is_address_in_network
 from cloud_utils.log_utils import markup, printinfo, get_traceback
+from boto.exception import BotoServerError
 from boto.vpc.subnet import Subnet
 from boto.vpc.vpc import VPC
 from boto.ec2.image import Image
@@ -108,8 +109,28 @@ class VpcBasics(CliTestRunner):
         return tc
 
     @property
-    def test_tag_name(self):
+    def my_tag_name(self):
         return '{0}_CREATED_TESTID'.format(self.__class__.__name__)
+
+    @property
+    def new_ephemeral_user(self):
+        account_prefix = 'vpcnewuser'
+        attr_name = '_new_ephemeral_user'
+        user = getattr(self, attr_name, None)
+        if not user:
+            accounts = [x.get('account_name') for x in self.tc.admin.iam.get_all_accounts()]
+            for x in xrange(0, 1000):
+                account_name = "{0}{1}".format(account_prefix, x)
+                user_name = 'admin'
+                if not account_name in accounts:
+                    self.log.debug('Creating a new account for this test: {0}'
+                                   .format(account_name))
+                    user = self.tc.create_user_using_cloudadmin(aws_account_name=account_name,
+                                                                aws_user_name=user_name)
+                    setattr(self, attr_name, user)
+                    break
+        return user
+
 
     def get_proxy_instance(self, zone):
         if not zone:
@@ -135,7 +156,7 @@ class VpcBasics(CliTestRunner):
                 raise ValueError('No default subnet for zone:{0} to create proxy instance in'
                                  .format(zone))
             subnet = subnet[0]
-            pi = self.user.ec2.run_image(image=self.emi, keypair=self.keypair, group=self.group,
+            pi = self.user.ec2.run_image(image=self.emi, keypair=self.get_keypair(user), group=self.group,
                                          subnet_id = subnet.id, zone=zone,
                                          type=self.args.proxy_vmtype,
                                          systemconnection=self.tc.sysadmin)[0]
@@ -170,7 +191,7 @@ class VpcBasics(CliTestRunner):
         if not isinstance(subnet, Subnet):
             raise ValueError('Must provide type Subnet() or subnet id for get_eni_subnet. '
                              'Got:"{0}"'.format(subnet))
-        filters = {'subnet-id': subnet.id, 'tag-key': self.test_tag_name, 'tag-value': self.id}
+        filters = {'subnet-id': subnet.id, 'tag-key': self.my_tag_name, 'tag-value': self.id}
         if status:
             filters['status'] = status
         enis = self.user.ec2.connection.get_all_network_interfaces(filters=filters) or []
@@ -178,7 +199,7 @@ class VpcBasics(CliTestRunner):
             for x in xrange(0, (count-len(enis))):
                 eni = self.user.ec2.connection.create_network_interface(
                     subnet_id=subnet.id, description='This was created by: {0}'.format(self.id))
-                self.user.ec2.create_tags(eni.id, {self.test_tag_name: self.id})
+                self.user.ec2.create_tags(eni.id, {self.my_tag_name: self.id})
                 eni.update()
                 enis.append(eni)
         return enis
@@ -193,13 +214,14 @@ class VpcBasics(CliTestRunner):
             keyname = "{0}_{1}".format(self.__class__.__name__, int(time.time()))
         return keyname
 
-    @property
-    def keypair(self):
-        key = getattr(self, '_keypair', None)
-        if not key:
-            key = self.user.ec2.get_keypair(key_name=self.keypair_name)
-            setattr(self, '_keypair', key)
-        return key
+    def get_keypair(self, user=None):
+        user = user or self.user
+        keys = getattr(self, '_keypairs', None)
+        if not keys:
+            key = user.ec2.get_keypair(key_name=self.keypair_name)
+            keys = {user: key}
+            setattr(self, '_keypairs', keys)
+        return keys[user]
 
     @property
     def group(self):
@@ -286,24 +308,26 @@ class VpcBasics(CliTestRunner):
                 raise RuntimeError('No default VPC found for user:"{0}"'.format(self.user))
             return vpcs[0]
 
-    def create_test_vpcs(self, count=1, gateways_per_vpc=1):
+    def create_test_vpcs(self, count=1, gateways_per_vpc=1, user=None):
+        user = user or self.user
         test_vpcs = []
         for vpc_count in xrange(0, count):
             # Make the new vpc cidr net in the private range based upon the number of existing VPCs
-            net_octet = 1 + (250 % len(self.user.ec2.get_all_vpcs()))
-            new_vpc = self.user.ec2.connection.create_vpc(cidr_block='172.{0}.0.0/16'.format(net_octet))
-            self.user.ec2.create_tags(new_vpc.id, {self.test_tag_name: count})
+            net_octet = 1 + (250 % len(user.ec2.get_all_vpcs()))
+            new_vpc = user.ec2.connection.create_vpc(cidr_block='172.{0}.0.0/16'.format(net_octet))
+            user.ec2.create_tags(new_vpc.id, {self.my_tag_name: count})
             test_vpcs.append(new_vpc)
             for gw in xrange(0, gateways_per_vpc):
-                gw = self.user.ec2.connection.create_internet_gateway()
-                self.user.ec2.connection.attach_internet_gateway(internet_gateway_id=gw.id, vpc_id=new_vpc.id)
-            self.user.log.info('Created the following VPC: {0}'.format(new_vpc.id))
-            self.user.ec2.show_vpc(new_vpc)
+                gw = user.ec2.connection.create_internet_gateway()
+                user.ec2.connection.attach_internet_gateway(internet_gateway_id=gw.id,
+                                                            vpc_id=new_vpc.id)
+            user.log.info('Created the following VPC: {0}'.format(new_vpc.id))
+            user.ec2.show_vpc(new_vpc)
         return test_vpcs
 
 
 
-    def create_test_subnets(self, vpc, count_per_zone=1):
+    def create_test_subnets(self, vpc, count_per_zone=1, user=None):
         """
         This method is intended to provided the convenience of returning a number of subnets per
         zone equal to the provided 'count_per_zone'. The intention is this method will
@@ -314,11 +338,12 @@ class VpcBasics(CliTestRunner):
         :param count_per_zone: int, number of subnets needed per zone
         :return: list of subnets
         """
+        user = user or self.user
         test_subnets = []
         for x in xrange(0, count_per_zone):
             for zone in self.zones:
                 # Use a /24 of the vpc's larger /16
-                subnets = self.user.ec2.get_all_subnets(filters={'vpc-id': vpc.id})
+                subnets = user.ec2.get_all_subnets(filters={'vpc-id': vpc.id})
 
                 subnet_cidr = None
                 attempts = 0
@@ -337,25 +362,25 @@ class VpcBasics(CliTestRunner):
                             subnet_cidr = None
                             break
                 try:
-                    subnet = self.user.ec2.connection.create_subnet(vpc_id=vpc.id,
-                                                                    cidr_block=subnet_cidr,
-                                                                    availability_zone=zone)
+                    subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id,
+                                                               cidr_block=subnet_cidr,
+                                                               availability_zone=zone)
                 except:
                     try:
                         self.log.error('Existing subnets during create request:')
-                        self.user.ec2.show_subnets(subnets, printmethod=self.log.error)
+                        user.ec2.show_subnets(subnets, printmethod=self.log.error)
                     except:
                         pass
                     self.log.error('Failed to create subnet for vpc:{0}, cidr:{1} zone:{2}'
                                    .format(vpc.id, subnet_cidr, zone))
                     raise
-                self.user.ec2.create_tags(subnet.id, {self.test_tag_name: x})
+                user.ec2.create_tags(subnet.id, {self.my_tag_name: x})
                 test_subnets.append(subnet)
-                self.user.log.info('Created the following SUBNET: {0}'.format(subnet.id))
-                self.user.ec2.show_subnet(subnet)
+                user.log.info('Created the following SUBNET: {0}'.format(subnet.id))
+                user.ec2.show_subnet(subnet)
         return test_subnets
 
-    def get_test_vpcs(self, count=1):
+    def get_test_vpcs(self, count=1, user=None):
         """
         This method is intended to provided the convenience of returning a number of VPCs equal
         to 'count'. The intention is this method will take care of first attempting to
@@ -364,15 +389,16 @@ class VpcBasics(CliTestRunner):
         :param count: number of VPCs requested
         :return: list of VPC boto objects
         """
-        existing = self.user.ec2.get_all_vpcs(filters={'tag-key': self.test_tag_name})
+        user = user or self.user
+        existing = user.ec2.get_all_vpcs(filters={'tag-key': self.my_tag_name})
         if len(existing) >= count:
             return existing[0:count]
         needed = count - len(existing)
-        new_vpcs = self.create_test_vpcs(count=needed, gateways_per_vpc=1)
+        new_vpcs = self.create_test_vpcs(count=needed, gateways_per_vpc=1, user=user)
         ret_list = existing + new_vpcs
         return ret_list
 
-    def get_test_subnets_for_vpc(self, vpc, zone=None, count=1):
+    def get_test_subnets_for_vpc(self, vpc, zone=None, count=1, user=None):
         """
         Fetch a given number of subnets within the provided VPC by either finding existing
         or creating new subnets to meet the count requested.
@@ -380,18 +406,19 @@ class VpcBasics(CliTestRunner):
         :param count: number of subnets requested
         :return: list of subnets
         """
-        filters = {'vpc-id': vpc.id, 'tag-key': self.test_tag_name}
+        user = user or self.user
+        filters = {'vpc-id': vpc.id, 'tag-key': self.my_tag_name}
         if zone:
             filters['availabilityZone'] = zone
-        existing = self.user.ec2.get_all_subnets(filters=filters)
+        existing = user.ec2.get_all_subnets(filters=filters)
         if len(existing) >= count:
             return  existing[0:count]
         needed = count - len(existing)
-        new_subnets = self.create_test_subnets(vpc=vpc, count_per_zone=needed)
+        new_subnets = self.create_test_subnets(vpc=vpc, count_per_zone=needed, user=user)
         ret_subnets = existing + new_subnets
         return ret_subnets
 
-    def get_test_security_groups(self, vpc=None, count=1, rules=None):
+    def get_test_security_groups(self, vpc=None, count=1, rules=None, user=None):
         """
         Fetch a given number of security groups by either finding existing or creating new groups
         to meet the count requested. If VPC is not provided, self.default_vpc value will be used.
@@ -407,10 +434,11 @@ class VpcBasics(CliTestRunner):
         :param rules: list of rule sets
         :return:
         """
+        user = user or self.user
         if rules is None:
             rules = self.DEFAULT_SG_RULES
         ret_groups = []
-        vpc = vpc or self.default_vpc
+        vpc = vpc or self.test1a_new_user_default_vpcs(user)
         if vpc and not isinstance(vpc, basestring):
             vpc = vpc.id
         existing = self._security_groups.get(vpc, None)
@@ -425,16 +453,16 @@ class VpcBasics(CliTestRunner):
                                             len(self._security_groups[vpc]) + 1,
                                             self.test_id)
                 self._security_groups[vpc].append(
-                    self.user.ec2.connection.create_security_group(name=name, description=name,
-                                                                   vpc_id=vpc))
+                    user.ec2.connection.create_security_group(name=name, description=name,
+                                                              vpc_id=vpc))
             ret_groups = self._security_groups[vpc]
         for group in ret_groups:
-            self.user.ec2.revoke_all_rules(group)
+            user.ec2.revoke_all_rules(group)
             for rule in rules:
                 protocol, port, end_port, cidr_ip = rule
-                self.user.ec2.authorize_group(group=group, port=port, end_port=end_port,
-                                              protocol=protocol)
-            self.user.ec2.show_security_group(group)
+                user.ec2.authorize_group(group=group, port=port, end_port=end_port,
+                                         protocol=protocol)
+            user.ec2.show_security_group(group)
         return ret_groups
 
     def get_test_addresses(self, count=1):
@@ -453,7 +481,8 @@ class VpcBasics(CliTestRunner):
 
     @printinfo
     def get_test_instances(self, zone, group_id,  vpc_id=None, subnet_id=None,
-                           state='running', count=None, monitor_to_running=True, timeout=480):
+                           state='running', count=None, monitor_to_running=True, timeout=480,
+                           user=None):
         """
         Finds existing instances created by this test which match the criteria provided,
         or creates new ones to meet the count requested.
@@ -473,6 +502,7 @@ class VpcBasics(CliTestRunner):
             returns: list of instances which meet the provided criteria.
         """
         instances = []
+        user = user or self.user
         if zone is None or group_id is None:
             raise ValueError('Must provide both zone:"{0}" and group_id:"{1}"'
                              .format(zone, group_id))
@@ -480,9 +510,10 @@ class VpcBasics(CliTestRunner):
         count = int(count or 0)
         filters = {'tag-key': self.test_name, 'tag-value': self.test_id}
         filters['availability-zone'] = zone
-        if not isinstance(group_id, basestring):
+        if not isinstance(group_id, basestring) and group_id is not None:
             group_id = group_id.id
-        filters['group-id'] = group_id
+        if group_id:
+            filters['group-id'] = group_id
         if subnet_id:
             if not isinstance(subnet_id, basestring):
                 subnet_id = subnet_id.id
@@ -493,27 +524,27 @@ class VpcBasics(CliTestRunner):
             filters['vpc-id'] = vpc_id
         if state:
             filters['instance-state-name'] = state
-        queried_instances = self.user.ec2.get_instances(filters=filters)
+        queried_instances = user.ec2.get_instances(filters=filters)
         self.log.debug('queried_instances:{0}'.format(queried_instances))
         for q_instance in queried_instances:
-            for instance in self.user.ec2.test_resources.get('instances'):
+            for instance in user.ec2.test_resources.get('instances'):
                 if instance.id == q_instance.id:
                     existing_instances.append(instance)
         for instance in existing_instances:
-            euinstance = self.user.ec2.convert_instance_to_euinstance(instance,
-                                                                      keypair=self.keypair,
-                                                                      auto_connect=False)
+            euinstance = user.ec2.convert_instance_to_euinstance(instance,
+                                                                 keypair=self.get_keypair(user),
+                                                                 auto_connect=False)
             euinstance.log.set_stdout_loglevel(self.args.log_level)
             instances.append(euinstance)
         self.log.debug('existing_instances:{0}'.format(existing_instances))
         if not count:
             if monitor_to_running:
-                return self.user.ec2.monitor_euinstances_to_running(instances, timeout=timeout)
+                return user.ec2.monitor_euinstances_to_running(instances, timeout=timeout)
             return instances
         if len(instances) >= count:
             instances = instances[0:count]
             if monitor_to_running:
-                return self.user.ec2.monitor_euinstances_to_running(instances, timeout=timeout)
+                return user.ec2.monitor_euinstances_to_running(instances, timeout=timeout)
             return instances
         else:
             needed = count - len(instances)
@@ -521,14 +552,15 @@ class VpcBasics(CliTestRunner):
                 vpc_filters = {'vpc-id':vpc_id}
                 if zone:
                     vpc_filters['availability-zone'] = zone
-                subnets = self.user.ec2.get_all_subnets(filters=vpc_filters)
+                subnets = user.ec2.get_all_subnets(filters=vpc_filters)
                 if not subnets:
                     raise ValueError('No subnet found for vpc: {0}'.format(vpc_id))
                 subnet = subnets[0]
                 subnet_id = subnet.id
             new_ins = self.create_test_instances(zone=zone, group=group_id,
                                                  subnet=subnet_id, count=needed,
-                                                 monitor_to_running=monitor_to_running)
+                                                 monitor_to_running=monitor_to_running,
+                                                 user=user)
             instances.extend(new_ins)
             if len(instances) != count:
                 raise RuntimeError('Less than the desired:{0} number of instances returned?'
@@ -537,7 +569,8 @@ class VpcBasics(CliTestRunner):
 
     @printinfo
     def create_test_instances(self, emi=None, key=None, group=None, zone=None, subnet=None,
-                              count=1, monitor_to_running=True, auto_connect=True, tag=True):
+                              count=1, monitor_to_running=True, auto_connect=True, tag=True,
+                              user=None):
         """
         Creates test instances using the criteria provided. This method is intended to be
         called from 'get_test_instances()'.
@@ -555,52 +588,140 @@ class VpcBasics(CliTestRunner):
         :param tag:
         :return:
         """
+        user = user or self.user
         vpc_id = None
         subnet_id = None
         if subnet:
             if isinstance(subnet, basestring):
-                subnet = self.user.ec2.get_subnet(subnet)
+                subnet = user.ec2.get_subnet(subnet)
             if not isinstance(subnet, Subnet):
                 raise ValueError('Failed to retrieve subnet with id "{0}" from cloud'
                                  .format(subnet))
         else:
-            subnets = self.get_test_subnets_for_vpc(vpc=self.default_vpc, count=1)
+            default_vpc = self.test1a_new_user_default_vpcs(user)
+            subnets = self.get_test_subnets_for_vpc(vpc=default_vpc, count=1, user=user)
             if not subnet:
                 raise ValueError('Failed to find subnet for default vpc:"{0}"'
-                                 .format(self.default_vpc.id))
+                                 .format(default_vpc.id))
             subnet = subnets[0]
         vpc_id = subnet.vpc_id
         subnet_id = subnet.id
 
         if group:
             if not isinstance(group, SecurityGroup):
-                group = self.user.ec2.get_security_group(group)
+                group = user.ec2.get_security_group(group)
         else:
-            group = self.get_test_security_groups(vpc=vpc_id, count=1)[0]
+            group = self.get_test_security_groups(vpc=vpc_id, count=1, user=user)[0]
         emi = emi or self.emi
-        key = key or self.keypair
-        instances = self.user.ec2.run_image(image=emi,
-                                            keypair=key,
-                                            group=group,
-                                            zone=zone,
-                                            subnet_id=subnet_id,
-                                            max=count,
-                                            auto_connect=auto_connect,
-                                            monitor_to_running=False,
-                                            systemconnection=self.tc.sysadmin)
+        key = key or self.get_keypair(user)
+        instances = user.ec2.run_image(image=emi,
+                                       keypair=key,
+                                       group=group,
+                                       zone=zone,
+                                       subnet_id=subnet_id,
+                                       max=count,
+                                       auto_connect=auto_connect,
+                                       monitor_to_running=False,
+                                       systemconnection=self.tc.sysadmin)
         for instance in instances:
             instance.add_tag(key=self.test_name, value=self.test_id)
         if monitor_to_running:
-            return self.user.ec2.monitor_euinstances_to_running(instances=instances)
+            return user.ec2.monitor_euinstances_to_running(instances=instances)
         return instances
 
-    def test1_basic_instance_ssh_default_vpc(self, instances_per_zone=2):
+    def test0a_new_user_supported_platforms(self, user=user):
+        user = user or self.new_ephemeral_user
+        supported_platforms = self.new_ephemeral_user.ec2.get_supported_platforms() or []
+        self.log.info('Found supported platforms: "{0}"'.format(", ".join(supported_platforms)))
+        if 'VPC' not in supported_platforms:
+            raise ValueError('User does not have VPC in the supported platforms:{0}'
+                             .format(supported_platforms))
+        return supported_platforms
+
+    def test1a_new_user_default_vpcs(self, user=None):
+        user = user or self.new_ephemeral_user
+        default_vpcs = user.ec2.get_default_vpcs()
+        if not default_vpcs:
+            raise ValueError('No default VPCs found for user:{0}'.format(user))
+        try:
+            user.ec2.show_vpcs(default_vpcs)
+        except Exception as E:
+            self.log.warning('{0}. Warning, could not show VPC debug. Ignoring err: '
+                             '"{1}"'.format(get_traceback(), E))
+        if len(default_vpcs) > 1:
+            raise ValueError('Multiple default VPCs found for user:{0}, vpcs:"{1}"'
+                             .format(user, default_vpcs))
+        return default_vpcs[0]
+
+    def test1b_new_user_default_igw(self, user=None):
+        user = user or self.new_ephemeral_user
+        default_vpc = self.test1a_new_user_default_vpcs(user=user)
+        igw = user.ec2.connection.get_all_internet_gateways(
+            filters={'attachment.vpc-id': default_vpc.id})
+        if not igw:
+            raise ValueError('{0}: Default Internet Gateway not found vpc:{1}'
+                             .format(user, default_vpc))
+        try:
+            user.ec2.show_internet_gateways(igw)
+        except Exception as E:
+            self.log.warning('{0}. Warning, could not show IGW debug. Ignoring err: '
+                             '"{1}"'.format(get_traceback(), E))
+        if len(igw) > 1:
+            raise ValueError('{0}: More than 1 IGW returned for default VPC:{1}, IGWS:{2}'
+                             .format(user, default_vpc, igw))
+        return igw[0]
+
+    def test1c_new_user_default_subnets(self, user=None):
+        user = user or self.new_ephemeral_user
+        subs = user.ec2.get_default_subnets()
+        if not subs:
+            raise ValueError('{0}: No default subnets found'.format(user))
+        zone_names = user.ec2.get_zone_names().sort()
+        sub_zones = [x.availability_zone for x in subs].sort()
+        try:
+            user.ec2.show_subnets(subs)
+        except Exception as E:
+            self.log.warning('{0}. Warning, could not show subnet debug. Ignoring err: '
+                             '"{1}"'.format(get_traceback(), E))
+        if zone_names != sub_zones:
+            raise ValueError('Error default subnets zones: "{0}" do not match '
+                             'Availability zones found:"{1}"'.format(zone_names, sub_zones))
+        return subs
+
+
+    def test1d_new_user_default_route_table_present(self, user=None):
+        user = user or self.new_ephemeral_user
+        default_vpc = self.test1a_new_user_default_vpcs(user=user)
+        rt = user.ec2.connection.get_all_route_tables(
+            filters={'association.main': 'true', 'vpc-id': default_vpc.id})
+        if not rt:
+            raise ValueError('{0}: No route table associated with default vpc:{1}'
+                             .format(user, default_vpc))
+        try:
+            user.ec2.show_route_tables(rt)
+        except Exception as E:
+            self.log.warning('{0}. Warning, could not show route table debug. Ignoring err: '
+                             '"{1}"'.format(get_traceback(), E))
+        if len(rt) > 1:
+            raise ValueError('More than one route table returned as main assoc with default '
+                             'vpc:{0}, RTs:{1}'.format(default_vpc, rt))
+        return rt[0]
+
+    def test1e_new_user_basic_instance_ssh_defaults(self, user=None):
+        user = user or self.new_ephemeral_user
+        ins = self.basic_instance_ssh_default_vpc(user=user, instances_per_zone=1)
+        if ins:
+            user.ec2.terminate_instances(ins)
+
+    def basic_instance_ssh_default_vpc(self, user=None, instances_per_zone=2):
+        user = user or self.user
         instances = []
-        vpc = self.default_vpc
-        sec_group = self.get_test_security_groups(vpc=vpc, count=1, rules=self.DEFAULT_RULES)[0]
+        vpc = self.test1a_new_user_default_vpcs(user)
         instance_count = instances_per_zone
         for zone in self.zones:
-            subnet = self.user.ec2.get_default_subnets(zone=zone) or None
+            subnet = user.ec2.get_default_subnets(zone=zone) or None
+            sec_group = self.get_test_security_groups(vpc=vpc, count=1, rules=self.DEFAULT_SG_RULES,
+                                                      user=user)[0]
             if subnet:
                 subnet = subnet[0]
             instances.extend(self.get_test_instances(zone=zone,
@@ -608,9 +729,10 @@ class VpcBasics(CliTestRunner):
                                                      group_id=sec_group.id,
                                                      vpc_id=vpc.id,
                                                      count=instance_count,
-                                                     monitor_to_running=False))
-        self.user.ec2.monitor_euinstances_to_running(instances=instances)
-        self.log.info('test1_basic_instance_ssh_default_vpc passed')
+                                                     monitor_to_running=False,
+                                                     user=user))
+        user.ec2.monitor_euinstances_to_running(instances=instances)
+        self.log.info('basic_instance_ssh_default_vpc passed')
         return instances
 
     def packet_test_scenario(self, zone1, zone2, sec_group1, sec_group_2, vpc1, vpc2,
@@ -645,7 +767,7 @@ class VpcBasics(CliTestRunner):
                 verbose = 2
             else:
                 verbose = 0
-        sec_group = self.get_test_security_groups(vpc=vpc, count=1, rules=self.DEFAULT_RULES)[0]
+        sec_group = self.get_test_security_groups(vpc=vpc, count=1, rules=self.DEFAULT_SG_RULES)[0]
         try:
             for zone in self.zones:
                 self.log.info('STARTING PACKET TEST AGAINST ZONE:"{0}"'.format(zone))
@@ -765,22 +887,18 @@ class VpcBasics(CliTestRunner):
 
     def clean_method(self):
         self.user.ec2.clean_all_test_resources()
+        if self.new_ephemeral_user:
+            self.log.debug('deleting new user account:"{0}"'
+                       .format(self.new_ephemeral_user.account_name))
+            self.tc.admin.iam.delete_account(account_name=self.new_ephemeral_user.account_name,
+                                             recursive=True)
 
 if __name__ == "__main__":
     testcase = VpcBasics()
-    if testcase.args.tests:
-        testlist = testcase.args.tests.splitlines(',')
+    # Create a single testcase to wrap and run the image creation tasks.
+    result = testcase.run()
+    if result:
+        testcase.log.error('TEST FAILED WITH RESULT:{0}'.format(result))
     else:
-        testlist = ['test1_basic_instance_ssh_default_vpc']
-
-    ### Convert test suite methods to EutesterUnitTest objects
-    unit_list = [ ]
-    for test in testlist:
-        unit_list.append(testcase.create_testunit_by_name(test))
-
-    clean_on_exit = not testcase.args.freeze_on_exit
-    ### Run the EutesterUnitTest objects
-    result = testcase.run_test_case_list(unit_list,
-                                         eof=False,
-                                         clean_on_exit=clean_on_exit)
+        testcase.status('TEST PASSED')
     exit(result)
