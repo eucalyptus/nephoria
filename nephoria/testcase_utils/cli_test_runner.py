@@ -513,6 +513,26 @@ class CliTestRunner(object):
         return testunit
 
     ##############################################################################################
+    # Convenience methods to fetch current testunit by its name
+    ##############################################################################################
+
+    def get_testunit_by_name(self, name):
+        for testunit in self._testlist:
+            if testunit.name == name:
+                return testunit
+        return None
+
+    ##############################################################################################
+    # Convenience methods to fetch current testunit by its method
+    ##############################################################################################
+
+    def get_testunit_by_method(self, method):
+        for testunit in self._testlist:
+            if testunit.method == method:
+                return testunit
+        return None
+
+    ##############################################################################################
     # Convenience methods to help inspect, convert, and run provided test functions/methods
     ##############################################################################################
 

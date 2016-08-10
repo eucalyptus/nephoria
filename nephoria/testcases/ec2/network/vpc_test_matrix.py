@@ -38,7 +38,7 @@ ingress/egress options for protocols = ['allow_per_protocol', 'allow_per_group',
 
 from nephoria.testcontroller import TestController
 from nephoria.usercontext import UserContext
-from nephoria.testcase_utils.cli_test_runner import CliTestRunner
+from nephoria.testcase_utils.cli_test_runner import CliTestRunner, TestResult, SkipTestException
 from cloud_utils.net_utils import packet_test, is_address_in_network
 from cloud_utils.log_utils import markup, printinfo, get_traceback
 from boto.exception import BotoServerError
@@ -102,8 +102,6 @@ class VpcBasics(CliTestRunner):
             tc = TestController(hostname=self.args.clc,
                                 environment_file=self.args.environment_file,
                                 password=self.args.password,
-                                clouduser_name=self.args.test_user,
-                                clouduser_account=self.args.test_account,
                                 log_level=self.args.log_level)
             setattr(self, '_tc', tc)
         return tc
@@ -111,26 +109,6 @@ class VpcBasics(CliTestRunner):
     @property
     def my_tag_name(self):
         return '{0}_CREATED_TESTID'.format(self.__class__.__name__)
-
-    @property
-    def new_ephemeral_user(self):
-        account_prefix = 'vpcnewuser'
-        attr_name = '_new_ephemeral_user'
-        user = getattr(self, attr_name, None)
-        if not user:
-            accounts = [x.get('account_name') for x in self.tc.admin.iam.get_all_accounts()]
-            for x in xrange(0, 1000):
-                account_name = "{0}{1}".format(account_prefix, x)
-                user_name = 'admin'
-                if not account_name in accounts:
-                    self.log.debug('Creating a new account for this test: {0}'
-                                   .format(account_name))
-                    user = self.tc.create_user_using_cloudadmin(aws_account_name=account_name,
-                                                                aws_user_name=user_name)
-                    setattr(self, attr_name, user)
-                    break
-        return user
-
 
     def get_proxy_instance(self, zone):
         if not zone:
@@ -274,6 +252,31 @@ class VpcBasics(CliTestRunner):
             raise ValueError('Could not set emi to value:"{0}/{1}"'.format(value, type(value)))
 
     @property
+    def new_ephemeral_user(self):
+        account_prefix = 'vpcnewuser'
+        attr_name = '_new_ephemeral_user'
+        user = getattr(self, attr_name, None)
+        if not user:
+            accounts = [x.get('account_name') for x in self.tc.admin.iam.get_all_accounts()]
+            for x in xrange(0, 1000):
+                account_name = "{0}{1}".format(account_prefix, x)
+                user_name = 'admin'
+                if not account_name in accounts:
+                    self.log.debug('Creating a new account for this test: {0}'
+                                   .format(account_name))
+                    user = self.tc.create_user_using_cloudadmin(aws_account_name=account_name,
+                                                                aws_user_name=user_name)
+                    setattr(self, attr_name, user)
+                    break
+        return user
+
+    @new_ephemeral_user.setter
+    def new_ephemeral_user(self, user):
+        attr_name = '_new_ephemeral_user'
+        if user is None or isinstance(user, UserContext):
+            setattr(self, attr_name, user)
+
+    @property
     def user(self):
         if not self._user:
             if self.args.access_key and self.args.secret_key and self.args.region:
@@ -281,7 +284,17 @@ class VpcBasics(CliTestRunner):
                                          aws_secret_key=self.args.secret_key,
                                          region=self.args.region)
             if (self.args.clc or self.args.environment_file) and self.tc:
-                self._user = self.tc.user
+                users = self.tc.admin.iam.get_all_users()
+                for user in users:
+                    if user.get('account_name') == self.args.test_account and \
+                        user.get('user_name') == self.args.test_user:
+                        self._user = self.tc.get_user_by_name(
+                            aws_user_name=self.args.test_user,
+                            aws_account_name=self.args.test_account)
+                        self.new_ephemeral_user = self._user
+                        return self._user
+                self._user = self.tc.create_user_using_cloudadmin(
+                    aws_user_name=self.args.test_user, aws_account_name=self.args.test_account)
         return self._user
 
     @property
@@ -438,7 +451,7 @@ class VpcBasics(CliTestRunner):
         if rules is None:
             rules = self.DEFAULT_SG_RULES
         ret_groups = []
-        vpc = vpc or self.test1a_new_user_default_vpcs(user)
+        vpc = vpc or self.check_user_default_vpcs(user)
         if vpc and not isinstance(vpc, basestring):
             vpc = vpc.id
         existing = self._security_groups.get(vpc, None)
@@ -598,7 +611,7 @@ class VpcBasics(CliTestRunner):
                 raise ValueError('Failed to retrieve subnet with id "{0}" from cloud'
                                  .format(subnet))
         else:
-            default_vpc = self.test1a_new_user_default_vpcs(user)
+            default_vpc = self.check_user_default_vpcs(user)
             subnets = self.get_test_subnets_for_vpc(vpc=default_vpc, count=1, user=user)
             if not subnet:
                 raise ValueError('Failed to find subnet for default vpc:"{0}"'
@@ -629,8 +642,8 @@ class VpcBasics(CliTestRunner):
             return user.ec2.monitor_euinstances_to_running(instances=instances)
         return instances
 
-    def test0a_new_user_supported_platforms(self, user=user):
-        user = user or self.new_ephemeral_user
+    def check_user_supported_platforms(self, user=user):
+        user = user or self.user
         supported_platforms = self.new_ephemeral_user.ec2.get_supported_platforms() or []
         self.log.info('Found supported platforms: "{0}"'.format(", ".join(supported_platforms)))
         if 'VPC' not in supported_platforms:
@@ -638,8 +651,8 @@ class VpcBasics(CliTestRunner):
                              .format(supported_platforms))
         return supported_platforms
 
-    def test1a_new_user_default_vpcs(self, user=None):
-        user = user or self.new_ephemeral_user
+    def check_user_default_vpcs(self, user=None):
+        user = user or self.user
         default_vpcs = user.ec2.get_default_vpcs()
         if not default_vpcs:
             raise ValueError('No default VPCs found for user:{0}'.format(user))
@@ -653,9 +666,9 @@ class VpcBasics(CliTestRunner):
                              .format(user, default_vpcs))
         return default_vpcs[0]
 
-    def test1b_new_user_default_igw(self, user=None):
-        user = user or self.new_ephemeral_user
-        default_vpc = self.test1a_new_user_default_vpcs(user=user)
+    def check_user_default_igw(self, user=None):
+        user = user or self.user
+        default_vpc = self.check_user_default_vpcs(user=user)
         igw = user.ec2.connection.get_all_internet_gateways(
             filters={'attachment.vpc-id': default_vpc.id})
         if not igw:
@@ -671,8 +684,8 @@ class VpcBasics(CliTestRunner):
                              .format(user, default_vpc, igw))
         return igw[0]
 
-    def test1c_new_user_default_subnets(self, user=None):
-        user = user or self.new_ephemeral_user
+    def check_user_default_subnets(self, user=None):
+        user = user or self.user
         subs = user.ec2.get_default_subnets()
         if not subs:
             raise ValueError('{0}: No default subnets found'.format(user))
@@ -689,9 +702,9 @@ class VpcBasics(CliTestRunner):
         return subs
 
 
-    def test1d_new_user_default_route_table_present(self, user=None):
-        user = user or self.new_ephemeral_user
-        default_vpc = self.test1a_new_user_default_vpcs(user=user)
+    def check_user_default_route_table_present(self, user=None):
+        user = user or self.user
+        default_vpc = self.check_user_default_vpcs(user=user)
         rt = user.ec2.connection.get_all_route_tables(
             filters={'association.main': 'true', 'vpc-id': default_vpc.id})
         if not rt:
@@ -707,16 +720,10 @@ class VpcBasics(CliTestRunner):
                              'vpc:{0}, RTs:{1}'.format(default_vpc, rt))
         return rt[0]
 
-    def test1e_new_user_basic_instance_ssh_defaults(self, user=None):
-        user = user or self.new_ephemeral_user
-        ins = self.basic_instance_ssh_default_vpc(user=user, instances_per_zone=1)
-        if ins:
-            user.ec2.terminate_instances(ins)
-
     def basic_instance_ssh_default_vpc(self, user=None, instances_per_zone=2):
         user = user or self.user
         instances = []
-        vpc = self.test1a_new_user_default_vpcs(user)
+        vpc = self.check_user_default_vpcs(user)
         instance_count = instances_per_zone
         for zone in self.zones:
             subnet = user.ec2.get_default_subnets(zone=zone) or None
@@ -884,6 +891,146 @@ class VpcBasics(CliTestRunner):
             return main_pt
         printmethod = printmethod or self.log.info
         printmethod("\n{0}\n".format(main_pt))
+
+    ###############################################################################################
+    #  Newly created user tests for default VPC artifacts and attributes
+    ###############################################################################################
+    def test1a_new_user_supported_platforms(self):
+        """
+        Definition:
+        Attempts to check that a newly created user has VPC in it's supported platforms
+        """
+        return self.check_user_supported_platforms(user=self.new_ephemeral_user)
+
+    def test1b_new_user_default_vpc(self):
+        """
+        Definition:
+        Attempts to check that a newly created user has a default VPC
+        """
+        return self.check_user_default_vpcs(user=self.new_ephemeral_user)
+
+    def test1c_new_user_default_igw(self):
+        """
+        Definition:
+        Attempts to check that a newly created user has a default igw associated with the
+        default vpc
+        """
+        return self.check_user_default_igw(user=self.new_ephemeral_user)
+
+    def test1d_new_user_default_subnets(self):
+        """
+        Definition:
+        Attempts to verify that a newly created user has default subnets in each availability
+        zone
+        """
+        return self.check_user_default_subnets(user=self.new_ephemeral_user)
+
+    def test1e_new_user_default_route_table(self):
+        """
+        Definition:
+        Attempts to verify that a newly created user has a default route table associated
+        with its default vpc
+        """
+        return self.check_user_default_route_table_present(user=self.new_ephemeral_user)
+
+    def test1f_new_user_basic_instance_ssh_defaults(self):
+        """
+            Definition:
+            Attempts to run an instance in the default vpc and subnet and verify basic ssh
+            connectivity.
+            This test should use a newly created account/user. 
+            """
+        user = self.new_ephemeral_user
+        ins = self.basic_instance_ssh_default_vpc(user=user, instances_per_zone=1)
+        if ins:
+            self.log.debug('Terminated successful test instances')
+            user.ec2.terminate_instances(ins)
+
+    ###############################################################################################
+    #  Primary test user tests for default VPC artifacts and attributes, this user may be existing
+    #  If this user is the same as the 'newly created user, and the previous tests were run against
+    #  that user, then these tests will be skipped.
+    ###############################################################################################
+
+    def test2a_test_user_supported_platforms(self):
+        """
+        Definition:
+        Attempts to check that the current test user has VPC in it's supported platforms
+        """
+        if self.user == self.new_ephemeral_user:
+           test = self.get_testunit_by_method(self.test1a_new_user_supported_platforms)
+           if test and test.result != TestResult.not_run:
+               raise SkipTestException('Test already run for the test user')
+        return self.check_user_supported_platforms(user=self.user)
+
+    def test2b_test_user_default_vpc(self):
+        """
+        Definition:
+        Attempts to check that the current test user has a default VPC
+        """
+        if self.user == self.new_ephemeral_user:
+            test = self.get_testunit_by_method(self.test1b_new_user_default_vpc)
+            if test and test.result != TestResult.not_run:
+                raise SkipTestException('Test already run for the test user')
+        return self.check_user_default_vpcs(user=self.user)
+
+    def test2c_test_user_default_igw(self):
+        """
+        Definition:
+        Attempts to check that the current test user has a default igw associated with the
+        default vpc
+        """
+        if self.user == self.new_ephemeral_user:
+            test = self.get_testunit_by_method(self.test1c_new_user_default_igw)
+            if test and test.result != TestResult.not_run:
+                raise SkipTestException('Test already run for the test user')
+        return self.check_user_default_igw(user=self.user)
+
+    def test2d_test_user_default_subnets(self):
+        """
+        Definition:
+        Attempts to verify that the current test user has default subnets in each availability
+        zone
+        """
+        if self.user == self.new_ephemeral_user:
+            test = self.get_testunit_by_method(self.test1d_new_user_default_subnets)
+            if test and test.result != TestResult.not_run:
+                raise SkipTestException('Test already run for the test user')
+        return self.check_user_default_subnets(user=self.user)
+
+    def test2e_test_user_default_route_table(self):
+        """
+        Definition:
+        Attempts to verify that the current test user has a default route table associated
+        with its default vpc
+        """
+        if self.user == self.new_ephemeral_user:
+            test = self.get_testunit_by_method(self.test1e_test_user_default_route_table)
+            if test and test.result != TestResult.not_run:
+                raise SkipTestException('Test already run for the test user')
+        return self.check_user_default_route_table_present(user=self.user)
+
+
+    def test2f_test_user_basic_instance_ssh_defaults(self):
+        """
+        Definition:
+        Attempts to run an instance in the default vpc and subnet and verify basic ssh
+        connectivity.
+        This test should use the primary test user.
+        """
+        if self.user == self.new_ephemeral_user:
+            test = self.get_testunit_by_method(self.test1f_new_user_basic_instance_ssh_defaults)
+            if test and test.result != TestResult.not_run:
+                raise SkipTestException('Test already run for the test user')
+        user = self.user
+        ins = self.basic_instance_ssh_default_vpc(user=user, instances_per_zone=1)
+        if ins:
+            self.log.debug('Terminated successful test instances')
+            user.ec2.terminate_instances(ins)
+
+    ###############################################################################################
+    #  Newly created user tests for default VPC artifacts and attributes
+    ###############################################################################################
 
     def clean_method(self):
         self.user.ec2.clean_all_test_resources()
