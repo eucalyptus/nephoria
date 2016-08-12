@@ -361,6 +361,7 @@ disable_root: false"""
         on the server to help
         avoid producing additional keys in test dev.
 
+        :key_name: specific name of keypair to look for
         :param path: Filesystem path to search in
         :param extension: extension of private key file
         :return: list of key names
@@ -1269,11 +1270,16 @@ disable_root: false"""
         return None
 
 
-    def get_default_subnets(self, zone=None):
+    def get_default_subnets(self, zone=None, vpc=None):
         ret_list = []
-        filters = None
+        filters = {}
         if zone:
-            filters = {'availabilityZone':zone}
+            filters['availabilityZone'] = zone
+        if vpc:
+            if not isinstance(vpc, basestring):
+                vpc = vpc.id
+            filters['vpc-id'] = vpc
+        filters = filters or None
         subnets = self.get_all_subnets(filters = filters, verbose=False)
         for subnet in subnets:
             if subnet.defaultForAz:
@@ -4154,7 +4160,6 @@ disable_root: false"""
                                  str(self.does_instance_sec_group_allow(instance,
                                                                         protocol='icmp',
                                                                         port=0)))
-                            ping(instance.ip_address, 2)
                             #  now try to connect ssh or winrm
                             allow = "None"
                             try:
@@ -4169,6 +4174,7 @@ disable_root: false"""
                             self.log.debug("Connected to instance:"+str(instance.id))
                             good.append(instance)
                     except :
+                        #ping(instance.ip_address, 2)
                         elapsed = int(time.time()-start)
                         err = ("instance {0} auto-connect. Time remaining before timeout:'{1}'. "
                                "ERROR:\n{2}".format(instance.id, (int(timeout)-int(elapsed)),
@@ -4692,12 +4698,15 @@ disable_root: false"""
                                        systemconnection=None,
                                        timeout=120):
         if isinstance(instance, basestring):
-            ins = self.get_instances(idstring=instance)
+            ins = self.get_instances(idstring=instance.strip())
             if ins:
                 instance = ins[0]
             else:
                 self.log.error('Could not find instance by id: ' + str(instance))
                 return None
+        if not isinstance(instance, Instance):
+            raise ValueError('Expected type Instance or str(id) for instance, got: {0}/{1}'
+                             .format(instance, type(instance)))
         if instance.platform == 'windows':
             username = username or 'Administrator'
             instance = WinInstance.make_euinstance_from_instance(

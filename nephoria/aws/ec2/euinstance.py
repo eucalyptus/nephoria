@@ -191,6 +191,35 @@ class EuInstance(Instance, TaggedResource, Machine):
         self._ssh = ssh
 
     @property
+    def keypath(self):
+        keypath = getattr(self, '_keypath', None)
+        if not keypath and self.keypair or self.key_name:
+            keyname = self.key_name or self.keypair.name
+            local_keys = self.ec2ops.get_all_current_local_keys(key_name=keyname,
+                                                                path='./',
+                                                                extension='.pem')
+            if local_keys:
+                local_key = local_keys[0]
+                keypath = os.path.abspath(local_key.name + '.pem')
+                self.log.debug('Found local file for ssh keypair, setting keypath to:{0}'
+                               .format(keypath))
+                setattr(self, '_keypath', keypath)
+            else:
+                self.log.warning('SSH key file not found in local dir on this machine. If trying'
+                                 'to connect either set self.keypath or move sshkey to local dir')
+        return keypath
+
+    @keypath.setter
+    def keypath(self, keypath):
+        if keypath is None or isinstance(keypath, basestring):
+            setattr(self, '_keypath', keypath)
+        else:
+            errmsg = '{0}\nExpected string or None type for keypath, got:{1}/{2}'\
+                .format(get_traceback(), keypath, type(keypath))
+            self.log.error(errmsg)
+            raise ValueError(errmsg)
+
+    @property
     def age(self):
         launchtime = self.ec2ops.get_datetime_from_resource_string(self.launch_time)
         # return the elapsed time in seconds

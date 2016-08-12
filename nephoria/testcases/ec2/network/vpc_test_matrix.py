@@ -41,7 +41,8 @@ from nephoria.usercontext import UserContext
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, TestResult, SkipTestException
 from nephoria.aws.ec2.euinstance import EuInstance
 from cloud_utils.net_utils import packet_test, is_address_in_network
-from cloud_utils.log_utils import markup, printinfo, get_traceback
+from cloud_utils.log_utils import markup, printinfo, get_traceback, red, ForegroundColor, \
+    BackGroundColor
 from boto.exception import BotoServerError
 from boto.vpc.subnet import Subnet
 from boto.vpc.vpc import VPC
@@ -49,6 +50,7 @@ from boto.ec2.image import Image
 from boto.ec2.group import Group
 from boto.ec2.securitygroup import SecurityGroup
 from random import randint
+import socket
 from prettytable import PrettyTable
 import copy
 import re
@@ -60,6 +62,33 @@ TCP = 6
 UDP = 17
 SCTP = 132
 
+
+import __builtin__
+openfiles = set()
+oldfile = __builtin__.file
+
+def printOpenFiles():
+    print red("\n\n### %d OPEN FILES: [%s]\n\n" % (len(openfiles), ", ".join(f.x for f in openfiles)))
+
+class newfile(oldfile):
+    def __init__(self, *args):
+        self.x = args[0]
+        print red("### OPENING %s ###" % str(self.x))
+        oldfile.__init__(self, *args)
+        openfiles.add(self)
+        printOpenFiles()
+
+    def close(self):
+        print red("### CLOSING %s ###" % str(self.x))
+        oldfile.close(self)
+        openfiles.remove(self)
+        printOpenFiles()
+
+oldopen = __builtin__.open
+def newopen(*args):
+    return newfile(*args)
+__builtin__.file = newfile
+__builtin__.open = newopen
 
 class VpcBasics(CliTestRunner):
 
@@ -324,7 +353,7 @@ class VpcBasics(CliTestRunner):
                 raise RuntimeError('No default VPC found for user:"{0}"'.format(self.user))
             return vpcs[0]
 
-    def create_test_vpcs(self, count=1, gateways_per_vpc=1, user=None):
+    def create_test_vpcs(self, count=1, gateways_per_vpc=1, add_default_igw_route=True, user=None):
         user = user or self.user
         test_vpcs = []
         for vpc_count in xrange(0, count):
@@ -337,6 +366,10 @@ class VpcBasics(CliTestRunner):
                 gw = user.ec2.connection.create_internet_gateway()
                 user.ec2.connection.attach_internet_gateway(internet_gateway_id=gw.id,
                                                             vpc_id=new_vpc.id)
+            if add_default_igw_route:
+                default_rt = user.ec2.connection.get_all_route_tables(
+                    filters={'association.main': 'true', 'vpc-id': new_vpc.id})[0]
+                user.ec2.connection.create_route(default_rt.id, '0.0.0.0/0', gw.id)
             user.log.info('Created the following VPC: {0}'.format(new_vpc.id))
             user.ec2.show_vpc(new_vpc)
         return test_vpcs
@@ -415,8 +448,7 @@ class VpcBasics(CliTestRunner):
         ret_list = existing + new_vpcs
         return ret_list
 
-    def get_test_subnets_for_vpc(self, vpc, zone=None, count=1, default_for_az=True,
-                                 user=None):
+    def get_non_default_test_subnets_for_vpc(self, vpc, zone=None, count=1, user=None):
         """
         Fetch a given number of subnets within the provided VPC by either finding existing
         or creating new subnets to meet the count requested.
@@ -424,21 +456,21 @@ class VpcBasics(CliTestRunner):
         :param count: number of subnets requested
         :return: list of subnets
         """
-        zone = zone or self.zones[0]
         user = user or self.user
         filters = {'vpc-id': vpc.id}
-        if default_for_az:
-            filters['defaultForAz'] = 'true'
-        else:
-            filters['defaultForAz'] = 'false'
-            filters['tag-key'] = self.my_tag_name
+
+        filters['defaultForAz'] = 'false'
+        filters['tag-key'] = self.my_tag_name
         if zone:
             filters['availabilityZone'] = zone
+            zones = [zone]
+        else:
+            zones = None
         existing = user.ec2.get_all_subnets(filters=filters)
         if len(existing) >= count:
             return  existing[0:count]
         needed = count - len(existing)
-        new_subnets = self.create_test_subnets(vpc=vpc, zones=[zone],
+        new_subnets = self.create_test_subnets(vpc=vpc, zones=zones,
                                                count_per_zone=needed, user=user)
         ret_subnets = existing + new_subnets
         return ret_subnets
@@ -506,8 +538,8 @@ class VpcBasics(CliTestRunner):
 
     @printinfo
     def get_test_instances(self, zone, group_id,  vpc_id=None, subnet_id=None,
-                           state='running', count=None, monitor_to_running=True, timeout=480,
-                           user=None):
+                           state='running', count=None, monitor_to_running=True,
+                           auto_connect=True, timeout=480, user=None, exclude=None):
         """
         Finds existing instances created by this test which match the criteria provided,
         or creates new ones to meet the count requested.
@@ -524,6 +556,8 @@ class VpcBasics(CliTestRunner):
             monitor_to_running: monitor instances to a running state before returning them.
                                 error out if they do not go to running within timeout
             timeout: int, number of seconds to monitor instances to running before erroring.
+            user: user context object to use, defaults to self.user
+            exclude: instance id or list of instance ids to exclude when fetching
             returns: list of instances which meet the provided criteria.
         """
         instances = []
@@ -532,6 +566,15 @@ class VpcBasics(CliTestRunner):
             raise ValueError('Must provide both zone:"{0}" and group_id:"{1}"'
                              .format(zone, group_id))
         existing_instances = []
+        exclude_instances = []
+        if exclude:
+            if not isinstance(exclude, list):
+                exclude = [exclude]
+            for i in exclude:
+                if isinstance(i, basestring):
+                    exclude_instances.append(i)
+                else:
+                    exclude_instances.append(i.id)
         count = int(count or 0)
         filters = {'tag-key': self.test_name, 'tag-value': self.test_id}
         filters['availability-zone'] = zone
@@ -552,14 +595,17 @@ class VpcBasics(CliTestRunner):
         queried_instances = user.ec2.get_instances(filters=filters)
         self.log.debug('queried_instances:{0}'.format(queried_instances))
         for q_instance in queried_instances:
-            for instance in user.ec2.test_resources.get('instances'):
-                if instance.id == q_instance.id:
-                    existing_instances.append(instance)
+            if (q_instance.state in ['pending', 'running'] and
+                        q_instance.id not in exclude_instances):
+                for instance in user.ec2.test_resources.get('instances'):
+                    if instance.id == q_instance.id:
+                        existing_instances.append(instance)
         for instance in existing_instances:
             euinstance = user.ec2.convert_instance_to_euinstance(instance,
                                                                  keypair=self.get_keypair(user),
                                                                  auto_connect=False)
             euinstance.log.set_stdout_loglevel(self.args.log_level)
+            euinstance.auto_connect = auto_connect
             instances.append(euinstance)
         self.log.debug('existing_instances:{0}'.format(existing_instances))
         if not count:
@@ -625,8 +671,7 @@ class VpcBasics(CliTestRunner):
         else:
             self.log.debug('No VPC provided using default VPC and default subnet')
             default_vpc = self.check_user_default_vpcs(user)
-            subnets = self.get_test_subnets_for_vpc(vpc=default_vpc, count=1, default_for_az=True,
-                                                    user=user, zone=zone)
+            subnets = user.ec2.get_default_subnets(vpc=default_vpc, zone=zone)
             if not subnets:
                 raise ValueError('{0}: Failed to find subnet for default vpc:"{1}"'
                                  .format(user, default_vpc.id))
@@ -783,38 +828,100 @@ class VpcBasics(CliTestRunner):
         :param verbose: bool, for verbose output
         :return dict of results (tbd)
         """
-        ins1 = self.get_test_instances(zone=zone1, group_id=sec_group1, subnet_id=subnet1)
-        ins2 = self.get_test_instances(zone=zone2, group_id=sec_group2, subnet_id=subnet2)
-
-        self.log.debug('\nAttempting packet test with instances:\n{0}'
-                       .format(self.tc.admin.ec2.show_instances([ins1, ins2], printme=False)))
+        ins1 = self.get_test_instances(zone=zone1, group_id=sec_group1, subnet_id=subnet1, count=1)
+        if not ins1:
+            raise RuntimeError('Could not fetch or create test instance #1 with the following '
+                               'criteria; zone:{0}, sec_group:{1}, subnet:{2}, count:{3}'
+                               .format(zone1, sec_group1, subnet1, 1))
+        ins1 = ins1[0]
+        ins2 = self.get_test_instances(zone=zone2, group_id=sec_group2, subnet_id=subnet2, count=1,
+                                       exclude=[ins1.id])
+        if not ins2:
+            raise RuntimeError('Could not fetch or create test instance #2 with the following '
+                               'criteria; zone:{0}, sec_group:{1}, subnet:{2}, count:{3}'
+                               .format(zone2, sec_group2, subnet2, 1))
+        ins2 = ins2[0]
+        def same(x, y):
+            if str(x) == str(y):
+                return 'SAME'
+            else:
+                return 'DIFF'
+        header_pt = PrettyTable(['ROLE', 'INS ID', 'ZONE', 'VPC', 'SEC GRP', 'SUBNET',
+                                 'PRIV', 'PROTO', 'PORT', 'COUNT'])
+        header_pt.align = 'l'
+        header_pt.add_row(['TX', "{0}\n{1}\n{2}".format(ins1.id, ins1.ip_address,
+                                                        ins1.private_ip_address),
+                           ins1.placement, ins1.vpc_id, ins1.groups[0].name,
+                           ins1.subnet_id, use_private, self.proto_to_name(protocol), port, count])
+        header_pt.add_row(['RX', "{0}\n{1}\n{2}".format(ins2.id, ins2.ip_address,
+                                                        ins2.private_ip_address),
+                           ins2.placement, ins2.vpc_id, ins2.groups[0].name,
+                           ins2.subnet_id, use_private, self.proto_to_name(protocol), port, count])
+        header_pt.add_row(['--', '---', same(ins1.placement, ins2.placement),
+                           same(ins1.vpc_id, ins2.vpc_id),
+                           same(ins1.groups[0].name, ins2.groups[0].name),
+                           same(ins1.subnet_id, ins2.subnet_id),
+                           use_private, self.proto_to_name(protocol), port, count])
+        self.user.ec2.revoke_all_rules(sec_group1)
+        self.user.ec2.revoke_all_rules(sec_group2)
+        base_rule = ('tcp', 22, 22, '0.0.0.0/0')
+        src_ip = ins1.ip_address
         if use_private:
+            src_ip = ins1.private_ip_address
+        test_rule = (protocol, port or -1, port or -1, src_ip)
+
+        def apply_rule(rule, groups):
+            protocol, port, end_port, cidr_ip = rule
+            for group in groups:
+                self.user.ec2.authorize_group(group=group, port=port, end_port=end_port,
+                                              protocol=protocol)
+        apply_rule(base_rule, [sec_group1, sec_group2])
+        apply_rule(test_rule, [sec_group2])
+
+        self.log.debug('{0}{1}\n'.format(markup('\nAttempting packet test with instances:\n',
+                                                [ForegroundColor.BLUE, BackGroundColor.BG_WHITE]),
+                        self.tc.admin.ec2.show_instances([ins1, ins2], printme=False)))
+        self.user.ec2.show_security_groups([sec_group1, sec_group2])
+        if use_private:
+            src_ip = ins1.private_ip_address
             dest_ip = ins2.private_ip_address
         else:
-            dest_ip = ins2.public_ip_address
+            dest_ip = ins2.ip_address
         retries = retries or 1
         results = None
         for retry in xrange(0, retries):
             try:
                 results = packet_test(sender_ssh=ins1.ssh, receiver_ssh=ins2.ssh, dest_ip=dest_ip,
-                                      protocol=protocol, port=port, bind=bind, verbose=verbose)
-                return results
+                                      protocol=protocol, port=port, bind=bind, count=count,
+                                      verbose=verbose)
+                results['header'] = header_pt.get_string()
+                if results['count'] != count and not results['error']:
+                    raise RuntimeError('Packet count does not equal count provided. '
+                                       'No error in output found')
+                self.log.debug(markup('Got results:{0}'.format(results),
+                                      [BackGroundColor.BG_BLACK,ForegroundColor.WHITE]))
             except Exception as E:
-                self.log.warning('{0}\nError in packet test on attempt: {1}/{2}, err:{3}'
-                                 .format(get_traceback(), retry, retries, E))
-                results = {'error', E}
+                self.log.warning(markup('{0}\nError in packet test on attempt: {1}/{2}, err:{3}'
+                                 .format(get_traceback(), retry, retries, E),
+                                        [ForegroundColor.WHITE, BackGroundColor.BG_RED]))
+                results = {'error': E}
+                results['header'] = header_pt.get_string()
+        for ins in [ins1, ins2]:
+            try:
+                ins.ssh.close()
+            except Exception as E:
+                self.log.warning("{0}\nError while closing ssh for instance:{1}, err:{2}".
+                                 format(get_traceback(), ins, E))
         return results
 
-
-
-
-    def basic_net_test(self, matrix=None):
+    def basic_net_test(self, matrix=None, dry_run=False):
         matrix = matrix or self.generate_basic_net_test_matrix()
-        zones = matrix.keys()
-        results = []
-        for zone1_name in zones:
+        zones = matrix.get('zones')
+        zone_names = zones.keys()
+        setattr(self, '_results', [])
+        for zone1_name in zone_names:
             zone1_dict = zones[zone1_name]
-            for zone2_name in zones:
+            for zone2_name in zone_names:
                 zone2_dict = zones[zone2_name]
                 for vpc1_dict in [zone1_dict.get('default_vpc'), zone1_dict.get('vpc2'),
                                   zone2_dict.get('default_vpc'), zone2_dict.get('vpc2')]:
@@ -827,68 +934,65 @@ class VpcBasics(CliTestRunner):
                                 for vpc1_subnet in vpc1_dict.get('subnets'):
                                     for vpc2_subnet in vpc2_dict.get('subnets'):
                                         for use_private in [True, False]:
+                                            if use_private and vpc1_group == vpc2_group:
+                                                continue
                                             for test_dict in matrix.get('packet_tests'):
-                                                results = self.packet_test_scenario(
-                                                    zone1=zone1_name,
-                                                    zone2=zone2_name,
-                                                    sec_group1=vpc1_group,
-                                                    sec_group2=vpc2_group,
-                                                    subnet1=vpc1_subnet,
-                                                    subnet2=vpc2_subnet,
-                                                    use_private=use_private,
-                                                    protocol=test_dict['protocol'],
-                                                    port=test_dict['port'],
-                                                    count=test_dict['count'],
-                                                    bind=test_dict['bind'])
-        return results
+                                                protocol = test_dict['protocol']
+                                                port = test_dict['port']
+                                                count = test_dict['count']
+                                                bind = test_dict['bind']
+                                                if dry_run:
+                                                    self.show_packet_test_scenario(
+                                                        vpc1, vpc2,
+                                                        zone1_name, zone2_name,
+                                                        vpc1_group, vpc2_group,
+                                                        vpc1_subnet, vpc2_subnet,
+                                                        use_private, protocol, port, count)
+                                                else:
+                                                    result = self.packet_test_scenario(
+                                                        zone1=zone1_name,
+                                                        zone2=zone2_name,
+                                                        sec_group1=vpc1_group,
+                                                        sec_group2=vpc2_group,
+                                                        subnet1=vpc1_subnet,
+                                                        subnet2=vpc2_subnet,
+                                                        use_private=use_private,
+                                                        protocol=protocol,
+                                                        port=port,
+                                                        count=count,
+                                                        bind=bind)
+                                                    self._results.append(result)
+                                                    try:
+                                                        test = 0
+                                                        for res in self._results:
+                                                            test += 1
+                                                            self.log.info('TEST NUMBER:{0}'
+                                                                          .format(test))
+                                                            self.show_packet_test_results(
+                                                                results_dict=res)
+                                                    except Exception as E:
+                                                        self.log.warning('{0}\nError while trying'
+                                                                         'to show test results: {1}'
+                                                                         .format(get_traceback(), E))
+        return self._results
 
-    def packet_test_example(self, verbose=None, retries=2, pkt_count=2):
-        vpc = self.default_vpc
-        results = {}
-        start = time.time()
-        if verbose is None:
-            if self.args.log_level == 'DEBUG':
-                verbose = 2
-            else:
-                verbose = 0
-        sec_group = self.get_test_security_groups(vpc=vpc, count=1, rules=self.DEFAULT_SG_RULES)[0]
-        try:
-            for zone in self.zones:
-                self.log.info('STARTING PACKET TEST AGAINST ZONE:"{0}"'.format(zone))
-                ins1, ins2 = self.get_test_instances(zone=zone, group_id=sec_group.id, count=2)
-                for retry in xrange(1, retries + 1):
-                    try:
-                        pkt_dict = packet_test(sender_ssh=ins1.ssh, receiver_ssh=ins2.ssh,
-                                               protocol=1, count=pkt_count, verbose=verbose)
-                        if pkt_dict.get('error', None) or (pkt_dict.get('count') != pkt_count):
-                            raise RuntimeError('Packet test failed, results:{0}'.format(pkt_dict))
-                        self.log.debug("Results for Zone: {0}\n{1}".format(zone, pkt_dict))
-                        results[zone] = pkt_dict
-                    except Exception as PE:
-                        self.log.error("{0}\nPacket Test for zone: {1} failed attempt:{2}/{3}"
-                                       .format(get_traceback(), zone, retry, retries))
-                        wait = 30 - int(time.time()-start)
-                        if wait > 0:
-                            self.log.debug('Waiting "{0}" seconds to retry packet test'.format(wait))
-                            time.sleep(wait)
-                if zone not in results:
-                    raise RuntimeError('Failed packet test for zone: {0}'.format(zone))
-        finally:
-            for zone, pkt_dict in results.iteritems():
-                self.show_packet_test_results(pkt_dict,
-                                              header='test2_icmp_packet_test_same_az_and_sg. '
-                                                     'Zone:{0}'.format(zone))
-        self.log.info('test2_icmp_packet_test_same_az_and_sg passed')
-        # todo decide up results format
-        return results
+    def show_packet_test_scenario(self, vpc1, vpc2, zone1, zone2, sec1, sec2, sub1, sub2,
+                                  private_addr, protocol, port, count):
+        def same(x, y):
+            if x == y:
+                return 'SAME'
+            return 'DIFF'
+        pt = PrettyTable(['ROLE','VPC', 'ZONE', 'SECGRP', 'SUBNET', 'PRIVADDR', 'PROTO',
+                         'PORT', 'COUNT'])
+        pt.align = 'l'
+        pt.add_row(['SENDER', str(vpc1), str(zone1), str(sec1), str(sub1), str(private_addr),
+                    str(self.proto_to_name(protocol)), str(port), str(count)])
+        pt.add_row(['RECEIVER', str(vpc2), str(zone2), str(sec2), str(sub2), str(private_addr),
+                    str(self.proto_to_name(protocol)), str(port), str(count)])
+        pt.add_row('', same(vpc1, vpc2), same(zone1, zone2), same(sec1, sec2), same(sub1, sub2),
+                   '', '', '', '')
+        self.log.info('\n{0}\n'.format(pt))
 
-
-
-
-
-    def basic_eni_test(self, zone1, zone2, sec_group1, sec_group_2, vpc1, vpc2, subnet1, subnet2,
-                 use_private, protocol, pkt_count=5, retries=2, verbose=None):
-        pass
 
     def generate_basic_net_test_matrix(self):
         """
@@ -897,31 +1001,32 @@ class VpcBasics(CliTestRunner):
         :return: test matrix dict
         """
         pkt_count = 5
-        start_port = 100
-        end_port = 103
+        start_port = 101
+        end_port = 101
         matrix = {}
         private_addressing = [True, False]
         vpc1 = self.default_vpc
         vpc2 = self.get_test_vpcs(count=1)[0]
-        packet_tests = [ {'name': 'ICMP', 'protocol': ICMP, 'count': pkt_count, 'port': None,
-                          'bind': False}]
-        for port in xrange(start_port, end_port):
-            packet_tests.append({'name': 'UDP', 'protocol': UDP, 'count': pkt_count,
-                                 'port': port, 'bind': False})
-        for port in xrange(start_port, end_port):
-            packet_tests.append({'name': 'TCP', 'protocol': TCP, 'count': pkt_count,
-                                 'bind': True, 'port':port})
-        for port in xrange(start_port, end_port):
-            packet_tests.append({'name': 'SCTP', 'protocol': SCTP, 'count': pkt_count,
-                                 'bind': True, 'port': port})
-        vpc1_sec_group1, vpc1_sec_group2 = self.get_test_security_groups(vpc=vpc1,
-                                                                         count=2,
-                                                                         rules=[])
-        vpc2_sec_group1, vpc2_sec_group2 = self.get_test_security_groups(vpc=vpc2,
-                                                                         count=2,
-                                                                         rules=[])
+        packet_tests = []
+
+        #for port in xrange(start_port, end_port):
+        #    packet_tests.append({'name': 'UDP', 'protocol': UDP, 'count': pkt_count,
+        #                         'port': port, 'bind': False})
+        #for port in xrange(start_port, end_port):
+        #    packet_tests.append({'name': 'TCP', 'protocol': TCP, 'count': pkt_count,
+        #                         'bind': True, 'port':port})
+        #for port in xrange(start_port, end_port):
+        #    packet_tests.append({'name': 'SCTP', 'protocol': SCTP, 'count': pkt_count,
+        #                         'bind': True, 'port': port})
+        packet_tests.append({'name': 'ICMP', 'protocol': ICMP, 'count': pkt_count, 'port': None,
+                          'bind': False})
+        vpc1_sec_group1, vpc1_sec_group2 = self.get_test_security_groups(
+            vpc=vpc1, count=2, rules=self.DEFAULT_SG_RULES)
+        vpc2_sec_group1, vpc2_sec_group2 = self.get_test_security_groups(
+            vpc=vpc2, count=2, rules=self.DEFAULT_SG_RULES)
         matrix['packet_tests'] = packet_tests
         # Create the available test params per zone...
+        matrix['zones'] = {}
         for zone in self.zones:
             new_def = {}
             new_def['private_addressing'] = private_addressing
@@ -936,13 +1041,23 @@ class VpcBasics(CliTestRunner):
             # VPC1 'should' be the default vpc, and the first subnet tested should be the
             # default subnet for the zone to cover 'default vpc+subnet' the rest will be
             # created by this test suite...
-            default_vpc['subnets'] = self.user.ec2.get_default_subnets(zone=zone) + \
-                                      self.get_test_subnets_for_vpc(vpc1, count=1)
-            second_vpc['subnets'] = self.get_test_subnets_for_vpc(vpc2, count=2)
+            default_vpc['subnets'] = self.user.ec2.get_default_subnets(vpc=vpc1, zone=zone) + \
+                                      self.get_non_default_test_subnets_for_vpc(vpc1,
+                                                                                zone=zone,
+                                                                                count=1)
+            second_vpc['subnets'] = self.user.ec2.get_default_subnets(vpc=vpc2, zone=zone) + \
+                                      self.get_non_default_test_subnets_for_vpc(vpc2,
+                                                                                zone=zone,
+                                                                                count=1)
             new_def['default_vpc'] = default_vpc
             new_def['vpc2'] =  second_vpc
-            matrix[zone] = new_def
+            matrix['zones'][zone] = new_def
         return matrix
+
+
+    def basic_eni_test(self, zone1, zone2, sec_group1, sec_group_2, vpc1, vpc2, subnet1, subnet2,
+                       use_private, protocol, pkt_count=5, retries=2, verbose=None):
+        raise NotImplementedError()
 
     def build_test_kwargs_from_testdefs(self, matrix):
         test_case_kwargs = []
@@ -954,31 +1069,38 @@ class VpcBasics(CliTestRunner):
                     for vm1_vpc in [testdef.get('vpc1'), testdef.get('vpc2')]:
                         pass
 
+    def proto_to_name(self, proto):
+        for varname, value in vars(socket).items():
+            if varname.startswith('IPPROTO') and value == proto:
+                return varname.lstrip('IPPROTO')
+        return proto
 
     def show_packet_test_results(self, results_dict, header=None, printmethod=None, printme=True):
         if not results_dict:
             self.log.warning('Empty results dict passed to show_packet_test_results')
             return
+
         protocol = results_dict.get('protocol', "???")
-        header = header or 'PACKET_TEST_RESULTS'
+        header = header or results_dict.get('header', None) or 'PACKET_TEST_RESULTS'
         main_pt = PrettyTable([header])
         main_pt.align = 'l'
         main_pt.padding_width = 0
-        main_pt.add_row(["{0}".format(results_dict.get('name'))])
-        main_pt.add_row(["Elapsed:{0}, Packet Count:{1}".format(results_dict.get('elapsed'),
-                                                        results_dict.get('count'))])
-        if results_dict.get('error'):
+        main_pt.add_row(["{0}".format(results_dict.get('name', "???"))])
+        main_pt.add_row(["Elapsed:{0}, Packet Count:{1}".format(results_dict.get('elapsed', "???"),
+                                                        results_dict.get('count', "???"))])
+        if results_dict.get('error', None):
             main_pt.add_row(["ERROR: {0}".format(markup(results_dict.get('error'), [1, 91]))])
         pt = PrettyTable(['pkt_src_addr', 'pkt_dst_addr', 'protocol', 'port', 'pkt_count'])
         for src_addr, s_dict in results_dict.get('packets', {}).iteritems():
             for dst_addr, d_dict in s_dict.iteritems():
                 for port, count in d_dict.iteritems():
-                    pt.add_row([src_addr, dst_addr, protocol, port, count])
+                    pt.add_row([src_addr, dst_addr, self.proto_to_name(protocol), port, count])
         main_pt.add_row(["{0}".format(pt)])
         if not printme:
             return main_pt
         printmethod = printmethod or self.log.info
-        printmethod("\n{0}\n".format(main_pt))
+        printmethod(markup("\n{0}\n".format(main_pt),
+                           [ForegroundColor.BLUE, BackGroundColor.BG_WHITE]))
 
     ###############################################################################################
     #  Newly created user tests for default VPC artifacts and attributes
