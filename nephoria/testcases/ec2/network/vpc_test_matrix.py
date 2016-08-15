@@ -107,8 +107,10 @@ class VpcBasics(CliTestRunner):
         'kwargs': {'help': 'Vm type to use for proxy test instance',
                    'default': 'm1.large'}}
 
+    SUBNET_TEST_TAG = "SUBNET TEST TAG"
+
     def post_init(self):
-        self.test_id = randint(0, 100000)
+        self.test_id = "{0}{1}".format(int(time.time()), randint(0, 50))
         self.id = str(int(time.time()))
         self.test_name = self.__class__.__name__
         self._tc = None
@@ -353,16 +355,20 @@ class VpcBasics(CliTestRunner):
                 raise RuntimeError('No default VPC found for user:"{0}"'.format(self.user))
             return vpcs[0]
 
-    def create_test_vpcs(self, count=1, gateways_per_vpc=1, add_default_igw_route=True, user=None):
+    def create_test_vpcs(self, count=1, create_igw_per_vpc=True, starting_octet=172,
+                         add_default_igw_route=True, user=None):
         user = user or self.user
         test_vpcs = []
+        if not create_igw_per_vpc and add_default_igw_route:
+            raise ValueError('Can not use add_default_igw_route if create_igw_per_vpc is not set')
         for vpc_count in xrange(0, count):
             # Make the new vpc cidr net in the private range based upon the number of existing VPCs
             net_octet = 1 + (250 % len(user.ec2.get_all_vpcs()))
-            new_vpc = user.ec2.connection.create_vpc(cidr_block='172.{0}.0.0/16'.format(net_octet))
+            new_vpc = user.ec2.connection.create_vpc(cidr_block='{0}.{1}.0.0/16'
+                                                     .format(starting_octet, net_octet))
             user.ec2.create_tags(new_vpc.id, {self.my_tag_name: count})
             test_vpcs.append(new_vpc)
-            for gw in xrange(0, gateways_per_vpc):
+            if create_igw_per_vpc:
                 gw = user.ec2.connection.create_internet_gateway()
                 user.ec2.connection.attach_internet_gateway(internet_gateway_id=gw.id,
                                                             vpc_id=new_vpc.id)
@@ -444,7 +450,7 @@ class VpcBasics(CliTestRunner):
         if len(existing) >= count:
             return existing[0:count]
         needed = count - len(existing)
-        new_vpcs = self.create_test_vpcs(count=needed, gateways_per_vpc=1, user=user)
+        new_vpcs = self.create_test_vpcs(count=needed, create_igw_per_vpc=1, user=user)
         ret_list = existing + new_vpcs
         return ret_list
 
@@ -783,6 +789,24 @@ class VpcBasics(CliTestRunner):
                              'vpc:{0}, RTs:{1}'.format(default_vpc, rt))
         return rt[0]
 
+
+    def check_user_default_security_group_rules(self, user=None):
+        """
+        A users VPC includes a default security group whose initial rules are to deny all
+        inbound traffic, allow all outbound traffic, and allow all traffic between
+        instances in the group. You can't delete this group; however, you can change
+        the group's rules.
+        Args:
+            user: user context to test against
+
+        Returns:
+
+        """
+        user = user or self.user
+        default_group = user.ec2.get_security_group('default')
+        user.ec2.show_security_group(default_group)
+
+
     def basic_instance_ssh_default_vpc(self, user=None, instances_per_zone=2):
         user = user or self.user
         instances = []
@@ -806,8 +830,10 @@ class VpcBasics(CliTestRunner):
         return instances
 
     @printinfo
-    def packet_test_scenario(self, zone1, zone2, sec_group1, sec_group2, subnet1, subnet2,
-                             use_private, protocol, port, count, bind, retries=2, verbose=None):
+    def packet_test_scenario(self, zone_tx, zone_rx, sec_group_tx, sec_group_rx,
+                             subnet_tx, subnet_rx,
+                             use_private, protocol, port, count, bind, retries=2,
+                             expected_packets=None, verbose=None, ssh1=None, ssh2=None):
         """
         This method is intended to be used as the core test method. It can be fed different
         sets of params each representing a different test scenario. This should allow for
@@ -815,32 +841,36 @@ class VpcBasics(CliTestRunner):
         auto-generated test matrix. Used with cli_runner each param set can be ran as a testunit
         providing formatted results. This method should also provide a dict of results for
         additional usage.
-        :param zone1: zone name
-        :param zone2: zone name
-        :param sec_group1: group obj or id
+        :param zone_tx: zone name
+        :param zone_rx: zone name
+        :param sec_group_tx: group obj or id
         :param sec_group_2: group obj or id
-        :param subnet1: subnet obj or id
-        :param subnet2: subnet obj or id
+        :param subnet_tx: subnet obj or id
+        :param subnet_rx: subnet obj or id
         :param use_private: bool, to use private addressing or not
         :param protocol: protocol number for packets ie: 1=icmp, 6=tcp, 17=udp, 132=sctp, etc..
         :param count: number of packets to send in test
         :param retries: number of retries
+        :param expected_packets: number of packets to expect, defaults to 'count' sent.
         :param verbose: bool, for verbose output
+        :param ssh1: adminapi SshConnection obj, used for tx pkts, if provided an instance matching
         :return dict of results (tbd)
         """
-        ins1 = self.get_test_instances(zone=zone1, group_id=sec_group1, subnet_id=subnet1, count=1)
+        ins1 = self.get_test_instances(zone=zone_tx, group_id=sec_group_tx, subnet_id=subnet_tx, count=1)
         if not ins1:
             raise RuntimeError('Could not fetch or create test instance #1 with the following '
                                'criteria; zone:{0}, sec_group:{1}, subnet:{2}, count:{3}'
-                               .format(zone1, sec_group1, subnet1, 1))
+                               .format(zone_tx, sec_group_tx, subnet_tx, 1))
         ins1 = ins1[0]
-        ins2 = self.get_test_instances(zone=zone2, group_id=sec_group2, subnet_id=subnet2, count=1,
+        ins2 = self.get_test_instances(zone=zone_rx, group_id=sec_group_rx, subnet_id=subnet_rx, count=1,
                                        exclude=[ins1.id])
         if not ins2:
             raise RuntimeError('Could not fetch or create test instance #2 with the following '
                                'criteria; zone:{0}, sec_group:{1}, subnet:{2}, count:{3}'
-                               .format(zone2, sec_group2, subnet2, 1))
+                               .format(zone_rx, sec_group_rx, subnet_rx, 1))
         ins2 = ins2[0]
+        if expected_packets is None:
+            expected_packets = count
         def same(x, y):
             if str(x) == str(y):
                 return 'SAME'
@@ -862,8 +892,8 @@ class VpcBasics(CliTestRunner):
                            same(ins1.groups[0].name, ins2.groups[0].name),
                            same(ins1.subnet_id, ins2.subnet_id),
                            use_private, self.proto_to_name(protocol), port, count])
-        self.user.ec2.revoke_all_rules(sec_group1)
-        self.user.ec2.revoke_all_rules(sec_group2)
+        self.user.ec2.revoke_all_rules(sec_group_tx)
+        self.user.ec2.revoke_all_rules(sec_group_rx)
         base_rule = ('tcp', 22, 22, '0.0.0.0/0')
         src_ip = ins1.ip_address
         if use_private:
@@ -875,13 +905,13 @@ class VpcBasics(CliTestRunner):
             for group in groups:
                 self.user.ec2.authorize_group(group=group, port=port, end_port=end_port,
                                               protocol=protocol)
-        apply_rule(base_rule, [sec_group1, sec_group2])
-        apply_rule(test_rule, [sec_group2])
+        apply_rule(base_rule, [sec_group_tx, sec_group_rx])
+        apply_rule(test_rule, [sec_group_rx])
 
         self.log.debug('{0}{1}\n'.format(markup('\nAttempting packet test with instances:\n',
                                                 [ForegroundColor.BLUE, BackGroundColor.BG_WHITE]),
                         self.tc.admin.ec2.show_instances([ins1, ins2], printme=False)))
-        self.user.ec2.show_security_groups([sec_group1, sec_group2])
+        self.user.ec2.show_security_groups([sec_group_tx, sec_group_rx])
         if use_private:
             src_ip = ins1.private_ip_address
             dest_ip = ins2.private_ip_address
@@ -895,8 +925,8 @@ class VpcBasics(CliTestRunner):
                                       protocol=protocol, port=port, bind=bind, count=count,
                                       verbose=verbose)
                 results['header'] = header_pt.get_string()
-                if results['count'] != count and not results['error']:
-                    raise RuntimeError('Packet count does not equal count provided. '
+                if results['count'] != expected_packets and not results['error']:
+                    raise RuntimeError('Packet count does not equal expected count provided. '
                                        'No error in output found')
                 self.log.debug(markup('Got results:{0}'.format(results),
                                       [BackGroundColor.BG_BLACK,ForegroundColor.WHITE]))
@@ -934,13 +964,15 @@ class VpcBasics(CliTestRunner):
                                 for vpc1_subnet in vpc1_dict.get('subnets'):
                                     for vpc2_subnet in vpc2_dict.get('subnets'):
                                         for use_private in [True, False]:
-                                            if use_private and vpc1_group == vpc2_group:
-                                                continue
+
                                             for test_dict in matrix.get('packet_tests'):
                                                 protocol = test_dict['protocol']
                                                 port = test_dict['port']
                                                 count = test_dict['count']
+                                                expected_count = count
                                                 bind = test_dict['bind']
+                                                if use_private and vpc1_group == vpc2_group:
+                                                    expected_count = 0
                                                 if dry_run:
                                                     self.show_packet_test_scenario(
                                                         vpc1, vpc2,
@@ -950,16 +982,17 @@ class VpcBasics(CliTestRunner):
                                                         use_private, protocol, port, count)
                                                 else:
                                                     result = self.packet_test_scenario(
-                                                        zone1=zone1_name,
-                                                        zone2=zone2_name,
-                                                        sec_group1=vpc1_group,
-                                                        sec_group2=vpc2_group,
-                                                        subnet1=vpc1_subnet,
-                                                        subnet2=vpc2_subnet,
+                                                        zone_tx=zone1_name,
+                                                        zone_rx=zone2_name,
+                                                        sec_group_tx=vpc1_group,
+                                                        sec_group_rx=vpc2_group,
+                                                        subnet_tx=vpc1_subnet,
+                                                        subnet_rx=vpc2_subnet,
                                                         use_private=use_private,
                                                         protocol=protocol,
                                                         port=port,
                                                         count=count,
+                                                        expected_count=expected_count,
                                                         bind=bind)
                                                     self._results.append(result)
                                                     try:
@@ -1143,7 +1176,20 @@ class VpcBasics(CliTestRunner):
         """
         return self.check_user_default_route_table_present(user=self.new_ephemeral_user)
 
-    def test1f_new_user_basic_instance_ssh_defaults(self):
+    def test1z_new_user_default_security_group_rules(self):
+        """
+        Test attributes specific to the 'default' security group
+        By default, no inbound traffic is allowed until you add inbound rules
+         to the security group.
+        By default, an outbound rule allows all outbound traffic.
+        You can remove the rule and add outbound rules that allow specific outbound traffic only.
+        Instances associated with a security group can't talk to each other unless you
+        add rules allowing it (exception: the default security group has these rules by default).
+
+        """
+        return self.check_user_default_security_group_rules(user=self.new_ephemeral_user)
+
+    def test1z_new_user_basic_instance_ssh_defaults(self):
         """
             Definition:
             Attempts to run an instance in the default vpc and subnet and verify basic ssh
@@ -1220,8 +1266,24 @@ class VpcBasics(CliTestRunner):
                 raise SkipTestException('Test already run for the test user')
         return self.check_user_default_route_table_present(user=self.user)
 
+    def test2f_test_user_default_security_group_rules(self):
+        """
+        Test attributes specific to the 'default' security group
+        By default, no inbound traffic is allowed until you add inbound rules
+         to the security group.
+        By default, an outbound rule allows all outbound traffic.
+        You can remove the rule and add outbound rules that allow specific outbound traffic only.
+        Instances associated with a security group can't talk to each other unless you
+        add rules allowing it (exception: the default security group has these rules by default).
 
-    def test2f_test_user_basic_instance_ssh_defaults(self):
+        """
+        if self.user == self.new_ephemeral_user:
+            test = self.get_testunit_by_method(self.test1z_new_user_default_security_group_rules)
+            if test and test.result != TestResult.not_run:
+                raise SkipTestException('Test already run for the test user')
+        return self.check_user_default_security_group_rules(user=self.user)
+
+    def test2z_test_user_basic_instance_ssh_defaults(self):
         """
         Definition:
         Attempts to run an instance in the default vpc and subnet and verify basic ssh
@@ -1229,7 +1291,7 @@ class VpcBasics(CliTestRunner):
         This test should use the primary test user.
         """
         if self.user == self.new_ephemeral_user:
-            test = self.get_testunit_by_method(self.test1f_new_user_basic_instance_ssh_defaults)
+            test = self.get_testunit_by_method(self.test1z_new_user_basic_instance_ssh_defaults)
             if test and test.result != TestResult.not_run:
                 raise SkipTestException('Test already run for the test user')
         user = self.user
@@ -1237,6 +1299,160 @@ class VpcBasics(CliTestRunner):
         if ins:
             self.log.debug('Terminated successful test instances')
             user.ec2.terminate_instances(ins)
+
+    ###############################################################################################
+    # Test VPC base attributes
+    ###############################################################################################
+    def test3a_create_new_vpc(self):
+        """
+        Definition:
+        Attempts to create a new vpc and verify params
+        """
+        self.create_test_vpcs()
+        raise NotImplementedError()
+
+    ###############################################################################################
+    # Test security groups basics
+    # - Legacy 'net test' covers most of the basic security group auth and revoke packet tests
+    # - This should cover attributes specific to VPC
+    ###############################################################################################
+    def get_vpc_for_subnet_tests(self):
+        test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.SUBNET_TEST_TAG,
+                                                  'tag-value': self.test_id})
+        if not test_vpc:
+            test_vpc = self.create_test_vpcs()
+            if not test_vpc:
+                raise RuntimeError('Failed to create test VPC for subnet tests?')
+            self.user.ec2.create_tags([test_vpc.id], {self.SUBNET_TEST_TAG: self.test_id})
+        return test_vpc
+
+    def test3b0_default_security_group_initial_ingress_rules(self):
+        """
+        A users VPC includes a default security group whose initial rules are to deny all
+        inbound traffic, allow all outbound traffic, and allow all traffic between
+        instances in the group. You can't delete this group; however, you can change
+        the group's rules.
+
+        By default, no inbound traffic is allowed until you add inbound rules
+         to the security group.
+        By default, an outbound rule allows all outbound traffic.
+        You can remove the rule and add outbound rules that allow specific outbound traffic only.
+        """
+        user = self.user
+        vpc = self.get_vpc_for_subnet_tests()
+        def_sg = user.ec2.get_security_group(name='default', vpc_id=vpc.id)
+        user.ec2.show_security_group(def_sg)
+        ingress_rules = def_sg.rules
+        # Deny all ingress traffic except for it's own group
+        self.status('Checking group {0} for user:{1}. Default Group should posses 1 '
+                    'ingress rule permitting traffic from VMs in its own group'
+                    .format(def_sg, user))
+        if len(ingress_rules) != 1:
+            raise ValueError('Expected default security group to posses 1 ingress rule, '
+                             'found {0} for users:{1} sec group: {2}'.format(len(ingress_rules),
+                                                                             user, def_sg.id))
+        ig = ingress_rules[0]
+        if (ig.from_port or ig.groups or ig.ipRanges or ig.ip_protocol or ig.to_port):
+            raise ValueError('Expected the following to be unset. Got: from_port{0}, groups:{1}, '
+                             'ipRanges:{2}, ip_protocol:{3}, to_port:{4}'
+                             .format(ig.from_port, ig.groups, ig.ipRanges,
+                                     ig.ip_protocol, ig.to_port))
+        grant = ingress_rules.grants[0]
+        expected_ingress_grant = {'cidr_ip': None,
+                                  'groupId': def_sg.id,
+                                  'groupName': 'default',
+                                  'group_id': def_sg.id,
+                                  'item': '',
+                                  'name': 'default',
+                                  'owner_id': self.user.aws_account_id,
+                                  'userId': self.user.aws_account_id}
+        for key, value in expected_ingress_grant:
+            if grant[key] != value:
+                raise ValueError('Default grant attribute: "{0}" value:"{1}", does not'
+                                 ' match expected attribute value:{2}'.format(key, grant[key],
+                                                                              value))
+
+    def test3b0_default_security_group_initial_egress_rules(self):
+        """
+        A users VPC includes a default security group whose initial rules are to deny all
+        inbound traffic, allow all outbound traffic, and allow all traffic between
+        instances in the group. You can't delete this group; however, you can change
+        the group's rules.
+
+        By default, no inbound traffic is allowed until you add inbound rules
+         to the security group.
+        By default, an outbound rule allows all outbound traffic.
+        You can remove the rule and add outbound rules that allow specific outbound traffic only.
+        """
+        user = self.user
+        vpc = self.get_vpc_for_subnet_tests()
+        def_sg = user.ec2.get_security_group(name='default', vpc_id=vpc.id)
+        user.ec2.show_security_group(def_sg)
+        egress_rules = def_sg.rules_egress
+        self.status('Checking group {0} for user:{1}. Default Group should posses 1 '
+                    'egress rule permitting all egress traffic'
+                    .format(def_sg, user))
+        if len(egress_rules) != 1:
+            raise ValueError('Expected default security group to posses 1 egress rule, '
+                             'found {0} for users:{1} sec group: {2}'.format(len(egress_rules),
+                                                                             user, def_sg.id))
+        ig = egress_rules[0]
+        if (ig.from_port or ig.groups or ig.ipRanges or ig.ip_protocol or ig.to_port):
+            raise ValueError('Expected the following to be unset. Got: from_port{0}, groups:{1}, '
+                             'ipRanges:{2}, ip_protocol:{3}, to_port:{4}'
+                             .format(ig.from_port, ig.groups, ig.ipRanges,
+                                     ig.ip_protocol, ig.to_port))
+        grant = egress_rules.grants[0]
+        expected_egress_grant = {'cidr_ip': '0.0.0.0/0',
+                                 'group_id': None,
+                                 'item': '',
+                                 'name': None,
+                                 'owner_id': None}
+        for key, value in expected_egress_grant:
+            if grant[key] != value:
+                raise ValueError('Default grant attribute: "{0}" value:"{1}", does not'
+                                 ' match expected attribute value:{2}'.format(key, grant[key],
+                                                                              value))
+
+
+    def test3b1_test_security_group_count_limit(self):
+        """
+        You can create up to 500 security groups per VPC.
+        """
+        raise NotImplementedError()
+
+    def test3b2_test_security_group_rule_limits(self):
+        """
+        You can add up to 50 rules to a security group
+        """
+        raise NotImplementedError()
+
+    def test3b3_test_security_group_per_eni_limits(self):
+        """
+        You can assign up to 5 security groups to a network interface.
+        """
+        raise NotImplementedError()
+
+    def test3b4_basic_default_security_group_packet_test(self, egress_test_ip=None):
+        """
+        Your VPC includes a default security group whose initial rules are to deny all
+        inbound traffic, allow all outbound traffic, and allow all traffic between
+        instances in the group.
+        Defaults:
+        This test will verify the default rules by attempting to reach a VM in the default group.
+        This should fail.
+        Modify/Authorize the group:
+        Modify the default rules to allow ssh (tcp/22), verify ssh access and verify egress rules
+        using ICMP to the egress test ip (defaults to a UFS).
+        """
+        raise NotImplementedError()
+
+
+
+
+
+
+
 
     ###############################################################################################
     #  Newly created user tests for default VPC artifacts and attributes

@@ -4305,7 +4305,7 @@ disable_root: false"""
             names.append(group_name)
         filters = {}
         if vpc_id:
-            filters={'VpcId':vpc_id}
+            filters={'vpc-id': vpc_id}
         groups = self.connection.get_all_security_groups(groupnames=names, group_ids=ids,
                                                          filters=filters)
         for group in groups:
@@ -6431,25 +6431,45 @@ disable_root: false"""
             raise ValueError('Show sec group failed. Could not fetch group:'
                              + str(group))
         title = markup("Security Group: {0}/{1}, VPC: {2}"
-                            .format(group.name, group.id, group.vpc_id))
+                            .format(group.name, group.id, group.vpc_id),
+                       [BackGroundColor.BG_BLUE, ForegroundColor.WHITE, TextStyle.BOLD,
+                        TextStyle.UNDERLINE])
         maintable = PrettyTable([title])
         maintable.border = False
         maintable.align = "l"
-        table = PrettyTable(["CIDR_IP", "SRC_GRP_NAME",
-                             "SRC_GRP_ID", "OWNER_ID", "PORT",
-                             "END_PORT", "PROTO"])
         maintable.align["title"] = 'l'
-        #table.padding_width = 1
-        for rule in group.rules:
-            port = rule.from_port
-            end_port = rule.to_port
-            proto = rule.ip_protocol
-            for grant in rule.grants:
-                table.add_row([grant.cidr_ip, grant.name,
-                               grant.group_id, grant.owner_id, port,
-                               end_port, proto])
-        table.hrules = ALL
-        maintable.add_row([str(table)])
+        def get_rules_table(rules):
+            buf = ""
+            table = PrettyTable(["CIDR_IP", "SRC_GRP_NAME",
+                                 "SRC_GRP_ID", "OWNER_ID", "PORT",
+                                 "END_PORT", "PROTO"])
+
+            table.hrules = 0
+            table.vrules = 1
+            table.align = 'l'
+            #table.padding_width = 1
+            for rule in rules:
+                port = getattr(rule, 'from_port', None)
+                end_port = getattr(rule, 'to_port', None)
+                proto = getattr(rule, 'ip_protocol', None)
+                for grant in rule.grants:
+                    table.add_row([str(grant.cidr_ip).ljust(19),
+                                   str(grant.name).ljust(24),
+                                   str(grant.group_id).ljust(11),
+                                   str(grant.owner_id).ljust(12),
+                                   str(port).ljust(5),
+                                   str(end_port).ljust(5),
+                                   str(proto).ljust(5)])
+            for line in table.get_string().splitlines():
+                buf += "\t{0}\n".format(line.strip('|'))
+            return buf
+
+        maintable.add_row(["INGRESS RULES:"])
+        maintable.add_row([get_rules_table(group.rules)])
+        egress_rules = getattr(group, 'rules_egress', None)
+        if egress_rules:
+            maintable.add_row(["EGRESS RULES:"])
+            maintable.add_row([get_rules_table(egress_rules)])
         if printme:
             self.log.info("\n{0}".format(str(maintable)))
         else:
