@@ -1004,8 +1004,8 @@ class VpcBasics(CliTestRunner):
                                                         subnet_tx=vpc1_subnet,
                                                         subnet_rx=vpc2_subnet,
                                                         use_private=use_private, protocol=protocol,
-                                                        port=port, count=count, bind=bind,
-                                                        bind=bind)
+                                                        port=port, count=count, bind=bind)
+
                                                     self._results.append(result)
                                                     try:
                                                         test = 0
@@ -1500,7 +1500,7 @@ class VpcBasics(CliTestRunner):
         ufs = self.tc.sysadmin.get_hosts_for_ufs()[0]
         for vm in vms:
             vm.sys('ping -c1 ' + ufs.hostname, code=0)
-        
+
 
 
 

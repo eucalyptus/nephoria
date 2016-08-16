@@ -954,6 +954,119 @@ disable_root: false"""
         else:
             return ret_buf
 
+    def get_vpc_dependency_artifacts(self, vpc):
+        """
+        Convienence method to help with the pains of gathering vpc artifacts needed to
+        delete a VPC.
+        Args:
+            vpc: vpc obj or id
+
+        Returns: dict of dependency artifacts
+        """
+        ret_dict = {}
+        if not isinstance(vpc, basestring):
+            vpc = vpc.id
+        self.log.debug('Attempting to gather: instances ')
+        ret_dict['instances'] = self.get_instances(filters={'vpc_id': vpc})
+        self.log.debug('Attempting to gather: subnets')
+        ret_dict['subnets'] = self.get_all_subnets(filters={'vpc_id': vpc})
+        self.log.debug('Attempting to gather: enis')
+        ret_dict['enis'] = []
+        for sub in ret_dict['subnets']:
+            ret_dict['enis'] += self.connection.get_all_network_interfaces(
+                filters={'subnet_id': sub.id})
+        self.log.debug('Attempting to gather: internet gateways')
+        ret_dict['internet_gateways'] = self.connection.get_all_internet_gateways(
+            filters={'attachment.vpc-id': vpc})
+        self.log.debug('Attempting to gather: vpn gateways')
+        ret_dict['vpn_gateways'] = self.connection.get_all_vpn_gateways(
+            filters={'vpc_id': vpc})
+        self.log.debug('Attempting to gather: route tables')
+        ret_dict['route_tables'] = self.connection.get_all_route_tables(
+            filters={'vpc-id': vpc})
+        self.log.debug('Attempting to gather: network acls')
+        ret_dict['network_acls'] = self.connection.get_all_network_acls(
+            filters={'vpc_id': vpc})
+        self.log.debug('Attempting to gather: security groups')
+        ret_dict['security_groups'] = self.connection.get_all_security_groups(
+            filters={'vpc_id': vpc})
+        return ret_dict
+
+    def show_vpc_dependency_artifacts(self, vpc=None, artifacts=None, printmethod=None,
+                                      printme=True):
+        if not vpc and not artifacts:
+            raise ValueError('Need "vpc" and/or "artifacts" to show dependencies')
+        deps = artifacts or self.get_vpc_dependency_artifacts(vpc=vpc)
+        pt = PrettyTable(['TYPE', 'ARTIFACTS'])
+        pt.align = 'l'
+        for key, value in deps.iteritems():
+            pt.add_row([key, "\n".join([str(x) for x in value or []])])
+        if printme:
+            printmethod = printmethod or self.log.info
+            printmethod("\n{0}\n".format(pt))
+        else:
+            return pt
+
+    def delete_vpc_and_dependency_artifacts(self, vpc, verbose=True):
+        if not isinstance(vpc, basestring):
+            vpc = vpc.id
+        deps = self.get_vpc_dependency_artifacts(vpc=vpc)
+        if verbose:
+            pt = self.show_vpc_dependency_artifacts(vpc, printme=False)
+            self.log.info('Attempting to delete VPC artifacts...\n{0}\n'.format(pt))
+        if deps['instances']:
+            self.log.debug('Attempting to delete vpc instances')
+            self.terminate_instances(deps['instances'])
+        if deps['enis']:
+            self.log.debug('Attempting to delete vpc enis')
+            for eni in deps['enis']:
+                eni.delete()
+        if deps['internet_gateways']:
+            self.log.debug('Attempting to delete vpc internet gateways')
+            for igw in deps['internet_gateways']:
+                self.connection.delete_internet_gateway(internet_gateway_id=igw.id)
+        if deps['vpn_gateways']:
+            self.log.debug('Attempting to delete vpc vpn gateways')
+            for vpn_gw in deps['vpn_gateways']:
+                self.connection.delete_vpn_gateway(vpn_gateway_id=vpn_gw.id)
+
+        subnet_ids = [str(x.id) for x in deps['subnets']]
+        if deps['route_tables']:
+            self.log.debug('Attempting to delete vpc route tables')
+            for rtb in deps['route_tables']:
+                main = False
+                for assoc in rtb.associations:
+                    if assoc.subnet_id in subnet_ids:
+                        self.connection.disassociate_route_table(assoc.id)
+                    if assoc.main:
+                        main = True
+                if not main:
+                    self.connection.delete_route_table(route_table_id=rtb.id)
+        if deps['network_acls']:
+            self.log.debug('Attempting to delete vpc network acls')
+            for acl in deps['network_acls']:
+                for assoc in acl.associations:
+                    if assoc.subnet_id in subnet_ids:
+                        self.connection.disassociate_network_acl(subnet_id=assoc.subnet_id,
+                                                                 vpc_id=vpc)
+                if not acl.default:
+                    self.connection.delete_network_acl(network_acl_id=acl.id)
+        if deps['security_groups']:
+            self.log.debug('Attempting to delete vpc security groups')
+            for group in deps['security_groups']:
+                self.revoke_all_rules(group, egress=True)
+                if group.name != 'default':
+                    self.delete_group(group)
+        if deps['subnets']:
+            self.log.debug('Attempting to delete vpc subnets')
+            for sub in deps['subnets']:
+                self.connection.delete_subnet(subnet_id=sub.id)
+        self.log.debug('Attempting to delete vpc')
+        vpc = self.get_vpc(vpc)
+        vpc.delete()
+        self.log.debug('Deleted VPC and dependency artifacts')
+
+
     def show_internet_gateway(self, igw, printmethod=None, printme=True):
         if isinstance(igw, basestring):
             igws = self.connection.get_all_internet_gateways([igw])
