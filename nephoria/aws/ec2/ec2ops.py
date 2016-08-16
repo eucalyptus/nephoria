@@ -367,11 +367,15 @@ disable_root: false"""
         :return: list of key names
         """
         keylist = []
+        keys = []
         if key_name:
-            # this will error out here if key_name is not found on the cloud
+            # log warning if key is not found
             keys = self.connection.get_key_pair(key_name)
             if keys:
                 keys = [keys]
+            else:
+                self.log.warning('key: {0} not found by this user'.format(key_name))
+                keys = []
         else:
             keys = self.connection.get_all_key_pairs()
         keyfile = None
@@ -865,34 +869,34 @@ disable_root: false"""
                 for igw in igws:
                     main_pt.add_row([
                         self.show_internet_gateway(igw, printme=False).get_string(border=False)])
-                # Add tag entries in sub-table...
-                tag_pt = ""
-                if igw and igw.tags:
-                    tag_key_len = 30
-                    tag_value_len = table_width - tag_key_len - 3
-                    tag_key_hdr = markup('TAG KEY', [TextStyle.BOLD, ForegroundColor.BLUE])
-                    tag_value_hdr = markup('TAG VALUE', [TextStyle.BOLD, ForegroundColor.BLUE])
-                    tag_pt = PrettyTable([tag_key_hdr, tag_value_hdr])
-                    tag_pt.align = 'l'
-                    tag_pt.max_width[tag_key_hdr] = tag_key_len
-                    tag_pt.max_width[tag_value_hdr] = tag_value_len
-                    tag_pt.header = True
-                    tag_pt.padding_width = 0
-                    tag_pt.vrules = 1
-                    tag_pt.hrules = 1
-                    for key, value in igw.tags.iteritems():
-                        tag_pt.add_row([str(key).ljust(tag_key_len),
-                                        str(value).ljust(tag_value_len)])
-                tag_pt = "\n".join(str(x).strip('|')
-                                   for x in str(tag_pt).translate(string.maketrans("", "", ),
-                                                                  '+|').splitlines())
-                tag_line = markup("TAGS FOR {0}:".format(vpc.id),
-                                   markups=[TextStyle.BOLD, TextStyle.UNDERLINE,
-                                            ForegroundColor.BLUE]).ljust(table_width)
+            # Add tag entries in sub-table...
+            tag_pt = ""
+            if igw and vpc.tags:
+                tag_key_len = 30
+                tag_value_len = table_width - tag_key_len - 3
+                tag_key_hdr = markup('TAG KEY', [TextStyle.BOLD, ForegroundColor.BLUE])
+                tag_value_hdr = markup('TAG VALUE', [TextStyle.BOLD, ForegroundColor.BLUE])
+                tag_pt = PrettyTable([tag_key_hdr, tag_value_hdr])
+                tag_pt.align = 'l'
+                tag_pt.max_width[tag_key_hdr] = tag_key_len
+                tag_pt.max_width[tag_value_hdr] = tag_value_len
+                tag_pt.header = True
+                tag_pt.padding_width = 1
+                tag_pt.vrules = 1
+                tag_pt.hrules = 1
+                for key, value in vpc.tags.iteritems():
+                    tag_pt.add_row([str(key).ljust(tag_key_len),
+                                    str(value).ljust(tag_value_len)])
+            tag_pt = "\n".join(str(x).strip('|')
+                               for x in str(tag_pt).translate(string.maketrans("", "", ),
+                                                              '+|').splitlines())
+            tag_line = markup("{0} TAGS:".format(vpc.id),
+                               markups=[TextStyle.BOLD, TextStyle.UNDERLINE,
+                                        ForegroundColor.BLUE]).ljust(table_width)
 
-                main_pt.add_row([".".ljust(table_width, ".")])
-                main_pt.add_row([tag_line])
-                main_pt.add_row([str(tag_pt)])
+            main_pt.add_row([".".ljust(table_width, ".")])
+            main_pt.add_row([tag_line])
+            main_pt.add_row([str(tag_pt)])
         if printme:
             printmethod = printmethod or self.log.info
             printmethod( "\n" + str(main_pt) + "\n")
@@ -961,7 +965,7 @@ disable_root: false"""
             raise ValueError('Uknown type for internet gateway: "{0}/{1}"'.format(igw, type(igw)))
         printmethod = printmethod or self.log.info
         table_width = 110
-        key_len = 14
+        key_len = 18
         val_len = table_width - key_len - 3
         key_hdr = 'ATTRIBUTE'.ljust(key_len)
         val_hdr = 'VALUE'.ljust(val_len)
@@ -1021,7 +1025,7 @@ disable_root: false"""
         tag_pt = "\n".join(str(x).strip('|')
                            for x in str(tag_pt).translate(string.maketrans("", "", ),
                                                           '+|').splitlines())
-        pt.add_row(['TAGS:', str(tag_pt)])
+        pt.add_row(['{0} TAGS:'.format(igw.id), str(tag_pt)])
 
         if printme:
             printmethod("\n{0}\n".format(pt))

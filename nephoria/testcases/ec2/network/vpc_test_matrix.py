@@ -40,7 +40,7 @@ from nephoria.testcontroller import TestController
 from nephoria.usercontext import UserContext
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, TestResult, SkipTestException
 from nephoria.aws.ec2.euinstance import EuInstance
-from cloud_utils.net_utils import packet_test, is_address_in_network
+from cloud_utils.net_utils import packet_test, is_address_in_network, test_port_status
 from cloud_utils.log_utils import markup, printinfo, get_traceback, red, ForegroundColor, \
     BackGroundColor
 from boto.exception import BotoServerError, EC2ResponseError
@@ -838,10 +838,10 @@ class VpcBasics(CliTestRunner):
         return instances
 
     @printinfo
-    def packet_test_scenario(self, zone_tx, zone_rx, sec_group_tx, sec_group_rx,
-                             subnet_tx, subnet_rx,
-                             use_private, protocol, port, count, bind, retries=2,
-                             expected_packets=None, verbose=None, ssh1=None, ssh2=None):
+    def packet_test_scenario(self, zone_tx, zone_rx, sec_group_tx, sec_group_rx, subnet_tx,
+                             subnet_rx, use_private, protocol, port, count, bind, retries=2,
+                             expected_packets=None, set_security_group=True,
+                             verbose=None, ssh_tx=None, ssh_rx=None):
         """
         This method is intended to be used as the core test method. It can be fed different
         sets of params each representing a different test scenario. This should allow for
@@ -852,7 +852,7 @@ class VpcBasics(CliTestRunner):
         :param zone_tx: zone name
         :param zone_rx: zone name
         :param sec_group_tx: group obj or id
-        :param sec_group_2: group obj or id
+        :param sec_group_rx: group obj or id
         :param subnet_tx: subnet obj or id
         :param subnet_rx: subnet obj or id
         :param use_private: bool, to use private addressing or not
@@ -861,7 +861,14 @@ class VpcBasics(CliTestRunner):
         :param retries: number of retries
         :param expected_packets: number of packets to expect, defaults to 'count' sent.
         :param verbose: bool, for verbose output
-        :param ssh1: adminapi SshConnection obj, used for tx pkts, if provided an instance matching
+        :param ssh_tx: adminapi SshConnection obj, used for tx pkts, if provided an instance will
+                       not be fetched
+        :param ssh_rx: adminapi SshConnection obj, used for rx pkts, if provided an instance will
+                       not be fetched
+        param set_security_group: boolean. If true all ingress rules from sec_groups will be
+                                  removed. New rules specific to this test will be added back.
+                                  If false the group will remain untouched.
+        matching
         :return dict of results (tbd)
         """
         ins1 = self.get_test_instances(zone=zone_tx, group_id=sec_group_tx, subnet_id=subnet_tx, count=1)
@@ -900,21 +907,22 @@ class VpcBasics(CliTestRunner):
                            same(ins1.groups[0].name, ins2.groups[0].name),
                            same(ins1.subnet_id, ins2.subnet_id),
                            use_private, self.proto_to_name(protocol), port, count])
-        self.user.ec2.revoke_all_rules(sec_group_tx)
-        self.user.ec2.revoke_all_rules(sec_group_rx)
-        base_rule = ('tcp', 22, 22, '0.0.0.0/0')
         src_ip = ins1.ip_address
         if use_private:
             src_ip = ins1.private_ip_address
-        test_rule = (protocol, port or -1, port or -1, src_ip)
 
         def apply_rule(rule, groups):
             protocol, port, end_port, cidr_ip = rule
             for group in groups:
                 self.user.ec2.authorize_group(group=group, port=port, end_port=end_port,
                                               protocol=protocol)
-        apply_rule(base_rule, [sec_group_tx, sec_group_rx])
-        apply_rule(test_rule, [sec_group_rx])
+        if set_security_group:
+            self.user.ec2.revoke_all_rules(sec_group_tx)
+            self.user.ec2.revoke_all_rules(sec_group_rx)
+            base_rule = ('tcp', 22, 22, '0.0.0.0/0')
+            test_rule = (protocol, port or -1, port or -1, src_ip)
+            apply_rule(base_rule, [sec_group_tx, sec_group_rx])
+            apply_rule(test_rule, [sec_group_rx])
 
         self.log.debug('{0}{1}\n'.format(markup('\nAttempting packet test with instances:\n',
                                                 [ForegroundColor.BLUE, BackGroundColor.BG_WHITE]),
@@ -990,17 +998,13 @@ class VpcBasics(CliTestRunner):
                                                         use_private, protocol, port, count)
                                                 else:
                                                     result = self.packet_test_scenario(
-                                                        zone_tx=zone1_name,
-                                                        zone_rx=zone2_name,
+                                                        zone_tx=zone1_name, zone_rx=zone2_name,
                                                         sec_group_tx=vpc1_group,
                                                         sec_group_rx=vpc2_group,
                                                         subnet_tx=vpc1_subnet,
                                                         subnet_rx=vpc2_subnet,
-                                                        use_private=use_private,
-                                                        protocol=protocol,
-                                                        port=port,
-                                                        count=count,
-                                                        expected_count=expected_count,
+                                                        use_private=use_private, protocol=protocol,
+                                                        port=port, count=count, bind=bind,
                                                         bind=bind)
                                                     self._results.append(result)
                                                     try:
@@ -1425,8 +1429,83 @@ class VpcBasics(CliTestRunner):
                                  ' match expected attribute value:{2}'.format(key, grant[key],
                                                                               value))
 
+    def test3b1_basic_default_security_group_packet_test(self, egress_test_ip=None):
+        """
+        Your VPC includes a default security group whose initial rules are to deny all
+        inbound traffic, allow all outbound traffic, and allow all traffic between
+        instances in the group.
+        Defaults:
+        This test will verify the default rules by attempting to reach a VM in the default group.
+        This should fail.
+        Modify/Authorize the group:
+        Modify the default rules to allow ssh (tcp/22), verify ssh access and verify egress rules
+        using ICMP to the egress test ip (defaults to a UFS).
+        """
+        user = self.user
+        vpc = self.get_vpc_for_security_group_tests()
+        def_sg = user.ec2.get_security_group(name='default', vpc_id=vpc.id)
+        user.ec2.show_security_group(def_sg)
+        vms = self.create_test_instances(group=def_sg, auto_connect=False, count=2)[0]
+        self.status('Attempting to reach vm on tcp/22 this should not be allowed...')
+        try:
+            for vm in vms:
+                test_port_status(vms.ip_address, 22)
+        except socket.error as SE:
+            self.status('Could not reach vm in default sg, passed:{0}'.format(SE))
+        user.ec2.authorize_group(def_sg, protocol='tcp', port=22, cidr_ip='0.0.0.0/0')
+        self.status('Attempting to connect to test VMs after authorizing ssh...')
+        for vm in vms:
+            vm.connect_to_instance()
+        self.status('Attempting VM to VM packet test in default group. All traffic should be '
+                    'allowed for this test')
+        vm1, vm2 = vms
+        results = []
+        results.append(self.packet_test_scenario(zone_tx=vm2.placement, zone_rx=vm1.placement,
+                                  sec_group_tx=def_sg.id, sec_group_rx=def_sg.id,
+                                  subnet_tx=vm2.subnet_id, subnet_rx=vm1.subnet_id,
+                                  use_private=False, protocol=1, port=None, count=5,
+                                  bind=False, set_security_group=False,
+                                  ssh_tx=vm1.ssh, ssh_rx=vm2.ssh))
+        results.append(self.packet_test_scenario(zone_tx=vm2.placement, zone_rx=vm1.placement,
+                                  sec_group_tx=def_sg.id, sec_group_rx=def_sg.id,
+                                  subnet_tx=vm2.subnet_id, subnet_rx=vm1.subnet_id,
+                                  use_private=False, protocol=6, port=100, count=5,
+                                  bind=True, set_security_group=False,
+                                  ssh_tx=vm1.ssh, ssh_rx=vm2.ssh))
+        results.append(self.packet_test_scenario(zone_tx=vm2.placement, zone_rx=vm1.placement,
+                                  sec_group_tx=def_sg.id, sec_group_rx=def_sg.id,
+                                  subnet_tx=vm2.subnet_id, subnet_rx=vm1.subnet_id,
+                                  use_private=False, protocol=17, port=101, count=5,
+                                  bind=False, set_security_group=False,
+                                  ssh_tx=vm1.ssh, ssh_rx=vm2.ssh))
+        results.append(self.packet_test_scenario(zone_tx=vm2.placement, zone_rx=vm1.placement,
+                                  sec_group_tx=def_sg.id, sec_group_rx=def_sg.id,
+                                  subnet_tx=vm2.subnet_id, subnet_rx=vm1.subnet_id,
+                                  use_private=False, protocol=132, port=101, count=5,
+                                  bind=True, set_security_group=False,
+                                  ssh_tx=vm1.ssh, ssh_rx=vm2.ssh))
+        for result in results:
+            self.show_packet_test_results(results_dict=result)
+        errors = []
+        for result in results:
+            error = result.get('error', None)
+            if error:
+                errors.append(error)
+        if errors:
+            self.log.error('Errors detected during default sec group packet test:{0}'
+                           .format("\n".join(str(x) for x in errors)))
+            raise RuntimeError('Errors detected during default sec group packet test. See results')
+        self.status('VM to VM to default security group packet test passed.')
+        self.status('Testing VM to egress now...')
+        ufs = self.tc.sysadmin.get_hosts_for_ufs()[0]
+        for vm in vms:
+            vm.sys('ping -c1 ' + ufs.hostname, code=0)
+        
 
-    def test3b1_test_security_group_count_limit(self):
+
+
+
+    def test3b2_test_security_group_count_limit(self):
         """
         AWS: You can create up to 500 security groups per VPC.
         EUCA: Verify cloud property 'cloud.vpc.securitygroupspervpc'.
@@ -1450,7 +1529,7 @@ class VpcBasics(CliTestRunner):
                             .format(len(groups), limit))
 
 
-    def test3b2_test_security_group_rule_limits(self):
+    def test3b3_test_security_group_rule_limits(self):
         """
         AWS: You can add up to 50 rules to a security group
         EUCA: you can add up to cloud.vpc.rulespersecuritygroup to a security group
@@ -1479,7 +1558,7 @@ class VpcBasics(CliTestRunner):
         else:
             raise ValueError('Was able to exceed rules per group limit of:{0}'.format(limit))
 
-    def test3b3_test_security_group_per_eni_limits(self):
+    def test3b4_test_security_group_per_eni_limits(self):
         """
         You can assign up to 5 security groups to a network interface.
         EUCA: cloud.vpc.securitygroupspernetworkinterface
@@ -1512,28 +1591,6 @@ class VpcBasics(CliTestRunner):
                 raise EE
         else:
             raise ValueError('Was able to exceed groups per eni limit of:{0}'.format(limit))
-
-
-
-
-    def test3b4_basic_default_security_group_packet_test(self, egress_test_ip=None):
-        """
-        Your VPC includes a default security group whose initial rules are to deny all
-        inbound traffic, allow all outbound traffic, and allow all traffic between
-        instances in the group.
-        Defaults:
-        This test will verify the default rules by attempting to reach a VM in the default group.
-        This should fail.
-        Modify/Authorize the group:
-        Modify the default rules to allow ssh (tcp/22), verify ssh access and verify egress rules
-        using ICMP to the egress test ip (defaults to a UFS).
-        """
-        raise NotImplementedError()
-
-
-
-
-
 
 
 
