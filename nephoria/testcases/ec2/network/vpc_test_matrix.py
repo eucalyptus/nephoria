@@ -107,8 +107,10 @@ class VpcBasics(CliTestRunner):
         'kwargs': {'help': 'Vm type to use for proxy test instance',
                    'default': 'm1.large'}}
 
-    SUBNET_TEST_TAG = "SUBNET TEST TAG"
+    SUBNET_TEST_TAG = "SUBNET_TEST_TAG"
     SECURITY_GROUP_TEST_TAG = "SECURITY_GROUP_TEST_TAG"
+    ENI_TEST_TAG = 'ENI_TEST_TAG'
+    ROUTE_TABLE_TEST_TAG = 'ROUTE_TABLE_TEST_TAG'
 
     def post_init(self):
         self.test_id = "{0}{1}".format(int(time.time()), randint(0, 50))
@@ -798,6 +800,34 @@ class VpcBasics(CliTestRunner):
         return rt[0]
 
 
+    def check_user_default_routes_present(self, user=None, vpc=None, check_igw=True):
+        user = user or self.user
+        vpc = vpc or self.check_user_default_vpcs(user=user)
+        rt = self.check_user_default_route_table_present(user=user)
+        routes = rt.routes
+        default_cidr_route = False
+        default_igw_route = False
+        if not check_igw:
+            default_igw_route = True
+            igw = None
+        else:
+            igw = self.check_user_default_igw(user=user)
+        for route in routes:
+            if route.destination_cidr_block == vpc.cidr_block and \
+                            route.gateway_id == 'local':
+                default_cidr_route = True
+            if check_igw:
+                if route.gateway_id == igw.id and route.destination_cidr_block == '0.0.0.0/0':
+                    default_igw_route = True
+            if default_igw_route and default_cidr_route:
+                break
+        if not default_cidr_route:
+            raise ValueError('{0}: Default route for VPC network:{1} not found'
+                             .format(vpc.id, vpc.cidr_block))
+        if not default_igw_route:
+            raise ValueError('{0}: Default route for IGW:{1} not found'
+                             .format(vpc.id, igw.id))
+
     def check_user_default_security_group_rules(self, user=None):
         """
         A users VPC includes a default security group whose initial rules are to deny all
@@ -1188,6 +1218,14 @@ class VpcBasics(CliTestRunner):
         """
         return self.check_user_default_route_table_present(user=self.new_ephemeral_user)
 
+    def test1f_new_user_default_routes(self):
+        """
+        Definition:
+        Attempts to verify that a newly created user has a default routes present for the vpc
+        cidr block and default igw in it's route table
+        """
+        return self.check_user_default_routes_present(user=self.new_ephemeral_user)
+
     def test1z_new_user_default_security_group_rules(self):
         """
         Test attributes specific to the 'default' security group
@@ -1295,6 +1333,14 @@ class VpcBasics(CliTestRunner):
                 raise SkipTestException('Test already run for the test user')
         return self.check_user_default_security_group_rules(user=self.user)
 
+    def test1g_test_user_default_routes(self):
+        """
+        Definition:
+        Attempts to verify that a test user has a default routes present for the vpc
+        cidr block and default igw in it's route table
+        """
+        return self.check_user_default_routes_present(user=self.user)
+
     def test2z_test_user_basic_instance_ssh_defaults(self):
         """
         Definition:
@@ -1312,25 +1358,15 @@ class VpcBasics(CliTestRunner):
             self.log.debug('Terminated successful test instances')
             user.ec2.terminate_instances(ins)
 
-    ###############################################################################################
-    # Test VPC base attributes
-    ###############################################################################################
-    def test3a_create_new_vpc(self):
-        """
-        Definition:
-        Attempts to create a new vpc and verify params
-        """
-        self.create_test_vpcs()
-        raise NotImplementedError()
 
     ###############################################################################################
     # Test security groups basics
     # - Legacy 'net test' covers most of the basic security group auth and revoke packet tests
     # - This should cover attributes specific to VPC
     ###############################################################################################
-    def get_vpc_for_security_group_tests(self):
+    def test3b0_get_vpc_for_security_group_tests(self):
         test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.SUBNET_TEST_TAG,
-                                                  'tag-value': self.test_id})
+                                                       'tag-value': self.test_id})
         if not test_vpc:
             test_vpc = self.create_test_vpcs()
             if not test_vpc:
@@ -1341,7 +1377,7 @@ class VpcBasics(CliTestRunner):
             test_vpc = test_vpc[0]
         return test_vpc
 
-    def test3b0_default_security_group_initial_ingress_rules(self):
+    def test3b1_default_security_group_initial_ingress_rules(self):
         """
         A users VPC includes a default security group whose initial rules are to deny all
         inbound traffic, allow all outbound traffic, and allow all traffic between
@@ -1354,7 +1390,7 @@ class VpcBasics(CliTestRunner):
         You can remove the rule and add outbound rules that allow specific outbound traffic only.
         """
         user = self.user
-        vpc = self.get_vpc_for_security_group_tests()
+        vpc = self.test3b0_get_vpc_for_security_group_tests()
         def_sg = user.ec2.get_security_group(name='default', vpc_id=vpc.id)
         user.ec2.show_security_group(def_sg)
         ingress_rules = def_sg.rules
@@ -1387,7 +1423,7 @@ class VpcBasics(CliTestRunner):
                                  ' match expected attribute value:{2}'.format(key, grant[key],
                                                                               value))
 
-    def test3b0_default_security_group_initial_egress_rules(self):
+    def test3b2_default_security_group_initial_egress_rules(self):
         """
         A users VPC includes a default security group whose initial rules are to deny all
         inbound traffic, allow all outbound traffic, and allow all traffic between
@@ -1400,7 +1436,7 @@ class VpcBasics(CliTestRunner):
         You can remove the rule and add outbound rules that allow specific outbound traffic only.
         """
         user = self.user
-        vpc = self.get_vpc_for_security_group_tests()
+        vpc = self.test3b0_get_vpc_for_security_group_tests()
         def_sg = user.ec2.get_security_group(name='default', vpc_id=vpc.id)
         user.ec2.show_security_group(def_sg)
         egress_rules = def_sg.rules_egress
@@ -1429,7 +1465,7 @@ class VpcBasics(CliTestRunner):
                                  ' match expected attribute value:{2}'.format(key, grant[key],
                                                                               value))
 
-    def test3b1_basic_default_security_group_packet_test(self, egress_test_ip=None):
+    def test3b3_basic_default_security_group_packet_test(self, egress_test_ip=None):
         """
         Your VPC includes a default security group whose initial rules are to deny all
         inbound traffic, allow all outbound traffic, and allow all traffic between
@@ -1442,7 +1478,7 @@ class VpcBasics(CliTestRunner):
         using ICMP to the egress test ip (defaults to a UFS).
         """
         user = self.user
-        vpc = self.get_vpc_for_security_group_tests()
+        vpc = self.test3b0_get_vpc_for_security_group_tests()
         def_sg = user.ec2.get_security_group(name='default', vpc_id=vpc.id)
         user.ec2.show_security_group(def_sg)
         vms = self.create_test_instances(group=def_sg, auto_connect=False, count=2)[0]
@@ -1502,16 +1538,13 @@ class VpcBasics(CliTestRunner):
             vm.sys('ping -c1 ' + ufs.hostname, code=0)
 
 
-
-
-
-    def test3b2_test_security_group_count_limit(self):
+    def test3b4_test_security_group_count_limit(self):
         """
         AWS: You can create up to 500 security groups per VPC.
         EUCA: Verify cloud property 'cloud.vpc.securitygroupspervpc'.
         """
         user = self.user
-        vpc = self.get_vpc_for_security_group_tests()
+        vpc = self.test3b0_get_vpc_for_security_group_tests()
         prop = self.tc.sysadmin.get_property('cloud.vpc.securitygroupspervpc')
         limit = int(prop.value)
         self.status('Attempting to verify security group counts up to '
@@ -1529,13 +1562,13 @@ class VpcBasics(CliTestRunner):
                             .format(len(groups), limit))
 
 
-    def test3b3_test_security_group_rule_limits(self):
+    def test3b5_test_security_group_rule_limits(self):
         """
         AWS: You can add up to 50 rules to a security group
         EUCA: you can add up to cloud.vpc.rulespersecuritygroup to a security group
         """
         user = self.user
-        vpc = self.get_vpc_for_security_group_tests()
+        vpc = self.test3b0_get_vpc_for_security_group_tests()
         prop = self.tc.sysadmin.get_property('cloud.vpc.rulespersecuritygroup')
         limit = int(prop.value)
         group = self.get_test_security_groups(vpc=vpc, user=user, rules={}, count=1)[0]
@@ -1558,13 +1591,13 @@ class VpcBasics(CliTestRunner):
         else:
             raise ValueError('Was able to exceed rules per group limit of:{0}'.format(limit))
 
-    def test3b4_test_security_group_per_eni_limits(self):
+    def test3b6_test_security_group_per_eni_limits(self):
         """
         You can assign up to 5 security groups to a network interface.
         EUCA: cloud.vpc.securitygroupspernetworkinterface
         """
         user = self.user
-        vpc = self.get_vpc_for_security_group_tests()
+        vpc = self.test3b0_get_vpc_for_security_group_tests()
         prop = self.tc.sysadmin.get_property('cloud.vpc.securitygroupspernetworkinterface')
         limit = int(prop.value)
         subnet = self.get_non_default_test_subnets_for_vpc(vpc=vpc, count=1, user=user)[0]
@@ -1591,11 +1624,101 @@ class VpcBasics(CliTestRunner):
                 raise EE
         else:
             raise ValueError('Was able to exceed groups per eni limit of:{0}'.format(limit))
+        eni.delete()
+
+    def test3z0_test_clean_up_security_group_vpc_dependencies(self):
+        """
+        Delete the VPC and dependency artifacts created for the security group testing.
+        """
+        if not self.args.no_clean:
+            user = self.user
+            vpc = self.test3b0_get_vpc_for_security_group_tests()
+            if vpc:
+                user.ec2.delete_vpc_and_dependency_artifacts(vpc)
+
+    ###############################################################################################
+    #  ROUTE TABLE tests
+    ###############################################################################################
+    def test4b0_get_vpc_for_route_table_tests(self):
+        test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.SUBNET_TEST_TAG,
+                                                       'tag-value': self.test_id})
+        if not test_vpc:
+            test_vpc = self.create_test_vpcs()
+            if not test_vpc:
+                raise RuntimeError('Failed to create test VPC for route table tests?')
+            test_vpc = test_vpc[0]
+            self.user.ec2.create_tags([test_vpc.id], {self.ROUTE_TABLE_TEST_TAG: self.test_id})
+        else:
+            test_vpc = test_vpc[0]
+        return test_vpc
+
+    def test4z0_test_clean_up_route_table_test_vpc_dependencies(self):
+        """
+        Delete the VPC and dependency artifacts created for the security group testing.
+        """
+        if not self.args.no_clean:
+            user = self.user
+            vpc = self.test4b0_get_vpc_for_route_table_tests()
+            if vpc:
+                user.ec2.delete_vpc_and_dependency_artifacts(vpc)
+
+    ###############################################################################################
+    #  SUBNET tests
+    ###############################################################################################
+    def test5b0_get_vpc_for_subnet_tests(self):
+        test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.SUBNET_TEST_TAG,
+                                                       'tag-value': self.test_id})
+        if not test_vpc:
+            test_vpc = self.create_test_vpcs()
+            if not test_vpc:
+                raise RuntimeError('Failed to create test VPC for subnet tests?')
+            test_vpc = test_vpc[0]
+            self.user.ec2.create_tags([test_vpc.id], {self.SUBNET_TEST_TAG: self.test_id})
+        else:
+            test_vpc = test_vpc[0]
+        return test_vpc
+
+    def test5z0_test_clean_up_subnet_test_vpc_dependencies(self):
+        """
+        Delete the VPC and dependency artifacts created for the security group testing.
+        """
+        if not self.args.no_clean:
+            user = self.user
+            vpc = self.test5b0_get_vpc_for_subnet_tests()
+            if vpc:
+                user.ec2.delete_vpc_and_dependency_artifacts(vpc)
+
+    ###############################################################################################
+    #  ENI tests
+    ###############################################################################################
+
+    def test6b0_get_vpc_for_eni_tests(self):
+        test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.SUBNET_TEST_TAG,
+                                                       'tag-value': self.test_id})
+        if not test_vpc:
+            test_vpc = self.create_test_vpcs()
+            if not test_vpc:
+                raise RuntimeError('Failed to create test VPC for eni tests?')
+            test_vpc = test_vpc[0]
+            self.user.ec2.create_tags([test_vpc.id], {self.ENI_TEST_TAG: self.test_id})
+        else:
+            test_vpc = test_vpc[0]
+        return test_vpc
+
+    def test6z0_test_clean_up_eni_test_vpc_dependencies(self):
+        """
+        Delete the VPC and dependency artifacts created for the security group testing.
+        """
+        if not self.args.no_clean:
+            user = self.user
+            vpc = self.test6b0_get_vpc_for_eni_tests()
+            if vpc:
+                user.ec2.delete_vpc_and_dependency_artifacts(vpc)
 
 
 
     ###############################################################################################
-    #  Newly created user tests for default VPC artifacts and attributes
+    # Misc tests
     ###############################################################################################
 
     def clean_method(self):
