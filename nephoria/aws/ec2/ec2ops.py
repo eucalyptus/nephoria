@@ -617,7 +617,7 @@ disable_root: false"""
             group_name=None,
             )
 
-    def revoke_all_rules(self, group):
+    def revoke_all_rules(self, group, egress=False):
 
         if not isinstance(group, SecurityGroup):
             group = self.get_security_group(name=group)
@@ -628,33 +628,66 @@ disable_root: false"""
             raise ValueError('Security group "{0}" not found'.format(group))
         self.show_security_group(group)
         assert isinstance(group, SecurityGroup)
-        rules = copy.copy(group.rules)
-        for r in rules:
+        # Remove ingress rules
+
+        name = getattr(group, 'name', None)
+        for r in group.rules:
+
+            ip_protocol = getattr(r, 'ip_protocol', None)
+            from_port = getattr(r, 'from_port', None)
+            to_port = getattr(r, 'to_port', None)
             self.log.debug('Attempting to revoke rule:{0}, grants:{1}'
                        .format(r, r.grants))
             assert isinstance(r, IPPermissions)
+
             for grant in r.grants:
+                self.connection.revoke_security_group(
+                    group_id=group.id,
+                    src_security_group_group_id=grant.group_id,
+                    ip_protocol=ip_protocol,
+                    from_port=from_port,
+                    to_port=to_port,
+                    cidr_ip=grant.cidr_ip)
+
+        for r in group.rules_egress:
+            for r in group.rules:
+                ip_protocol = getattr(r, 'ip_protocol', None)
+                from_port = getattr(r, 'from_port', None)
+                to_port = getattr(r, 'to_port', None)
+                self.log.debug('Attempting to revoke egress rule:{0}, grants:{1}'
+                               .format(r, r.grants))
+                assert isinstance(r, IPPermissions)
+                for grant in r.grants:
+                    self.connection.revoke_security_group_egress(
+                        group_id=group.id,
+                        src_group_id=grant.group_id,
+                        ip_protocol=ip_protocol,
+                        from_port=from_port,
+                        to_port=to_port,
+                        cidr_ip=grant.cidr_ip)
+                """
                 if grant.cidr_ip:
                     self.log.debug('{0}.revoke(ip_protocol:{1}, from_port:{2}, '
-                               'to_port{3}, cidr_ip:{4})'.format(group.name,
-                                                                 r.ip_protocol,
-                                                                 r.from_port,
-                                                                 r.to_port,
+                               'to_port{3}, cidr_ip:{4})'.format(name,
+                                                                 ip_protocol,
+                                                                 from_port,
+                                                                 to_port,
                                                                  grant))
-                    group.revoke(ip_protocol=r.ip_protocol, from_port=r.from_port,
-                                 to_port=r.to_port, cidr_ip=grant.cidr_ip)
+                    group.revoke(ip_protocol=ip_protocol, from_port=from_port,
+                                 to_port=to_port, cidr_ip=grant.cidr_ip)
                 if grant.name or grant.group_id:
-                    group.revoke(ip_protocol=r.ip_protocol,
-                                 from_port=r.from_port,
-                                 to_port=r.to_port,
+                    group.revoke(ip_protocol=ip_protocol,
+                                 from_port=from_port,
+                                 to_port=to_port,
                                  src_group=grant,
                                  cidr_ip=None )
                     self.log.debug('{0}.revoke(ip_protocol:{1}, from_port:{2}, '
                                'to_port:{3}, src_group:{4})'.format(group.name,
-                                                                   r.ip_protocol,
-                                                                   r.from_port,
-                                                                   r.to_port,
+                                                                   ip_protocol,
+                                                                   from_port,
+                                                                   to_port,
                                                                    grant))
+                """
         group = self.get_security_group(id=group.id)
         self.log.debug('AFTER removing all rules...')
         self.show_security_group(group)

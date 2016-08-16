@@ -43,7 +43,7 @@ from nephoria.aws.ec2.euinstance import EuInstance
 from cloud_utils.net_utils import packet_test, is_address_in_network
 from cloud_utils.log_utils import markup, printinfo, get_traceback, red, ForegroundColor, \
     BackGroundColor
-from boto.exception import BotoServerError
+from boto.exception import BotoServerError, EC2ResponseError
 from boto.vpc.subnet import Subnet
 from boto.vpc.vpc import VPC
 from boto.ec2.image import Image
@@ -108,6 +108,7 @@ class VpcBasics(CliTestRunner):
                    'default': 'm1.large'}}
 
     SUBNET_TEST_TAG = "SUBNET TEST TAG"
+    SECURITY_GROUP_TEST_TAG = "SECURITY_GROUP_TEST_TAG"
 
     def post_init(self):
         self.test_id = "{0}{1}".format(int(time.time()), randint(0, 50))
@@ -176,7 +177,7 @@ class VpcBasics(CliTestRunner):
             self._proxy_instances = proxy_instances
         return pi
 
-    def get_test_enis_for_subnet(self, subnet, status='available', count=0):
+    def get_test_enis_for_subnet(self, subnet, status='available', count=0, user=None):
         """
         Attempts to fetch enis for a given subnet which are tagged with self.test_tag_name and
         self.id.
@@ -191,12 +192,13 @@ class VpcBasics(CliTestRunner):
             count: Int, number of test ENIs to fetch
             returns list of ENIs
         """
+        user = user or self.user
         if count and status != 'available':
             raise ValueError('Count argument can only be used with status "available" got: '
                              'count:{0}, status:{1}'.format(count, status))
         if isinstance(subnet, basestring):
             orig_sub = subnet
-            subnet = self.user.ec2.get_subnet(subnet)
+            subnet = user.ec2.get_subnet(subnet)
             if not subnet:
                 raise ValueError('get_eni_for_subnet: Could not find subnet for "{0}"'
                                  .format(orig_sub))
@@ -206,12 +208,12 @@ class VpcBasics(CliTestRunner):
         filters = {'subnet-id': subnet.id, 'tag-key': self.my_tag_name, 'tag-value': self.id}
         if status:
             filters['status'] = status
-        enis = self.user.ec2.connection.get_all_network_interfaces(filters=filters) or []
+        enis = user.ec2.connection.get_all_network_interfaces(filters=filters) or []
         if count and len(enis) < count:
             for x in xrange(0, (count-len(enis))):
-                eni = self.user.ec2.connection.create_network_interface(
+                eni = user.ec2.connection.create_network_interface(
                     subnet_id=subnet.id, description='This was created by: {0}'.format(self.id))
-                self.user.ec2.create_tags(eni.id, {self.my_tag_name: self.id})
+                user.ec2.create_tags(eni.id, {self.my_tag_name: self.id})
                 eni.update()
                 enis.append(eni)
         return enis
@@ -500,6 +502,7 @@ class VpcBasics(CliTestRunner):
         user = user or self.user
         if rules is None:
             rules = self.DEFAULT_SG_RULES
+        sec_groups = []
         ret_groups = []
         vpc = vpc or self.check_user_default_vpcs(user)
         if vpc and not isinstance(vpc, basestring):
@@ -509,7 +512,7 @@ class VpcBasics(CliTestRunner):
             existing = []
             self._security_groups[vpc] = existing
         if len(existing) >= count:
-            ret_groups =  existing[0:count]
+            sec_groups =  existing[0:count]
         else:
             for x in xrange(0, count-len(existing)):
                 name = "{0}_{1}_{2}".format(self.test_name,
@@ -518,14 +521,19 @@ class VpcBasics(CliTestRunner):
                 self._security_groups[vpc].append(
                     user.ec2.connection.create_security_group(name=name, description=name,
                                                               vpc_id=vpc))
-            ret_groups = self._security_groups[vpc]
-        for group in ret_groups:
+            sec_groups = self._security_groups[vpc]
+        for group in sec_groups:
             user.ec2.revoke_all_rules(group)
             for rule in rules:
                 protocol, port, end_port, cidr_ip = rule
                 user.ec2.authorize_group(group=group, port=port, end_port=end_port,
                                          protocol=protocol)
-            user.ec2.show_security_group(group)
+            group = user.ec2.get_security_group(group.id)
+            if not group:
+                raise ValueError('Was not able to retrieve sec group: {0}/{1}'
+                                 .format(group.name, group.id))
+            ret_groups.append(group)
+        user.ec2.show_security_groups(ret_groups)
         return ret_groups
 
     def get_test_addresses(self, count=1):
@@ -1316,14 +1324,17 @@ class VpcBasics(CliTestRunner):
     # - Legacy 'net test' covers most of the basic security group auth and revoke packet tests
     # - This should cover attributes specific to VPC
     ###############################################################################################
-    def get_vpc_for_subnet_tests(self):
+    def get_vpc_for_security_group_tests(self):
         test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.SUBNET_TEST_TAG,
                                                   'tag-value': self.test_id})
         if not test_vpc:
             test_vpc = self.create_test_vpcs()
             if not test_vpc:
                 raise RuntimeError('Failed to create test VPC for subnet tests?')
-            self.user.ec2.create_tags([test_vpc.id], {self.SUBNET_TEST_TAG: self.test_id})
+            test_vpc = test_vpc[0]
+            self.user.ec2.create_tags([test_vpc.id], {self.SECURITY_GROUP_TEST_TAG: self.test_id})
+        else:
+            test_vpc = test_vpc[0]
         return test_vpc
 
     def test3b0_default_security_group_initial_ingress_rules(self):
@@ -1339,7 +1350,7 @@ class VpcBasics(CliTestRunner):
         You can remove the rule and add outbound rules that allow specific outbound traffic only.
         """
         user = self.user
-        vpc = self.get_vpc_for_subnet_tests()
+        vpc = self.get_vpc_for_security_group_tests()
         def_sg = user.ec2.get_security_group(name='default', vpc_id=vpc.id)
         user.ec2.show_security_group(def_sg)
         ingress_rules = def_sg.rules
@@ -1385,7 +1396,7 @@ class VpcBasics(CliTestRunner):
         You can remove the rule and add outbound rules that allow specific outbound traffic only.
         """
         user = self.user
-        vpc = self.get_vpc_for_subnet_tests()
+        vpc = self.get_vpc_for_security_group_tests()
         def_sg = user.ec2.get_security_group(name='default', vpc_id=vpc.id)
         user.ec2.show_security_group(def_sg)
         egress_rules = def_sg.rules_egress
@@ -1417,21 +1428,93 @@ class VpcBasics(CliTestRunner):
 
     def test3b1_test_security_group_count_limit(self):
         """
-        You can create up to 500 security groups per VPC.
+        AWS: You can create up to 500 security groups per VPC.
+        EUCA: Verify cloud property 'cloud.vpc.securitygroupspervpc'.
         """
-        raise NotImplementedError()
+        user = self.user
+        vpc = self.get_vpc_for_security_group_tests()
+        prop = self.tc.sysadmin.get_property('cloud.vpc.securitygroupspervpc')
+        limit = int(prop.value)
+        self.status('Attempting to verify security group counts up to '
+                    'cloud.vpc.securitygroupspervpc:{0}'.format(limit))
+        try:
+            # Create Security groups to limit
+            self.get_test_security_groups(vpc=vpc, user=user, count=limit)
+        except Exception as SE:
+            groups = user.ec2.connection.get_all_security_groups(filters={'vpc-id': vpc.id})
+            if len(groups) != limit:
+                self.log.error('Could not create security group count:{0} == limit:{1}'
+                               .format(len(groups), limit))
+            else:
+                self.status('Group count: {0} == cloud.vpc.securitygroupspervpc:{1}'
+                            .format(len(groups), limit))
+
 
     def test3b2_test_security_group_rule_limits(self):
         """
-        You can add up to 50 rules to a security group
+        AWS: You can add up to 50 rules to a security group
+        EUCA: you can add up to cloud.vpc.rulespersecuritygroup to a security group
         """
-        raise NotImplementedError()
+        user = self.user
+        vpc = self.get_vpc_for_security_group_tests()
+        prop = self.tc.sysadmin.get_property('cloud.vpc.rulespersecuritygroup')
+        limit = int(prop.value)
+        group = self.get_test_security_groups(vpc=vpc, user=user, rules={}, count=1)[0]
+        egress_count = len(group.rules_egress)
+        if len(group.rules) != 0:
+            user.ec2.revoke_all_rules(group)
+        self.log.debug('Attempt to create limit number:{0} of rules per group'.format(limit))
+        for x in xrange(0, limit-egress_count):
+            user.ec2.authorize_group(group, port=x, protocol='tcp', cidr_ip='0.0.0.0/32')
+        group = user.ec2.get_security_group(group.id)
+        user.ec2.show_security_group(group)
+        try:
+            self.log.debug('Attempt to exceed the rules per group limit...')
+            user.ec2.authorize_group(group, port=(x + 1), protocol='tcp', cidr_ip='0.0.0.0/32')
+        except EC2ResponseError as EE:
+            if EE.status == '400' and EE.reason == 'RulesPerSecurityGroupLimitExceeded':
+                self.log.debug('Negative test caught with correct exception: {0}'.format(EE))
+            else:
+                raise EE
+        else:
+            raise ValueError('Was able to exceed rules per group limit of:{0}'.format(limit))
 
     def test3b3_test_security_group_per_eni_limits(self):
         """
         You can assign up to 5 security groups to a network interface.
+        EUCA: cloud.vpc.securitygroupspernetworkinterface
         """
-        raise NotImplementedError()
+        user = self.user
+        vpc = self.get_vpc_for_security_group_tests()
+        prop = self.tc.sysadmin.get_property('cloud.vpc.securitygroupspernetworkinterface')
+        limit = int(prop.value)
+        subnet = self.get_non_default_test_subnets_for_vpc(vpc=vpc, count=1, user=user)[0]
+        eni = self.get_test_enis_for_subnet(subnet, count=1, user=user)[0]
+        self.status('Attempt to set eni groups to maximum count per limit:{0}'.format(limit))
+        groups = self.get_test_security_groups(vpc=vpc, rules={}, count=limit)
+        user.ec2.connection.modify_network_interface_attribute(eni.id,
+                                                               attr='groupSet',
+                                                               value=groups)
+        eni.update()
+        if len(eni.groups) != limit:
+            raise ValueError('Was not able to set eni max groups to limit:{0}, got:{1}'
+                             .format(limit, len(eni.groups)))
+        self.status('Succeeded in setting group limit, now try to exceed it')
+        try:
+            groups = self.get_test_security_groups(vpc=vpc, rules={}, count=(limit + 1))
+            user.ec2.connection.modify_network_interface_attribute(eni.id,
+                                                                   attr='groupSet',
+                                                                   value=groups)
+        except EC2ResponseError as EE:
+            if EE.status == '400' and EE.reason == 'SecurityGroupsPerInterfaceLimitExceeded':
+                self.log.debug('Negative test caught with correct exception: {0}'.format(EE))
+            else:
+                raise EE
+        else:
+            raise ValueError('Was able to exceed groups per eni limit of:{0}'.format(limit))
+
+
+
 
     def test3b4_basic_default_security_group_packet_test(self, egress_test_ip=None):
         """
