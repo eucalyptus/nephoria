@@ -1640,7 +1640,7 @@ class VpcBasics(CliTestRunner):
     #  ROUTE TABLE tests
     ###############################################################################################
     def test4b0_get_vpc_for_route_table_tests(self):
-        test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.SUBNET_TEST_TAG,
+        test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.ROUTE_TABLE_TEST_TAG,
                                                        'tag-value': self.test_id})
         if not test_vpc:
             test_vpc = self.create_test_vpcs()
@@ -1652,7 +1652,86 @@ class VpcBasics(CliTestRunner):
             test_vpc = test_vpc[0]
         return test_vpc
 
-    def test4z0_test_clean_up_route_table_test_vpc_dependencies(self):
+    def test4b5_route_table_implicit_subnet_association(self):
+        """
+        Each subnet must be associated with a route table, which controls the routing
+        for the subnet. If you don't explicitly associate a subnet with a particular
+        route table, the subnet is implicitly associated with the main route table.
+        """
+        user = self.user
+        vpc = self.test4b0_get_vpc_for_route_table_tests()
+        raise NotImplementedError()
+
+    def test4b6_route_table_default_local_route(self):
+        """
+        Every route table contains a local route that enables communication within a VPC.
+        You cannot modify or delete this route
+        """
+        raise NotImplementedError()
+
+    def test4b7_route_table_can_not_delete_main_table(self):
+        """
+        You cannot delete the main route table, but you can replace the main route table
+        with a custom table that you've created (so that this table is the default table
+        each new subnet is associated with).
+        """
+        raise NotImplementedError()
+
+    def test4b10_route_table_add_route_basic_packet_test(self):
+        """
+        Launch a VM(s) in a subnet referencing the route table to be tested.
+        Verify that packets are routed correctly per route provided.
+        """
+        raise NotImplementedError()
+
+    def test4b11_route_table_delete_route_basic_packet_test(self):
+        """
+        Launch a VM(s) in a subnet referencing the route table to be tested.
+        Add use an exiting route to verify traffic is routed correctly per this route entry.
+        Delete the route entry and verify traffic is no longer routed accordingly.
+        """
+        raise NotImplementedError()
+
+    def test4b13_route_table_verify_internet_gateway_route(self):
+        """
+        Launch a VM(s) in a subnet referencing the route table to be tested.
+        Add use an exiting route referencing an internet gateway. Verify traffic is routed
+        correctly with regards to this IGW route
+        """
+        raise NotImplementedError()
+
+    def test4c1_route_table_max_tables_per_vpc(self):
+        """
+        There is a limit on the number of route tables you can create per VPC.
+        cloud.vpc.routetablespervpc
+        """
+        raise NotImplementedError()
+
+
+    def test4c2_route_table_max_routes_per_table(self):
+        """
+        There is a limit on the number of routes you can add per route table.
+        cloud.vpc.routespertable
+        """
+        raise NotImplementedError()
+
+    def test4d1_route_table_change_main_table(self):
+        """
+        A user can change which table is the main route table, which changes
+        the default for additional new subnets, or any subnets that are not explicitly
+        associated with any other route table.
+        """
+        raise NotImplementedError()
+
+    def test4d3_route_table_replace_route_table_association(self):
+        """
+        Changes the route table associated with a given subnet in a VPC. After the operation
+        completes, the subnet uses the routes in the new route table it's associated with.
+        """
+        raise NotImplementedError()
+
+
+    def test4z0_clean_up_route_table_test_vpc_dependencies(self):
         """
         Delete the VPC and dependency artifacts created for the security group testing.
         """
@@ -1693,7 +1772,7 @@ class VpcBasics(CliTestRunner):
     ###############################################################################################
 
     def test6b0_get_vpc_for_eni_tests(self):
-        test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.SUBNET_TEST_TAG,
+        test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.ENI_TEST_TAG,
                                                        'tag-value': self.test_id})
         if not test_vpc:
             test_vpc = self.create_test_vpcs()
