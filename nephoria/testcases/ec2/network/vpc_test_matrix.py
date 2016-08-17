@@ -41,6 +41,7 @@ from nephoria.usercontext import UserContext
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, TestResult, SkipTestException
 from nephoria.aws.ec2.euinstance import EuInstance
 from cloud_utils.net_utils import packet_test, is_address_in_network, test_port_status
+from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 from cloud_utils.log_utils import markup, printinfo, get_traceback, red, ForegroundColor, \
     BackGroundColor
 from boto.exception import BotoServerError, EC2ResponseError
@@ -1652,6 +1653,89 @@ class VpcBasics(CliTestRunner):
             test_vpc = test_vpc[0]
         return test_vpc
 
+
+    def test4b1_get_subnets_for_route_table_tests(self, vpc=None, count=1):
+        vpc = vpc or self.test4b0_get_vpc_for_route_table_tests()
+        subnets = self.user.ec2.get_all_subnets(filters={'vpc_id': vpc.id,
+                                                         'tag-key': self.ROUTE_TABLE_TEST_TAG,
+                                                         'tag-value': self.test_id}) or []
+        subnets = subnets[:count]
+        if len(subnets) > count:
+            new_subnets = self.create_test_subnets(vpc=vpc, count_per_zone=count)
+            sub_ids = [str(x.id) for x in new_subnets]
+            self.user.ec2.create_tags(sub_ids, {self.ROUTE_TABLE_TEST_TAG: self.test_id})
+            subnets += new_subnets
+        if len(subnets) != count:
+            raise ValueError('Did not retrieve {0} number of subnets for route table tests?'
+                             .format(count))
+        return subnets
+
+    def test4b2_route_table_verify_internet_gateway_route(self, vpc=None, user=None):
+        """
+        Launch a VM(s) in a subnet referencing the route table to be tested.
+        Add use an exiting route referencing an internet gateway. Verify traffic is routed
+        correctly with regards to this IGW route
+
+        """
+        user = user or self.user
+        vpc = vpc or self.test4b0_get_vpc_for_route_table_tests()
+        subnet = self.test4b1_get_subnets_for_route_table_tests(count=1)[0]
+        rt = user.ec2.connection.get_all_route_tables(filters={'association.subnet_id': subnet.id})
+        if not rt:
+            rt = user.ec2.connection.get_all_route_tables(filters={'association.main': 'true',
+                                                                   'vpc-id': vpc.id})
+            if not rt:
+                raise ValueError('Main route table not found for vpc:{0}, and no'
+                                 'route table associated with subnet:{1}'.format(vpc.id,
+                                                                                 subnet.id))
+        rt = rt[0]
+        igw = user.ec2.connection.get_all_internet_gateways(filters={'attachment.vpc-id': vpc.id})
+        if not igw:
+            raise ValueError('No internet gateway found for VPC: {0}'.format(vpc.id))
+        igw = igw[0]
+
+        original_igw_route = None
+        new_route = None
+        for route in rt.routes:
+            if route.gateway_id == igw.id:
+                original_igw_route = route
+                current_route = route
+
+        if original_igw_route and original_igw_route.destination_cidr_block != '0.0.0.0/0':
+            user.ec2.connection.delete_route(
+                route_table_id=rt.id,
+                destination_cidr_block=original_igw_route.desination_cidr_block)
+            new_route = user.ec2.connection.create_route(rt.id, '0.0.0.0/0', igw.id)
+            current_route = new_route
+        group = self.get_test_security_groups(vpc=vpc, rules = [('tcp', 22, 22, '0.0.0.0/0'),
+                                                                ('icmp', -1, -1, '0.0.0.0/0')])[0]
+        vm = self.get_test_instances(zone=subnet.availability_zone, subnet_id=subnet.id,
+                                               group_id=group.id, user=user, count=1)[0]
+        self.status('Attempting to ping the VM from the UFS using the default IGW route...')
+        ufs = self.tc.sysadmin.get_hosts_for_ufs()[0]
+        ufs.sys('ping -c1 -t5 ' + vm.ip_address, code=0)
+        self.status('Removing the route and attempting to ping again...')
+
+        user.ec2.connection.delete_route(
+            route_table_id=rt.id,
+            destination_cidr_block=current_route.desination_cidr_block)
+        self.status('Removing route and retrying...')
+        time.sleep(2)
+        try:
+            ufs.sys('ping -c1 -t5 ' + vm.ip_address, code=0)
+        except CommandExitCodeException:
+            self.status('Failed to reach VM without route passing')
+        else:
+            self.log.error('Was able to reach the following VM, after removing the igw route...')
+            user.ec2.show_instance(vm)
+            user.ec2.show_route_table(rt)
+            raise RuntimeError('Was able to reach VM after removing the igw route')
+        self.log.debug('restoring original igw route for route table:{0}'.format(rt.id))
+        if original_igw_route:
+            user.ec2.connection.create_route(rt.id,
+                                             original_igw_route.destination_cidr_block,
+                                             igw.id)
+
     def test4b5_route_table_implicit_subnet_association(self):
         """
         Each subnet must be associated with a route table, which controls the routing
@@ -1659,8 +1743,8 @@ class VpcBasics(CliTestRunner):
         route table, the subnet is implicitly associated with the main route table.
         """
         user = self.user
-        vpc = self.test4b0_get_vpc_for_route_table_tests()
-        raise NotImplementedError()
+        subnet = self.test4b1_get_subnet_for_route_table_tests(count=1)[0]
+
 
     def test4b6_route_table_default_local_route(self):
         """
@@ -1692,13 +1776,6 @@ class VpcBasics(CliTestRunner):
         """
         raise NotImplementedError()
 
-    def test4b13_route_table_verify_internet_gateway_route(self):
-        """
-        Launch a VM(s) in a subnet referencing the route table to be tested.
-        Add use an exiting route referencing an internet gateway. Verify traffic is routed
-        correctly with regards to this IGW route
-        """
-        raise NotImplementedError()
 
     def test4c1_route_table_max_tables_per_vpc(self):
         """
