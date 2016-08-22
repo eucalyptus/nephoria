@@ -1670,7 +1670,8 @@ class VpcBasics(CliTestRunner):
                              .format(count))
         return subnets
 
-    def test4b2_route_table_verify_internet_gateway_route(self, vpc=None, user=None):
+    def test4b2_route_table_verify_internet_gateway_route(self, subnet=None, user=None,
+                                                           force_main_rt=False):
         """
         Launch a VM(s) in a subnet referencing the route table to be tested.
         Add use an exiting route referencing an internet gateway. Verify traffic is routed
@@ -1678,17 +1679,35 @@ class VpcBasics(CliTestRunner):
 
         """
         user = user or self.user
+        if subnet:
+            if isinstance(subnet, basestring):
+                subnetobj = user.ec2.get_subnet(subnet)
+            if not subnetobj:
+                raise ValueError('user:{0}, could not fetch subnet:{1}'.format(user, subnet))
+            subnet = subnetobj
+            vpc = user.ec2.get_vpc(subnet.vpc_id)
         vpc = vpc or self.test4b0_get_vpc_for_route_table_tests()
-        subnet = self.test4b1_get_subnets_for_route_table_tests(count=1)[0]
-        rt = user.ec2.connection.get_all_route_tables(filters={'association.subnet_id': subnet.id})
-        if not rt:
-            rt = user.ec2.connection.get_all_route_tables(filters={'association.main': 'true',
+        subnet = subnet or self.test4b1_get_subnets_for_route_table_tests(vpc, count=1)[0]
+
+        rts = user.ec2.connection.get_all_route_tables(
+            filters={'association.subnet_id': subnet.id}) or []
+
+        if force_main_rt:
+            # if force main is setup, disassociate all other router so the test is forced
+            # to use the main table
+            for rt in rts:
+                for ass in rt.associtations:
+                    if ass.subnet_id == subnet.id:
+                        user.ec2.connection.disassociate_route_table(ass.id)
+            rts = []
+        if not rts:
+            rts = user.ec2.connection.get_all_route_tables(filters={'association.main': 'true',
                                                                    'vpc-id': vpc.id})
-            if not rt:
+            if not rts:
                 raise ValueError('Main route table not found for vpc:{0}, and no'
                                  'route table associated with subnet:{1}'.format(vpc.id,
                                                                                  subnet.id))
-        rt = rt[0]
+        rt = rts[0]
         igw = user.ec2.connection.get_all_internet_gateways(filters={'attachment.vpc-id': vpc.id})
         if not igw:
             raise ValueError('No internet gateway found for VPC: {0}'.format(vpc.id))
@@ -1696,12 +1715,13 @@ class VpcBasics(CliTestRunner):
 
         original_igw_route = None
         new_route = None
+        current_route = None
         for route in rt.routes:
             if route.gateway_id == igw.id:
                 original_igw_route = route
                 current_route = route
 
-        if original_igw_route and original_igw_route.destination_cidr_block != '0.0.0.0/0':
+        if not original_igw_route or original_igw_route.destination_cidr_block != '0.0.0.0/0':
             user.ec2.connection.delete_route(
                 route_table_id=rt.id,
                 destination_cidr_block=original_igw_route.desination_cidr_block)
@@ -1743,23 +1763,126 @@ class VpcBasics(CliTestRunner):
         route table, the subnet is implicitly associated with the main route table.
         """
         user = self.user
-        subnet = self.test4b1_get_subnet_for_route_table_tests(count=1)[0]
-
+        subnet = self.test4b1_get_subnets_for_route_table_tests(count=1)[0]
+        self.status('Using the IGW test on the main route table to verify the main'
+                    'route table is implicitly in use on a subnet w/o route table association...')
+        return self.test4b2_route_table_verify_internet_gateway_route(subnet=subnet,
+                                                                      force_main_rt=True,
+                                                                      user=user)
 
     def test4b6_route_table_default_local_route(self):
         """
         Every route table contains a local route that enables communication within a VPC.
         You cannot modify or delete this route
         """
-        raise NotImplementedError()
+        user = self.user
+        vpc = self.test4b0_get_vpc_for_route_table_tests()
+        subnet = self.test4b1_get_subnets_for_route_table_tests(vpc=vpc, count=1)[0]
+        new_rt = user.ec2.connection.create_route_table(subnet.vpc_id)
+        rts = user.ec2.connection.get_all_route_tables(filters={'vpc-id': vpc.id})
+        for rt in rts:
+            found = False
+            for route in rt.routes:
+                if route.gateway_id == 'local' and route.destination_cidr_block == vpc.cidr_block:
+                    found = True
+                    try:
+                        user.ec2.connection.delete_route(rt.id, route.destination_cidr_block)
+                    except Exception as EE:
+                        if isinstance(EE, EC2ResponseError) and str(EE.status) == '400' and \
+                                        EE.reason == 'InvalidParameterValue':
+                            self.status('Passed, was not able to delete local default route for '
+                                        'VPC communication:"{0}"'.format(EE))
+                            break
+                        else:
+                            self.log.error('Unexpected error during negative test. '
+                                           'Deleting default local route, err:{0}'.format(EE))
+                            raise EE
+                    else:
+                        raise RuntimeError('Was able to delete default local route, this should '
+                                           'not be permitted')
+            if not found:
+                user.ec2.show_route_table(rt)
+                raise ValueError('No default local route found in route table?')
 
-    def test4b7_route_table_can_not_delete_main_table(self):
+
+    def test4b7a_route_table_can_not_delete_main_table(self):
         """
         You cannot delete the main route table, but you can replace the main route table
         with a custom table that you've created (so that this table is the default table
         each new subnet is associated with).
+        You can also use replace-route-table-association to change which table is the main
+        route table in the VPC. You just specify the main route table's association ID and
+        the route table to be the new main route table.
         """
-        raise NotImplementedError()
+        user = self.user
+        vpc = self.test4b0_get_vpc_for_route_table_tests()
+        rts = user.ec2.connection.get_all_route_tables(
+            filters={'association.main': 'true', 'vpc-id': vpc.id})
+        if not rts:
+            raise ValueError('Main route table not found for vpc:{0}'.format(vpc.id))
+        rt = rts[0]
+        try:
+            user.ec2.connection.delete_route_table(rt.id)
+        except Exception as EE:
+            if (isinstance(EE, EC2ResponseError) and str(EE.status) == '400' and
+                        EE.reason == 'InvalidParameterValue'):
+                self.status('Passed. Was not able to delete main route table:{0}'.format(EE))
+            else:
+                self.log.error('Unexpected error during negative test deleting main route table, '
+                               'err:{0}'.format(EE))
+                raise EE
+        else:
+            user.ec2.show_route_table(rt)
+            user.ec2.show_vpc(vpc)
+            raise RuntimeError('Was able to delete main route table:{0} for vpc:{1}'
+                               .format(rt.id, vpc.id))
+
+    def test4b7b_route_table_main_route_table_can_be_replaced(self, new_rt=None, revert=True):
+        """
+        You cannot delete the main route table, but you can replace the main route table
+        with a custom table that you've created (so that this table is the default table
+        each new subnet is associated with).
+        You can also use replace-route-table-association to change which table is the main
+        route table in the VPC. You just specify the main route table's association ID and
+        the route table to be the new main route table.
+        """
+        user = self.user
+        vpc = self.test4b0_get_vpc_for_route_table_tests()
+        def get_main_route_table(vpc):
+            rts = user.ec2.connection.get_all_route_tables(
+                filters={'association.main': 'true', 'vpc-id': vpc.id})
+            if not rts:
+                raise ValueError('Main route table not found for vpc:{0}'.format(vpc.id))
+            main = rts[0]
+            return main
+        main_rt = get_main_route_table(vpc)
+        for ass in main_rt.associations:
+            if ass.main:
+                break
+            else:
+                ass = None
+        if not ass:
+            user.ec2.show_route_table(main_rt)
+            raise ValueError('No association found for main route table: {0}'.format(main_rt.id))
+        new_rt = new_rt or user.ec2.connection.create_route_table(vpc.id)
+        if isinstance(new_rt, basestring):
+            new_rt = user.ec2.connection.get_all_route_tables(new_rt)
+            if not new_rt:
+                raise ValueError('Could not fetch route table for: {0}'.format(new_rt))
+            new_rt = new_rt[0]
+        user.ec2.connection.replace_route_table_association_with_assoc(association_id=ass.id,
+                                                                       route_table_id=new_rt.id)
+        new_main = get_main_route_table(vpc)
+        if new_main.id != new_rt.id:
+            raise ValueError('New main route table:{0} != to expected route table:{1} after '
+                             'requesting replacement'.format(new_main.id, new_rt.id))
+        self.status('Replaced main route table.')
+        if revert:
+            self.status('Reverting back to previous main route table...')
+            return self.test4b7b_route_table_main_route_table_can_be_replaced(new_rt=main_rt,
+                                                                              revert=False)
+        else:
+            return new_rt
 
     def test4b10_route_table_add_route_basic_packet_test(self):
         """

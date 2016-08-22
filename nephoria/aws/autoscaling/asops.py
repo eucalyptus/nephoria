@@ -47,9 +47,13 @@ class ASops(BotoBaseOps):
     CONNECTION_CLASS = AutoScaleConnection
 
     def setup(self):
-        super(self, ASops).setup()
+        super(ASops, self).setup()
         #Source ip on local test machine used to reach instances
         self.as_source_ip = None
+
+    def setup_resource_trackers(self):
+        self.log.warning('No resource trackers have been implemented for: {0}'
+                         .format(self.__class__.__name__))
 
     def create_launch_config(self, name, image_id, key_name=None, security_groups=None, user_data=None,
                              instance_type=None, kernel_id=None, ramdisk_id=None, block_device_mappings=None,
