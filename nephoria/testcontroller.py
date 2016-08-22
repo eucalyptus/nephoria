@@ -47,8 +47,13 @@ class TestController(object):
             log_level = getattr(logging, log_level.upper(), logging.DEBUG)
         self.log = Eulogger("TESTER:{0}".format(hostname), stdout_level=log_level)
         if not hostname and environment_file:
-            component = self.get_component_from_topology(environment_file, 'clc-1')
-            hostname = component['clc-1']
+            try:
+                component = self.get_component_from_topology(environment_file, 'clc-1')
+                hostname = component['clc-1']
+            except KeyError:
+                component = self.get_component_from_topology(environment_file,
+                                                             'clc')
+                hostname = component['clc'][0]
         self.log.identifier = "TESTER:{0}".format(hostname)
         self.log = Eulogger("TESTER:{0}".format(hostname), stdout_level=log_level)
         self._region = region
