@@ -1548,6 +1548,7 @@ class VpcBasics(CliTestRunner):
         user = self.user
         vpc = self.test3b0_get_vpc_for_security_group_tests()
         prop = self.tc.sysadmin.get_property('cloud.vpc.securitygroupspervpc')
+        prop.show()
         limit = int(prop.value)
         self.status('Attempting to verify security group counts up to '
                     'cloud.vpc.securitygroupspervpc:{0}'.format(limit))
@@ -1572,6 +1573,7 @@ class VpcBasics(CliTestRunner):
         user = self.user
         vpc = self.test3b0_get_vpc_for_security_group_tests()
         prop = self.tc.sysadmin.get_property('cloud.vpc.rulespersecuritygroup')
+        prop.show()
         limit = int(prop.value)
         group = self.get_test_security_groups(vpc=vpc, user=user, rules={}, count=1)[0]
         egress_count = len(group.rules_egress)
@@ -1601,6 +1603,7 @@ class VpcBasics(CliTestRunner):
         user = self.user
         vpc = self.test3b0_get_vpc_for_security_group_tests()
         prop = self.tc.sysadmin.get_property('cloud.vpc.securitygroupspernetworkinterface')
+        prop.show()
         limit = int(prop.value)
         subnet = self.get_non_default_test_subnets_for_vpc(vpc=vpc, count=1, user=user)[0]
         eni = self.get_test_enis_for_subnet(subnet, count=1, user=user)[0]
@@ -2046,6 +2049,7 @@ class VpcBasics(CliTestRunner):
         user = self.user
         vpc = self.test4b0_get_vpc_for_route_table_tests()
         prop = self.tc.sysadmin.get_property('cloud.vpc.routetablespervpc')
+        prop.show()
         limit = int(prop.value)
         existing = user.ec2.connection.get_all_route_tables(filters={'vpc-id': vpc.id})
         new_rts = []
@@ -2073,6 +2077,7 @@ class VpcBasics(CliTestRunner):
         subnet = self.test4b1_get_subnets_for_route_table_tests(vpc=vpc, count=1)
         eni = self.get_test_enis_for_subnet(subnet=subnet, count=1)[0]
         prop = self.tc.sysadmin.get_property('cloud.vpc.routespertable')
+        prop.show()
         limit = int(prop.value)
         rts = user.ec2.connection.get_all_route_tables(
             filters={'association.main': 'true', 'vpc-id': vpc.id})
@@ -2139,6 +2144,62 @@ class VpcBasics(CliTestRunner):
             test_vpc = test_vpc[0]
         return test_vpc
 
+    def test5c0_subnets_per_vpc_limit(self, vpc=None):
+        """
+        Test that the max subnets per vpc defined in the following property can not be exceeded,
+        and the user can create the amount defined in the property.
+        cloud.vpc.subnetspervpc
+        """
+        user = self.user
+        vpc = vpc or self.test5b0_get_vpc_for_subnet_tests()
+        prop = self.tc.sysadmin.get_property('cloud.vpc.subnetspervpc')
+        prop.show()
+        limit = int(prop.value)
+        existing = user.ec2.connection.get_all_subnets(vpc=vpc)
+        zone1 = self.zones[0]
+        if len(self.zones) > 1:
+            zone2 = self.zones[1]
+        else:
+            zone2 = zone1
+        remaining = limit - len(existing)
+        amount1 = remaining / 2
+        amount2 = remaining - amount1
+        self.status('Creating {0} subnets. Existing:{1}, limit:{2}'
+                    .format(amount1, len(existing), limit))
+        cleanup = []
+        try:
+            new = self.create_test_subnets(zones=[zone1], count_per_zone=amount1)
+            cleanup = new
+            self.status('Created {0} new subnets'.format(len(new)))
+            existing = user.ec2.connection.get_all_subnets(vpc=vpc)
+            self.status('Creating {0} subnets. Existing:{1}, limit:{2}'
+                       .format(amount2, len(existing), limit))
+            new2 = self.create_test_subnets(zones=[zone2], count_per_zone=amount2)
+            cleanup += new2
+            self.status('Created {0} new subnets'.format(len(new2)))
+
+            existing = user.ec2.connection.get_all_subnets(vpc=vpc)
+            if len(existing) != limit:
+                raise ValueError('Attempted to create subnets of limit count, but existing '
+                                 'subnets:{0} != limit:{1}?'.format(len(existing), limit))
+            self.status('Negative test. Attempting to exceed limit:{0}. Creating {1} subnets. '
+                        'Existing:{1}'.format(limit, len(self.zones), len(existing)))
+            try:
+                new2 = self.create_test_subnets(zones=self.zones, count_per_zone=1)
+            except EC2ResponseError as EE:
+                if int(EE.status) == 400 and EE.reason == 'SubnetLimitExceeded':
+                    self.status('Success. Was not able to exceed subnet per vpc limit. Error:{0}'
+                                .format(EE))
+            else:
+                raise RuntimeError('Attempted to exceed max subnets per vpc and did not rx error')
+        finally:
+            for subnet in new:
+                user.ec2.delete_subnet_and_dependency_artifacts(subnet)
+
+
+
+
+
     def test5z0_test_clean_up_subnet_test_vpc_dependencies(self):
         """
         Delete the VPC and dependency artifacts created for the security group testing.
@@ -2186,12 +2247,13 @@ class VpcBasics(CliTestRunner):
         if not test_vpc:
             test_vpc = self.create_test_vpcs()
             if not test_vpc:
-                raise RuntimeError('Failed to create test VPC for eni tests?')
+                raise RuntimeError('Failed to create test VPC for nat gw tests?')
             test_vpc = test_vpc[0]
             self.user.ec2.create_tags([test_vpc.id], {self.NAT_GW_TEST_TAG: self.test_id})
         else:
             test_vpc = test_vpc[0]
         return test_vpc
+
 
     def test8z0_test_clean_up_nat_gw_test_vpc_dependencies(self):
         """

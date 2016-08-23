@@ -954,6 +954,58 @@ disable_root: false"""
         else:
             return ret_buf
 
+    def get_subnet_dependency_artifacts(self, subnet):
+        ret_dict = {}
+        if not isinstance(subnet, basestring):
+            subnet = subnet.id
+        ret_dict['route_tables'] = self.connection.get_all_route_tables(
+            filters={'association.subnet-id': subnet})
+        ret_dict['enis'] = self.connection.get_all_network_interfaces(
+            filters={'subnet-id': subnet})
+        return ret_dict
+
+    def show_subnet_dependency_artifacts(self, subnet=None, artifacts=None, printmethod=None,
+                                          printme=True):
+        if not subnet and not artifacts:
+            raise ValueError('Need "vpc" and/or "artifacts" to show dependencies')
+        deps = artifacts or self.get_subnet_dependency_artifacts(subnet=subnet) or {}
+        pt = PrettyTable(['TYPE', 'ARTIFACTS'])
+        pt.align = 'l'
+        for key, value in deps.iteritems():
+            pt.add_row([key, "\n".join([str(x) for x in value or []])])
+        if printme:
+            printmethod = printmethod or self.log.info
+            printmethod("\n{0}\n".format(pt))
+        else:
+            return pt
+
+    def delete_subnet_and_dependency_artifacts(self, subnet, verbose=True):
+        if not isinstance(subnet, basestring):
+            subnet = subnet.id
+        deps = self.get_subnet_dependency_artifacts(subnet=subnet)
+        if verbose:
+            pt = self.show_subnet_dependency_artifacts(subnet, printme=False)
+            self.log.info('Attempting to delete SUBNET artifacts...\n{0}\n'.format(pt))
+        if deps['route_tables']:
+            self.log.debug('Attempting to delete vpc route tables')
+            for rtb in deps['route_tables']:
+                main = False
+                for assoc in rtb.associations:
+                    self.connection.disassociate_route_table(assoc.id)
+                    if assoc.main:
+                        main = True
+                if not main:
+                    self.connection.delete_route_table(route_table_id=rtb.id)
+        if deps['enis']:
+            self.log.debug('Attempting to delete vpc enis')
+            for eni in deps['enis']:
+                eni.delete()
+        self.log.debug('Attempting to delete subnet:{0}'.format(subnet))
+        self.connection.delete_subnet(subnet)
+        self.log.debug('Deleted SUBNET and dependency artifacts')
+
+
+
     def get_vpc_dependency_artifacts(self, vpc):
         """
         Convienence method to help with the pains of gathering vpc artifacts needed to
@@ -1378,7 +1430,7 @@ disable_root: false"""
         else:
             return ret_buf
 
-    def get_all_subnets(self, subnet_ids=None, zone=None, filters=None, dry_run=False,
+    def get_all_subnets(self, subnet_ids=None, zone=None, vpc=None, filters=None, dry_run=False,
                         verbose=None):
         ret_list = []
         filters = filters or {}
@@ -1386,6 +1438,10 @@ disable_root: false"""
             if not isinstance(zone, Zone):
                 zone = zone.name
             filters['availabilityZone'] = zone
+        if vpc:
+            if not isinstance(vpc, basestring):
+                vpc = vpc.id
+            filters['vpc-id'] = vpc
         if verbose is None:
             verbose = self._use_verbose_requests
         if verbose:
