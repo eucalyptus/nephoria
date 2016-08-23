@@ -112,6 +112,7 @@ class VpcBasics(CliTestRunner):
     SECURITY_GROUP_TEST_TAG = "SECURITY_GROUP_TEST_TAG"
     ENI_TEST_TAG = 'ENI_TEST_TAG'
     ROUTE_TABLE_TEST_TAG = 'ROUTE_TABLE_TEST_TAG'
+    NAT_GW_TEST_TAG = 'NAT_GATEWAY_TEST_TAG'
 
     def post_init(self):
         self.test_id = "{0}{1}".format(int(time.time()), randint(0, 50))
@@ -2112,22 +2113,6 @@ class VpcBasics(CliTestRunner):
             raise ValueError('Was able to exceed route limit per table of :{0}'.format(limit))
 
 
-    def test4d1_route_table_change_main_table(self):
-        """
-        A user can change which table is the main route table, which changes
-        the default for additional new subnets, or any subnets that are not explicitly
-        associated with any other route table.
-        """
-        raise NotImplementedError()
-
-    def test4d3_route_table_replace_route_table_association(self):
-        """
-        Changes the route table associated with a given subnet in a VPC. After the operation
-        completes, the subnet uses the routes in the new route table it's associated with.
-        """
-        raise NotImplementedError()
-
-
     def test4z0_clean_up_route_table_test_vpc_dependencies(self):
         """
         Delete the VPC and dependency artifacts created for the security group testing.
@@ -2191,6 +2176,32 @@ class VpcBasics(CliTestRunner):
             if vpc:
                 user.ec2.delete_vpc_and_dependency_artifacts(vpc)
 
+
+    ###############################################################################################
+    # NAT Gateway tests
+    ###############################################################################################
+    def test8b0_get_vpc_for_nat_gw_tests(self):
+        test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.NAT_GW_TEST_TAG,
+                                                       'tag-value': self.test_id})
+        if not test_vpc:
+            test_vpc = self.create_test_vpcs()
+            if not test_vpc:
+                raise RuntimeError('Failed to create test VPC for eni tests?')
+            test_vpc = test_vpc[0]
+            self.user.ec2.create_tags([test_vpc.id], {self.NAT_GW_TEST_TAG: self.test_id})
+        else:
+            test_vpc = test_vpc[0]
+        return test_vpc
+
+    def test8z0_test_clean_up_nat_gw_test_vpc_dependencies(self):
+        """
+        Delete the VPC and dependency artifacts created for the security group testing.
+        """
+        if not self.args.no_clean:
+            user = self.user
+            vpc = self.test8b0_get_vpc_for_nat_gw_tests()
+            if vpc:
+                user.ec2.delete_vpc_and_dependency_artifacts(vpc)
 
 
     ###############################################################################################
