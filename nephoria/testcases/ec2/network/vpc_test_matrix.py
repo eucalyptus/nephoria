@@ -2042,7 +2042,24 @@ class VpcBasics(CliTestRunner):
         There is a limit on the number of route tables you can create per VPC.
         cloud.vpc.routetablespervpc
         """
-        raise NotImplementedError()
+        user = self.user
+        vpc = self.test4b0_get_vpc_for_route_table_tests()
+        prop = self.tc.sysadmin.get_property('cloud.vpc.routetablespervpc')
+        limit = int(prop.value)
+        existing = user.ec2.connection.get_all_route_tables(filters={'vpc-id': vpc.id})
+        new_rts = []
+        for x in xrange(0, limit-len(existing)):
+            new_rts.append(user.ec2.connection.create_route_table(vpc_id=vpc.id))
+        existing = user.ec2.connection.get_all_route_tables(filters={'vpc-id': vpc.id})
+        if len(existing) != limit:
+            raise ValueError('Was not able to create route tables of count limit, got:{0}/{1}'
+                             .format(existing, limit))
+        self.status('Passed. Could create route tables up to limit per vpc set')
+        try:
+            user.ec2.connection.create_route_table(vpc_id=vpc.id)
+        except EC2ResponseError as EE:
+            if int(EE.status) == 400 and EE.reason == 'RouteTableLimitExceeded':
+                self.status('Passed. Could not exceed route table limit per VPC')
 
 
     def test4c2_route_table_max_routes_per_table(self):
@@ -2050,7 +2067,50 @@ class VpcBasics(CliTestRunner):
         There is a limit on the number of routes you can add per route table.
         cloud.vpc.routespertable
         """
-        raise NotImplementedError()
+        user = self.user
+        vpc = self.test4b0_get_vpc_for_route_table_tests()
+        subnet = self.test4b1_get_subnets_for_route_table_tests(vpc=vpc, count=1)
+        eni = self.get_test_enis_for_subnet(subnet=subnet, count=1)[0]
+        prop = self.tc.sysadmin.get_property('cloud.vpc.routespertable')
+        limit = int(prop.value)
+        rts = user.ec2.connection.get_all_route_tables(
+            filters={'association.main': 'true', 'vpc-id': vpc.id})
+        if rts:
+            rt = rts[0]
+        else:
+            rt = user.ec2.connection.create_route_table(vpc_id=vpc.id)[0]
+        for route in rt.rules:
+            user.ec2.connection.delete_route(route_table_id=rt.id,
+                                             destination_cidr_block=route.destination_cidr_block)
+        test_net = '192.168'
+        def add_route(count):
+            n4 = count % 255
+            n3 = count / 255
+            test_cidr = "{0}.{1}.{2}/32".format(test_net, n3, n4)
+            self.log.debug('Attempting to add route#{0}, cidr:{1} via:{2} to {3}'
+                           .format(count, test_cidr, eni.id, rt.id))
+            user.ec2.connection.create_route(route_table_id=rt.id,
+                                             destination_cidr_block=test_cidr,
+                                             interface_id=eni.id)
+        x = 0
+        for x in xrange(0, limit):
+            add_route(x)
+        rt = user.ec2.connection.get_all_route_tables(rt.id)[0]
+        if len(rt.routes) != limit:
+            raise ValueError('Route count:{0} != limit:{1} after adding routes'
+                             .format(len(rt.routes), limit))
+        self.status('Was able to add count equal to limit of: {0}'.format(limit))
+        try:
+            x += 1
+            add_route(x)
+        except Exception as E:
+            if (isinstance(E, EC2ResponseError) and int(E.status == 400) and
+                E.reason == 'RouteLimitExceeded'):
+                self.status('Passing. Could not exceed route limit')
+                return
+        else:
+            raise ValueError('Was able to exceed route limit per table of :{0}'.format(limit))
+
 
     def test4d1_route_table_change_main_table(self):
         """
