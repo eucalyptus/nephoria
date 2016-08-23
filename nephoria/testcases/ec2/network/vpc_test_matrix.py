@@ -1884,20 +1884,157 @@ class VpcBasics(CliTestRunner):
         else:
             return new_rt
 
-    def test4b10_route_table_add_route_basic_packet_test(self):
+    def test4b10_route_table_add_and_delete_eni_route_packet_test(self,
+                                                                  test_net='192.168.190.0'):
         """
         Launch a VM(s) in a subnet referencing the route table to be tested.
+        Find an IP that is not reachable by the tx VM. Assign this TEST IP to the rx VM.
+        Enable IP forwarding on the rx VM. Set the route for the TEST IP to the eni of the rx
+        VM. Attempt to reach the the TEST IP from the tx VM to verify the new route works.
+        Remove the route and verify the tx can no longer reach the TEST IP.
         Verify that packets are routed correctly per route provided.
         """
-        raise NotImplementedError()
+        user = self.user
+        vpc = self.test4b0_get_vpc_for_route_table_tests()
+        subnet = self.test4b1_get_subnets_for_route_table_tests(vpc=vpc, count=1)[0]
 
-    def test4b11_route_table_delete_route_basic_packet_test(self):
-        """
-        Launch a VM(s) in a subnet referencing the route table to be tested.
-        Add use an exiting route to verify traffic is routed correctly per this route entry.
-        Delete the route entry and verify traffic is no longer routed accordingly.
-        """
-        raise NotImplementedError()
+        for rt in user.ec2.connection.get_all_route_tables(
+                filters={'association.subnet_id': subnet.id}):
+            for ass in rt.associtations:
+                if ass.subnet_id == subnet.id:
+                    user.ec2.connection.disassociate_route_table(association_id=ass.id)
+        new_rt = user.ec2.connection.create_route_table(subnet.vpc_id)
+        user.ec2.connection.associate_route_table(route_table_id=new_rt.id, subnet_id=subnet.id)
+        group = self.get_test_security_groups(vpc=vpc, rules=[('tcp', 22, 22, '0.0.0.0/0'),
+                                                              ('icmp', -1, -1, '0.0.0.0/0')])[0]
+
+        vm = self.get_test_instances(zone=subnet.availability_zone, subnet_id=subnet.id,
+                                     group_id=group.id, user=user, count=2)
+        vm_tx, vm_rx = self.create_test_instances
+        keep_pinging = True
+        octets = [int(x) for x in test_net.split('.')]
+        test_net = "{0}.{1}".format(octets[0], octets[1])
+        net, ip = [octets[2], octets[3]]
+        # Find a free ip address...
+        test_ip = None
+        while keep_pinging:
+            ip += 1
+            if ip > 254:
+                if net >= 255:
+                    raise ValueError('Could not find available ip for test. Maxed out at:'
+                                     '"{0}.{1}.{2}"'.format(test_net, net, ip))
+                net += 1
+                ip = 2
+
+            test_ip = "{0}.{1}.{2}".format(test_net, net, ip)
+            try:
+                vm_tx.sys('ping -c1 -t3 {0}'.format(test_ip))
+            except CommandExitCodeException as CE:
+                self.log.debug('Assuming ip:{0} is available ping test returned:{0}'.format(CE))
+                keep_pinging = False
+                break
+            else:
+                test_ip = None
+        if not test_ip:
+            raise ValueError('Could not find available ip for test?')
+        interfaces = vm_rx.sys("ip -o link show | awk -F': ' '{print $2}' | grep 'eth\|em'",
+                               code=0) or []
+        eth_itfc = None
+        virt_eth = None
+        for x in [0, 1]:
+            for prefix in ['eth', 'em']:
+                eth_itfc = prefix + str(x)
+                if eth_itfc in  interfaces:
+                    break
+                else:
+                    eth_itfc = None
+        if not eth_itfc:
+            raise ValueError('Could not find test interface (eth0, eth1, em0, em1, etc) on '
+                             'vm:{0}, interfaces:{1}'.format(vm_rx.id, ",".join(interfaces)))
+        for x in xrange(0, 100):
+            virt_eth = "{0}:{1}".format(eth_itfc, x)
+            if virt_eth not in interfaces:
+                break
+            else:
+                virt_eth = None
+        if not virt_eth:
+            raise ValueError('Could not find available virt interface on '
+                             'vm:{0}, interfaces:{1}'.format(vm_rx.id, ",".join(interfaces)))
+
+        vm_rx.sys('ifconfig {0} {1}'.format(virt_eth, test_ip), code=0)
+        try:
+            vm_rx.sys('echo 1 > /proc/sys/net/ipv4/ip_forward', code=0)
+            eni = None
+            for eni in vm_rx.interfaces:
+                if eni.subnet_id == vm_tx.subnet_id:
+                    break
+            if not eni:
+                vm_tx.show_enis()
+                vm_rx.show_enis()
+                raise ValueError('Could not find eni on {0} with subnet for {1}, {2}'
+                                 .format(vm_rx.id, vm_tx.id, vm_tx.subnet_id))
+            new_route = user.ec2.connection.create_route(route_table_id=new_rt.id,
+                                                         destination_cidr_block=test_ip + "/32",
+                                                         interface_id=eni.id)
+            timeout = 60
+            start = time.time()
+            elapsed = 0
+            attempt = 1
+            success = False
+            # Retry this test in case rule needs time to take effect...
+            while elapsed < timeout:
+                elapsed = int(time.time() - start)
+                try:
+                    self.status('Attempting to ping test ip after new route has been ADDED. '
+                                'Attempt: {0}, Elapsed:{1}/{2}'.format(attempt, elapsed, timeout))
+                    vm_tx.sys('ping -c2 {0}'.format(test_ip), code=0)
+                    success = True
+                    break
+                except CommandExitCodeException as CE:
+                    msg = 'Ping vm to vm failed on attempt:{0} elapsed::{1}/{2}. Err:{1}'\
+                        .format(attempt, elapsed, timeout, CE)
+                    if elapsed >= timeout:
+                        raise RuntimeError(msg)
+                    else:
+                        self.log.debug(msg)
+                        time.sleep(5)
+            if not success:
+                raise RuntimeError('Ping vm to vm failed on attempt:{0} elapsed::{1}/{2}. Err:{1}'
+                                   .format(attempt, elapsed, timeout))
+            self.status('Test IP was reachable from {0} after route was added'.format(vm_tx.id))
+            self.status('Revoking route and retesting...')
+
+            user.ec2.connection.delete_route(
+                route_table_id=new_rt.id, destination_cidr_block=new_route.destination_cidr_block)
+            timeout = 60
+            start = time.time()
+            elapsed = 0
+            attempt = 1
+            success = False
+            # Retry this test in case rule needs time to take effect...
+            while elapsed < timeout:
+                elapsed = int(time.time() - start)
+                try:
+                    self.status('Attempting to ping test ip after new route has been DELETED. '
+                                'Attempt: {0}, Elapsed:{1}/{2}'.format(attempt, elapsed, timeout))
+                    vm_tx.sys('ping -c2 {0}'.format(test_ip), code=0)
+                except CommandExitCodeException as CE:
+                    msg = 'SUCCESS, Ping vm to vm failed on attempt:{0} elapsed::{1}/{2}. ' \
+                          'Err:{1}'.format(attempt, elapsed, timeout, CE)
+                    success = True
+                    break
+
+                if elapsed >= timeout:
+                    raise RuntimeError(msg)
+                else:
+                    self.log.debug('Error, Ping vm to vm succeeded on attempt:{0} '
+                                   'elapsed::{1}/{2}'.format(attempt, elapsed, timeout))
+                    time.sleep(5)
+            self.status('Test IP was no longer reachable from {0} after route was deleted'
+                        .format(vm_tx.id))
+
+        finally:
+            vm_rx.sys('ifconfig {0} down'.format(virt_eth, test_ip), code=0)
 
 
     def test4c1_route_table_max_tables_per_vpc(self):
