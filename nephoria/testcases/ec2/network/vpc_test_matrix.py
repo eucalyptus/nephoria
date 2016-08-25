@@ -113,6 +113,7 @@ class VpcBasics(CliTestRunner):
     ENI_TEST_TAG = 'ENI_TEST_TAG'
     ROUTE_TABLE_TEST_TAG = 'ROUTE_TABLE_TEST_TAG'
     NAT_GW_TEST_TAG = 'NAT_GATEWAY_TEST_TAG'
+    NET_ACL_TEST_TAG = 'NET_ACL_TEST_TAG'
 
     def post_init(self):
         self.test_id = "{0}{1}".format(int(time.time()), randint(0, 50))
@@ -397,6 +398,7 @@ class VpcBasics(CliTestRunner):
         :param count_per_zone: int, number of subnets needed per zone
         :return: list of subnets
         """
+        max_net = 253
         user = user or self.user
         test_subnets = []
         zones = zones or self.zones
@@ -409,7 +411,7 @@ class VpcBasics(CliTestRunner):
 
                 subnet_cidr = None
                 attempts = 0
-                while subnet_cidr is None and attempts < 253:
+                while subnet_cidr is None and attempts < max_net:
                     attempts += 1
                     subnet_cidr =  re.sub("(\d+.\d+).\d+.\d+.\d\d",
                                           r"\1.{0}.0/24".format(attempts), vpc.cidr_block)
@@ -419,8 +421,9 @@ class VpcBasics(CliTestRunner):
                     for sub in subnets:
                         if sub.cidr_block == subnet_cidr or \
                                 is_address_in_network(subnet_cidr.strip('/24'), sub.cidr_block):
-                            self.log.info('Subnet: {0} conflicts with existing:{1}'
-                                          .format(subnet_cidr, sub.cidr_block))
+                            self.log.debug('Subnet: {0} conflicts with existing:{1}, '
+                                           'attempt:{0}/{1}'.format(subnet_cidr, sub.cidr_block,
+                                                                    attempts, max_net))
                             subnet_cidr = None
                             break
                 try:
@@ -1335,13 +1338,125 @@ class VpcBasics(CliTestRunner):
                 raise SkipTestException('Test already run for the test user')
         return self.check_user_default_security_group_rules(user=self.user)
 
-    def test1g_test_user_default_routes(self):
+    def test2g_test_user_default_routes(self):
         """
         Definition:
         Attempts to verify that a test user has a default routes present for the vpc
         cidr block and default igw in it's route table
         """
         return self.check_user_default_routes_present(user=self.user)
+
+    def test2v1_vpc_cidr_block_range_large(self):
+        """
+        This test attempts to create a vpc larger than allowed cidr block range...
+        You can assign a single CIDR block to a VPC. The allowed block size is between
+        a /28 netmask and /16 netmask. In other words, the VPC can contain from 16 to 65,536 IP
+         addresses. You can't change the size of a VPC after you create it. If your VPC is too
+         small to meet your needs, create a new, larger VPC, and then migrate your instances
+         to the new VPC.
+        """
+        user = self.user
+        self.status('Attempting to create a new vpc which exceeds the max cidr range of /16...')
+        vpc = None
+        try:
+            try:
+                vpc = user.ec2.connection.create_vpc(cidr_block='192.0.0.0/8')
+            except Exception as E:
+                if (isinstance(EC2ResponseError) and int(E.status) == 400 and
+                    E.reason == 'InvalidVpc.Range'):
+                    self.status('Passed. System provided proper error when attempting to create a VPC '
+                                'larger than /16. Err:{0}'.format(E))
+                else:
+                    self.log.error('System responded with incorrect error for this negative test...')
+                    raise
+            else:
+                if vpc:
+                    user.ec2.show_vpc(vpc)
+                raise RuntimeError('System either allowed the user to create a VPC with cidr larger '
+                                   'than /16, or did not respond with the proper error')
+        finally:
+            if vpc:
+                self.status('attempting to delete vpc after this test...')
+                user.ec2.delete_vpc_and_dependency_artifacts(vpc)
+
+    def test2v2_vpc_cidr_block_range_small(self):
+        """
+        This test attempts to create a vpc smaller than allowed cidr block range...
+        You can assign a single CIDR block to a VPC. The allowed block size is between
+        a /28 netmask and /16 netmask. In other words, the VPC can contain from 16 to 65,536 IP
+         addresses. You can't change the size of a VPC after you create it. If your VPC is too
+         small to meet your needs, create a new, larger VPC, and then migrate your instances
+         to the new VPC.
+        """
+        user = self.user
+        self.status('Attempting to create a new vpc which is smaller than the min cidr range'
+                    ' of /28...')
+        vpc = None
+        try:
+            try:
+                vpc = user.ec2.connection.create_vpc(cidr_block='192.0.0.0/29')
+            except Exception as E:
+                if (isinstance(EC2ResponseError) and int(E.status) == 400 and
+                            E.reason == 'InvalidVpc.Range'):
+                    self.status(
+                        'Passed. System provided proper error when attempting to create a VPC '
+                        'smaller than /28. Err:{0}'.format(E))
+                else:
+                    self.log.error(
+                        'System responded with incorrect error for this negative test...')
+                    raise
+            else:
+                if vpc:
+                    user.ec2.show_vpc(vpc)
+                raise RuntimeError(
+                    'System either allowed the user to create a VPC with cidr smaller '
+                    'than /28, or did not respond with the proper error')
+        finally:
+            if vpc:
+                self.status('attempting to delete vpc after this test...')
+                user.ec2.delete_vpc_and_dependency_artifacts(vpc)
+
+    def test2v2_vpc_cidr_block_range_invalid_blocks(self):
+        """
+        This test attempts to create vpcs which with cidr values which are not permitted.
+
+        Per euca-12101
+        Looks like use of these subnets should not be permitted:
+        0.0.0.0/8
+        127.0.0.0/8
+        169.254.0.0/16
+        224.0.0.0/4
+        """
+        user = self.user
+        for cidr in ['0.0.0.0/8', '0.0.0.0/16', '127.0.0.0/8', '169.254.0.0/16', '224.0.0.0/4']:
+            self.status('Attempting to create a new vpc using the invalid cidr: {0}'.format(cidr))
+            vpc = None
+            try:
+                try:
+                    self.status('Attempting to create a VPC with invalid CIDR:"{0}"'.format(cidr))
+                    vpc = user.ec2.connection.create_vpc(cidr_block=cidr)
+                except Exception as E:
+                    if (isinstance(EC2ResponseError) and int(E.status) == 400 and
+                                E.reason == 'InvalidVpc.Range'):
+                        self.status(
+                            'Passed. System provided proper error when attempting to create a VPC '
+                            'with invalid cidr block:"{0}". Err:{1}'.format(cidr, E))
+                    else:
+                        self.log.error(
+                            'System responded with incorrect error for this negative test...')
+                        raise
+                else:
+                    if vpc:
+                        user.ec2.show_vpc(vpc)
+                    raise RuntimeError(
+                        'System either allowed the user to create a VPC with invalid cidr:"{0}", '
+                        'or did not respond with the proper error'.format(cidr))
+            finally:
+                if vpc:
+                    self.status('attempting to delete vpc after this test...')
+                    user.ec2.delete_vpc_and_dependency_artifacts(vpc)
+
+
 
     def test2z_test_user_basic_instance_ssh_defaults(self):
         """
@@ -2193,12 +2308,10 @@ class VpcBasics(CliTestRunner):
             else:
                 raise RuntimeError('Attempted to exceed max subnets per vpc and did not rx error')
         finally:
-            for subnet in new:
+            self.status('Attempting to delete the recently created subnets and '
+                        'any dependencies...')
+            for subnet in cleanup:
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)
-
-
-
-
 
     def test5z0_test_clean_up_subnet_test_vpc_dependencies(self):
         """
@@ -2254,6 +2367,23 @@ class VpcBasics(CliTestRunner):
             test_vpc = test_vpc[0]
         return test_vpc
 
+    def test8s0_scenario2_private_and_public_subnet_packet_test(self):
+        """
+        The instances in the public subnet can receive inbound traffic directly from the
+        Internet, whereas the instances in the private subnet can't. The instances in the
+        public subnet can send outbound traffic directly to the Internet, whereas the instances
+        in the private subnet can't. Instead, the instances in the private subnet can access
+        the Internet by using a network address translation (NAT) gateway that resides in
+        the public subnet.
+        """
+        raise NotImplementedError()
+
+    def test8x0_nat_gw_max_gw_per_zone_limit(self):
+        """
+        Test the eucalyptus property:cloud.vpc.natgatewaysperavailabilityzone
+        Confirm the limit can be reached and not exceeded.
+        """
+        raise NotImplementedError()
 
     def test8z0_test_clean_up_nat_gw_test_vpc_dependencies(self):
         """
@@ -2265,6 +2395,39 @@ class VpcBasics(CliTestRunner):
             if vpc:
                 user.ec2.delete_vpc_and_dependency_artifacts(vpc)
 
+###############################################################################################
+# NAT Gateway tests
+###############################################################################################
+    def test9b0_get_vpc_for_network_acl_tests(self):
+        test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.NET_ACL_TEST_TAG,
+                                                       'tag-value': self.test_id})
+        if not test_vpc:
+            test_vpc = self.create_test_vpcs()
+            if not test_vpc:
+                raise RuntimeError('Failed to create test VPC for network acl tests?')
+            test_vpc = test_vpc[0]
+            self.user.ec2.create_tags([test_vpc.id],
+                                      {self.NET_ACL_TEST_TAG: self.test_id})
+        else:
+            test_vpc = test_vpc[0]
+        return test_vpc
+
+    def test9c0_net_acl_max_net_acl_per_vpc_limit(self):
+        """
+        Test the eucalyptus property:cloud.vpc.networkaclspervpc
+        Confirm the limit can be reached and not exceeded.
+        """
+        raise NotImplementedError()
+
+    def test9z0_test_clean_up_nat_gw_test_vpc_dependencies(self):
+        """
+        Delete the VPC and dependency artifacts created for the security group testing.
+        """
+        if not self.args.no_clean:
+            user = self.user
+            vpc = self.test9b0_get_vpc_for_network_acl_tests()
+            if vpc:
+                user.ec2.delete_vpc_and_dependency_artifacts(vpc)
 
     ###############################################################################################
     # Misc tests
