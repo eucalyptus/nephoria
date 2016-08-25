@@ -40,7 +40,8 @@ from nephoria.testcontroller import TestController
 from nephoria.usercontext import UserContext
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, TestResult, SkipTestException
 from nephoria.aws.ec2.euinstance import EuInstance
-from cloud_utils.net_utils import packet_test, is_address_in_network, test_port_status
+from cloud_utils.net_utils import packet_test, is_address_in_network, test_port_status, \
+    get_network_info_for_cidr
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 from cloud_utils.log_utils import markup, printinfo, get_traceback, red, ForegroundColor, \
     BackGroundColor
@@ -1416,7 +1417,7 @@ class VpcBasics(CliTestRunner):
                 self.status('attempting to delete vpc after this test...')
                 user.ec2.delete_vpc_and_dependency_artifacts(vpc)
 
-    def test2v2_vpc_cidr_block_range_invalid_blocks(self):
+    def test2v3_vpc_cidr_block_range_invalid_blocks(self):
         """
         This test attempts to create vpcs which with cidr values which are not permitted.
 
@@ -2259,7 +2260,246 @@ class VpcBasics(CliTestRunner):
             test_vpc = test_vpc[0]
         return test_vpc
 
-    def test5c0_subnets_per_vpc_limit(self, vpc=None):
+    def test5g0_vpc_cidr_block_range_full_vpc_cidr_block(self):
+        """
+        This test attempts to create a subnet equal to the size of the vpc cidr block.
+
+        The CIDR block of a subnet can be the same as the CIDR block for the VPC (for a single
+        subnet in the VPC), or a subset (for multiple subnets). The allowed block size is
+        between a /28 netmask and /16 netmask. If you create more than one subnet in a VPC,
+        the CIDR blocks of the subnets cannot overlap.
+        """
+        user = self.user
+        vpc = self.test5b0_get_vpc_for_subnet_tests()
+        self.status('Attempting to create a new subnet which is equal to the VPC CIDR block...')
+        subnet = None
+        self.status('Deleting any potentially conflicting subnets from this test vpc:{0}'
+                    .format(vpc.id))
+        test_cidr = vpc.cidr_block
+        subs = user.ec2.get_all_subnets(filters={'vpc_id': vpc.id})
+        for sub in subs:
+            user.ec2.delete_subnet_and_dependency_artifacts(sub)
+        try:
+            self.status('Attempting to create subnet with VALID cidr equal to vpc cidr:{0}'
+                        .format(test_cidr))
+            subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id, cidr_block=test_cidr)
+        finally:
+            if subnet:
+                self.status('attempting to delete SUBNET after this test...')
+                user.ec2.delete_subnet_and_dependency_artifacts(subnet)
+
+    def test5v1_subnet_duplicate_subnets(self):
+        """
+        This test attempts to create 2 duplicate subnets, this should not be allowed...
+
+        The CIDR block of a subnet can be the same as the CIDR block for the VPC (for a single
+        subnet in the VPC), or a subset (for multiple subnets). The allowed block size is
+        between a /28 netmask and /16 netmask. If you create more than one subnet in a VPC,
+        the CIDR blocks of the subnets cannot overlap.
+        """
+        user = self.user
+        vpc = self.test5b0_get_vpc_for_subnet_tests()
+        self.status('Attempting to create a new subnets with duplicate cidr...')
+        subnets =[]
+        self.status('Deleting any potentially conflicting subnets from this test vpc:{0}'
+                    .format(vpc.id))
+        subs = user.ec2.get_all_subnets(filters={'vpc_id': vpc.id})
+        zone = self.zones[0]
+        for sub in subs:
+            user.ec2.delete_subnet_and_dependency_artifacts(sub)
+        try:
+            try:
+                self.status('Attempting to create the intial subnet in zone:{0}...'.format(zone))
+                subnet1 = self.create_test_subnets(vpc=vpc, zones=[zone], count_per_zone=1)[0]
+                subnets.append(subnet1)
+                self.status('Attempting to create a subnet with duplicate cidr block. This '
+                            'should not be allowed')
+                subnet2 = user.ec2.connection.create_subnet(vpc_id=vpc.id,
+                                                            cidr_block=subnet1.cidr_block)
+                subnets.append(subnet2)
+            except Exception as E:
+                if (isinstance(EC2ResponseError) and int(E.status) == 400 and
+                            E.reason == 'InvalidSubnet.Conflict'):
+                    self.status(
+                        'Passed. System provided proper error when attempting to create a SUBNET '
+                        'with duplicate cidr block. Err:{0}'.format(E))
+                else:
+                    self.log.error(
+                        'System responded with incorrect error for this negative test...')
+                    raise
+            else:
+                if subnets:
+                    user.ec2.show_subnets(subnets)
+                raise RuntimeError(
+                    'System either allowed the user to create a SUBNET with duplicate cidr, '
+                    'or did not respond with the proper error')
+        finally:
+            self.status('Attempting to delete SUBNETs after this test...')
+            for sub in subnets:
+                user.ec2.delete_subnet_and_dependency_artifacts(sub)
+
+    def test5v1_subnet_overlapping_cidr(self):
+        """
+        This test attempts to create 2 subnets with overlapping cidr, this should not be allowed...
+
+        The CIDR block of a subnet can be the same as the CIDR block for the VPC (for a single
+        subnet in the VPC), or a subset (for multiple subnets). The allowed block size is
+        between a /28 netmask and /16 netmask. If you create more than one subnet in a VPC,
+        the CIDR blocks of the subnets cannot overlap.
+        """
+        user = self.user
+        vpc = self.test5b0_get_vpc_for_subnet_tests()
+        self.status('Attempting to create subnets with overlapping cidr...')
+        subnets = []
+        zone = self.zones[0]
+
+        # Create the test CIDR values to use when creating the test subnets...
+        base_cidr, base_mask = vpc.cidr_block.split('/')
+        base_mask = int(base_mask)
+        if base_mask > 27:
+            user.ec2.show(vpc)
+            raise ValueError('This test is not written to handle a vpc with masks > /27')
+        net_info = get_network_info_for_cidr("{0}/{1}".format(base_cidr, 28))
+        if not is_address_in_network(net_info.get('network'), vpc.cidr_block):
+            raise ValueError('Error in this test, the test network is not within the larger'
+                             'vpc cidr block?')
+        test_cidr = "{0}/{1}".format(net_info.get('network') or base_cidr, 28)
+        self.status('Deleting any potentially conflicting subnets from this test vpc:{0}'
+                    .format(vpc.id))
+
+        subs = user.ec2.get_all_subnets(filters={'vpc_id': vpc.id})
+        for sub in subs:
+            user.ec2.delete_subnet_and_dependency_artifacts(sub)
+        try:
+            try:
+                self.status('Attempting to create the intial subnet  equal to the entire'
+                            'vpc cidr block:{0}...'.format(vpc.cidr_block))
+                subnet1 = user.ec2.connection.create_subnet(vpc_id=vpc.id,
+                                                            cidr_block=vpc.cidr_block)
+                subnets.append(subnet1)
+                self.status('Attempting to create a subnet with cidr block:{0} which overlaps'
+                            'the inital subnet cidr_block:{0}'.format(test_cidr,
+                                                                      subnet1.cidr_block))
+                subnet2 = user.ec2.connection.create_subnet(vpc_id=vpc.id,
+                                                            cidr_block=test_cidr)
+                subnets.append(subnet2)
+            except Exception as E:
+                if (isinstance(EC2ResponseError) and int(E.status) == 400 and
+                            E.reason == 'InvalidSubnet.Conflict'):
+                    self.status(
+                        'Passed. System provided proper error when attempting to create a SUBNET '
+                        'with overlapping cidr block. Err:{0}'.format(E))
+                else:
+                    self.log.error(
+                        'System responded with incorrect error for this negative test...')
+                    raise
+            else:
+                if subnets:
+                    user.ec2.show_subnets(subnets)
+                raise RuntimeError(
+                    'System either allowed the user to create a SUBNET with overlapping cidr, '
+                    'or did not respond with the proper error')
+        finally:
+            self.status('Attempting to delete SUBNETs after this test...')
+            for sub in subnets:
+                user.ec2.delete_subnet_and_dependency_artifacts(sub)
+
+
+
+    def test5v1_subnet_cidr_block_range_large(self, cidr_mask=8):
+        """
+        This test attempts to create a subnet larger than allowed cidr block range...
+        The CIDR block of a subnet can be the same as the CIDR block for the VPC (for a single
+        subnet in the VPC), or a subset (for multiple subnets). The allowed block size is
+        between a /28 netmask and /16 netmask. If you create more than one subnet in a VPC,
+        the CIDR blocks of the subnets cannot overlap.
+        """
+        user = self.user
+        vpc = self.test5b0_get_vpc_for_subnet_tests()
+        self.status('Attempting to create a new subnet which exceeds the max cidr range of /16...')
+        subnet = None
+        self.status('Deleting any potentially conflicting subnets from this test vpc:{0}'
+                    .format(vpc.id))
+        base_cidr = vpc.cidr_block.split('/')[0]
+        net_info = get_network_info_for_cidr("{0}/{1}".format(base_cidr, cidr_mask))
+        test_cidr = "{0}/{1}".format(net_info.get('network') or base_cidr, cidr_mask)
+        subs = user.ec2.get_all_subnets(filters={'vpc_id':vpc.id})
+        for sub in subs:
+            user.ec2.delete_subnet_and_dependency_artifacts(sub)
+        try:
+            try:
+                self.status('Attempting to create subnet with invalid cidr:{0}'
+                            .format(test_cidr))
+                subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id, cidr_block= test_cidr)
+            except Exception as E:
+                if (isinstance(EC2ResponseError) and int(E.status) == 400 and
+                            E.reason == 'InvalidSubnet.Range'):
+                    self.status(
+                        'Passed. System provided proper error when attempting to create a SUBNET '
+                        'larger than /16. Err:{0}'.format(E))
+                else:
+                    self.log.error(
+                        'System responded with incorrect error for this negative test...')
+                    raise
+            else:
+                if subnet:
+                    user.ec2.show_subnet(subnet)
+                raise RuntimeError(
+                    'System either allowed the user to create a SUBNET with cidr larger '
+                    'than /16, or did not respond with the proper error')
+        finally:
+            if subnet:
+                self.status('attempting to delete SUBNET after this test...')
+                user.ec2.delete_subnet_and_dependency_artifacts(subnet)
+
+    def test5v2_subnet_cidr_block_range_large(self, cidr_mask=29):
+        """
+        This test attempts to create a subnet smaller than allowed cidr block range...
+        The CIDR block of a subnet can be the same as the CIDR block for the VPC (for a single
+        subnet in the VPC), or a subset (for multiple subnets). The allowed block size is
+        between a /28 netmask and /16 netmask. If you create more than one subnet in a VPC,
+        the CIDR blocks of the subnets cannot overlap.
+        """
+        user = self.user
+        vpc = self.test5b0_get_vpc_for_subnet_tests()
+        self.status('Attempting to create a new subnet which is smaller than the min '
+                    'cidr range of /28...')
+        subnet = None
+        self.status('Deleting any potentially conflicting subnets from this test vpc:{0}'
+                    .format(vpc.id))
+        base_cidr = vpc.cidr_block.split('/')[0]
+        net_info = get_network_info_for_cidr("{0}/{1}".format(base_cidr, cidr_mask))
+        test_cidr = "{0}/{1}".format(net_info.get('network') or base_cidr, cidr_mask)
+        subs = user.ec2.get_all_subnets(filters={'vpc_id':vpc.id})
+        for sub in subs:
+            user.ec2.delete_subnet_and_dependency_artifacts(sub)
+        try:
+            try:
+                self.status('Attempting to create subnet with invalid cidr:{0}'
+                            .format(test_cidr))
+                subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id, cidr_block= test_cidr)
+            except Exception as E:
+                if (isinstance(EC2ResponseError) and int(E.status) == 400 and
+                            E.reason == 'InvalidSubnet.Range'):
+                    self.status(
+                        'Passed. System provided proper error when attempting to create a SUBNET '
+                        'smaller than /28. Err:{0}'.format(E))
+                else:
+                    self.log.error(
+                        'System responded with incorrect error for this negative test...')
+                    raise
+            else:
+                if subnet:
+                    user.ec2.show_subnet(subnet)
+                raise RuntimeError(
+                    'System either allowed the user to create a SUBNET with cidr smaller '
+                    'than /28, or did not respond with the proper error')
+        finally:
+            if subnet:
+                self.status('attempting to delete SUBNET after this test...')
+                user.ec2.delete_subnet_and_dependency_artifacts(subnet)
+
+    def test5x0_subnets_per_vpc_limit(self, vpc=None):
         """
         Test that the max subnets per vpc defined in the following property can not be exceeded,
         and the user can create the amount defined in the property.
@@ -2367,7 +2607,7 @@ class VpcBasics(CliTestRunner):
             test_vpc = test_vpc[0]
         return test_vpc
 
-    def test8s0_scenario2_private_and_public_subnet_packet_test(self):
+    def test8s0_nat_gw_private_and_public_subnet_packet_test(self):
         """
         The instances in the public subnet can receive inbound traffic directly from the
         Internet, whereas the instances in the private subnet can't. The instances in the
