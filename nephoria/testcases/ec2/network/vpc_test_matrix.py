@@ -237,10 +237,13 @@ class VpcBasics(CliTestRunner):
     def get_keypair(self, user=None):
         user = user or self.user
         keys = getattr(self, '_keypairs', None)
-        if not keys:
-            key = user.ec2.get_keypair(key_name=self.keypair_name)
-            keys = {user: key}
+        if keys is None:
+            keys = {}
             setattr(self, '_keypairs', keys)
+        keypair = keys.get(user, None)
+        if not keypair:
+            keypair = user.ec2.get_keypair(key_name=self.keypair_name)
+            keys[user] = keypair
         return keys[user]
 
     @property
@@ -757,7 +760,9 @@ class VpcBasics(CliTestRunner):
         igw = user.ec2.connection.get_all_internet_gateways(
             filters={'attachment.vpc-id': default_vpc.id})
         if not igw:
-            raise ValueError('{0}: Default Internet Gateway not found vpc:{1}'
+            if default_vpc:
+                user.ec2.show_vpc(default_vpc)
+            raise ValueError('{0}: Default Internet Gateway not found for default vpc:{1}'
                              .format(user, default_vpc))
         try:
             user.ec2.show_internet_gateways(igw)
@@ -1317,7 +1322,7 @@ class VpcBasics(CliTestRunner):
         with its default vpc
         """
         if self.user == self.new_ephemeral_user:
-            test = self.get_testunit_by_method(self.test1e_test_user_default_route_table)
+            test = self.get_testunit_by_method(self.test1e_new_user_default_route_table)
             if test and test.result != TestResult.not_run:
                 raise SkipTestException('Test already run for the test user')
         return self.check_user_default_route_table_present(user=self.user)
@@ -1363,7 +1368,7 @@ class VpcBasics(CliTestRunner):
             try:
                 vpc = user.ec2.connection.create_vpc(cidr_block='192.0.0.0/8')
             except Exception as E:
-                if (isinstance(EC2ResponseError) and int(E.status) == 400 and
+                if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                     E.reason == 'InvalidVpc.Range'):
                     self.status('Passed. System provided proper error when attempting to create a VPC '
                                 'larger than /16. Err:{0}'.format(E))
@@ -1397,7 +1402,7 @@ class VpcBasics(CliTestRunner):
             try:
                 vpc = user.ec2.connection.create_vpc(cidr_block='192.0.0.0/29')
             except Exception as E:
-                if (isinstance(EC2ResponseError) and int(E.status) == 400 and
+                if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                             E.reason == 'InvalidVpc.Range'):
                     self.status(
                         'Passed. System provided proper error when attempting to create a VPC '
@@ -1437,7 +1442,7 @@ class VpcBasics(CliTestRunner):
                     self.status('Attempting to create a VPC with invalid CIDR:"{0}"'.format(cidr))
                     vpc = user.ec2.connection.create_vpc(cidr_block=cidr)
                 except Exception as E:
-                    if (isinstance(EC2ResponseError) and int(E.status) == 400 and
+                    if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                                 E.reason == 'InvalidVpc.Range'):
                         self.status(
                             'Passed. System provided proper error when attempting to create a VPC '
@@ -1521,12 +1526,13 @@ class VpcBasics(CliTestRunner):
                              'found {0} for users:{1} sec group: {2}'.format(len(ingress_rules),
                                                                              user, def_sg.id))
         ig = ingress_rules[0]
-        if (ig.from_port or ig.groups or ig.ipRanges or ig.ip_protocol or ig.to_port):
-            raise ValueError('Expected the following to be unset. Got: from_port{0}, groups:{1}, '
+        if (ig.from_port or ig.groups or ig.ipRanges or str(ig.ip_protocol) != "-1" or ig.to_port):
+            raise ValueError('Expected the following ingress_rule attributes to be unset. Got: '
+                             'from_port:{0}, groups:{1}, '
                              'ipRanges:{2}, ip_protocol:{3}, to_port:{4}'
                              .format(ig.from_port, ig.groups, ig.ipRanges,
                                      ig.ip_protocol, ig.to_port))
-        grant = ingress_rules.grants[0]
+        grant = ig.grants[0]
         expected_ingress_grant = {'cidr_ip': None,
                                   'groupId': def_sg.id,
                                   'groupName': 'default',
@@ -1535,8 +1541,8 @@ class VpcBasics(CliTestRunner):
                                   'name': 'default',
                                   'owner_id': self.user.aws_account_id,
                                   'userId': self.user.aws_account_id}
-        for key, value in expected_ingress_grant:
-            if grant[key] != value:
+        for key, value in expected_ingress_grant.iteritems():
+            if getattr(grant, key) != value:
                 raise ValueError('Default grant attribute: "{0}" value:"{1}", does not'
                                  ' match expected attribute value:{2}'.format(key, grant[key],
                                                                               value))
@@ -1565,20 +1571,21 @@ class VpcBasics(CliTestRunner):
             raise ValueError('Expected default security group to posses 1 egress rule, '
                              'found {0} for users:{1} sec group: {2}'.format(len(egress_rules),
                                                                              user, def_sg.id))
-        ig = egress_rules[0]
-        if (ig.from_port or ig.groups or ig.ipRanges or ig.ip_protocol or ig.to_port):
-            raise ValueError('Expected the following to be unset. Got: from_port{0}, groups:{1}, '
-                             'ipRanges:{2}, ip_protocol:{3}, to_port:{4}'
-                             .format(ig.from_port, ig.groups, ig.ipRanges,
-                                     ig.ip_protocol, ig.to_port))
-        grant = egress_rules.grants[0]
+        eg = egress_rules[0]
+        if (eg.from_port or eg.groups or eg.ipRanges or
+                str(eg.ip_protocol) != '-1' or eg.to_port):
+            raise ValueError('Expected the following egress_rule attributes to be unset. '
+                             'Got: from_port{0}, groups:{1}, ipRanges:{2}, ip_protocol:{3}, '
+                             'to_port:{4}'.format(eg.from_port, eg.groups, eg.ipRanges,
+                                                  eg.ip_protocol, eg.to_port))
+        grant = eg.grants[0]
         expected_egress_grant = {'cidr_ip': '0.0.0.0/0',
                                  'group_id': None,
                                  'item': '',
                                  'name': None,
                                  'owner_id': None}
-        for key, value in expected_egress_grant:
-            if grant[key] != value:
+        for key, value in expected_egress_grant.iteritems():
+            if getattr(grant, key) != value:
                 raise ValueError('Default grant attribute: "{0}" value:"{1}", does not'
                                  ' match expected attribute value:{2}'.format(key, grant[key],
                                                                               value))
@@ -1704,7 +1711,7 @@ class VpcBasics(CliTestRunner):
             self.log.debug('Attempt to exceed the rules per group limit...')
             user.ec2.authorize_group(group, port=(x + 1), protocol='tcp', cidr_ip='0.0.0.0/32')
         except EC2ResponseError as EE:
-            if EE.status == '400' and EE.reason == 'RulesPerSecurityGroupLimitExceeded':
+            if int(EE.status) == 400 and EE.reason == 'RulesPerSecurityGroupLimitExceeded':
                 self.log.debug('Negative test caught with correct exception: {0}'.format(EE))
             else:
                 raise EE
@@ -1739,7 +1746,7 @@ class VpcBasics(CliTestRunner):
                                                                    attr='groupSet',
                                                                    value=groups)
         except EC2ResponseError as EE:
-            if EE.status == '400' and EE.reason == 'SecurityGroupsPerInterfaceLimitExceeded':
+            if int(EE.status) == 400 and EE.reason == 'SecurityGroupsPerInterfaceLimitExceeded':
                 self.log.debug('Negative test caught with correct exception: {0}'.format(EE))
             else:
                 raise EE
@@ -1774,20 +1781,32 @@ class VpcBasics(CliTestRunner):
         return test_vpc
 
 
-    def test4b1_get_subnets_for_route_table_tests(self, vpc=None, count=1):
+    def test4b1_get_subnets_for_route_table_tests(self, vpc=None, zones=None, count=1):
         vpc = vpc or self.test4b0_get_vpc_for_route_table_tests()
         subnets = self.user.ec2.get_all_subnets(filters={'vpc_id': vpc.id,
                                                          'tag-key': self.ROUTE_TABLE_TEST_TAG,
                                                          'tag-value': self.test_id}) or []
+        zones = zones or self.zones
         subnets = subnets[:count]
-        if len(subnets) > count:
-            new_subnets = self.create_test_subnets(vpc=vpc, count_per_zone=count)
-            sub_ids = [str(x.id) for x in new_subnets]
-            self.user.ec2.create_tags(sub_ids, {self.ROUTE_TABLE_TEST_TAG: self.test_id})
-            subnets += new_subnets
+        self.log.debug('Found {0} pre-existing subnets'.format(len(subnets)))
+        if len(subnets) < count:
+            need = count - len(subnets)
+
+            # Try to create subnets across zones if possible...
+            for sub_count in [ (need / len(zones)) , (need % len(zones))]:
+                zones_to_use = zones[:sub_count]
+                self.log.debug('Attepting to create {0} number of subnets in each zone:{1}'
+                               .format(sub_count, ",".join(zones_to_use)))
+                new_subnets = self.create_test_subnets(vpc=vpc, zones=zones_to_use,
+                                                       count_per_zone=sub_count)
+                sub_ids = [str(x.id) for x in new_subnets]
+                self.user.ec2.create_tags(sub_ids, {self.ROUTE_TABLE_TEST_TAG: self.test_id})
+                subnets += new_subnets
+                self.log.debug('Created {0}/{1} new subnets, total subnets:{2}, requested{3}'
+                               .format(len(new_subnets), need, len(subnets), count))
         if len(subnets) != count:
-            raise ValueError('Did not retrieve {0} number of subnets for route table tests?'
-                             .format(count))
+            raise ValueError('Did not retrieve {0} number of subnets for route table tests? '
+                             'Got:{1}'.format(count, len(subnets)))
         return subnets
 
     def test4b2_route_table_verify_internet_gateway_route(self, subnet=None, user=None,
@@ -1799,12 +1818,14 @@ class VpcBasics(CliTestRunner):
 
         """
         user = user or self.user
+        vpc = None
         if subnet:
             if isinstance(subnet, basestring):
                 subnetobj = user.ec2.get_subnet(subnet)
-            if not subnetobj:
-                raise ValueError('user:{0}, could not fetch subnet:{1}'.format(user, subnet))
-            subnet = subnetobj
+                if not subnetobj:
+                    raise ValueError('user:{0}, could not fetch subnet:{1}/{2}'
+                                     .format(user, subnet, type(subnet)))
+                subnet = subnetobj
             vpc = user.ec2.get_vpc(subnet.vpc_id)
         vpc = vpc or self.test4b0_get_vpc_for_route_table_tests()
         subnet = subnet or self.test4b1_get_subnets_for_route_table_tests(vpc, count=1)[0]
@@ -1844,7 +1865,7 @@ class VpcBasics(CliTestRunner):
         if not original_igw_route or original_igw_route.destination_cidr_block != '0.0.0.0/0':
             user.ec2.connection.delete_route(
                 route_table_id=rt.id,
-                destination_cidr_block=original_igw_route.desination_cidr_block)
+                destination_cidr_block=original_igw_route.destination_cidr_block)
             new_route = user.ec2.connection.create_route(rt.id, '0.0.0.0/0', igw.id)
             current_route = new_route
         group = self.get_test_security_groups(vpc=vpc, rules = [('tcp', 22, 22, '0.0.0.0/0'),
@@ -1858,7 +1879,7 @@ class VpcBasics(CliTestRunner):
 
         user.ec2.connection.delete_route(
             route_table_id=rt.id,
-            destination_cidr_block=current_route.desination_cidr_block)
+            destination_cidr_block=current_route.destination_cidr_block)
         self.status('Removing route and retrying...')
         time.sleep(2)
         try:
@@ -2190,7 +2211,7 @@ class VpcBasics(CliTestRunner):
         """
         user = self.user
         vpc = self.test4b0_get_vpc_for_route_table_tests()
-        subnet = self.test4b1_get_subnets_for_route_table_tests(vpc=vpc, count=1)
+        subnet = self.test4b1_get_subnets_for_route_table_tests(vpc=vpc, count=1)[0]
         eni = self.get_test_enis_for_subnet(subnet=subnet, count=1)[0]
         prop = self.tc.sysadmin.get_property('cloud.vpc.routespertable')
         prop.show()
@@ -2201,9 +2222,10 @@ class VpcBasics(CliTestRunner):
             rt = rts[0]
         else:
             rt = user.ec2.connection.create_route_table(vpc_id=vpc.id)[0]
-        for route in rt.rules:
-            user.ec2.connection.delete_route(route_table_id=rt.id,
-                                             destination_cidr_block=route.destination_cidr_block)
+        for route in rt.routes:
+            if route.gateway_id != 'local':
+                user.ec2.connection.delete_route(
+                    route_table_id=rt.id, destination_cidr_block=route.destination_cidr_block)
         test_net = '192.168'
         def add_route(count):
             n4 = count % 255
@@ -2318,7 +2340,7 @@ class VpcBasics(CliTestRunner):
                                                             cidr_block=subnet1.cidr_block)
                 subnets.append(subnet2)
             except Exception as E:
-                if (isinstance(EC2ResponseError) and int(E.status) == 400 and
+                if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                             E.reason == 'InvalidSubnet.Conflict'):
                     self.status(
                         'Passed. System provided proper error when attempting to create a SUBNET '
@@ -2384,7 +2406,7 @@ class VpcBasics(CliTestRunner):
                                                             cidr_block=test_cidr)
                 subnets.append(subnet2)
             except Exception as E:
-                if (isinstance(EC2ResponseError) and int(E.status) == 400 and
+                if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                             E.reason == 'InvalidSubnet.Conflict'):
                     self.status(
                         'Passed. System provided proper error when attempting to create a SUBNET '
@@ -2432,7 +2454,7 @@ class VpcBasics(CliTestRunner):
                             .format(test_cidr))
                 subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id, cidr_block= test_cidr)
             except Exception as E:
-                if (isinstance(EC2ResponseError) and int(E.status) == 400 and
+                if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                             E.reason == 'InvalidSubnet.Range'):
                     self.status(
                         'Passed. System provided proper error when attempting to create a SUBNET '
@@ -2479,7 +2501,7 @@ class VpcBasics(CliTestRunner):
                             .format(test_cidr))
                 subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id, cidr_block= test_cidr)
             except Exception as E:
-                if (isinstance(EC2ResponseError) and int(E.status) == 400 and
+                if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                             E.reason == 'InvalidSubnet.Range'):
                     self.status(
                         'Passed. System provided proper error when attempting to create a SUBNET '
@@ -2510,7 +2532,7 @@ class VpcBasics(CliTestRunner):
         prop = self.tc.sysadmin.get_property('cloud.vpc.subnetspervpc')
         prop.show()
         limit = int(prop.value)
-        existing = user.ec2.connection.get_all_subnets(vpc=vpc)
+        existing = user.ec2.get_all_subnets(vpc=vpc)
         zone1 = self.zones[0]
         if len(self.zones) > 1:
             zone2 = self.zones[1]
@@ -2523,24 +2545,24 @@ class VpcBasics(CliTestRunner):
                     .format(amount1, len(existing), limit))
         cleanup = []
         try:
-            new = self.create_test_subnets(zones=[zone1], count_per_zone=amount1)
+            new = self.create_test_subnets(vpc=vpc, zones=[zone1], count_per_zone=amount1)
             cleanup = new
             self.status('Created {0} new subnets'.format(len(new)))
-            existing = user.ec2.connection.get_all_subnets(vpc=vpc)
+            existing = user.ec2.get_all_subnets(vpc=vpc)
             self.status('Creating {0} subnets. Existing:{1}, limit:{2}'
                        .format(amount2, len(existing), limit))
-            new2 = self.create_test_subnets(zones=[zone2], count_per_zone=amount2)
+            new2 = self.create_test_subnets(vpc=vpc, zones=[zone2], count_per_zone=amount2)
             cleanup += new2
             self.status('Created {0} new subnets'.format(len(new2)))
 
-            existing = user.ec2.connection.get_all_subnets(vpc=vpc)
+            existing = user.ec2.get_all_subnets(vpc=vpc)
             if len(existing) != limit:
                 raise ValueError('Attempted to create subnets of limit count, but existing '
                                  'subnets:{0} != limit:{1}?'.format(len(existing), limit))
             self.status('Negative test. Attempting to exceed limit:{0}. Creating {1} subnets. '
                         'Existing:{1}'.format(limit, len(self.zones), len(existing)))
             try:
-                new2 = self.create_test_subnets(zones=self.zones, count_per_zone=1)
+                new2 = self.create_test_subnets(vpc=vpc, zones=self.zones, count_per_zone=1)
             except EC2ResponseError as EE:
                 if int(EE.status) == 400 and EE.reason == 'SubnetLimitExceeded':
                     self.status('Success. Was not able to exceed subnet per vpc limit. Error:{0}'
@@ -2579,6 +2601,18 @@ class VpcBasics(CliTestRunner):
         else:
             test_vpc = test_vpc[0]
         return test_vpc
+
+    def test6c_eni_eip_reserved_addresses(self):
+        """
+        10.0.0.0: Network address.
+        10.0.0.1: Reserved by AWS for the VPC router.
+        10.0.0.2: Reserved by AWS for mapping to the Amazon-provided DNS. (Note that the IP
+                  address of the DNS server is the base of the VPC network range plus two.)
+        10.0.0.3: Reserved by AWS for future use.
+        10.0.0.255: Network broadcast address. We do not support broadcast in a VPC, therefore
+                    we reserve this address.
+        """
+        raise NotImplementedError()
 
     def test6z0_test_clean_up_eni_test_vpc_dependencies(self):
         """
@@ -2652,13 +2686,6 @@ class VpcBasics(CliTestRunner):
             test_vpc = test_vpc[0]
         return test_vpc
 
-    def test9c0_net_acl_max_net_acl_per_vpc_limit(self):
-        """
-        Test the eucalyptus property:cloud.vpc.networkaclspervpc
-        Confirm the limit can be reached and not exceeded.
-        """
-        raise NotImplementedError()
-
     def test9z0_test_clean_up_nat_gw_test_vpc_dependencies(self):
         """
         Delete the VPC and dependency artifacts created for the security group testing.
@@ -2668,6 +2695,25 @@ class VpcBasics(CliTestRunner):
             vpc = self.test9b0_get_vpc_for_network_acl_tests()
             if vpc:
                 user.ec2.delete_vpc_and_dependency_artifacts(vpc)
+
+    ###############################################################################################
+    # ACL tests
+    """
+    AWS provides two features that you can use to increase security in your VPC: security
+    groups and network ACLs. Both features enable you to control the inbound and outbound
+    traffic for your instances, but security groups work at the instance level, while network ACLs
+    work at the subnet level.
+    By design, each subnet must be associated with a network ACL. Every subnet that you create is
+    automatically associated with the VPC's default network ACL. You can change the association,
+    and you can change the contents of the default network ACL
+    """
+    ###############################################################################################
+    def test10c0_net_acl_max_net_acl_per_vpc_limit(self):
+        """
+        Test the eucalyptus property:cloud.vpc.networkaclspervpc
+        Confirm the limit can be reached and not exceeded.
+        """
+        raise NotImplementedError()
 
     ###############################################################################################
     # Misc tests

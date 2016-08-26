@@ -88,7 +88,7 @@ class TestResult():
 ##################################################################################################
 
 
-class TestUnit():
+class TestUnit(object):
     '''
     Description: Convenience class to run wrap individual methods, and run and store and access
     results.
@@ -156,7 +156,7 @@ class TestUnit():
     def set_kwarg(self, kwarg, val):
         self.kwargs[kwarg] = val
 
-    def get_test_method_description(self):
+    def get_test_method_description(self, header=True):
         '''
         Description:
         Attempts to derive test unit description for the registered test method.
@@ -165,7 +165,10 @@ class TestUnit():
         providing info to the user as to the method being run as a testunit's
         intention/description.
         '''
-        desc = "\nMETHOD:" + str(self.name) + ", TEST DESCRIPTION:\n"
+        if header:
+            desc = "\nMETHOD:" + str(self.name) + ", TEST DESCRIPTION:\n"
+        else:
+            desc = ""
         ret = []
         try:
             doc = str(self.method.__doc__)
@@ -293,6 +296,11 @@ class CliTestRunner(object):
                         'kwargs': {"help": "Environment file that describes Eucalyptus topology,"
                                            "e.g Environment file that was used by Calyptos.",
                                    "default": None}},
+        'dry_run': {'args': ['--dry-run'],
+                     'kwargs': {'help': 'Flag, if provided will print the test list to be run with'
+                                        'out running the tests',
+                                'action': 'store_true',
+                                'default': False}},
         'no_clean': {'args': ['--no-clean'],
                      'kwargs': {'help': 'Flag, if provided will not run the clean method on exit',
                                 'action': 'store_true',
@@ -649,6 +657,12 @@ class CliTestRunner(object):
         tests_ran = 0
         test_count = len(self._testlist)
         orig_log_id = self.log.identifier
+        if self.get_arg('dry_run'):
+            msgout ="TEST LIST: NOT RUNNING DUE TO DRYRUN\n{0}\n"\
+                .format(self.print_test_list_results(testlist=self._testlist, descriptions=True,
+                                                     printout=False))
+            self.status(msgout)
+            return 0
         try:
             for test in self._testlist:
                 tests_ran += 1
@@ -1210,7 +1224,8 @@ class CliTestRunner(object):
             startbuf += '\n </div>'
         self.status(startbuf)
 
-    def print_test_list_results(self, testlist=None, printout=True, printmethod=None):
+    def print_test_list_results(self, testlist=None, descriptions=False,
+                                printout=True, printmethod=None):
         '''
         Description: Prints a formated list of results for a list of EutesterTestUnits
 
@@ -1221,6 +1236,8 @@ class CliTestRunner(object):
         :param printout: boolean to flag whether to print using printmethod or self.debug,
                          or to return a string buffer representing the results outputq
 
+        :type descriptions: boolean
+        "param description: boolean flag, if true will include test descriptions in the output
         :type printmethod: method
         :param printmethod: method to use for printing test result output. Default is self.debug
         '''
@@ -1248,7 +1265,7 @@ class CliTestRunner(object):
             term_height, term_width = get_terminal_size()
             if term_width > self._term_width:
                 term_width = self._term_width
-            key_width = 10
+            key_width = 12
             val_width = term_width - key_width - 6
             headers = ['KEY'.ljust(key_width, "-"), 'VALUE'.ljust(val_width, "-")]
             pt = PrettyTable(headers)
@@ -1272,6 +1289,8 @@ class CliTestRunner(object):
             pt.add_row(['TEST NAME', testunit.name])
             pt.add_row(['TIME:', testunit.time_to_run])
             pt.add_row(['TEST ARGS:', test_arg_string])
+            if descriptions:
+                pt.add_row(['DESCRIPTION:', testunit.get_test_method_description(header=False)])
             pt.add_row(['OUTPUT:', error_summary])
             main_pt.add_row([markup(pt, markups=markups)])
 
