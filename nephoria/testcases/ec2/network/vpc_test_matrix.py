@@ -124,7 +124,6 @@ class VpcBasics(CliTestRunner):
         self._group = None
         self._zonelist = []
         self._keypair = None
-        self._keypair_name = None
         self._emi = None
         self._user = None
         self._addresses = []
@@ -227,12 +226,8 @@ class VpcBasics(CliTestRunner):
     def add_subnet_interface_to_proxy_vm(self, subnet):
         pass
 
-    @property
-    def keypair_name(self):
-        keyname = getattr(self, '_keypair_name', None)
-        if not keyname:
-            keyname = "{0}_{1}".format(self.__class__.__name__, int(time.time()))
-        return keyname
+    def get_keypair_name(self, user):
+        return "{0}_{1}_{2}".format(self.__class__.__name__, user.account_id, self.test_id)
 
     def get_keypair(self, user=None):
         user = user or self.user
@@ -242,7 +237,12 @@ class VpcBasics(CliTestRunner):
             setattr(self, '_keypairs', keys)
         keypair = keys.get(user, None)
         if not keypair:
-            keypair = user.ec2.get_keypair(key_name=self.keypair_name)
+            # See if this keypair is already created and present in the local dir...
+            keypairs = user.ec2.get_all_current_local_keys(key_name=self.get_keypair_name(user))
+            if keypairs:
+                keypair = keypairs[0]
+            else:
+                keypair = user.ec2.get_keypair(key_name=self.get_keypair_name(user))
             keys[user] = keypair
         return keys[user]
 
@@ -347,14 +347,16 @@ class VpcBasics(CliTestRunner):
         if not self._zonelist:
             # create some zone objects and append them to the zonelist
             if self.args.zone:
-                self._zonelist.append(self.args.zone)
-                self.multicluster = False
+                self._zonelist = [str(self.args.zone)]
             else:
+                self._zonelist = []
                 for zone in self.user.ec2.get_zone_names():
                     self._zonelist.append(zone)
             if not self._zonelist:
-                raise RuntimeError("Could not discover an availability zone to "
-                                   "perform tests in. Please specify zone")
+                msg = "Could not discover an availability zone to perform tests in. Please " \
+                      "specify zone"
+                self.log.error("{0}\n{1}".format(get_traceback(), msg))
+                raise RuntimeError(None)
         return self._zonelist
 
 
@@ -406,10 +408,14 @@ class VpcBasics(CliTestRunner):
         user = user or self.user
         test_subnets = []
         zones = zones or self.zones
+        if not zones:
+            raise ValueError('Could not find zones for this test?')
         if not isinstance(zones, list):
             zones = [zones]
+        self.log.debug('create_test_subnets: vpc:{0}, zones:{1}, count_per_zone:{2}, user:{3}'
+                       .format(vpc, zones, count_per_zone, user))
         for x in xrange(0, count_per_zone):
-            for zone in self.zones:
+            for zone in zones:
                 # Use a /24 of the vpc's larger /16
                 subnets = user.ec2.get_all_subnets(filters={'vpc-id': vpc.id})
 
@@ -881,7 +887,7 @@ class VpcBasics(CliTestRunner):
     @printinfo
     def packet_test_scenario(self, zone_tx, zone_rx, sec_group_tx, sec_group_rx, subnet_tx,
                              subnet_rx, use_private, protocol, port, count, bind, retries=2,
-                             expected_packets=None, set_security_group=True,
+                             expected_packets=None, set_security_group=True, user=None,
                              verbose=None, ssh_tx=None, ssh_rx=None):
         """
         This method is intended to be used as the core test method. It can be fed different
@@ -912,14 +918,16 @@ class VpcBasics(CliTestRunner):
         matching
         :return dict of results (tbd)
         """
-        ins1 = self.get_test_instances(zone=zone_tx, group_id=sec_group_tx, subnet_id=subnet_tx, count=1)
+        user = user or self.user
+        ins1 = self.get_test_instances(zone=zone_tx, group_id=sec_group_tx, subnet_id=subnet_tx,
+                                       user=user, count=1)
         if not ins1:
             raise RuntimeError('Could not fetch or create test instance #1 with the following '
                                'criteria; zone:{0}, sec_group:{1}, subnet:{2}, count:{3}'
                                .format(zone_tx, sec_group_tx, subnet_tx, 1))
         ins1 = ins1[0]
-        ins2 = self.get_test_instances(zone=zone_rx, group_id=sec_group_rx, subnet_id=subnet_rx, count=1,
-                                       exclude=[ins1.id])
+        ins2 = self.get_test_instances(zone=zone_rx, group_id=sec_group_rx, subnet_id=subnet_rx,
+                                       user=user,count=1, exclude=[ins1.id])
         if not ins2:
             raise RuntimeError('Could not fetch or create test instance #2 with the following '
                                'criteria; zone:{0}, sec_group:{1}, subnet:{2}, count:{3}'
@@ -955,11 +963,11 @@ class VpcBasics(CliTestRunner):
         def apply_rule(rule, groups):
             protocol, port, end_port, cidr_ip = rule
             for group in groups:
-                self.user.ec2.authorize_group(group=group, port=port, end_port=end_port,
-                                              protocol=protocol)
+                user.ec2.authorize_group(group=group, port=port, end_port=end_port,
+                                         protocol=protocol)
         if set_security_group:
-            self.user.ec2.revoke_all_rules(sec_group_tx)
-            self.user.ec2.revoke_all_rules(sec_group_rx)
+            user.ec2.revoke_all_rules(sec_group_tx)
+            user.ec2.revoke_all_rules(sec_group_rx)
             base_rule = ('tcp', 22, 22, '0.0.0.0/0')
             test_rule = (protocol, port or -1, port or -1, src_ip)
             apply_rule(base_rule, [sec_group_tx, sec_group_rx])
@@ -968,7 +976,7 @@ class VpcBasics(CliTestRunner):
         self.log.debug('{0}{1}\n'.format(markup('\nAttempting packet test with instances:\n',
                                                 [ForegroundColor.BLUE, BackGroundColor.BG_WHITE]),
                         self.tc.admin.ec2.show_instances([ins1, ins2], printme=False)))
-        self.user.ec2.show_security_groups([sec_group_tx, sec_group_rx])
+        user.ec2.show_security_groups([sec_group_tx, sec_group_rx])
         if use_private:
             src_ip = ins1.private_ip_address
             dest_ip = ins2.private_ip_address
@@ -1237,7 +1245,7 @@ class VpcBasics(CliTestRunner):
         """
         return self.check_user_default_routes_present(user=self.new_ephemeral_user)
 
-    def test1z_new_user_default_security_group_rules(self):
+    def test1ga_new_user_default_security_group_rules(self):
         """
         Test attributes specific to the 'default' security group
         By default, no inbound traffic is allowed until you add inbound rules
@@ -1249,6 +1257,90 @@ class VpcBasics(CliTestRunner):
 
         """
         return self.check_user_default_security_group_rules(user=self.new_ephemeral_user)
+
+    def test1gb_new_user_default_security_group_packet_test(self, egress_test_ip=None):
+        """
+        Your VPC includes a default security group whose initial rules are to deny all
+        inbound traffic, allow all outbound traffic, and allow all traffic between
+        instances in the group.
+        Defaults:
+        This test will verify the default rules by attempting to reach a VM in the default group.
+        This should fail.
+        Modify/Authorize the group:
+        Modify the default rules to allow ssh (tcp/22), verify ssh access and verify egress rules
+        using ICMP to the egress test ip (defaults to a UFS).
+        """
+        user = self.new_ephemeral_user
+        vpc = self.test1b_new_user_default_vpc()
+        subnet = user.ec2.connection.get_all_subnets(filters={'vpc-id': vpc.id,
+                                                              'default-for-az': 'true'})[0]
+        def_sg = user.ec2.get_security_group(name='default', vpc_id=vpc.id)
+        self.log.debug('This tests is making the assumption that the test user was created '
+                       'in this test and the default security group has not been manipulated.')
+        # tbd - change this assumption? ^
+        user.ec2.show_security_group(def_sg)
+        vms = self.create_test_instances(group=def_sg, subnet=subnet,
+                                         auto_connect=False, count=2, user=user)
+        self.status('Attempting to reach vm on tcp/22 this should not be allowed...')
+
+        for vm in vms:
+            try:
+                test_port_status(vm.ip_address, 22)
+                raise RuntimeError('Was able to connect to a {0} in the default security group. '
+                                   'Note: This test makes the assumption the sec group is newly '
+                                   'created and not manipulated'.format(vm.id))
+            except socket.error as SE:
+                self.status('Could not reach vm {0} in default sg, passed:{0}'.format(vm.id, SE))
+        user.ec2.authorize_group(def_sg, protocol='tcp', port=22, cidr_ip='0.0.0.0/0')
+        self.status('Attempting to connect to test VMs after authorizing ssh...')
+        for vm in vms:
+            vm.connect_to_instance()
+        self.status('Attempting VM to VM packet test in default group. All traffic should be '
+                    'allowed for this test')
+        vm1, vm2 = vms
+        results = []
+        results.append(self.packet_test_scenario(zone_tx=vm2.placement, zone_rx=vm1.placement,
+                                  sec_group_tx=def_sg.id, sec_group_rx=def_sg.id,
+                                  subnet_tx=vm2.subnet_id, subnet_rx=vm1.subnet_id,
+                                  use_private=False, protocol=1, port=None, count=5, user=user,
+                                  bind=False, set_security_group=False,
+                                  ssh_tx=vm1.ssh, ssh_rx=vm2.ssh))
+        results.append(self.packet_test_scenario(zone_tx=vm2.placement, zone_rx=vm1.placement,
+                                  sec_group_tx=def_sg.id, sec_group_rx=def_sg.id,
+                                  subnet_tx=vm2.subnet_id, subnet_rx=vm1.subnet_id,
+                                  use_private=False, protocol=6, port=100, count=5, user=user,
+                                  bind=True, set_security_group=False,
+                                  ssh_tx=vm1.ssh, ssh_rx=vm2.ssh))
+        results.append(self.packet_test_scenario(zone_tx=vm2.placement, zone_rx=vm1.placement,
+                                  sec_group_tx=def_sg.id, sec_group_rx=def_sg.id,
+                                  subnet_tx=vm2.subnet_id, subnet_rx=vm1.subnet_id,
+                                  use_private=False, protocol=17, port=101, count=5, user=user,
+                                  bind=False, set_security_group=False,
+                                  ssh_tx=vm1.ssh, ssh_rx=vm2.ssh))
+        results.append(self.packet_test_scenario(zone_tx=vm2.placement, zone_rx=vm1.placement,
+                                  sec_group_tx=def_sg.id, sec_group_rx=def_sg.id,
+                                  subnet_tx=vm2.subnet_id, subnet_rx=vm1.subnet_id,
+                                  use_private=False, protocol=132, port=101, count=5, user=user,
+                                  bind=True, set_security_group=False,
+                                  ssh_tx=vm1.ssh, ssh_rx=vm2.ssh))
+        for result in results:
+            self.show_packet_test_results(results_dict=result)
+        errors = []
+        for result in results:
+            error = result.get('error', None)
+            if error:
+                errors.append(error)
+        if errors:
+            self.log.error('Errors detected during default sec group packet test:{0}'
+                           .format("\n".join(str(x) for x in errors)))
+            raise RuntimeError('Errors detected during default sec group packet test. See results')
+        self.status('VM to VM to default security group packet test passed.')
+        self.status('Testing VM to egress now...')
+        ufs = self.tc.sysadmin.get_hosts_for_ufs()[0]
+        for vm in vms:
+            vm.sys('ping -c1 ' + ufs.hostname, code=0)
+        self.status('Packet test Complete. Passed')
+
 
     def test1z_new_user_basic_instance_ssh_defaults(self):
         """
@@ -1339,7 +1431,7 @@ class VpcBasics(CliTestRunner):
 
         """
         if self.user == self.new_ephemeral_user:
-            test = self.get_testunit_by_method(self.test1z_new_user_default_security_group_rules)
+            test = self.get_testunit_by_method(self.test1ga_new_user_default_security_group_rules)
             if test and test.result != TestResult.not_run:
                 raise SkipTestException('Test already run for the test user')
         return self.check_user_default_security_group_rules(user=self.user)
@@ -1590,77 +1682,6 @@ class VpcBasics(CliTestRunner):
                                  ' match expected attribute value:{2}'.format(key, grant[key],
                                                                               value))
 
-    def test3b3_basic_default_security_group_packet_test(self, egress_test_ip=None):
-        """
-        Your VPC includes a default security group whose initial rules are to deny all
-        inbound traffic, allow all outbound traffic, and allow all traffic between
-        instances in the group.
-        Defaults:
-        This test will verify the default rules by attempting to reach a VM in the default group.
-        This should fail.
-        Modify/Authorize the group:
-        Modify the default rules to allow ssh (tcp/22), verify ssh access and verify egress rules
-        using ICMP to the egress test ip (defaults to a UFS).
-        """
-        user = self.user
-        vpc = self.test3b0_get_vpc_for_security_group_tests()
-        def_sg = user.ec2.get_security_group(name='default', vpc_id=vpc.id)
-        user.ec2.show_security_group(def_sg)
-        vms = self.create_test_instances(group=def_sg, auto_connect=False, count=2)[0]
-        self.status('Attempting to reach vm on tcp/22 this should not be allowed...')
-        try:
-            for vm in vms:
-                test_port_status(vms.ip_address, 22)
-        except socket.error as SE:
-            self.status('Could not reach vm in default sg, passed:{0}'.format(SE))
-        user.ec2.authorize_group(def_sg, protocol='tcp', port=22, cidr_ip='0.0.0.0/0')
-        self.status('Attempting to connect to test VMs after authorizing ssh...')
-        for vm in vms:
-            vm.connect_to_instance()
-        self.status('Attempting VM to VM packet test in default group. All traffic should be '
-                    'allowed for this test')
-        vm1, vm2 = vms
-        results = []
-        results.append(self.packet_test_scenario(zone_tx=vm2.placement, zone_rx=vm1.placement,
-                                  sec_group_tx=def_sg.id, sec_group_rx=def_sg.id,
-                                  subnet_tx=vm2.subnet_id, subnet_rx=vm1.subnet_id,
-                                  use_private=False, protocol=1, port=None, count=5,
-                                  bind=False, set_security_group=False,
-                                  ssh_tx=vm1.ssh, ssh_rx=vm2.ssh))
-        results.append(self.packet_test_scenario(zone_tx=vm2.placement, zone_rx=vm1.placement,
-                                  sec_group_tx=def_sg.id, sec_group_rx=def_sg.id,
-                                  subnet_tx=vm2.subnet_id, subnet_rx=vm1.subnet_id,
-                                  use_private=False, protocol=6, port=100, count=5,
-                                  bind=True, set_security_group=False,
-                                  ssh_tx=vm1.ssh, ssh_rx=vm2.ssh))
-        results.append(self.packet_test_scenario(zone_tx=vm2.placement, zone_rx=vm1.placement,
-                                  sec_group_tx=def_sg.id, sec_group_rx=def_sg.id,
-                                  subnet_tx=vm2.subnet_id, subnet_rx=vm1.subnet_id,
-                                  use_private=False, protocol=17, port=101, count=5,
-                                  bind=False, set_security_group=False,
-                                  ssh_tx=vm1.ssh, ssh_rx=vm2.ssh))
-        results.append(self.packet_test_scenario(zone_tx=vm2.placement, zone_rx=vm1.placement,
-                                  sec_group_tx=def_sg.id, sec_group_rx=def_sg.id,
-                                  subnet_tx=vm2.subnet_id, subnet_rx=vm1.subnet_id,
-                                  use_private=False, protocol=132, port=101, count=5,
-                                  bind=True, set_security_group=False,
-                                  ssh_tx=vm1.ssh, ssh_rx=vm2.ssh))
-        for result in results:
-            self.show_packet_test_results(results_dict=result)
-        errors = []
-        for result in results:
-            error = result.get('error', None)
-            if error:
-                errors.append(error)
-        if errors:
-            self.log.error('Errors detected during default sec group packet test:{0}'
-                           .format("\n".join(str(x) for x in errors)))
-            raise RuntimeError('Errors detected during default sec group packet test. See results')
-        self.status('VM to VM to default security group packet test passed.')
-        self.status('Testing VM to egress now...')
-        ufs = self.tc.sysadmin.get_hosts_for_ufs()[0]
-        for vm in vms:
-            vm.sys('ping -c1 ' + ufs.hostname, code=0)
 
 
     def test3b4_test_security_group_count_limit(self):
@@ -1787,6 +1808,8 @@ class VpcBasics(CliTestRunner):
                                                          'tag-key': self.ROUTE_TABLE_TEST_TAG,
                                                          'tag-value': self.test_id}) or []
         zones = zones or self.zones
+        if not zones:
+            raise ValueError('Could not find any zones?')
         subnets = subnets[:count]
         self.log.debug('Found {0} pre-existing subnets'.format(len(subnets)))
         if len(subnets) < count:
@@ -1794,17 +1817,19 @@ class VpcBasics(CliTestRunner):
 
             # Try to create subnets across zones if possible...
             for sub_count in [ (need / len(zones)) , (need % len(zones))]:
-                zones_to_use = zones[:sub_count]
-                self.log.debug('Attepting to create {0} number of subnets in each zone:{1}'
-                               .format(sub_count, ",".join(zones_to_use)))
-                new_subnets = self.create_test_subnets(vpc=vpc, zones=zones_to_use,
-                                                       count_per_zone=sub_count)
-                sub_ids = [str(x.id) for x in new_subnets]
-                self.user.ec2.create_tags(sub_ids, {self.ROUTE_TABLE_TEST_TAG: self.test_id})
-                subnets += new_subnets
-                self.log.debug('Created {0}/{1} new subnets, total subnets:{2}, requested{3}'
-                               .format(len(new_subnets), need, len(subnets), count))
+                if sub_count:
+                    zones_to_use = zones[:sub_count]
+                    self.log.debug('Attepting to create {0} number of subnets in each zone:{1}'
+                                   .format(sub_count, ",".join(zones_to_use)))
+                    new_subnets = self.create_test_subnets(vpc=vpc, zones=zones_to_use,
+                                                           count_per_zone=sub_count)
+                    sub_ids = [str(x.id) for x in new_subnets]
+                    self.user.ec2.create_tags(sub_ids, {self.ROUTE_TABLE_TEST_TAG: self.test_id})
+                    subnets += new_subnets
+                    self.log.debug('Created {0}/{1} new subnets, total subnets:{2}, requested{3}'
+                                   .format(len(new_subnets), need, len(subnets), count))
         if len(subnets) != count:
+            self.user.ec2.show_subnets(subnets)
             raise ValueError('Did not retrieve {0} number of subnets for route table tests? '
                              'Got:{1}'.format(count, len(subnets)))
         return subnets
@@ -1829,6 +1854,8 @@ class VpcBasics(CliTestRunner):
             vpc = user.ec2.get_vpc(subnet.vpc_id)
         vpc = vpc or self.test4b0_get_vpc_for_route_table_tests()
         subnet = subnet or self.test4b1_get_subnets_for_route_table_tests(vpc, count=1)[0]
+
+        user.ec2.show_subnet(subnet)
 
         rts = user.ec2.connection.get_all_route_tables(
             filters={'association.subnet_id': subnet.id}) or []
@@ -1881,16 +1908,33 @@ class VpcBasics(CliTestRunner):
             route_table_id=rt.id,
             destination_cidr_block=current_route.destination_cidr_block)
         self.status('Removing route and retrying...')
-        time.sleep(2)
-        try:
-            ufs.sys('ping -c1 -t5 ' + vm.ip_address, code=0)
-        except CommandExitCodeException:
-            self.status('Failed to reach VM without route passing')
-        else:
-            self.log.error('Was able to reach the following VM, after removing the igw route...')
-            user.ec2.show_instance(vm)
-            user.ec2.show_route_table(rt)
-            raise RuntimeError('Was able to reach VM after removing the igw route')
+        start = time.time()
+        elapsed = 0
+        timeout = 30
+        good = False
+        while not good and (elapsed < timeout):
+            try:
+                ufs.sys('ping -c1 -t5 ' + vm.ip_address, code=0)
+            except CommandExitCodeException:
+                self.status('Success. Failed to reach VM without route, passing this test')
+                good = True
+                break
+            else:
+                elapsed = int(time.time() - start)
+                self.log.error('Was still able to reach VM:{0}, after removing the igw '
+                               'route. Elapsed:{1}'.format(vm.id, elapsed))
+                user.ec2.show_instance(vm)
+                user.ec2.show_vpc(vpc)
+                user.ec2.show_subnet(subnet)
+                user.ec2.show_route_table(rt)
+
+                if elapsed < timeout:
+                    self.log.info('sleeping briefly and then retrying...')
+                    time.sleep(3)
+
+        if not good:
+            raise RuntimeError('Was still able to reach VM after removing the igw route '
+                               'after elapsed:{0}'.format(elapsed))
         self.log.debug('restoring original igw route for route table:{0}'.format(rt.id))
         if original_igw_route:
             user.ec2.connection.create_route(rt.id,
@@ -2025,8 +2069,7 @@ class VpcBasics(CliTestRunner):
         else:
             return new_rt
 
-    def test4b10_route_table_add_and_delete_eni_route_packet_test(self,
-                                                                  test_net='192.168.190.0'):
+    def test4b10_route_table_add_and_delete_eni_route_packet_test(self, test_net='192.168.190.0'):
         """
         Launch a VM(s) in a subnet referencing the route table to be tested.
         Find an IP that is not reachable by the tx VM. Assign this TEST IP to the rx VM.
@@ -2226,6 +2269,9 @@ class VpcBasics(CliTestRunner):
             if route.gateway_id != 'local':
                 user.ec2.connection.delete_route(
                     route_table_id=rt.id, destination_cidr_block=route.destination_cidr_block)
+        rt = user.ec2.connection.get_all_route_tables(route_table_ids=[rt.id])[0]
+        existing = len(rt.routes or [])
+        limit = limit - existing
         test_net = '192.168'
         def add_route(count):
             n4 = count % 255
@@ -2238,11 +2284,20 @@ class VpcBasics(CliTestRunner):
                                              interface_id=eni.id)
         x = 0
         for x in xrange(0, limit):
-            add_route(x)
+            try:
+                add_route(x)
+            except Exception as E:
+                rt = user.ec2.connection.get_all_route_tables(route_table_ids=[rt.id])[0]
+                if len(rt.routes) != int(prop.value):
+                    self.log.error('Error while trying to add routes up to acceptable limit:"0", '
+                                   'got:"{1}", err:"{2}"'.format(int(prop.value),
+                                                                 len(rt.routes or []), E))
+                    raise E
+        # Double check here...
         rt = user.ec2.connection.get_all_route_tables(rt.id)[0]
-        if len(rt.routes) != limit:
+        if len(rt.routes) != int(prop.value):
             raise ValueError('Route count:{0} != limit:{1} after adding routes'
-                             .format(len(rt.routes), limit))
+                             .format(len(rt.routes), int(prop.value)))
         self.status('Was able to add count equal to limit of: {0}'.format(limit))
         try:
             x += 1
@@ -2545,7 +2600,18 @@ class VpcBasics(CliTestRunner):
                     .format(amount1, len(existing), limit))
         cleanup = []
         try:
-            new = self.create_test_subnets(vpc=vpc, zones=[zone1], count_per_zone=amount1)
+            try:
+                new = self.create_test_subnets(vpc=vpc, zones=[zone1], count_per_zone=amount1)
+            except EC2ResponseError as EE:
+                subs  = user.ec2.get_all_subnets(vpc=vpc)
+                if len(subs) != limit:
+                    self.log.error('Was not able to create subnets == acceptable limit:"{0}". '
+                                   'Got:"{1}". Error:"{2}"'.format(limit, len(subs), EE))
+                    raise
+                else:
+                    self.status('Was able to create {0} number of subs equal to acceptable limit'
+                                .format(limit))
+            # Double check
             cleanup = new
             self.status('Created {0} new subnets'.format(len(new)))
             existing = user.ec2.get_all_subnets(vpc=vpc)
@@ -2563,12 +2629,18 @@ class VpcBasics(CliTestRunner):
                         'Existing:{1}'.format(limit, len(self.zones), len(existing)))
             try:
                 new2 = self.create_test_subnets(vpc=vpc, zones=self.zones, count_per_zone=1)
-            except EC2ResponseError as EE:
-                if int(EE.status) == 400 and EE.reason == 'SubnetLimitExceeded':
+            except Exception as EE:
+                if isinstance(EE, EC2ResponseError) and int(EE.status) == 400 and \
+                                EE.reason == 'SubnetLimitExceeded':
                     self.status('Success. Was not able to exceed subnet per vpc limit. Error:{0}'
                                 .format(EE))
+                else:
+                    self.log.error('Expected an error, but not this one(?), while trying to '
+                                   'subnet limt:"{0}"'.format(EE))
+                    raise EE
             else:
-                raise RuntimeError('Attempted to exceed max subnets per vpc and did not rx error')
+                raise RuntimeError('Attempted to exceed max subnets per vpc and did not rx proper '
+                                   'error')
         finally:
             self.status('Attempting to delete the recently created subnets and '
                         'any dependencies...')

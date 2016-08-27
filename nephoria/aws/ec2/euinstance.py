@@ -653,7 +653,9 @@ class EuInstance(Instance, TaggedResource, Machine):
         except Exception as AE:
             self.log.debug('Failed to get arp info:' + str(AE))
         self.get_cloud_init_info_from_console()
-        if systemconnection:
+        # For classic modes, check nodes for conflicts.
+        #tbd - Add checks for vpc backends if a vpc backend is available.
+        if not self.vpc_id and systemconnection:
             my_node = None
             try:
                 my_node = systemconnection.get_hosts_for_node_controllers(instanceid=self.id)[0]

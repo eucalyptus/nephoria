@@ -219,7 +219,7 @@ class TestUnit(object):
                 buf += ' </font>'
                 print '<a name="' + str(self.error_anchor_id) + '"></a>'
             print red("{0}\n".format(get_traceback()))
-            self.error = str(e)
+            self.error = '{0}("{1}")'.format(e.__class__.__name__, e)
             self.result = TestResult.failed
             if eof:
                 raise e

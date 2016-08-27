@@ -623,11 +623,14 @@ disable_root: false"""
 
     def revoke_all_rules(self, group, egress=False):
 
-        if not isinstance(group, SecurityGroup):
+        if isinstance(group, SecurityGroup):
+            # fetch it since group obj does not have update() yet...
+            group = self.get_security_group(id=group.id)
+        elif isinstance(group, basestring):
             group = self.get_security_group(name=group)
         else:
-            # group obj does not have update() yet...
-            group = self.get_security_group(id=group.id)
+            raise ValueError('Unknown type passed for group: {0}/{1}'.format(group, type(group)))
+
         if not group:
             raise ValueError('Security group "{0}" not found'.format(group))
         self.show_security_group(group)
@@ -6632,6 +6635,13 @@ disable_root: false"""
         except ImportError as IE:
             self.log.debug('No pretty table import failed:' + str(IE))
             return
+        if isinstance(group, SecurityGroup) or isinstance(group, BotoGroup):
+            # re-fetch to update,  since group obj does not have update() yet...
+            group = self.get_security_group(id=group.id)
+        elif isinstance(group, basestring):
+            group = self.get_security_group(name=group)
+        else:
+            raise ValueError('Unknown type passed for group: {0}/{1}'.format(group, type(group)))
         group = self.get_security_group(id=group.id)
         if not group:
             raise ValueError('Show sec group failed. Could not fetch group:'
