@@ -2081,7 +2081,8 @@ class VpcBasics(CliTestRunner):
         user = self.user
         vpc = self.test4b0_get_vpc_for_route_table_tests()
         subnet = self.test4b1_get_subnets_for_route_table_tests(vpc=vpc, count=1)[0]
-
+        igw = user.ec2.connection.get_all_internet_gateways(
+            filters={'attachment.vpc-id': vpc.id})[0]
         for rt in user.ec2.connection.get_all_route_tables(
                 filters={'association.subnet_id': subnet.id}):
             for ass in rt.associtations:
@@ -2089,12 +2090,14 @@ class VpcBasics(CliTestRunner):
                     user.ec2.connection.disassociate_route_table(association_id=ass.id)
         new_rt = user.ec2.connection.create_route_table(subnet.vpc_id)
         user.ec2.connection.associate_route_table(route_table_id=new_rt.id, subnet_id=subnet.id)
+        user.ec2.connection.create_route(route_table_id=new_rt.id,
+                                         destination_cidr_block='0.0.0.0/0',
+                                         gateway_id=igw.id)
         group = self.get_test_security_groups(vpc=vpc, rules=[('tcp', 22, 22, '0.0.0.0/0'),
                                                               ('icmp', -1, -1, '0.0.0.0/0')])[0]
 
-        vm = self.get_test_instances(zone=subnet.availability_zone, subnet_id=subnet.id,
-                                     group_id=group.id, user=user, count=2)
-        vm_tx, vm_rx = self.create_test_instances
+        vm_tx, vm_rx = self.get_test_instances(zone=subnet.availability_zone, subnet_id=subnet.id,
+                                               group_id=group.id, user=user, count=2)
         keep_pinging = True
         octets = [int(x) for x in test_net.split('.')]
         test_net = "{0}.{1}".format(octets[0], octets[1])
@@ -2112,7 +2115,7 @@ class VpcBasics(CliTestRunner):
 
             test_ip = "{0}.{1}.{2}".format(test_net, net, ip)
             try:
-                vm_tx.sys('ping -c1 -t3 {0}'.format(test_ip))
+                vm_tx.sys('ping -c1 -t3 {0}'.format(test_ip), code=0)
             except CommandExitCodeException as CE:
                 self.log.debug('Assuming ip:{0} is available ping test returned:{0}'.format(CE))
                 keep_pinging = False
@@ -2126,16 +2129,18 @@ class VpcBasics(CliTestRunner):
         eth_itfc = None
         virt_eth = None
         for x in [0, 1]:
+            if eth_itfc:
+                break
             for prefix in ['eth', 'em']:
                 eth_itfc = prefix + str(x)
-                if eth_itfc in  interfaces:
+                if eth_itfc in interfaces:
                     break
                 else:
                     eth_itfc = None
         if not eth_itfc:
             raise ValueError('Could not find test interface (eth0, eth1, em0, em1, etc) on '
                              'vm:{0}, interfaces:{1}'.format(vm_rx.id, ",".join(interfaces)))
-        for x in xrange(0, 100):
+        for x in xrange(1, 100):
             virt_eth = "{0}:{1}".format(eth_itfc, x)
             if virt_eth not in interfaces:
                 break
