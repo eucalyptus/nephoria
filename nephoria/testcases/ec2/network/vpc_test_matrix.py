@@ -2140,17 +2140,26 @@ class VpcBasics(CliTestRunner):
         if not eth_itfc:
             raise ValueError('Could not find test interface (eth0, eth1, em0, em1, etc) on '
                              'vm:{0}, interfaces:{1}'.format(vm_rx.id, ",".join(interfaces)))
-        for x in xrange(1, 100):
-            virt_eth = "{0}:{1}".format(eth_itfc, x)
-            if virt_eth not in interfaces:
-                break
-            else:
-                virt_eth = None
-        if not virt_eth:
-            raise ValueError('Could not find available virt interface on '
-                             'vm:{0}, interfaces:{1}'.format(vm_rx.id, ",".join(interfaces)))
 
-        vm_rx.sys('ifconfig {0} {1}'.format(virt_eth, test_ip), code=0)
+        try:
+            for x in xrange(1, 100):
+                ethdummy = "eth{0}".format(10 + x)
+                if ethdummy not in interfaces:
+                    break
+            vm_rx.sys('modprobe dummy', code=0)
+            vm_rx.sys('ip link set name {0} dev dummy0'.format(ethdummy), code=0)
+        except CommandExitCodeException as CE:
+            self.log.info('Error:{0}\nDummy interface failed trying alias...')
+            for x in xrange(1, 100):
+                virt_eth = "{0}:{1}".format(eth_itfc, x)
+                if virt_eth not in interfaces:
+                    break
+                else:
+                    virt_eth = None
+            if not virt_eth:
+                raise ValueError('Could not find available virt interface on '
+                                 'vm:{0}, interfaces:{1}'.format(vm_rx.id, ",".join(interfaces)))
+            vm_rx.sys('ifconfig {0} {1}'.format(virt_eth, test_ip), code=0)
         try:
             vm_rx.sys('echo 1 > /proc/sys/net/ipv4/ip_forward', code=0)
             eni = None
@@ -2165,6 +2174,9 @@ class VpcBasics(CliTestRunner):
             new_route = user.ec2.connection.create_route(route_table_id=new_rt.id,
                                                          destination_cidr_block=test_ip + "/32",
                                                          interface_id=eni.id)
+
+            vm_tx.reboot_instance_and_verify()
+            self.log.info("\n".join(vm_tx.sys('route') or []))
             timeout = 60
             start = time.time()
             elapsed = 0
