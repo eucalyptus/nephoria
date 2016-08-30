@@ -3035,6 +3035,12 @@ class VpcBasics(CliTestRunner):
 
 
     def test6b5_basic_create_and_delete_eni_test(self):
+        """
+        Create a set of valid ENIs with different attributes and checks the ENI attributes
+        in the response.
+         see ec2ops.create_network_interface for specifics on attribute checks.
+
+        """
         user = self.user
         vpc = self.test6b0_get_vpc_for_eni_tests()
         zones = self.zones
@@ -3046,6 +3052,7 @@ class VpcBasics(CliTestRunner):
                                .format(vpc.id))
         self.status('Using subnets:"{0}" for this eni test.'
                     .format(", ".join([str(x.id) for x in subnets])))
+        enis = []
         for sub in subnets:
             net_info = get_network_info_for_cidr(sub.cidr_block)
             network = net_info.get('network')
@@ -3054,17 +3061,55 @@ class VpcBasics(CliTestRunner):
             self.status('Attempting to remove all existing artifacts from subnet:{0}'
                         .format(sub.id))
             user.ec2.delete_subnet_and_dependency_artifacts(subnet=sub)
-            self.status('Attempting to create valid eni without specifying the private ip...')
-            eni = user.ec2.connection.create_network_interface(subnet_id=sub.id)
 
+            self.status('Attempting to create valid eni without specifying the private ip...')
+            eni = user.ec2.create_network_interface(subnet_id=sub.id, show_eni=True)
+            enis.append(eni)
             if eni.private_ip_address == valid_ip:
                 valid_ip = ".".join(str(x) for x in (octets[:2])) + "." + str(octets[3] + 11)
-            self.status('Attempting to create an valid eni providing private ip:{0}'
+
+            self.status('Attempting to create an valid eni providing the private ip:{0}'
                         .format(valid_ip))
-            eni = user.ec2.connection.create_network_interface(subnet_id=sub.id,
-                                                               private_ip_address=valid_ip)
-
-
+            eni = user.ec2.create_network_interface(subnet_id=sub.id, private_ip_address=valid_ip)
+            enis.append(eni)
+            groups = self.get_test_security_groups(vpc=vpc, count=3)
+            self.status('Attempting to create an valid eni providing a list of security groups:{0}'
+                        .format(",".join(str(x.id) for x in groups)))
+            eni = user.ec2.create_network_interface(subnet_id=sub.id, groups=groups)
+            enis.append(eni)
+            description = 'TEST ENI DESCRIPTION for subnet:{0}'.format(sub.id)
+            self.status('Attempting to create an valid eni with a description:{0}'
+                        .format(description))
+            eni = user.ec2.create_network_interface(subnet_id=sub.id, description=description)
+            enis.append(eni)
+        self.status('Finished Creating the following network interfaces...')
+        user.ec2.show_network_interfaces(enis)
+        self.status('Attempting to delete the network interfaces created in this test...')
+        for eni in enis:
+            eni.delete()
+        delete_me = [str(x.id) for x in enis]
+        timeout = 120
+        start = time.time()
+        elapsed = 0
+        attempts = 0
+        while delete_me and elapsed > timeout:
+            attempts += 1
+            self.log.info('Attempting to delete enis:"{0}", attempt:{1}'
+                          .format(",".join([str(x.id) for x in enis]), attempts))
+            for eni in enis:
+                self.log.debug('Attempting to delete ENI:{0}, elapsed:{1}'.format(eni.id, elapsed))
+                try:
+                    eni.delete()
+                    eni.update()
+                except EC2ResponseError as EE:
+                    if int(EE.status) == 400 and EE.reason == 'InvalidNetworkInterfaceID.NotFound':
+                        if eni.id in delete_me:
+                            delete_me.remove(eni.id)
+                        self.log.debug('Deleted eni:{0}'.format(eni.id))
+        if delete_me:
+            raise RuntimeError('Failed to delete the following ENIs:{0}'
+                               .format(",".join(delete_me)))
+        self.status('Passed. Basic create and delete ENI checks complete')
 
 
 
