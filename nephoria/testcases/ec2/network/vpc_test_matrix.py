@@ -2357,11 +2357,12 @@ class VpcBasics(CliTestRunner):
 
 
 
-def test4b12_route_table_add_and_delete_vm_id_route_packet_test(self, test_net='192.168.190.0'):
+    def test4b12_route_table_add_and_delete_vm_id_route_packet_test(self,
+                                                                    test_net='192.168.190.0'):
         """
         Test intends to verify routes which reference an INSTANCE ID as the route point/gateway.
         Launch a VM(s) in a subnet referencing the route table to be tested.
-        Removes all ENIs but device index 0 for the rx'ing VM which is used as the route entry. 
+        Removes all ENIs but device index 0 for the rx'ing VM which is used as the route entry.
         Find an IP that is not reachable by the tx VM. Assign this TEST IP to the rx VM.
         Enable IP forwarding on the rx VM. Set the route for the TEST IP to the eni of the rx
         VM. Attempt to reach the the TEST IP from the tx VM to verify the new route works.
@@ -2548,11 +2549,17 @@ def test4b12_route_table_add_and_delete_vm_id_route_packet_test(self, test_net='
                     self.log.debug('Error, Ping vm to vm succeeded on attempt:{0} '
                                    'elapsed::{1}/{2}'.format(attempt, elapsed, timeout))
                     time.sleep(5)
-            self.status('Test IP was no longer reachable from {0} after route was deleted'
-                        .format(vm_tx.id))
-
+            if success:
+                self.status('Test IP was no longer reachable from {0} after route was deleted'
+                            .format(vm_tx.id))
+            else:
+                raise RuntimeError('Error, Ping vm to vm succeeded after route was deleted. '
+                                   'Attempts:{0} elapsed::{1}/{2}'
+                                   .format(attempt, elapsed, timeout))
         finally:
             vm_rx.sys('ifconfig {0} down'.format(virt_eth, test_ip))
+            if vpc:
+                user.ec2.delete_vpc_and_dependency_artifacts(vpc)
 
 
     def test4c1_route_table_max_tables_per_vpc(self):
