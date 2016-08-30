@@ -3018,6 +3018,8 @@ class VpcBasics(CliTestRunner):
 
     ###############################################################################################
     #  ENI tests
+    #  An elastic network interface (ENI) is a virtual network interface that you can attach to an
+    #  instance in a VPC. ENIs are available only for instances running in a VPC.
     ###############################################################################################
 
     def test6b0_get_vpc_for_eni_tests(self):
@@ -3046,7 +3048,7 @@ class VpcBasics(CliTestRunner):
         zones = self.zones
         subnets = []
         for zone in zones:
-            subnets.append(self.get_test_subnets_for_vpc(vpc, zone=zone,  count=1)[0])
+            subnets.append(self.get_non_default_test_subnets_for_vpc(vpc, zone=zone,  count=1)[0])
         if not subnets:
             raise RuntimeError('No subnets found or created for this eni-test vpc:{0}'
                                .format(vpc.id))
@@ -3111,6 +3113,107 @@ class VpcBasics(CliTestRunner):
                                .format(",".join(delete_me)))
         self.status('Passed. Basic create and delete ENI checks complete')
 
+    def test6c0_eni_basic__creation_deletion_tests_extended(self):
+        """
+        Test will attempt to create ENIs using invalid requests/attributes.
+        - Request a private ip outside the subnet range
+        - Request a private ip already in use by another ENI
+        """
+        user = self.user
+        vpc = self.test6b0_get_vpc_for_eni_tests()
+        zones = self.zones
+        subnets = []
+        for zone in zones:
+            subnets.append(self.get_non_default_test_subnets_for_vpc(vpc, zone=zone, count=1)[0])
+        if not subnets:
+            raise RuntimeError('No subnets found or created for this eni-test vpc:{0}'
+                               .format(vpc.id))
+        self.status('Using subnets:"{0}" for this eni test.'
+                    .format(", ".join([str(x.id) for x in subnets])))
+        enis = []
+        for sub in subnets:
+            try:
+                net_info = get_network_info_for_cidr(sub.cidr_block)
+                # Find an address outside the range of the subnet...
+                network = net_info.get('network')
+                octets = network.split('.')
+                invalid_ip = None
+                test_count = 0
+                for octet in xrange(0, 3):
+                    if test_count > 100:
+                        break
+                    test_octets = copy.copy(octets)
+                    test_octets[3] = test_octets[3] + 100
+                    for x in range(1, 254):
+                        test_octets[octet] = x
+                        invalid_ip = ".".join([str(x) for x in test_octets])
+                        if not is_address_in_network(invalid_ip, sub.cidr_block):
+                            test_count += 1
+                            try:
+                                eni = user.ec2.connection.create_network_interface(
+                                    sub.id, private_ip_address=invalid_ip)
+                            except EC2ResponseError as EE:
+                                if int(EE.status) == 400 and EE.reason == 'InvalidParameterValue':
+                                    self.log.debug('Received correct error response for private IP '
+                                                   'out range: {0}'.format(EE))
+                                else:
+                                    raise ValueError('Received the incorrect error for private IP out'
+                                                     ' of range: {0}'.format(EE))
+                            else:
+                                raise RuntimeError('Attempting to create ENI using IP:{0} outside of '
+                                                   'subnet:{1} cidr:{2} was either allowed or did not'
+                                                   'respond with an error'
+                                                   .format(invalid_ip, sub.id, sub.cidr_block))
+                self.status('Verified system responded with proper errors for {0} out of range IPs'
+                            'in ENI creation requests'.format(test_count))
+                self.log.debug('Attempting to create initial ENI for duplicate ENI test...')
+                eni1 = user.ec2.connection.create_network_interface(sub.id)
+                self.status('Attempting to create an ENI with an address already in use by another '
+                            'ENI...')
+                try:
+                    eni2 = user.ec2.connection.create_network_interface(
+                        sub.id, private_ip_address=eni1.private_ip_address)
+                except EC2ResponseError as EE:
+                    if int(EE.status) == 400 and EE.reason == 'InvalidParameterValue':
+                        self.log.debug('Received correct error response for  duplicate private IP: {0}'
+                                       .format(EE))
+                    else:
+                        raise ValueError('Received the incorrect error for  duplicate private IP: {0}'
+                                         .format(EE))
+                else:
+                    raise RuntimeError('Attempting to create ENI using IP:{0} duplicate of '
+                                       'eni:{1} was either allowed or did not'
+                                       'respond with an error'
+                                       .format(eni1.private_ip_address, eni1.id))
+                self.status('Attempting to create an ENI using an IP of a deleted ENI...')
+                eni1.delete()
+                elapsed = 0
+                start = time.time()
+                timeout = 60
+                attempts = 0
+                while elapsed < timeout:
+                    attempts += 1
+                    elapsed = int(time.time() - start)
+                    try:
+                        eni2 = user.ec2.create_network_interface(
+                            sub.id, private_ip_address=eni1.private_ip_address)
+                        self.status('Success. Was able to create an ENI:{0} reusing IP:{1} of '
+                                    'deleted ENI:{2}'.format(eni2.id, eni1.private_ip_address,
+                                                             eni1.id))
+                        break
+                    except Exception as E:
+                        if elapsed > timeout:
+                            self.log.error('{0}. Was unable to re-use IP address:{1} after '
+                                           'elasped:{2}. Error:"{3}"'
+                                           .format(get_traceback(), eni1.private_ip_address,
+                                                   elapsed, E))
+                            raise RuntimeError('Was unable to re-use IP address:{0} after '
+                                               'elasped:{1}. Error:"{2}"'
+                                               .format(eni1.private_ip_address, elapsed, E))
+            finally:
+                if sub:
+                    self.status('Deleteing subnet and artifacts from this ENI test...')
+                    user.ec2.delete_subnet_and_dependency_artifacts(sub)
 
 
     def test6c_eni_eip_vpc_reserved_addresses(self):
