@@ -388,7 +388,7 @@ class VpcBasics(CliTestRunner):
             if add_default_igw_route:
                 default_rt = user.ec2.connection.get_all_route_tables(
                     filters={'association.main': 'true', 'vpc-id': new_vpc.id})[0]
-                user.ec2.connection.create_route(default_rt.id, '0.0.0.0/0', gw.id)
+                user.ec2.create_route(default_rt.id, '0.0.0.0/0', gw.id)
             user.log.info('Created the following VPC: {0}'.format(new_vpc.id))
             user.ec2.show_vpc(new_vpc)
         return test_vpcs
@@ -818,6 +818,14 @@ class VpcBasics(CliTestRunner):
 
 
     def check_user_default_routes_present(self, user=None, vpc=None, check_igw=True):
+        """
+        Check default route entries...
+        Regarding route.origin...
+        route.origin - Describes how the route was created.
+        This test checks for CreateRouteTable as the origin. ec2ops checks for user created
+        origins for all other create route requests.
+        
+        """
         user = user or self.user
         vpc = vpc or self.check_user_default_vpcs(user=user)
         rt = self.check_user_default_route_table_present(user=user)
@@ -832,9 +840,15 @@ class VpcBasics(CliTestRunner):
         for route in routes:
             if route.destination_cidr_block == vpc.cidr_block and \
                             route.gateway_id == 'local':
+                if route.origin != 'CreateRouteTable':
+                    raise ValueError('Default Cidr route has incorrect route origin:{0}, '
+                                     'should be:{1}'.format(route.origin, 'CreateRouteTable'))
                 default_cidr_route = True
             if check_igw:
                 if route.gateway_id == igw.id and route.destination_cidr_block == '0.0.0.0/0':
+                    if route.origin != 'CreateRouteTable':
+                        raise ValueError('Default IGW route has incorrect route origin:{0}, '
+                                         'should be:{1}'.format(route.origin, 'CreateRouteTable'))
                     default_igw_route = True
             if default_igw_route and default_cidr_route:
                 break
@@ -1893,7 +1907,7 @@ class VpcBasics(CliTestRunner):
             user.ec2.connection.delete_route(
                 route_table_id=rt.id,
                 destination_cidr_block=original_igw_route.destination_cidr_block)
-            new_route = user.ec2.connection.create_route(rt.id, '0.0.0.0/0', igw.id)
+            user.ec2.create_route(rt.id, '0.0.0.0/0', igw.id)
             current_route = new_route
         group = self.get_test_security_groups(vpc=vpc, rules = [('tcp', 22, 22, '0.0.0.0/0'),
                                                                 ('icmp', -1, -1, '0.0.0.0/0')])[0]
@@ -1937,7 +1951,7 @@ class VpcBasics(CliTestRunner):
                                'after elapsed:{0}'.format(elapsed))
         self.log.debug('restoring original igw route for route table:{0}'.format(rt.id))
         if original_igw_route:
-            user.ec2.connection.create_route(rt.id,
+            user.ec2.create_route(rt.id,
                                              original_igw_route.destination_cidr_block,
                                              igw.id)
 
@@ -2091,7 +2105,7 @@ class VpcBasics(CliTestRunner):
                     user.ec2.connection.disassociate_route_table(association_id=ass.id)
         new_rt = user.ec2.connection.create_route_table(subnet.vpc_id)
         user.ec2.connection.associate_route_table(route_table_id=new_rt.id, subnet_id=subnet.id)
-        user.ec2.connection.create_route(route_table_id=new_rt.id,
+        user.ec2.create_route(route_table_id=new_rt.id,
                                          destination_cidr_block='0.0.0.0/0',
                                          gateway_id=igw.id)
         group = self.get_test_security_groups(vpc=vpc, rules=[('tcp', 22, 22, '0.0.0.0/0'),
@@ -2178,7 +2192,7 @@ class VpcBasics(CliTestRunner):
             test_route = test_ip + "/32"
             self.log.debug("Adding test route: {0}, to router:{1} using VM:{2} 's ENI:{3}"
                            .format(test_route, new_rt.id, vm_rx.id, eni.id))
-            user.ec2.connection.create_route(route_table_id=new_rt.id,
+            user.ec2.create_route(route_table_id=new_rt.id,
                                              destination_cidr_block=test_route,
                                              interface_id=eni.id)
 
@@ -2282,7 +2296,7 @@ class VpcBasics(CliTestRunner):
                     user.ec2.connection.disassociate_route_table(association_id=ass.id)
         new_rt = user.ec2.connection.create_route_table(subnet.vpc_id)
         user.ec2.connection.associate_route_table(route_table_id=new_rt.id, subnet_id=subnet.id)
-        user.ec2.connection.create_route(route_table_id=new_rt.id,
+        user.ec2.create_route(route_table_id=new_rt.id,
                                          destination_cidr_block='0.0.0.0/0',
                                          gateway_id=igw.id)
         group = self.get_test_security_groups(vpc=vpc, rules=[('tcp', 22, 22, '0.0.0.0/0'),
@@ -2303,7 +2317,7 @@ class VpcBasics(CliTestRunner):
         route = None
         try:
             try:
-                route = user.ec2.connection.create_route(route_table_id=new_rt.id,
+                route = user.ec2.create_route(route_table_id=new_rt.id,
                                                          destination_cidr_block=test_route,
                                                          instance_id=vm_rx.id)
             except Exception as E:
@@ -2332,7 +2346,7 @@ class VpcBasics(CliTestRunner):
                             'single ENI. This should work...')
 
                 time.sleep(5)
-                route = user.ec2.connection.create_route(route_table_id=new_rt.id,
+                route = user.ec2.create_route(route_table_id=new_rt.id,
                                                          destination_cidr_block=test_route,
                                                          instance_id=vm_rx.id)
                 route_found = False
@@ -2381,7 +2395,7 @@ class VpcBasics(CliTestRunner):
                     user.ec2.connection.disassociate_route_table(association_id=ass.id)
         new_rt = user.ec2.connection.create_route_table(subnet.vpc_id)
         user.ec2.connection.associate_route_table(route_table_id=new_rt.id, subnet_id=subnet.id)
-        user.ec2.connection.create_route(route_table_id=new_rt.id,
+        user.ec2.create_route(route_table_id=new_rt.id,
                                          destination_cidr_block='0.0.0.0/0',
                                          gateway_id=igw.id)
         group = self.get_test_security_groups(vpc=vpc, rules=[('tcp', 22, 22, '0.0.0.0/0'),
@@ -2473,7 +2487,7 @@ class VpcBasics(CliTestRunner):
             test_route = test_ip + "/32"
             self.log.debug("Adding test route: {0}, to router:{1} using VM:{2} 's ENI:{3}"
                            .format(test_route, new_rt.id, vm_rx.id, eni.id))
-            user.ec2.connection.create_route(route_table_id=new_rt.id,
+            user.ec2.create_route(route_table_id=new_rt.id,
                                              destination_cidr_block=test_route,
                                              interface_id=eni.id)
 
@@ -2620,7 +2634,7 @@ class VpcBasics(CliTestRunner):
             test_cidr = "{0}.{1}.{2}/32".format(test_net, n3, n4)
             self.log.debug('Attempting to add route#{0}, cidr:{1} via:{2} to {3}'
                            .format(count, test_cidr, eni.id, rt.id))
-            user.ec2.connection.create_route(route_table_id=rt.id,
+            user.ec2.create_route(route_table_id=rt.id,
                                              destination_cidr_block=test_cidr,
                                              interface_id=eni.id)
         x = 0

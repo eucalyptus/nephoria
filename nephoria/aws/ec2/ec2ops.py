@@ -1433,6 +1433,87 @@ disable_root: false"""
         else:
             return ret_buf
 
+
+
+    def get_routes_from_route_table(self, route_table, destination_cidr_block=None,
+                                    gateway_id=None, interface_id=None, instance_id=None,
+                                    natgateway_id=None, vpc_peering_connection_id=None,
+                                    state=None):
+        # update the table first...
+        if isinstance(route_table, basestring):
+            rt_id = route_table_id
+        else:
+            rt_id = route_table.id
+        route_table = self.connection.get_all_route_tables(route_table_ids=[route_table])
+        if not route_table:
+            raise ValueError('Route Table not found for:{0}'.format(rt_id))
+        route_table = route_table[0]
+        routes = []
+        for route in route_table.routes:
+            assert  isinstance(route, EucaRoute)
+            if destination_cidr_block and route.destination_cidr_block != destination_cidr_block:
+                continue
+            if gateway_id and route.gateway_id != gateway_id:
+                continue
+            if interface_id and route.interface_id != interface_id:
+                continue
+            if instance_id and route.instance_id != instance_id:
+                continue
+            if natgateway_id and route.natgateway_id != natgateway_id:
+                continue
+            if vpc_peering_connection_id and \
+                            route.vpc_peering_connection_id != vpc_peering_connection_id:
+                continue
+            if state and route.state != state:
+                continue
+            routes.append(route)
+        return routes
+
+    def create_route(self, route_table_id, destination_cidr_block, gateway_id=None,
+                     instance_id=None, interface_id=None, vpc_peering_connection_id=None,
+                     natgateway_id=None, dry_run=False):
+        params = {
+            'RouteTableId': route_table_id,
+            'DestinationCidrBlock': destination_cidr_block
+        }
+
+        if gateway_id is not None:
+            params['GatewayId'] = gateway_id
+        if instance_id is not None:
+            params['InstanceId'] = instance_id
+        if interface_id is not None:
+            params['NetworkInterfaceId'] = interface_id
+        if natgateway_id is not None:
+            params['NatGatewayId'] = natgateway_id
+        if vpc_peering_connection_id is not None:
+            params['VpcPeeringConnectionId'] = vpc_peering_connection_id
+        if dry_run:
+            params['DryRun'] = 'true'
+
+        status = self.get_status('CreateRoute', params)
+
+        routes = self.get_routes_from_route_table(
+            route_table=route_table_id, destination_cidr_block=destination_cidr_block,
+            gateway_id=gateway_id, interface_id=interface_id, instance_id=instance_id,
+            natgateway_id=None, vpc_peering_connection_id=None, state=None)
+        if not routes:
+            raise ValueError('Newly added route for cidr:{0} not found in route table:{1} '
+                             'response. Resp Status:{2}'
+                             .format(destination_cidr_block, route_table_id, status))
+        if len(routes) != 1:
+            self.show_route_table(route_table_id)
+            raise ValueError('Multiple:{0} routes found for same destination cidr:{1} in route'
+                             'table:{2} response'.format(len(routes),
+                                                         destination_cidr_block, route_table_id))
+        route = routes[0]
+        if route.origin != "CreateRoute":
+            self.show_route_table(route_table_id)
+            raise ValueError('User created route does not have "CreateRoute" as origin, '
+                             'found route:{0}, origin:{1}'.format(route.destination_cidr_block,
+                                                                  route.origin))
+        return route
+
+
     def get_all_subnets(self, subnet_ids=None, zone=None, vpc=None, filters=None, dry_run=False,
                         verbose=None):
         ret_list = []
