@@ -2098,6 +2098,7 @@ class VpcBasics(CliTestRunner):
 
         vm_tx, vm_rx = self.get_test_instances(zone=subnet.availability_zone, subnet_id=subnet.id,
                                                group_id=group.id, user=user, count=2)
+
         keep_pinging = True
         octets = [int(x) for x in test_net.split('.')]
         test_net = "{0}.{1}".format(octets[0], octets[1])
@@ -2140,7 +2141,7 @@ class VpcBasics(CliTestRunner):
         if not eth_itfc:
             raise ValueError('Could not find test interface (eth0, eth1, em0, em1, etc) on '
                              'vm:{0}, interfaces:{1}'.format(vm_rx.id, ",".join(interfaces)))
-
+        ethdummy = None
         try:
             for x in xrange(1, 100):
                 ethdummy = "eth{0}".format(10 + x)
@@ -2148,18 +2149,14 @@ class VpcBasics(CliTestRunner):
                     break
             vm_rx.sys('modprobe dummy', code=0)
             vm_rx.sys('ip link set name {0} dev dummy0'.format(ethdummy), code=0)
+            vm_rx.sys('ifconfig {0} {1}'.format(ethdummy, test_ip), code=0)
+            vm_rx.sys('ifconfig {0} up'.format(ethdummy), code=0)
         except CommandExitCodeException as CE:
-            self.log.info('Error:{0}\nDummy interface failed trying alias...')
-            for x in xrange(1, 100):
-                virt_eth = "{0}:{1}".format(eth_itfc, x)
-                if virt_eth not in interfaces:
-                    break
-                else:
-                    virt_eth = None
-            if not virt_eth:
-                raise ValueError('Could not find available virt interface on '
-                                 'vm:{0}, interfaces:{1}'.format(vm_rx.id, ",".join(interfaces)))
-            vm_rx.sys('ifconfig {0} {1}'.format(virt_eth, test_ip), code=0)
+            if ethdummy:
+                vm_rx.sys('ifconfig {0} down'.format(ethdummy))
+            self.log.error('Could not create test network interface on vm_rx:{0}, err:{1}'
+                           .format(vm_rx.id, CE))
+            raise CE
         try:
             vm_rx.sys('echo 1 > /proc/sys/net/ipv4/ip_forward', code=0)
             eni = None
@@ -2171,10 +2168,19 @@ class VpcBasics(CliTestRunner):
                 vm_rx.show_enis()
                 raise ValueError('Could not find eni on {0} with subnet for {1}, {2}'
                                  .format(vm_rx.id, vm_tx.id, vm_tx.subnet_id))
-            new_route = user.ec2.connection.create_route(route_table_id=new_rt.id,
-                                                         destination_cidr_block=test_ip + "/32",
-                                                         interface_id=eni.id)
+            self.log.debug('Disabling source/dest checks on the eni: {0}'.format(eni.id))
+            user.ec2.connection.modify_network_interface_attribute(interface_id=eni.id,
+                                                                   attr='sourceDestCheck',
+                                                                   value='false')
+            test_route = test_ip + "/32"
+            self.log.debug("Adding test route: {0}, to router:{1} using VM:{2} 's ENI:{3}"
+                           .format(test_route, new_rt.id, vm_rx.id, eni.id))
+            user.ec2.connection.create_route(route_table_id=new_rt.id,
+                                             destination_cidr_block=test_route,
+                                             interface_id=eni.id)
 
+            self.log.debug('Rebooting the vm_tx instance to make sure it has the latest route info'
+                           'provided via DHCP...')
             vm_tx.reboot_instance_and_verify()
             self.log.info("\n".join(vm_tx.sys('route') or []))
             timeout = 60
@@ -2185,14 +2191,24 @@ class VpcBasics(CliTestRunner):
             # Retry this test in case rule needs time to take effect...
             while elapsed < timeout:
                 elapsed = int(time.time() - start)
+                msg = ""
                 try:
+                    try:
+                        self.status('Attempting to ping the vm_rx/vm_tx private IPs to populate each'
+                                    'others arp tables...')
+                        vm_tx.sys('ping -c1 {0}'.format(vm_rx.private_ip_address), code=0)
+                        vm_rx.sys('ping -c1 {0}'.format(vm_tx.private_ip_address), code=0)
+                    except CommandExitCodeException as PE:
+                        msg = "Failed to ping to pre-populate ARP cache with test VM private addr" \
+                              "info, err:{0}".format(PE)
+                        raise CommandExitCodeException(msg)
                     self.status('Attempting to ping test ip after new route has been ADDED. '
                                 'Attempt: {0}, Elapsed:{1}/{2}'.format(attempt, elapsed, timeout))
                     vm_tx.sys('ping -c2 {0}'.format(test_ip), code=0)
                     success = True
                     break
                 except CommandExitCodeException as CE:
-                    msg = 'Ping vm to vm failed on attempt:{0} elapsed::{1}/{2}. Err:{1}'\
+                    msg += 'Ping vm to vm failed on attempt:{0} elapsed::{1}/{2}. Err:{3}'\
                         .format(attempt, elapsed, timeout, CE)
                     if elapsed >= timeout:
                         raise RuntimeError(msg)
@@ -2200,13 +2216,15 @@ class VpcBasics(CliTestRunner):
                         self.log.debug(msg)
                         time.sleep(5)
             if not success:
-                raise RuntimeError('Ping vm to vm failed on attempt:{0} elapsed::{1}/{2}. Err:{1}'
-                                   .format(attempt, elapsed, timeout))
+                msg = 'Error. Ping vm:{0} to vm:{1} test_ip:{2} failed on attempt:{3} ' \
+                      'elapsed::{4}/{5}'.format(vm_tx.id, vm_rx.id, test_ip, attempt, elapsed,
+                                                timeout)
+                raise RuntimeError(msg)
             self.status('Test IP was reachable from {0} after route was added'.format(vm_tx.id))
             self.status('Revoking route and retesting...')
 
-            user.ec2.connection.delete_route(
-                route_table_id=new_rt.id, destination_cidr_block=new_route.destination_cidr_block)
+            user.ec2.connection.delete_route(route_table_id=new_rt.id,
+                                             destination_cidr_block=test_route)
             timeout = 60
             start = time.time()
             elapsed = 0
@@ -2220,8 +2238,9 @@ class VpcBasics(CliTestRunner):
                                 'Attempt: {0}, Elapsed:{1}/{2}'.format(attempt, elapsed, timeout))
                     vm_tx.sys('ping -c2 {0}'.format(test_ip), code=0)
                 except CommandExitCodeException as CE:
-                    msg = 'SUCCESS, Ping vm to vm failed on attempt:{0} elapsed::{1}/{2}. ' \
-                          'Err:{1}'.format(attempt, elapsed, timeout, CE)
+                    msg = 'SUCCESS, Ping vm:{0} to vm:{1} test_ip:{2} failed on attempt:{3} ' \
+                          'elapsed::{4}/{5}. Err:{6}'.format(vm_tx.id, vm_rx.id, test_ip, attempt,
+                                                             elapsed, timeout, CE)
                     success = True
                     break
 
@@ -2235,7 +2254,7 @@ class VpcBasics(CliTestRunner):
                         .format(vm_tx.id))
 
         finally:
-            vm_rx.sys('ifconfig {0} down'.format(virt_eth, test_ip), code=0)
+            vm_rx.sys('ifconfig {0} down'.format(virt_eth, test_ip))
 
 
     def test4c1_route_table_max_tables_per_vpc(self):

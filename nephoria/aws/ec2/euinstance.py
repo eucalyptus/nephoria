@@ -498,6 +498,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 eni_info_pt.add_row(['ID:'.ljust(key_len), str(eni.id).ljust(val_len)])
                 eni_info_pt.add_row(['VPC:', getattr(eni, 'vpc_id', None)])
                 eni_info_pt.add_row(['SUBNET:', getattr(eni, 'subnet_id', None)])
+                eni_info_pt.add_row(['CHECK SRC/DST', getattr(eni, 'source_dest_check', None)])
                 region =  getattr(eni, 'region', None)
                 if region:
                     region = region.name
