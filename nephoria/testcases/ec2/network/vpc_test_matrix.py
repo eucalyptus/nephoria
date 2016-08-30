@@ -2071,6 +2071,7 @@ class VpcBasics(CliTestRunner):
 
     def test4b10_route_table_add_and_delete_eni_route_packet_test(self, test_net='192.168.190.0'):
         """
+        Test intends to verify routes which reference an ENI as the route point/gateway.
         Launch a VM(s) in a subnet referencing the route table to be tested.
         Find an IP that is not reachable by the tx VM. Assign this TEST IP to the rx VM.
         Enable IP forwarding on the rx VM. Set the route for the TEST IP to the eni of the rx
@@ -2211,6 +2212,301 @@ class VpcBasics(CliTestRunner):
                     break
                 except CommandExitCodeException as CE:
                     msg += 'Ping vm to vm failed on attempt:{0} elapsed::{1}/{2}. Err:{3}'\
+                        .format(attempt, elapsed, timeout, CE)
+                    if elapsed >= timeout:
+                        raise RuntimeError(msg)
+                    else:
+                        self.log.debug(msg)
+                        time.sleep(5)
+            if not success:
+                msg = 'Error. Ping vm:{0} to vm:{1} test_ip:{2} failed on attempt:{3} ' \
+                      'elapsed::{4}/{5}'.format(vm_tx.id, vm_rx.id, test_ip, attempt, elapsed,
+                                                timeout)
+                raise RuntimeError(msg)
+            self.status('Test IP was reachable from {0} after route was added'.format(vm_tx.id))
+            self.status('Revoking route and retesting...')
+
+            user.ec2.connection.delete_route(route_table_id=new_rt.id,
+                                             destination_cidr_block=test_route)
+            timeout = 60
+            start = time.time()
+            elapsed = 0
+            attempt = 1
+            success = False
+            # Retry this test in case rule needs time to take effect...
+            while elapsed < timeout:
+                elapsed = int(time.time() - start)
+                try:
+                    self.status('Attempting to ping test ip after new route has been DELETED. '
+                                'Attempt: {0}, Elapsed:{1}/{2}'.format(attempt, elapsed, timeout))
+                    vm_tx.sys('ping -c2 {0}'.format(test_ip), code=0)
+                except CommandExitCodeException as CE:
+                    msg = 'SUCCESS, Ping vm:{0} to vm:{1} test_ip:{2} failed on attempt:{3} ' \
+                          'elapsed::{4}/{5}. Err:{6}'.format(vm_tx.id, vm_rx.id, test_ip, attempt,
+                                                             elapsed, timeout, CE)
+                    success = True
+                    break
+
+                if elapsed >= timeout:
+                    raise RuntimeError(msg)
+                else:
+                    self.log.debug('Error, Ping vm to vm succeeded on attempt:{0} '
+                                   'elapsed::{1}/{2}'.format(attempt, elapsed, timeout))
+                    time.sleep(5)
+            self.status('Test IP was no longer reachable from {0} after route was deleted'
+                        .format(vm_tx.id))
+
+        finally:
+            vm_rx.sys('ifconfig {0} down'.format(virt_eth, test_ip))
+
+    def test4b12_route_table_instance_id_with_multiple_eni_test(self,
+                                                                test_route='192.168.191.0/24'):
+        """
+        Test intends to verify routes which reference an INSTANCE ID as the route point/gateway.
+        - The test will first attempt an instance with more than a single ENI, this should not
+        be allowed. Expecting the request to create a route referencing an instance with multiple
+        ENIs will be rejected with the proper error response.
+        - Next the test will remove all ENIs leaving only a single ENI at device index 0. It will
+        again try creating a route referencing this instance id. This should be allowed.
+
+        """
+        user = self.user
+        vpc = self.test4b0_get_vpc_for_route_table_tests()
+        subnet = self.test4b1_get_subnets_for_route_table_tests(vpc=vpc, count=1)[0]
+        igw = user.ec2.connection.get_all_internet_gateways(
+            filters={'attachment.vpc-id': vpc.id})[0]
+        for rt in user.ec2.connection.get_all_route_tables(
+                filters={'association.subnet_id': subnet.id}):
+            for ass in rt.associtations:
+                if ass.subnet_id == subnet.id:
+                    user.ec2.connection.disassociate_route_table(association_id=ass.id)
+        new_rt = user.ec2.connection.create_route_table(subnet.vpc_id)
+        user.ec2.connection.associate_route_table(route_table_id=new_rt.id, subnet_id=subnet.id)
+        user.ec2.connection.create_route(route_table_id=new_rt.id,
+                                         destination_cidr_block='0.0.0.0/0',
+                                         gateway_id=igw.id)
+        group = self.get_test_security_groups(vpc=vpc, rules=[('tcp', 22, 22, '0.0.0.0/0'),
+                                                              ('icmp', -1, -1, '0.0.0.0/0')])[0]
+
+        vm_rx = self.get_test_instances(zone=subnet.availability_zone, subnet_id=subnet.id,
+                                        group_id=group.id, user=user, auto_connect=False,
+                                        count=1)[0]
+        vm_rx = user.ec2.convert_instance_to_euinstance(vm_rx.id, auto_connect=False)
+        self.status('Attempting to attach an additional eni to the the VM:{0} used in the route'
+                    .format(vm_rx.id))
+        eni = self.get_test_enis_for_subnet(subnet=subnet, count=1)[0]
+        eni.attach(instance_id=vm_rx.id, device_index=(len(vm_rx.interfaces) + 1))
+        vm_rx.update()
+        vm_rx.show_enis()
+        self.status('Attempting to create a route referencing an Instance ID which has multiple'
+                    'ENIs attached. This should not be allowed...')
+        route = None
+        try:
+            try:
+                route = user.ec2.connection.create_route(route_table_id=new_rt.id,
+                                                         destination_cidr_block=test_route,
+                                                         instance_id=vm_rx.id)
+            except Exception as E:
+                if isinstance(E, EC2ResponseError) and int(E.status) == 400 and \
+                    E.reason == 'InvalidInstanceID':
+                    self.status('Passed. Attempt to create a route referencing an instance with'
+                                'multiple ENI was rejected with the proper errror:{0}'.format(E))
+                else:
+                    raise ValueError('Attempt to create a route referencing an instance with'
+                                     'multiple ENI returned an error but no the one this test '
+                                     'expected. Error:{0}'.format(E))
+            else:
+                raise RuntimeError('System either created a route or did not respond with an error'
+                                   'when attempting to create a route referencing an instance with'
+                                   'multiple ENIs. Route:{0}'.format(route))
+
+
+            try:
+                self.status('Detaching any additional network interfaces other than device index 0'
+                            'on the rx vm...')
+                for eni in vm_rx.interfaces:
+                    if eni.attachment.device_index != 0:
+                        eni.detach()
+                self.status('Sleeping for 5 seconds to allow detachments to settle. Then attempting'
+                            'to create a route referencing the previous instance now with a '
+                            'single ENI. This should work...')
+
+                time.sleep(5)
+                route = user.ec2.connection.create_route(route_table_id=new_rt.id,
+                                                         destination_cidr_block=test_route,
+                                                         instance_id=vm_rx.id)
+                route_found = False
+                new_rt = user.ec2.connection.get_all_route_tables(new_rt.id)
+                for route in new_rt.routes:
+                    if route.destination_cidr_block == test_route and r.instance_id == vm_rx.id:
+                        route_found = True
+                        break
+                if not route_found:
+                    user.ec2.show_route_table(new_rt)
+                    raise RuntimeError('Added valid Route: "{0} -> {1}", but its not in the route '
+                                       'table:{2}.'.format(test_route, vm_rx.id, new_rt.id))
+            except Exception as E:
+                vm_rx.show_enis()
+                self.log.error('Error while attempting to create a route to an instance which'
+                               'previously had multiple ENIs but now does not. Error:{0}'
+                               .format(E))
+                raise E
+        finally:
+            if vpc:
+                user.ec2.delete_vpc_and_dependency_artifacts(vpc)
+
+
+
+def test4b12_route_table_add_and_delete_vm_id_route_packet_test(self, test_net='192.168.190.0'):
+        """
+        Test intends to verify routes which reference an INSTANCE ID as the route point/gateway.
+        Launch a VM(s) in a subnet referencing the route table to be tested.
+        Removes all ENIs but device index 0 for the rx'ing VM which is used as the route entry. 
+        Find an IP that is not reachable by the tx VM. Assign this TEST IP to the rx VM.
+        Enable IP forwarding on the rx VM. Set the route for the TEST IP to the eni of the rx
+        VM. Attempt to reach the the TEST IP from the tx VM to verify the new route works.
+        Remove the route and verify the tx can no longer reach the TEST IP.
+        Verify that packets are routed correctly per route provided.
+        """
+        user = self.user
+        vpc = self.test4b0_get_vpc_for_route_table_tests()
+        subnet = self.test4b1_get_subnets_for_route_table_tests(vpc=vpc, count=1)[0]
+        igw = user.ec2.connection.get_all_internet_gateways(
+            filters={'attachment.vpc-id': vpc.id})[0]
+        for rt in user.ec2.connection.get_all_route_tables(
+                filters={'association.subnet_id': subnet.id}):
+            for ass in rt.associtations:
+                if ass.subnet_id == subnet.id:
+                    user.ec2.connection.disassociate_route_table(association_id=ass.id)
+        new_rt = user.ec2.connection.create_route_table(subnet.vpc_id)
+        user.ec2.connection.associate_route_table(route_table_id=new_rt.id, subnet_id=subnet.id)
+        user.ec2.connection.create_route(route_table_id=new_rt.id,
+                                         destination_cidr_block='0.0.0.0/0',
+                                         gateway_id=igw.id)
+        group = self.get_test_security_groups(vpc=vpc, rules=[('tcp', 22, 22, '0.0.0.0/0'),
+                                                              ('icmp', -1, -1, '0.0.0.0/0')])[0]
+
+        vm_tx, vm_rx = self.get_test_instances(zone=subnet.availability_zone, subnet_id=subnet.id,
+                                               group_id=group.id, user=user, count=2)
+        vm_tx = user.ec2.convert_instance_to_euinstance(vm_tx.id, auto_connect=True)
+        vm_rx = user.ec2.convert_instance_to_euinstance(vm_rx.id, auto_connect=True)
+        self.status('Attempting to attach an additional eni to the the rx VM')
+        self.log.debug('Detaching any additional network interfaces other than device index 0'
+                       'on the rx vm...')
+        for eni in vm_rx.interfaces:
+            if eni.attachment.device_index != 0:
+                eni.detach()
+        keep_pinging = True
+        octets = [int(x) for x in test_net.split('.')]
+        test_net = "{0}.{1}".format(octets[0], octets[1])
+        net, ip = [octets[2], octets[3]]
+        # Find a free ip address...
+        test_ip = None
+        while keep_pinging:
+            ip += 1
+            if ip > 254:
+                if net >= 255:
+                    raise ValueError('Could not find available ip for test. Maxed out at:'
+                                     '"{0}.{1}.{2}"'.format(test_net, net, ip))
+                net += 1
+                ip = 2
+
+            test_ip = "{0}.{1}.{2}".format(test_net, net, ip)
+            try:
+                vm_tx.sys('ping -c1 -t3 {0}'.format(test_ip), code=0)
+            except CommandExitCodeException as CE:
+                self.log.debug('Assuming ip:{0} is available ping test returned:{0}'.format(CE))
+                keep_pinging = False
+                break
+            else:
+                test_ip = None
+        if not test_ip:
+            raise ValueError('Could not find available ip for test?')
+        interfaces = vm_rx.sys("ip -o link show | awk -F': ' '{print $2}' | grep 'eth\|em'",
+                               code=0) or []
+        eth_itfc = None
+        virt_eth = None
+        for x in [0, 1]:
+            if eth_itfc:
+                break
+            for prefix in ['eth', 'em']:
+                eth_itfc = prefix + str(x)
+                if eth_itfc in interfaces:
+                    break
+                else:
+                    eth_itfc = None
+        if not eth_itfc:
+            raise ValueError('Could not find test interface (eth0, eth1, em0, em1, etc) on '
+                             'vm:{0}, interfaces:{1}'.format(vm_rx.id, ",".join(interfaces)))
+        ethdummy = None
+        try:
+            for x in xrange(1, 100):
+                ethdummy = "eth{0}".format(10 + x)
+                if ethdummy not in interfaces:
+                    break
+            vm_rx.sys('modprobe dummy', code=0)
+            vm_rx.sys('ip link set name {0} dev dummy0'.format(ethdummy), code=0)
+            vm_rx.sys('ifconfig {0} {1}'.format(ethdummy, test_ip), code=0)
+            vm_rx.sys('ifconfig {0} up'.format(ethdummy), code=0)
+        except CommandExitCodeException as CE:
+            if ethdummy:
+                vm_rx.sys('ifconfig {0} down'.format(ethdummy))
+            self.log.error('Could not create test network interface on vm_rx:{0}, err:{1}'
+                           .format(vm_rx.id, CE))
+            raise CE
+        try:
+            vm_rx.sys('echo 1 > /proc/sys/net/ipv4/ip_forward', code=0)
+            eni = None
+            for eni in vm_rx.interfaces:
+                if eni.subnet_id == vm_tx.subnet_id:
+                    break
+            if not eni:
+                vm_tx.show_enis()
+                vm_rx.show_enis()
+                raise ValueError('Could not find eni on {0} with subnet for {1}, {2}'
+                                 .format(vm_rx.id, vm_tx.id, vm_tx.subnet_id))
+            self.log.debug('Disabling source/dest checks on the eni: {0}'.format(eni.id))
+            user.ec2.connection.modify_network_interface_attribute(interface_id=eni.id,
+                                                                   attr='sourceDestCheck',
+                                                                   value='false')
+            test_route = test_ip + "/32"
+            self.log.debug("Adding test route: {0}, to router:{1} using VM:{2} 's ENI:{3}"
+                           .format(test_route, new_rt.id, vm_rx.id, eni.id))
+            user.ec2.connection.create_route(route_table_id=new_rt.id,
+                                             destination_cidr_block=test_route,
+                                             interface_id=eni.id)
+
+            self.log.debug('Rebooting the vm_tx instance to make sure it has the latest route info'
+                           'provided via DHCP...')
+            vm_tx.reboot_instance_and_verify()
+            self.log.info("\n".join(vm_tx.sys('route') or []))
+            timeout = 60
+            start = time.time()
+            elapsed = 0
+            attempt = 1
+            success = False
+            # Retry this test in case rule needs time to take effect...
+            while elapsed < timeout:
+                elapsed = int(time.time() - start)
+                msg = ""
+                try:
+                    try:
+                        self.status(
+                            'Attempting to ping the vm_rx/vm_tx private IPs to populate each'
+                            'others arp tables...')
+                        vm_tx.sys('ping -c1 {0}'.format(vm_rx.private_ip_address), code=0)
+                        vm_rx.sys('ping -c1 {0}'.format(vm_tx.private_ip_address), code=0)
+                    except CommandExitCodeException as PE:
+                        msg = "Failed to ping to pre-populate ARP cache with test VM private addr" \
+                              "info, err:{0}".format(PE)
+                        raise CommandExitCodeException(msg)
+                    self.status('Attempting to ping test ip after new route has been ADDED. '
+                                'Attempt: {0}, Elapsed:{1}/{2}'.format(attempt, elapsed, timeout))
+                    vm_tx.sys('ping -c2 {0}'.format(test_ip), code=0)
+                    success = True
+                    break
+                except CommandExitCodeException as CE:
+                    msg += 'Ping vm to vm failed on attempt:{0} elapsed::{1}/{2}. Err:{3}' \
                         .format(attempt, elapsed, timeout, CE)
                     if elapsed >= timeout:
                         raise RuntimeError(msg)
@@ -2712,8 +3008,14 @@ class VpcBasics(CliTestRunner):
             test_vpc = test_vpc[0]
         return test_vpc
 
-    def test6c_eni_eip_reserved_addresses(self):
+    def test6c_eni_eip_vpc_reserved_addresses(self):
         """
+        Confirm the system does not allow the following reserved IP addresses.
+        This test will create a test vpc, and a single subnet within that vpc with a cidr block
+        equal to the vpc cidr block. It will attempt to create ENIs with private ip addresses
+        which conflict with the VPC reserved addresses. These ENI create requests should fail
+        with the proper error response.
+        example using a 10.0.0.0/24
         10.0.0.0: Network address.
         10.0.0.1: Reserved by AWS for the VPC router.
         10.0.0.2: Reserved by AWS for mapping to the Amazon-provided DNS. (Note that the IP
@@ -2722,7 +3024,49 @@ class VpcBasics(CliTestRunner):
         10.0.0.255: Network broadcast address. We do not support broadcast in a VPC, therefore
                     we reserve this address.
         """
-        raise NotImplementedError()
+        user = self.user
+        self.log.debug('creating test vpc...')
+        vpc = user.ec2.connection.create_vpc('10.0.0.0/24')
+        self.log.debug('creating test subnet....')
+        subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id, cidr_block=vpc.cidr_block)
+        net_info = get_network_info_for_cidr(vpc.cidr_block)
+        net_addr = net_info.get('network')
+        bcast_addr = net_info.get('broadcast')
+        octets = net_addr.split('.')
+        octets[3]  = int(octets[3]) + 1
+        router_addr = ".".join([str(x) for x in octets])
+        octets[3] = int(octets[3]) + 1
+        dns_addr =  ".".join([str(x) for x in octets])
+        octets[3] = int(octets[3]) + 1
+        future_addr = ".".join([str(x) for x in octets])
+
+        for res_addr in [net_addr, bcast_addr, router_addr, dns_addr, future_addr]:
+            try:
+                eni = user.ec2.connection.create_network_interface(subnet_id=subnet.id,
+                                                                   private_ip_address=res_addr)
+            except Exception as E:
+                if isinstance(E, EC2ResponseError) and int(E.status) == 400 and \
+                    E.reason == 'InvalidParameterValue':
+                    self.status('Passed. System returned proper error for ENI with reserved'
+                                   'IP addr:{0}. Err: {1}'.format(res_addr, E))
+                    good = True
+                    continue
+                else:
+                    self.log.error('System responded with an error but no the one we expected '
+                                   '"for creating an ENI with a reserved IP addr:{0}". Error:{1}'
+                                   .format(res_addr, E))
+                    raise E
+            else:
+                user.ec2.show_network_interfaces([eni])
+                raise ValueError('System allowed either allowed an ENI to be created with '
+                                 'the reserved IP address:"{0}", or did not respond with an '
+                                 'error'.format(res_addr))
+        self.status('Passed all attempts to use reserved addresses in ENI create requests')
+        self.status('Attempting to clean up this eni test vpc artifacts...')
+        if vpc:
+            user.ec2.delete_vpc_and_dependency_artifacts(vpc)
+
+
 
     def test6z0_test_clean_up_eni_test_vpc_dependencies(self):
         """
