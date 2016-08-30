@@ -44,7 +44,7 @@ from cloud_utils.net_utils import packet_test, is_address_in_network, test_port_
     get_network_info_for_cidr
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 from cloud_utils.log_utils import markup, printinfo, get_traceback, red, ForegroundColor, \
-    BackGroundColor
+    BackGroundColor, yellow
 from boto.exception import BotoServerError, EC2ResponseError
 from boto.vpc.subnet import Subnet
 from boto.vpc.vpc import VPC
@@ -70,18 +70,18 @@ openfiles = set()
 oldfile = __builtin__.file
 
 def printOpenFiles():
-    print red("\n\n### %d OPEN FILES: [%s]\n\n" % (len(openfiles), ", ".join(f.x for f in openfiles)))
+    print yellow("\n### %d OPEN FILES: [%s]\n" % (len(openfiles), ", ".join(f.x for f in openfiles)))
 
 class newfile(oldfile):
     def __init__(self, *args):
         self.x = args[0]
-        print red("### OPENING %s ###" % str(self.x))
+        print yellow("### OPENING %s ###" % str(self.x))
         oldfile.__init__(self, *args)
         openfiles.add(self)
         printOpenFiles()
 
     def close(self):
-        print red("### CLOSING %s ###" % str(self.x))
+        print yellow("### CLOSING %s ###" % str(self.x))
         oldfile.close(self)
         openfiles.remove(self)
         printOpenFiles()
@@ -2098,6 +2098,8 @@ class VpcBasics(CliTestRunner):
 
         vm_tx, vm_rx = self.get_test_instances(zone=subnet.availability_zone, subnet_id=subnet.id,
                                                group_id=group.id, user=user, count=2)
+        vm_tx = user.ec2.convert_instance_to_euinstance(vm_tx.id, auto_connect=True)
+        vm_rx = user.ec2.convert_instance_to_euinstance(vm_rx.id, auto_connect=True)
 
         keep_pinging = True
         octets = [int(x) for x in test_net.split('.')]
