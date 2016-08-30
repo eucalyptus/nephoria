@@ -4156,6 +4156,103 @@ disable_root: false"""
             if reservation and clean_on_fail:
                 self.terminate_instances(reservation=reservation)
             raise E
+
+    def create_network_interface(self, subnet_id, private_ip_address=None, description=None,
+                                 groups=None, show_eni=True):
+        """
+        Wrapper around boto's create_network_interface.
+        Creates a network interface in the specified subnet and performs basic validation
+        checks on the return eni attributes.
+
+
+        :type subnet_id: str
+        :param subnet_id: The ID of the subnet to associate with the
+            network interface.
+
+        :type private_ip_address: str
+        :param private_ip_address: The private IP address of the
+            network interface.  If not supplied, one will be chosen
+            for you.
+
+        :type description: str
+        :param description: The description of the network interface.
+
+        :type groups: list
+        :param groups: Lists the groups for use by the network interface.
+            This can be either a list of group ID's or a list of
+            :class:`boto.ec2.securitygroup.SecurityGroup` objects.
+
+        :type dry_run: bool
+        :param dry_run: Set to True if the operation should not actually run.
+
+        :rtype: :class:`boto.ec2.networkinterface.NetworkInterface`
+        :return: The newly created network interface.
+
+        """
+        self.create_network_interface.__doc__ += self.connection.create_network_interface.__doc__
+        group_ids = None
+        if groups:
+            group_ids = []
+            if not isinstance(groups, list):
+                groups = [groups]
+            for group in groups:
+                if isinstance(group, basestring):
+                    group_ids.append(group)
+                else:
+                    group_ids.append(group.id)
+        try:
+            subnet = self.get_subnet(subnet_id=subnet_id)
+        except Exception as E:
+            subnet = None
+            self.log.error('Could not fetch subnet:{0} in create eni request. Err:{1}'
+                           .format(subnet_id, E))
+        eni = self.connection.create_network_interface(subnet_id=subnet_id,
+                                                       private_ip_address=private_ip_address,
+                                                       description=description,
+                                                       groups=group_ids)
+        if show_eni:
+            self.show_network_interfaces(eni)
+        if private_ip_address and eni.private_ip_address != private_ip_address:
+            raise ValueError("Created ENI:{0} private ip:{1} does not match the requested "
+                             "private ip:{2}".format(eni.id, eni.private_ip_address,
+                                                     private_ip_address))
+        if description is not None:
+            if str(description).strip() != str(eni.description).strip():
+                raise ValueError('Created ENI:{0} description does not match requested description. '
+                                 'ENI:"{1}" vs Requested:"{2}"'
+                                 .format(eni.id, str(eni.description).strip(),
+                                         str(description).strip()))
+
+        if subnet:
+            # create a sorted list of security group ids from the request
+            group_ids = group_ids or []
+            default_group = self.get_security_group('default', vpc_id=subnet.vpc_id)
+            if default_group.id in group_ids:
+                group_ids.remove(default_group.id)
+            group_ids.sort()
+            # create a sorted list of security group ids from the response
+            new_group_ids = []
+            for group in eni.groups:
+                if group.id != default_group.id:
+                    new_group_ids.append(group.id)
+                else:
+                    self.log.debug('Excluding default security group:{0} from eni groups check.'
+                                   .format(default_group.id))
+            new_group_ids.sort()
+            if group_ids != new_group_ids:
+                raise ValueError('Created ENI:{0} groups do not match groups in the request.'
+                                 'ENI response groups:"{2}", vs Requested Groups:{3} ')
+
+
+            if not is_address_in_network(eni.private_ip_address, subnet.cidr_block):
+                raise ValueError('Newly created ENI:{0}, private ip:{1} not within '
+                                 'subnet:{2} cidr:{3}'.format(eni.id, eni.private_ip_address,
+                                                              subnet.id, subnet.cidr_block))
+
+        return eni
+
+
+
     
 
     def create_network_interface_collection(self,
@@ -4288,6 +4385,8 @@ disable_root: false"""
                 eni_list += self.connection.get_all_network_interfaces(
                     network_interface_ids=fetch_list)
             enis = eni_list
+        else:
+            enis = [enis]
         pt = PrettyTable([id_h, public_h, vpc_h, subnet_h, groups_h, priv_h,
                           aid_h, inst_h, index_h, status_h, dot_h])
         pt.hrules = 1

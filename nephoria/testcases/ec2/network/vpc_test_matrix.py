@@ -818,14 +818,6 @@ class VpcBasics(CliTestRunner):
 
 
     def check_user_default_routes_present(self, user=None, vpc=None, check_igw=True):
-        """
-        Check default route entries...
-        Regarding route.origin...
-        route.origin - Describes how the route was created.
-        This test checks for CreateRouteTable as the origin. ec2ops checks for user created
-        origins for all other create route requests.
-        
-        """
         user = user or self.user
         vpc = vpc or self.check_user_default_vpcs(user=user)
         rt = self.check_user_default_route_table_present(user=user)
@@ -1256,6 +1248,12 @@ class VpcBasics(CliTestRunner):
         Definition:
         Attempts to verify that a newly created user has a default routes present for the vpc
         cidr block and default igw in it's route table
+        Check default route entries...
+        Regarding route.origin...
+        route.origin - Describes how the route was created.
+        This test checks for CreateRouteTable as the origin. ec2ops checks for user created
+        origins for all other create route requests.
+        References
         """
         return self.check_user_default_routes_present(user=self.new_ephemeral_user)
 
@@ -1455,6 +1453,12 @@ class VpcBasics(CliTestRunner):
         Definition:
         Attempts to verify that a test user has a default routes present for the vpc
         cidr block and default igw in it's route table
+        Check default route entries...
+        Regarding route.origin...
+        route.origin - Describes how the route was created.
+        This test checks for CreateRouteTable as the origin. ec2ops checks for user created
+        origins for all other create route requests.
+        References
         """
         return self.check_user_default_routes_present(user=self.user)
 
@@ -3028,6 +3032,41 @@ class VpcBasics(CliTestRunner):
         else:
             test_vpc = test_vpc[0]
         return test_vpc
+
+
+    def test6b5_basic_create_and_delete_eni_test(self):
+        user = self.user
+        vpc = self.test6b0_get_vpc_for_eni_tests()
+        zones = self.zones
+        subnets = []
+        for zone in zones:
+            subnets.append(self.get_test_subnets_for_vpc(vpc, zone=zone,  count=1)[0])
+        if not subnets:
+            raise RuntimeError('No subnets found or created for this eni-test vpc:{0}'
+                               .format(vpc.id))
+        self.status('Using subnets:"{0}" for this eni test.'
+                    .format(", ".join([str(x.id) for x in subnets])))
+        for sub in subnets:
+            net_info = get_network_info_for_cidr(sub.cidr_block)
+            network = net_info.get('network')
+            octets = network.split('.')
+            valid_ip = ".".join(str(x) for x in (octets[:2])) + "." + str(octets[3] + 10)
+            self.status('Attempting to remove all existing artifacts from subnet:{0}'
+                        .format(sub.id))
+            user.ec2.delete_subnet_and_dependency_artifacts(subnet=sub)
+            self.status('Attempting to create valid eni without specifying the private ip...')
+            eni = user.ec2.connection.create_network_interface(subnet_id=sub.id)
+
+            if eni.private_ip_address == valid_ip:
+                valid_ip = ".".join(str(x) for x in (octets[:2])) + "." + str(octets[3] + 11)
+            self.status('Attempting to create an valid eni providing private ip:{0}'
+                        .format(valid_ip))
+            eni = user.ec2.connection.create_network_interface(subnet_id=sub.id,
+                                                               private_ip_address=valid_ip)
+
+
+
+
 
     def test6c_eni_eip_vpc_reserved_addresses(self):
         """
