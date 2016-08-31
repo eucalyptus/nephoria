@@ -2190,19 +2190,21 @@ class EuInstance(Instance, TaggedResource, Machine):
 
         Returns: eni
         """
-
+        self.log.debug('Starting checks for attachment of ENI:{0}'.format(eni))
         if isinstance(eni, basestring):
-            enis = self.connection.connection.get_all_network_interfaces(self, [eni])
+            enis = self.connection.get_all_network_interfaces([str(eni)])
             if not enis:
                 raise ValueError('Could not fetch ENI for provided value:{0}'.format(eni))
             eni = enis[0]
+            self.log.debug('Found ENI: {0}'.format(eni.id))
         self.update()
         eni.update()
+        self.ec2ops.show_network_interfaces(eni)
         pre_attach_net_devs = self.get_network_interfaces().keys()
         indexes = []
-        for eni in self.interfaces:
-            if eni.attachment:
-                indexes.append(int(eni.attachment.device_index))
+        for interface in self.interfaces:
+            if interface.attachment:
+                indexes.append(int(interface.attachment.device_index))
         indx = None
         for indx in xrange(0, 500):
             if indx not in indexes:
@@ -2213,16 +2215,17 @@ class EuInstance(Instance, TaggedResource, Machine):
             raise ValueError('Could not find free network device index on this instance?')
         self.log.debug('Devices on guest before ENI:{0} attach:"{1}"'.format(eni.id,
                                                                              pre_attach_net_devs))
+        self.log.debug('Sending attach request now for ENI:{0}'.format(eni.id))
         eni.attach(self.id, indx)
         eni.update()
         self.update()
         start = time.time()
         elapsed = 0
         attempts = 0
-        api_timeout = 10
+        api_timeout = 30
         api_is_good = False
         last_error = None
-        while elapsed and not api_is_good:
+        while elapsed < api_timeout and not api_is_good:
             elapsed = int(time.time() - start)
             attempts += 1
             try:
@@ -2233,7 +2236,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 for i in self.interfaces:
                     if i.id == eni.id:
                         break
-                if int(i.device_index) != indx:
+                if int(i.attachment.device_index) != indx:
                     raise ValueError('Device index:"{0}" of eni in local instances does not match '
                                      'requested:"{1}" value.'.format(i.id. indx))
                 if eni.attachment.id != i.attachment.id:
@@ -2260,6 +2263,9 @@ class EuInstance(Instance, TaggedResource, Machine):
         if not api_is_good:
             raise ValueError('ERRORS after elapsed:{0}:"{1}"'.format(elapsed,
                                                                      last_error or "UNKNOWN?"))
+        else:
+            self.log.debug('System is showing ENI:{0} attached. Moving on to guest checks...'
+                           .format(eni.id))
         if local_dev_timeout is None:
             self.log.debug('local_dev_timeout is None, not waiting for device to appear on guest')
             return (eni, None)
@@ -2308,7 +2314,7 @@ class EuInstance(Instance, TaggedResource, Machine):
 
         """
         if isinstance(eni, basestring):
-            enis = self.connection.connection.get_all_network_interfaces(self, [eni])
+            enis = self.connection.get_all_network_interfaces([eni])
             if not enis:
                 raise ValueError('Could not fetch ENI for provided value:{0}'.format(eni))
             eni = enis[0]
@@ -2349,10 +2355,10 @@ class EuInstance(Instance, TaggedResource, Machine):
         start = time.time()
         elapsed = 0
         attempts = 0
-        api_timeout = 10
+        api_timeout = 30
         api_is_good = False
         last_error = None
-        while elapsed and not api_is_good:
+        while elapsed < api_timeout and not api_is_good:
             elapsed = int(time.time() - start)
             attempts += 1
             try:
@@ -2373,8 +2379,11 @@ class EuInstance(Instance, TaggedResource, Machine):
         if not api_is_good:
             raise ValueError('ERRORS after elapsed:{0}:"{1}"'.format(elapsed,
                                                                      last_error or "UNKNOWN?"))
+        else:
+            self.log.debug('System is showing ENI:{0} detached. Moving on to guest checks...'
+                           .format(eni.id))
         if local_dev_timeout is None:
-            self.log.debug('Skipping local device detach on ENI:{0} detach'.format(eni.id))
+            self.log.debug('Skipping local device checks on ENI:{0} detach'.format(eni.id))
             return eni
         start = time.time()
         elapsed = 0
@@ -2404,6 +2413,13 @@ class EuInstance(Instance, TaggedResource, Machine):
         raise RuntimeError('Network device for ENI:{0} still on guest after detach. '
                            'attempts:{1}, elapsed{2}'.format(eni.id, attempts, elapsed))
 
+
+    def detach_all_enis(self, local_dev_timeout=60):
+        self.update()
+        for eni in self.interfaces:
+            if int(eni.attachment.device_index) != 0:
+                self.detach_eni(eni=eni, local_dev_timeout=local_dev_timeout)
+        self.log.debug('Done detaching all non-primary index ENIs from this instance')
 
     def sync_enis_etc_sysconfig(self, prefix='eth'):
         """
