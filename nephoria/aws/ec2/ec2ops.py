@@ -6779,7 +6779,7 @@ disable_root: false"""
         if zone:
             zones = [zone]
         else:
-            zones = self.get_all_zones()
+            zones = self.get_zone_names()
         for zone in zones:
             buf = "{0}: {1}\n".format(markup('ZONE', [1, 4, 94]), markup(zone))
 

@@ -3274,6 +3274,41 @@ class VpcBasics(CliTestRunner):
         if vpc:
             user.ec2.delete_vpc_and_dependency_artifacts(vpc)
 
+    def test6d1_eni_post_run_attach_detach(self):
+        raise NotImplementedError()
+
+    def test6d2_eni_multiple_post_run_attach_detach(self):
+        raise NotImplementedError()
+
+    def test6d3_eni_delete_on_terminate(self):
+        raise NotImplementedError()
+
+    def test6e0_eni_attach_on_run_detach(self):
+        raise NotImplementedError()
+
+    def test6e1_eni_multiple_attach_on_run_detach(self):
+        raise NotImplementedError()
+
+    def test6e2_eni_ebs_multiple_attach_on_run_stop_start_detach(self):
+        raise NotImplementedError()
+
+    def test6f1_eni_per_vmtype_test(self):
+        raise NotImplementedError()
+
+    def test6h1_eni_eip_basic_test(self):
+        """
+        assoc /diss-assoc EIP test
+        """
+        raise NotImplementedError()
+
+    def test6m1_eni_migration_test(self):
+        raise NotImplementedError()
+
+    def test6n1_eni_swap_between_vms(self):
+        raise NotImplementedError()
+
+    def test6p1_eni_secondary_eni_basic_packet_tests(self):
+        raise NotImplementedError()
 
 
     def test6z0_test_clean_up_eni_test_vpc_dependencies(self):
@@ -3314,12 +3349,17 @@ class VpcBasics(CliTestRunner):
         """
         raise NotImplementedError()
 
+    def test8t1_nat_gw_multiple_nat_gw_packet_test(self):
+        raise NotImplementedError()
+
+
     def test8x0_nat_gw_max_gw_per_zone_limit(self):
         """
         Test the eucalyptus property:cloud.vpc.natgatewaysperavailabilityzone
         Confirm the limit can be reached and not exceeded.
         """
         raise NotImplementedError()
+
 
     def test8z0_test_clean_up_nat_gw_test_vpc_dependencies(self):
         """
@@ -3331,32 +3371,6 @@ class VpcBasics(CliTestRunner):
             if vpc:
                 user.ec2.delete_vpc_and_dependency_artifacts(vpc)
 
-###############################################################################################
-# NAT Gateway tests
-###############################################################################################
-    def test9b0_get_vpc_for_network_acl_tests(self):
-        test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.NET_ACL_TEST_TAG,
-                                                       'tag-value': self.test_id})
-        if not test_vpc:
-            test_vpc = self.create_test_vpcs()
-            if not test_vpc:
-                raise RuntimeError('Failed to create test VPC for network acl tests?')
-            test_vpc = test_vpc[0]
-            self.user.ec2.create_tags([test_vpc.id],
-                                      {self.NET_ACL_TEST_TAG: self.test_id})
-        else:
-            test_vpc = test_vpc[0]
-        return test_vpc
-
-    def test9z0_test_clean_up_nat_gw_test_vpc_dependencies(self):
-        """
-        Delete the VPC and dependency artifacts created for the security group testing.
-        """
-        if not self.args.no_clean:
-            user = self.user
-            vpc = self.test9b0_get_vpc_for_network_acl_tests()
-            if vpc:
-                user.ec2.delete_vpc_and_dependency_artifacts(vpc)
 
     ###############################################################################################
     # ACL tests
@@ -3375,7 +3389,7 @@ class VpcBasics(CliTestRunner):
         Test the eucalyptus property:cloud.vpc.networkaclspervpc
         Confirm the limit can be reached and not exceeded.
         """
-        raise NotImplementedError()
+        raise SkipTestException('ACLs Not supported at this time')
 
     ###############################################################################################
     # Misc tests
