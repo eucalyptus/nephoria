@@ -47,6 +47,7 @@ from nephoria.exceptions import EucaAdminRequired
 
 from boto.ec2.image import Image
 from boto.ec2.instance import Reservation, Instance
+from boto.ec2.ec2object import EC2Object
 from boto.ec2.keypair import KeyPair
 from boto.ec2.blockdevicemapping import BlockDeviceMapping, BlockDeviceType
 from boto.ec2.group import Group as BotoGroup
@@ -75,7 +76,6 @@ from nephoria.aws.ec2.euinstance import EuInstance
 from nephoria.aws.ec2.windows_instance import WinInstance
 from nephoria.aws.ec2.euvolume import EuVolume
 from nephoria.aws.ec2.eusnapshot import EuSnapshot
-from nephoria.aws.ec2.euzone import EuZone
 from nephoria.aws.ec2.conversiontask import ConversionTask
 
 class NephoriaNetworkInterfaceCollection(NetworkInterfaceCollection):
@@ -180,6 +180,40 @@ class EucaSubnet(BotoSubnet):
             self.mapPublicIpOnLaunch = value
         elif name == 'defaultForAz':
             self.defaultForAz = value
+
+class EucaZoneAvailability(object):
+    def __init__(self):
+        self.zonename = None
+        self.available = None
+        self.max = None
+
+class EucaVmType(EC2Object):
+    # Base Class For Eucalyptus Vmtype Objects
+    def __init__(self, connection=None):
+        self.connection = connection
+        self.name = None
+        self.memory = None
+        self.cpu = None
+        self.disk = None
+        self.networkinterfaces = None
+        self.region = None
+        self.availability = None
+
+    def __repr__(self):
+        return str(self.__class__.__name__) + ":" + str(self.name)
+
+    def startElement(self, name, value, connection):
+        pass
+
+    def endElement(self, name, value, connection):
+        ename = name.lower().replace('euca:', '')
+        if ename:
+            if ename in ['zonename', 'available', 'max']:
+                if not self.availability:
+                    self.availability  = EucaZoneAvailability()
+                setattr(self.availability, ename, value)
+            else:
+                setattr(self, ename.lower(), value)
 
 
 EC2RegionData = {
@@ -1441,7 +1475,7 @@ disable_root: false"""
                                     state=None):
         # update the table first...
         if isinstance(route_table, basestring):
-            rt_id = route_table_id
+            rt_id = route_table
         else:
             rt_id = route_table.id
         route_table = self.connection.get_all_route_tables(route_table_ids=[route_table])
@@ -6245,43 +6279,51 @@ disable_root: false"""
             policy = base64.b64encode(policy)
         return policy
 
-
-
     def sign_policy(self, policy):
         my_hmac = hmac.new(self.connection.aws_secret_access_key, policy, digestmod=hashlib.sha1)
         return base64.b64encode(my_hmac.digest())
 
-    def get_euzones(self, zones=None):
-        ret_list = []
-        get_zones = []
-        if zones is not None:
-            if not isinstance(zones, types.ListType):
-                zones = [zones]
-            for zone in zones:
-                if zone:
-                    if isinstance(zone, Zone):
-                        zone = zone.name
-                    get_zones.append(zone)
-            myzones = self.connection.get_all_zones(zones=get_zones)
-        else:
-            myzones = self.connection.get_all_zones()
-        for zone in myzones:
-            ret_list.append(EuZone.make_euzone_from_zone(zone, self))
-        return ret_list
+    def get_vm_types(self):
+        params = {}
+        usercontext = getattr(self, '_user_context', None)
+        if usercontext:
+            if usercontext.account_name == 'eucalyptus' and usercontext.user_name == 'admin':
+                params['Availability'] = 'true'
+        vmtypes = self.connection.get_list(action='DescribeInstanceTypes',
+                                           params=params,
+                                           markers=[('item', EucaVmType)])
+        bases = {}
+        count = 0
+        # populate the base types...
+        for vmtype in vmtypes:
+            setattr(vmtype, 'index', count)
+            count += 1
+            if vmtype.name in bases:
+                base = bases[vmtype.name]
+                if vmtype.index < base.index:
+                    base.index = vmtype.index
+                base.cpu = vmtype.cpu or base.cpu
+                base.disk = vmtype.disk or base.disk
+                base.memory = vmtype.memory or base.memory
+                base.region = vmtype.region or base.region
+                base.networkinterfaces = vmtype.networkinterfaces or base.networkinterfaces
+                if vmtype.availability:
+                    base.availability[vmtype.availability.zonename] = vmtype.availability
+            else:
+                if vmtype.availability:
+                    vmtype.availability = {vmtype.availability.zonename: vmtype.availability}
+                else:
+                    vmtype.availability = {}
+                bases[vmtype.name] = vmtype
 
+        retlist = bases.values()
+        retlist.sort(key=lambda x: x.index)
+        return retlist
 
-    def get_vm_type_list_from_zone(self, zone):
-        euzone = self.get_euzones(zone)[0]
-        return euzone.vm_types
-
-    def get_vm_type_from_zone(self,zone, vmtype_name):
-        vm_type = None
-        type_list = self.get_vm_type_list_from_zone(zone)
-        for type in type_list:
-            if type.name == vmtype_name:
-                vm_type = type
-                break
-        return vm_type
+    def get_vm_type_info(self, vmtype):
+        for  vtype in self.get_vm_types():
+            if vtype.name == vmtype:
+                return vtype
 
     def print_block_device_map(self,block_device_map, printmethod=None ):
         printmethod = printmethod or self.log.debug
@@ -6328,20 +6370,6 @@ disable_root: false"""
         buf += line
         printmethod(buf)
 
-    def print_all_vm_types(self,zone=None, debugmethod=None):
-        debugmethod = debugmethod or self.log.debug
-        buf = "\n"
-        if zone:
-            zones = [zone]
-        else:
-            zones = self.connection.get_all_zones()
-        for zone in zones:
-            buf += "------------------------( " + str(zone) + " )--------------------------------------------\n"
-            for vm in self.get_vm_type_list_from_zone(zone):
-                vminfo = self.get_all_attributes(vm, debug=False)
-                buf +=  "---------------------------------"
-                buf += self.get_all_attributes(vm, debug=False)
-        debugmethod(buf)
 
     def monitor_instances(self, instance_ids):
         self.log.debug('Enabling monitoring for instance(s) ' + str(instance_ids))
@@ -6770,33 +6798,40 @@ disable_root: false"""
 
     def show_vm_types(self, zone=None, debugmethod=None, printme=True):
         debugmethod = debugmethod or self.log.info
-        mainpt=PrettyTable([markup('VM TYPES PER ZONE:', [1, 4, 94])])
+        header = markup('VMTYPE INFO', [1, 4, 31])
 
-        mainpt.align = 'l'
-        mainpt.padding_width = 0
+        pt = PrettyTable([markup('NAME', [1, 4]).ljust(20), markup('CPU', [1, 4]).ljust(7),
+                          markup('DISK', [1, 4]).ljust(10), markup('RAM', [1, 4]).ljust(10),
+                          markup('ENI', [1, 4]).ljust(4),
+                          markup('ZONE (AVAILABILE/MAX)', [1, 4]).ljust(45)])
+        pt.align = 'l'
+        pt.hrules = 1
+        pt.padding_width = 0
+        pt.junction_char = "-"
+        pt.vertical_char = " "
+        pt.horizontal_char = "-"
+        for vm in self.get_vm_types():
+            if not vm.availability:
+                availability = "???"
+            else:
+                apt = PrettyTable(['zone', 'available'])
+                apt.header = False
+                apt.border = False
+                apt.align = 'l'
+                for zonename, info in vm.availability.iteritems():
+                    apt.add_row(["zone: {0}"
+                                .format(markup(info.zonename, [TextStyle.BOLD,
+                                                               ForegroundColor.YELLOW,
+                                                               BackGroundColor.BG_BLACK])),
+                                 "({0}/{1})".format(info.available, info.max)])
+                availability = apt.get_string()
 
-
-        if zone:
-            zones = [zone]
-        else:
-            zones = self.get_zone_names()
-        for zone in zones:
-            buf = "{0}: {1}\n".format(markup('ZONE', [1, 4, 94]), markup(zone))
-
-            pt = PrettyTable([markup('NAME', [1, 4]).ljust(20), markup('CPU', [1, 4]).ljust(7),
-                              markup('DISK', [1, 4]).ljust(10), markup('RAM', [1, 4]).ljust(10),
-                              markup('FREE', [1, 4]).ljust(10)])
-            pt.align = 'l'
-            # pt.hrules = 1
-            for vm in self.get_vm_type_list_from_zone(zone):
-                pt.add_row([markup(vm.name), vm.cpu, vm.disk, vm.ram,
-                            "{0}/{1}".format(vm.free, vm.max)])
-            buf += str(pt)
-            mainpt.add_row([buf])
+            pt.add_row([markup(vm.name), vm.cpu, vm.disk, vm.memory, vm.networkinterfaces,
+                        availability])
         if printme:
-            debugmethod("\n{0}\n".format(mainpt))
+            debugmethod("\n{0}\n".format(pt))
         else:
-            return mainpt
+            return pt
 
     def show_security_groups(self, groups=None, printme=True):
         ret_buf = ""

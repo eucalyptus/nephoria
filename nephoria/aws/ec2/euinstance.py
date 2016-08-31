@@ -2004,7 +2004,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         return mount_dir
 
     def update_vm_type_info(self):
-        self.vmtype_info = self.ec2ops.get_vm_type_from_zone(self.placement, self.instance_type)
+        self.vmtype_info = self.ec2ops.get_vm_type_info(self.instance_type)
         return self.vmtype_info
 
     def get_ephemeral_dev(self):

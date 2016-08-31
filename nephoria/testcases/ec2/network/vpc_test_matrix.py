@@ -3326,6 +3326,9 @@ class VpcBasics(CliTestRunner):
     # NAT Gateway tests
     ###############################################################################################
     def test8b0_get_vpc_for_nat_gw_tests(self):
+        """
+        Finds an existing VPC
+        """
         test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.NAT_GW_TEST_TAG,
                                                        'tag-value': self.test_id})
         if not test_vpc:
