@@ -999,6 +999,7 @@ disable_root: false"""
             filters={'association.subnet-id': subnet})
         ret_dict['enis'] = self.connection.get_all_network_interfaces(
             filters={'subnet-id': subnet})
+        ret_dict['instances'] = self.get_instances(filters={'subnet-id': subnet})
         return ret_dict
 
     def show_subnet_dependency_artifacts(self, subnet=None, artifacts=None, printmethod=None,
@@ -1023,6 +1024,9 @@ disable_root: false"""
         if verbose:
             pt = self.show_subnet_dependency_artifacts(subnet, printme=False)
             self.log.info('Attempting to delete SUBNET artifacts...\n{0}\n'.format(pt))
+        if deps['instances']:
+            self.log.debug('Attempting to delete vpc instances')
+            self.terminate_instances(deps['instances'])
         if deps['route_tables']:
             self.log.debug('Attempting to delete vpc route tables')
             for rtb in deps['route_tables']:
@@ -6878,6 +6882,7 @@ disable_root: false"""
             table.hrules = 0
             table.vrules = 1
             table.align = 'l'
+            table.vertical_char = " "
             #table.padding_width = 1
             for rule in rules:
                 port = getattr(rule, 'from_port', None)
@@ -6892,8 +6897,9 @@ disable_root: false"""
                                    str(end_port).ljust(5),
                                    str(proto).ljust(5)])
             for line in table.get_string().splitlines():
-                buf += "\t{0}\n".format(line.strip('|'))
+                buf += "    {0}\n".format(line)
             return buf
+            #return str(table)
 
         maintable.add_row(["INGRESS RULES:"])
         maintable.add_row([get_rules_table(group.rules)])

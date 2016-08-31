@@ -568,7 +568,7 @@ class VpcBasics(CliTestRunner):
 
 
     @printinfo
-    def get_test_instances(self, zone, group_id,  vpc_id=None, subnet_id=None,
+    def get_test_instances(self, zone, group_id, vpc_id=None, subnet_id=None,
                            state='running', count=None, monitor_to_running=True,
                            auto_connect=True, timeout=480, user=None, exclude=None):
         """
@@ -631,6 +631,7 @@ class VpcBasics(CliTestRunner):
                 for instance in user.ec2.test_resources.get('instances'):
                     if instance.id == q_instance.id:
                         existing_instances.append(instance)
+        # Dont connect in the convert method in case we want to monitor to running state later...
         for instance in existing_instances:
             euinstance = user.ec2.convert_instance_to_euinstance(instance,
                                                                  keypair=self.get_keypair(user),
@@ -639,6 +640,9 @@ class VpcBasics(CliTestRunner):
             euinstance.auto_connect = auto_connect
             instances.append(euinstance)
         self.log.debug('existing_instances:{0}'.format(existing_instances))
+        # Monitor to running will connect to instances if the auto connect flag is set
+        for instance in instances:
+            instance.auto_connect = auto_connect
         if not count:
             if monitor_to_running:
                 return user.ec2.monitor_euinstances_to_running(instances, timeout=timeout)
@@ -662,6 +666,7 @@ class VpcBasics(CliTestRunner):
             new_ins = self.create_test_instances(zone=zone, group=group_id,
                                                  subnet=subnet_id, count=needed,
                                                  monitor_to_running=monitor_to_running,
+                                                 auto_connect = auto_connect,
                                                  user=user)
             instances.extend(new_ins)
             if len(instances) != count:
@@ -1807,6 +1812,11 @@ class VpcBasics(CliTestRunner):
     #  ROUTE TABLE tests
     ###############################################################################################
     def test4b0_get_vpc_for_route_table_tests(self):
+        """
+        Creates or fetches a VPC matching the filters for this test section to share.
+        By default this will create an IGW, a default route using the IGW, and TAG the VPC
+        for later filtering.
+        """
         test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.ROUTE_TABLE_TEST_TAG,
                                                        'tag-value': self.test_id})
         if not test_vpc:
@@ -1821,6 +1831,12 @@ class VpcBasics(CliTestRunner):
 
 
     def test4b1_get_subnets_for_route_table_tests(self, vpc=None, zones=None, count=1):
+        """
+        Creates or fetches subnets matching the filters for this test section to share.
+        By default this test will search for available cidr blocks of /24 in size within the
+        VPC provided, or the default VPC for this test section.
+        The test will TAG the subnets for this test section for later filtering.
+        """
         vpc = vpc or self.test4b0_get_vpc_for_route_table_tests()
         subnets = self.user.ec2.get_all_subnets(filters={'vpc_id': vpc.id,
                                                          'tag-key': self.ROUTE_TABLE_TEST_TAG,
@@ -2356,7 +2372,8 @@ class VpcBasics(CliTestRunner):
                 route_found = False
                 new_rt = user.ec2.connection.get_all_route_tables(new_rt.id)
                 for route in new_rt.routes:
-                    if route.destination_cidr_block == test_route and r.instance_id == vm_rx.id:
+                    if route.destination_cidr_block == test_route and \
+                                    route.instance_id == vm_rx.id:
                         route_found = True
                         break
                 if not route_found:
@@ -2684,6 +2701,11 @@ class VpcBasics(CliTestRunner):
     #  SUBNET tests
     ###############################################################################################
     def test5b0_get_vpc_for_subnet_tests(self):
+        """
+        Creates or fetches a VPC matching the filters for this test section to share.
+        By default this will create an IGW, a default route using the IGW, and TAG the VPC
+        for later filtering.
+        """
         test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.SUBNET_TEST_TAG,
                                                        'tag-value': self.test_id})
         if not test_vpc:
@@ -3023,6 +3045,12 @@ class VpcBasics(CliTestRunner):
     ###############################################################################################
 
     def test6b0_get_vpc_for_eni_tests(self):
+        """
+        Creates or fetches a VPC matching the filters for this test section to share.
+        By default this will create an IGW, a default route using the IGW, and TAG the VPC
+        for later filtering.
+        """
+
         test_vpc = self.user.ec2.get_all_vpcs(filters={'tag-key': self.ENI_TEST_TAG,
                                                        'tag-value': self.test_id})
         if not test_vpc:
@@ -3274,8 +3302,52 @@ class VpcBasics(CliTestRunner):
         if vpc:
             user.ec2.delete_vpc_and_dependency_artifacts(vpc)
 
-    def test6d1_eni_post_run_attach_detach(self):
-        raise NotImplementedError()
+    def test6d1_eni_post_run_attach_detach_tests(self):
+        """
+        Test Attaching and detaching an ENI to running instances in each zone.
+        Attach:
+        Verify the ENI is reported correctly as attached.
+        Verify the device is seen on the guest on attach.
+        Verify the ENI can not be attached to another VM while attached.
+        Verify the ENI can not be deleted while attached.
+
+        Detach:
+        Verify the ENI is reported correctly as detached
+        Verify the device is no longer seen on the guest
+        Verify the IP associated with this VM is no longer reachable.
+        Verify the ENI can be deleted once detached.
+        """
+
+        user = self.user
+        vpc = self.test6b0_get_vpc_for_eni_tests()
+        instances = []
+        try:
+            for zone in self.zones:
+                subnet = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
+                                                                   count=1)[0]
+                vm1, vm2 = self.get_test_instances(zone=zone, subnet_id=subnet.id,
+                                                   count=2, user=user, auto_connect=True)
+                instances += [vm1, vm2]
+                eni1, eni2 = self.get_test_enis_for_subnet(subnet=2, user=user)
+                vm1_pre_attach_interfaces = vm1.get_network_interfaces().keys()
+                vm1_pre_attach_interfaces = vm2.get_network_interfaces().keys()
+                self.status('Instance ENI info before attaching...')
+                for vm in [vm1, vm2]
+                    vm.show_enis()
+                    vm.show_network_interfaces_table()
+                self.status('Attaching ENIs to test VMs...')
+                eni.attach()
+
+
+
+        finally:
+            if instances:
+                self.status('Attempting to terminate the instances used in this test...')
+                user.ec2.terminate_instances(instances)
+
+
+
+
 
     def test6d2_eni_multiple_post_run_attach_detach(self):
         raise NotImplementedError()

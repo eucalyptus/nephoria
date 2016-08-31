@@ -480,12 +480,13 @@ class EuInstance(Instance, TaggedResource, Machine):
                     attached_status = eni.attachment.status
                 title = " {0}, DESC:{1}, STATUS:{2} ({3})"\
                     .format(markup("{0}, {1}".format(dev_index, eni.id),
-                                   markups=[TextStyle.BOLD, ForegroundColor.WHITE,
-                                            BackGroundColor.BG_BLUE]),
+                                   markups=[TextStyle.BOLD, ForegroundColor.BLUE,
+                                            BackGroundColor.BG_WHITE]),
                             eni.description, eni.status, attached_status)
                 enipt = PrettyTable([title])
                 enipt.align[title] = 'l'
                 enipt.padding_width = 0
+                enipt.horizontal_char = "="
                 dot = "?"
                 eni_info_pt = PrettyTable(['key', 'value'])
                 eni_info_pt.header = False
@@ -2173,6 +2174,236 @@ class EuInstance(Instance, TaggedResource, Machine):
                            "' --> Metadata device value:'" + \
                            str(meta_devices.get(meta_dev)) + "' (Not found in Instance's BDM)"
             raise Exception(err_buf)
+
+    def attach_eni(self, eni, index=None, local_dev_timeout=60):
+        """
+        Attaches an ENI to this instance and peforms basic validation on the attachment.
+        If the local device is discovered, the ENI is tagged with {attachment-id:local dev name}.
+        Checks the attachment info,  device index in the response for the ENI and instance, etc.
+        Checks the local guest, polls waiting for the device to show up.
+        Args:
+            eni: eni id, or boto obj.
+            index: Device index to provide in the attach request. If 'None' this method will
+                   attempt to provide a free index value.
+            local_dev_timeout: The time to wait for the device to show up on the guest before
+                               erroring out. If this timeout is None, this check is not performed.
+
+        Returns: eni
+        """
+
+        if isinstance(eni, basestring):
+            enis = self.connection.connection.get_all_network_interfaces(self, [eni])
+            if not enis:
+                raise ValueError('Could not fetch ENI for provided value:{0}'.format(eni))
+            eni = enis[0]
+        self.update()
+        eni.update()
+        pre_attach_net_devs = self.get_network_interfaces().keys()
+        indexes = []
+        for eni in self.interfaces:
+            if eni.attachment:
+                indexes.append(int(eni.attachment.device_index))
+        indx = None
+        for indx in xrange(0, 500):
+            if indx not in indexes:
+                break
+            else:
+                indx = None
+        if indx is None:
+            raise ValueError('Could not find free network device index on this instance?')
+        self.log.debug('Devices on guest before ENI:{0} attach:"{1}"'.format(eni.id,
+                                                                             pre_attach_net_devs))
+        eni.attach(self.id, indx)
+        eni.update()
+        self.update()
+        start = time.time()
+        elapsed = 0
+        attempts = 0
+        api_timeout = 10
+        api_is_good = False
+        last_error = None
+        while elapsed and not api_is_good:
+            elapsed = int(time.time() - start)
+            attempts += 1
+            try:
+                if eni.id not in [str(x.id) for x in self.interfaces]:
+                    raise ValueError('ENI:{0} not found in instance:{1} interfaces:"{2}"'
+                                     .format(eni.id, self.id,
+                                             ", ".join([str(x.id) for x in self.interfaces])))
+                for i in self.interfaces:
+                    if i.id == eni.id:
+                        break
+                if int(i.device_index) != indx:
+                    raise ValueError('Device index:"{0}" of eni in local instances does not match '
+                                     'requested:"{1}" value.'.format(i.id. indx))
+                if eni.attachment.id != i.attachment.id:
+                    raise ValueError('ENI attachment id:{0} != self.interfaces.attachment.id:{1}'
+                                     .format(eni.attachment.id, i.attachment.id))
+                if not eni.attachment:
+                    raise ValueError('ENI attachment info is empty after updating ENI info post '
+                                     'attachment')
+                if eni.attachment.instance_id != self.id:
+                    raise ValueError('ENI attachment data instance_id:"{0}" does not show proper '
+                                     'instance id:{1}'.format(eni.attachment.instance_id, self.id))
+                if int(eni.attachment.device_index) != indx:
+                        raise ValueError('ENI attachment device index:"{0}" does match requested '
+                                         'index:"{1}"'.format(eni.attachment.device_index, indx))
+                api_is_good = True
+                break
+            except ValueError as VE:
+                last_error = str(VE)
+                self.log.debug('{0}\nERROR:"{1}", attempts:{2}, elapsed:{3}'
+                               .format(get_traceback(), VE, attempts, elapsed))
+                time.sleep(2)
+                eni.update()
+                self.update()
+        if not api_is_good:
+            raise ValueError('ERRORS after elapsed:{0}:"{1}"'.format(elapsed,
+                                                                     last_error or "UNKNOWN?"))
+        if local_dev_timeout is None:
+            self.log.debug('local_dev_timeout is None, not waiting for device to appear on guest')
+            return (eni, None)
+        start = time.time()
+        elapsed = 0
+        attempts = 0
+        dev_found = False
+
+        while elapsed < local_dev_timeout and not dev_found:
+            elapsed = int(time.time() - start)
+            attempts += 1
+            post_attach_net_devs = self.get_network_interfaces().keys()
+            diff = list(set(post_attach_net_devs) - set(pre_attach_net_devs))
+            if not diff:
+                self.log.debug('Found network devs:"{0}"'
+                               .format(", ".join(str(x) for x in post_attach_net_devs)))
+                self.log.debug('Waiting for local device to appear for ENI:{0}, attempts:{1}, '
+                               'elapsed:{2}'.format(eni.id, attempts, elapsed))
+                time.sleep(5)
+            else:
+                if len(diff) == 1:
+                    local_dev = diff[0]
+                    self.log.debug('Found device:{0} for ENI:{1} attachment:{2}'
+                                   .format(local_dev, eni.id, eni.attachment.id))
+                    eni.add_tag(eni.attachment.id, value=local_dev)
+                    return eni
+        raise RuntimeError('Network device for ENI:{0} did not appear on guest after '
+                           'attempts:{1}, elapsed{2}'.format(eni.id, attempts, elapsed))
+
+
+    def detach_eni(self, eni, local_dev=None, local_dev_timeout=60):
+        """
+        Attempts to detach the provided ENI from this instance.
+        Checks to see if this eni is indeed attached and found in self.instances first.
+        If 'local_dev' is provided, this method will wait for that device to disappear from the
+        guest. If 'local_dev' is not  provided, the method will look for the tag containing
+        {attachment.id: local_dev}, otherwise this method will check the current local
+        network devices and attempts to wait for single device to disappear.
+        If local_dev_timeout is None, this check is skipped.
+        Args:
+            eni: eni id, or boto eni object to detach
+            local_dev_timeout: Time to wait for the local guest device to disappear after detaching
+                               the ENI before raising an error.
+
+        Returns: The updated detached ENI
+
+        """
+        if isinstance(eni, basestring):
+            enis = self.connection.connection.get_all_network_interfaces(self, [eni])
+            if not enis:
+                raise ValueError('Could not fetch ENI for provided value:{0}'.format(eni))
+            eni = enis[0]
+        self.update()
+        eni.update()
+        attachment_id = eni.attachment.id
+
+        if eni.id not in [str(x.id) for x in self.interfaces]:
+            raise ValueError('ENI:{0} not found as attached in self.interfaces:"{1}"'
+                             .format(eni.id, ", ".join([str(x.id) for x in self.interfaces])))
+        if not eni.attachment or eni.attachment.instance_id != self.id:
+            raise('{0}.instances has the eni in the list of attached ENI, but the ENI '
+                  'attachment.instance_id:{1} != {2}'.format(self.id, eni.attachment.instance_id,
+                                                             self.id))
+        if not local_dev:
+            dev_tag = eni.tags.get(eni.attachment.id, None)
+            if dev_tag:
+                self.log.debug('Found local device:{0} per attachment tag:{1}'
+                               .format(dev_tag, eni.attachment.id))
+                local_dev = dev_tag
+
+        pre_detach_net_devices = self.get_network_interfaces().keys()
+        self.log.debug('Devices on this instance before ENI:{0} detach:"{1}"'
+                       .format(eni.id, pre_detach_net_devices))
+        if local_dev and local_dev not in pre_detach_net_devices:
+            errmsg = ('Device name:{0} not found on:{1}. ENI attachment tag can be removed, and'
+                      'local_dev can be left None, so autodiscovery can be attempted.'
+                      .format(local_dev))
+            if local_dev_timeout is None:
+                self.log.warning(errmsg)
+            else:
+                raise ValueError(errmsg + " local_dev_timeout can be set to None to avoid these "
+                                          "checks.")
+        self.log.debug('sending {0} detach now...'.format(eni.id))
+        eni.detach()
+        eni.update()
+        self.update()
+        start = time.time()
+        elapsed = 0
+        attempts = 0
+        api_timeout = 10
+        api_is_good = False
+        last_error = None
+        while elapsed and not api_is_good:
+            elapsed = int(time.time() - start)
+            attempts += 1
+            try:
+                if eni.attachment and eni.attachment.instance_id == self.id:
+                    raise ValueError('ENI:{0} attachment data still shows it is attached to this '
+                                     'instance:{1}'.format(eni.id, eni.attachment.instance_id))
+                if eni.id in [str(x.id) for x in self.interfaces]:
+                    raise ValueError('ENI:{0} still present in self.interfaces'.format(eni.id))
+                api_is_good = True
+                break
+            except ValueError as VE:
+                last_error = str(VE)
+                self.log.debug('{0}\nERROR:"{1}", attempts:{2}, elapsed:{3}'
+                               .format(get_traceback(), VE, attempts, elapsed))
+                time.sleep(2)
+                eni.update()
+                self.update()
+        if not api_is_good:
+            raise ValueError('ERRORS after elapsed:{0}:"{1}"'.format(elapsed,
+                                                                     last_error or "UNKNOWN?"))
+        if local_dev_timeout is None:
+            self.log.debug('Skipping local device detach on ENI:{0} detach'.format(eni.id))
+            return eni
+        start = time.time()
+        elapsed = 0
+        attempts = 0
+        dev_found = True
+
+        while elapsed < local_dev_timeout and dev_found:
+            elapsed = int(time.time() - start)
+            attempts += 1
+            post_detach_net_devs = self.get_network_interfaces().keys()
+            self.log.debug('Found network devs:"{0}"'
+                          .format(", ".join(str(x) for x in post_detach_net_devs)))
+
+            if local_dev and local_dev not in post_detach_net_devs:
+                self.log.debug('Local dev:{0} for ENI:{1} no longer found on guest after, '
+                               'attempts:{2}, elapsed:{3}'.format(local_dev, eni.id, attempts,
+                                                                 elapsed))
+                eni.remove_tags({attachment_id: local_dev})
+                eni.update()
+                return eni
+            if not local_dev and len(pre_detach_net_devices) > len(post_detach_net_devs):
+                diff = list(set(pre_detach_net_devices) - set(post_detach_net_devs))
+                self.log.debug('local device unknown but at least one less network device was'
+                               'detected after detach:"{0}", attempts:{1}, elapsed:{2}'
+                               .format(diff, attempts, elapsed))
+                return eni
+        raise RuntimeError('Network device for ENI:{0} still on guest after detach. '
+                           'attempts:{1}, elapsed{2}'.format(eni.id, attempts, elapsed))
+
 
     def sync_enis_etc_sysconfig(self, prefix='eth'):
         """
