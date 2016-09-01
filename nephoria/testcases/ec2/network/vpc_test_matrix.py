@@ -3322,6 +3322,14 @@ class VpcBasics(CliTestRunner):
         user = self.user
         vpc = self.test6b0_get_vpc_for_eni_tests()
         instances = []
+        def show_vm_net_info(vm)
+            try:
+                vm.show_enis()
+                vm.show_network_interfaces_table()
+                vm.show_network_device_info()
+            except Exception as E:
+                self.log.warning('{0}\nFailed to print network device info for vm:{1}, '
+                                 'Error:"{2}"'.format(get_traceback(), vm, E))
         try:
             for zone in self.zones:
                 subnet = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
@@ -3334,17 +3342,15 @@ class VpcBasics(CliTestRunner):
                                        '{0}'.format(vm.id))
                         vm.detach_all_enis()
                 instances += [vm1, vm2]
-
+                show_vm_net_info(vm)
                 self.status('Instance ENI info before attaching...')
                 for vm in [vm1, vm2]:
                     enis  = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=2)
-                    vm.show_enis()
-                    vm.show_network_interfaces_table()
+
                     self.status('Attaching two ENIs to test VMs...')
                     for eni in enis:
                         vm.attach_eni(eni)
-                    vm.show_enis()
-                    vm.show_network_interfaces_table()
+                    show_vm_net_info(vm)
                 self.status('All network interfaces attached correctly for zone:{0}'.format(zone))
                 self.status('Now attempting detach for all network interfacces...')
                 for vm in [vm1, vm2]:
@@ -3352,8 +3358,7 @@ class VpcBasics(CliTestRunner):
                         self.log.debug('Detaching all ENIS other than index0 from '
                                        '{0}'.format(vm.id))
                         vm.detach_all_enis()
-                vm.show_enis()
-                vm.show_network_interfaces_table()
+                show_vm_net_info(vm)
                 self.status('All network interfaces dettached correctly for zone:{0}'.format(zone))
             self.status('Success. Basic attach/detach tests passed.')
         finally:

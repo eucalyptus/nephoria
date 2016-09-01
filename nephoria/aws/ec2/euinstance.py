@@ -2175,12 +2175,17 @@ class EuInstance(Instance, TaggedResource, Machine):
                            str(meta_devices.get(meta_dev)) + "' (Not found in Instance's BDM)"
             raise Exception(err_buf)
 
-    def get_network_device_info(self, prefix='/sys/class/net/'):
+    def get_network_device_info(self, name=None, prefix='/sys/class/net/'):
         ret = {}
         dev_names = self.sys('ls -1 {0}'.format(prefix), code=0)
         for dev_name in dev_names:
+            dev_name = str(dev_name).strip()
+            if name and dev_name != name:
+                continue
             dev = {}
             dev_path = os.path.join(prefix, dev_name)
+
+            # Get MAC address...
             mac_path = os.path.join(dev_path, 'address')
             mac_addr = self.sys('cat {0}'.format(mac_path))[0]
             search = re.search("^\w\w:\w\w:\w\w:\w\w:\w\w:\w\w$", mac_addr.strip())
@@ -2189,8 +2194,45 @@ class EuInstance(Instance, TaggedResource, Machine):
             else:
                 self.log.warning('Failed to parse MAC info for:{0}'.format(dev_name))
                 dev['address'] = None
+            # Get the operation state...
+            oper_path = os.path.join(dev_path, 'operstate')
+            try:
+                dev['operstate'] = self.sys('cat {0}'.format(oper_path), code=0, timeout=2)[0]
+            except CommandTimeoutException as TE:
+                self.log.debug(TE)
+                dev['operstate'] = None
             ret[dev_name] = dev
         return ret
+
+    def show_network_device_info(self, dev_name=None, dev_info=None,  printme=True,
+                                 printmethod=None):
+        dev_info = dev_info or self.get_network_device_info(name=dev_name)
+        if not dev_info:
+            self.log.debug('No network devices found, name:{0}?'.format(dev_name))
+            return None
+        headers = ['dev_name']
+        # Build the headers dynamically from the device dictionary...
+        for dev, value in dev_info.iteritems():
+            for header, info in value.iteritems():
+                if header not in headers:
+                    headers.append(header)
+        # Create the table...
+        pt = PrettyTable(headers)
+        pt.align = 'l'
+        for dev, dev_info in dev_info.iteritems():
+            dev_info['dev_name']  = dev
+            row = []
+            for header in headers:
+                if header in dev_info:
+                    row.append(dev_info[header])
+                else:
+                    row.append('???')
+            pt.add_row(row)
+        if not printme:
+            return pt
+        else:
+            printmethod = printmethod or self.log.info
+            printmethod("\n{0}\n".format(pt))
 
 
     def attach_eni(self, eni, index=None, local_dev_timeout=60):
