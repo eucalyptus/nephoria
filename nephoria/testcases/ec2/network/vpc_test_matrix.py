@@ -3302,7 +3302,7 @@ class VpcBasics(CliTestRunner):
         if vpc:
             user.ec2.delete_vpc_and_dependency_artifacts(vpc)
 
-    def test6d1_eni__multiple_post_run_attach_detach_tests(self):
+    def test6d1_eni__multiple_post_run_attach_detach_and_terminate_tests(self):
         """
         Test Attaching and detaching an ENI to running instances in each zone.
         Note most checks are performed in the euinstance class attach/detach methods.
@@ -3317,6 +3317,9 @@ class VpcBasics(CliTestRunner):
         Verify the device is no longer seen on the guest
         Verify the IP associated with this VM is no longer reachable.
         Verify the ENI can be deleted once detached.
+
+        Terminate:
+        Verify the attached ENIs are
         """
 
         user = self.user
@@ -3336,12 +3339,13 @@ class VpcBasics(CliTestRunner):
                                                                    count=1)[0]
                 vm1, vm2 = self.get_test_instances(zone=zone, subnet_id=subnet.id,
                                                    count=2, user=user, auto_connect=True)
+                instances += [vm1, vm2]
+
                 for vm in [vm1, vm2]:
-                    if len(vm.instances) > 1:
+                    if len(vm.interfaces) > 1:
                         self.log.debug('Detaching all pre-existing ENIS other than index0 from '
                                        '{0}'.format(vm.id))
                         vm.detach_all_enis()
-                instances += [vm1, vm2]
                 show_vm_net_info(vm)
                 self.status('Instance ENI info before attaching...')
                 for vm in [vm1, vm2]:
@@ -3360,15 +3364,15 @@ class VpcBasics(CliTestRunner):
                         vm.detach_all_enis()
                 show_vm_net_info(vm)
                 self.status('All network interfaces dettached correctly for zone:{0}'.format(zone))
-            self.status('Success. Basic attach/detach tests passed.')
+            self.status('Success. Basic attach/detach tests passed. Now termination tests...')
+            for instance in instances:
+                instance.terminate_and_verify()
         finally:
             if subnet:
                 self.status('Attempting to delete subnet and dependency artifacts from this test')
                 user.ec2.delete_subnet_and_dependency_artifacts()
 
 
-    def test6d3_eni_delete_on_terminate(self):
-        raise NotImplementedError()
 
     def test6e0_eni_attach_on_run_detach(self):
         raise NotImplementedError()

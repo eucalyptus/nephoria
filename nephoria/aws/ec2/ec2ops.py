@@ -4290,8 +4290,110 @@ disable_root: false"""
         return eni
 
 
+    def modify_network_interface_attributes(self, eni, description=None, group_set=None,
+                                            source_dest_check=None, delete_on_terminate=None,
+                                            other_dict=None):
+        """
+        Changes an attribute of a network interface.
+        * description - Textual description of interface
+        * groupSet - List of security group ids or group objects
+        * sourceDestCheck - Boolean
+        * deleteOnTermination - Boolean. Must also specify attachment_id
+        """
+        if isinstance(eni, basestring):
+            enis = self.connection.get_all_network_interfaces([eni])
+            if not enis:
+                raise ValueError('Could not fetch eni:{0}'.format(eni))
+            else:
+                eni = enis[0]
+        if description is not None:
+            ret = self.connection.modify_network_interface_attribute(
+                interaces_id=eni.id, attr='description', value=description)
+            if not ret:
+                raise RuntimeError('Error setting description for {0}. Value:"{1}"'
+                                   .format(eni, description))
+            eni.update()
+            if eni.description != description:
+                raise ValueError('ENI description: "{0}" != requested:"{1}"'
+                                 .format(eni.description, description))
+        if group_set is not None:
+            ret = self.connection.modify_network_interface_attribute(
+                interaces_id=eni.id, attr='groupSet', value=group_set)
+            if not ret:
+                raise RuntimeError('Error setting groupSet for {0}. Value:"{1}"'
+                                   .format(eni, group_set))
+            eni.update()
+            if not isinstance(group_set, list):
+                group_set = []
+            for group in group_set:
+                if isinstance(group, basestring):
+                    group_set.append(group)
+                else:
+                    group_set.append(group.id)
+            group_set.sort()
+            eni_groups = [str(x.id) for x in eni.groups]
+            eni_groups.sort()
+            for eni_group in eni_groups:
+                if eni_group.name == 'default':
+                    if eni_group.id not in group_set:
+                        group_set.append(eni_group.id)
+            eni_groups.sort()
+            if eni_groups != group_set:
+                raise ValueError('ENI groups:"{0}" do not match requested group_set:{1}'
+                                 .format(", ".join(eni_groups), ", ".join(group_set)))
+        if source_dest_check is not None:
+            ret = self.connection.modify_network_interface_attribute(
+                interaces_id=eni.id, attr='sourceDestCheck', value=source_dest_check)
+            if not ret:
+                raise RuntimeError('Error setting sourceDestCheck for {0}. Value:"{1}"'
+                                   .format(eni, source_dest_check))
+            eni.update()
+            if str(eni.source_dest_check).uppder() != str(eni.source_dest_check).upper():
+                raise ValueError('ENI sourceDestCheck:"{0}" != requsted:"{1}"'
+                                 .format(str(eni.source_dest_check).upper(),
+                                         str(source_dest_check).upper()))
+        if delete_on_terminate is not None:
+            eni.update()
+            if not eni.attachment:
+                raise ValueError('Can not set delete on terminate flag if not attached:{0}, '
+                                 'status:{1}'.format(eni.id, eni.status))
+            ret = self.connection.modify_network_interface_attribute(
+                interaces_id=eni.id, attr='deleteOnTermination',
+                value=delete_on_terminate, attachment_id=eni.attachment.id)
+            if not ret:
+                raise RuntimeError('Error setting deleteOnTermination for {0}. Value:"{1}"'
+                                   .format(eni, delete_on_terminate))
+            eni.update()
+            if not eni.attachment:
+                raise ValueError('ENI {0} still present after DOT flag set but attachment is no'
+                                 'longer present?'.format(eni.id))
+            eni_val = str(eni.attachment.delete_on_termination).upper()
+            req_val = str(delete_on_terminate).upper()
+            if eni_val != req_val:
+                raise ValueError('ENI:{0} attachment:{1} delete on terminate flag:"{0}" != '
+                                 'requested value:"{1}"'.format(eni.id, eni.attachment.id,
+                                                                eni_val, req_val))
+        if other_dict is not None:
+            if not isinstance(other_dict, dict):
+                raise ValueError('"other_dict" must be of type dictionary. ie '
+                                 '{"attribute_name": "value"}, got:"{0}/{1}"'
+                                 .format(other_dict, type(other_dict)))
+            for key, value in other_dict.iteritems():
+                ret = self.connection.modify_network_interface_attribute(
+                    interaces_id=eni.id, attr=key,
+                    value=value)
+                if not ret:
+                    raise RuntimeError('Error setting {0} for {1}. Value:"{2}"'
+                                       .format(eni, key, value))
+            eni.update()
+        return eni
 
-    
+
+
+
+
+
+
 
     def create_network_interface_collection(self,
                                             eni=None,
