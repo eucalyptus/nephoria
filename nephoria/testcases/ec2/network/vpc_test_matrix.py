@@ -3044,6 +3044,16 @@ class VpcBasics(CliTestRunner):
     #  instance in a VPC. ENIs are available only for instances running in a VPC.
     ###############################################################################################
 
+    def show_vm_net_info(self, vm):
+        try:
+            vm.show_enis()
+            vm.show_network_interfaces_table()
+            vm.show_network_device_info()
+        except Exception as E:
+            self.log.warning('{0}\nFailed to print network device info for vm:{1}, '
+                             'Error:"{2}"'.format(get_traceback(), vm, E))
+
+
     def test6b0_get_vpc_for_eni_tests(self):
         """
         Creates or fetches a VPC matching the filters for this test section to share.
@@ -3325,18 +3335,13 @@ class VpcBasics(CliTestRunner):
         user = self.user
         vpc = self.test6b0_get_vpc_for_eni_tests()
         instances = []
-        def show_vm_net_info(vm)
-            try:
-                vm.show_enis()
-                vm.show_network_interfaces_table()
-                vm.show_network_device_info()
-            except Exception as E:
-                self.log.warning('{0}\nFailed to print network device info for vm:{1}, '
-                                 'Error:"{2}"'.format(get_traceback(), vm, E))
+        subnets = []
+
         try:
             for zone in self.zones:
                 subnet = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
                                                                    count=1)[0]
+                subnets.append(subnet)
                 vm1, vm2 = self.get_test_instances(zone=zone, subnet_id=subnet.id,
                                                    count=2, user=user, auto_connect=True)
                 instances += [vm1, vm2]
@@ -3346,15 +3351,15 @@ class VpcBasics(CliTestRunner):
                         self.log.debug('Detaching all pre-existing ENIS other than index0 from '
                                        '{0}'.format(vm.id))
                         vm.detach_all_enis()
-                show_vm_net_info(vm)
-                self.status('Instance ENI info before attaching...')
-                for vm in [vm1, vm2]:
+                    self.show_vm_net_info(vm)
+                    self.status('Instance {0} ENI info before attaching...'.format(vm.id))
                     enis  = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=2)
 
-                    self.status('Attaching two ENIs to test VMs...')
+                    self.status('Attaching two ENIs to test VM:{0}...'.format(vm.id))
                     for eni in enis:
                         vm.attach_eni(eni)
-                    show_vm_net_info(vm)
+                    self.show_vm_net_info(vm)
+                    self.status('Successfully attached ENIs to {0}'.format(vm.id))
                 self.status('All network interfaces attached correctly for zone:{0}'.format(zone))
                 self.status('Now attempting detach for all network interfacces...')
                 for vm in [vm1, vm2]:
@@ -3362,16 +3367,62 @@ class VpcBasics(CliTestRunner):
                         self.log.debug('Detaching all ENIS other than index0 from '
                                        '{0}'.format(vm.id))
                         vm.detach_all_enis()
-                show_vm_net_info(vm)
+                self.show_vm_net_info(vm)
                 self.status('All network interfaces dettached correctly for zone:{0}'.format(zone))
             self.status('Success. Basic attach/detach tests passed. Now termination tests...')
             for instance in instances:
                 instance.terminate_and_verify()
         finally:
-            if subnet:
+            for subnet in subnets:
                 self.status('Attempting to delete subnet and dependency artifacts from this test')
                 user.ec2.delete_subnet_and_dependency_artifacts()
 
+    def test6d2_eni_attribute_delete_on_terminate(self):
+        """
+        Attempts to verify the delete on terminate network interface attachment attribute.
+        - Attach an ENI to VM in each zone.
+        - Set and verify the delete on terminate attachment attribute
+        - Terminate the VMs and verify the ENI per the D.O.T. flag.
+
+        """
+        user = self.user
+        vpc = self.test6b0_get_vpc_for_eni_tests()
+        instances = []
+        subnets = []
+
+        try:
+            for zone in self.zones:
+                subnet = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
+                                                                   count=1)[0]
+                subnets.append(subnet)
+                vm = self.get_test_instances(zone=zone, subnet_id=subnet.id,
+                                                   count=1, user=user, auto_connect=True)[0]
+                instances.append(vm)
+
+                if len(vm.interfaces) > 1:
+                    self.log.debug('Detaching all pre-existing ENIS other than index0 from '
+                                   '{0}'.format(vm.id))
+                    vm.detach_all_enis()
+                self.show_vm_net_info(vm)
+                self.status('Instance ENI info before attaching...')
+
+                eni1, eni2 = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=2)
+                self.status('Attaching two ENIs to test VMs:{0}.'.format(vm.id))
+                for eni in [eni1, eni2]:
+                    vm.attach_eni(eni)
+                self.status('All network interfaces attached correctly for zone:'.format(zone))
+                self.status('Setting delete on terminate flag and verifying post vm terminate...')
+                user.ec2.modify_network_interface_attributes(eni1, delete_on_terminate=True)
+                user.ec2.modify_network_interface_attributes(eni2, delete_on_terminate=False)
+                self.status('Terminating instance {0} and verifying DOT flag for attached ENIs...'
+                            .format(vm.id))
+                vm.show_enis()
+                vm.terminate_and_verify()
+                self.status('Done Verifying DOT flag for zone:{0}'.format(zone))
+        finally:
+            for subnet in subnets:
+                self.status('Attempting to delete subnet and dependency artifacts from this test')
+                user.ec2.delete_subnet_and_dependency_artifacts()
 
 
     def test6e0_eni_attach_on_run_detach(self):

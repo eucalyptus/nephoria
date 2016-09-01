@@ -4294,11 +4294,22 @@ disable_root: false"""
                                             source_dest_check=None, delete_on_terminate=None,
                                             other_dict=None):
         """
-        Changes an attribute of a network interface.
+        Changes an attribute of a network interface, then verifies the attribute on the
+        network interface.
         * description - Textual description of interface
         * groupSet - List of security group ids or group objects
         * sourceDestCheck - Boolean
         * deleteOnTermination - Boolean. Must also specify attachment_id
+        Args:
+            eni: eni id or eni obj
+            description: string
+            group_set: list of security group ids or objs
+            source_dest_check: boolean
+            delete_on_terminate: boolean
+            other_dict: catch all dict to allow passing any string attribute and value.
+
+        Returns: updated eni obj
+
         """
         if isinstance(eni, basestring):
             enis = self.connection.get_all_network_interfaces([eni])
@@ -4308,7 +4319,7 @@ disable_root: false"""
                 eni = enis[0]
         if description is not None:
             ret = self.connection.modify_network_interface_attribute(
-                interaces_id=eni.id, attr='description', value=description)
+                interface_id=eni.id, attr='description', value=description)
             if not ret:
                 raise RuntimeError('Error setting description for {0}. Value:"{1}"'
                                    .format(eni, description))
@@ -4318,7 +4329,7 @@ disable_root: false"""
                                  .format(eni.description, description))
         if group_set is not None:
             ret = self.connection.modify_network_interface_attribute(
-                interaces_id=eni.id, attr='groupSet', value=group_set)
+                interface_id=eni.id, attr='groupSet', value=group_set)
             if not ret:
                 raise RuntimeError('Error setting groupSet for {0}. Value:"{1}"'
                                    .format(eni, group_set))
@@ -4343,7 +4354,7 @@ disable_root: false"""
                                  .format(", ".join(eni_groups), ", ".join(group_set)))
         if source_dest_check is not None:
             ret = self.connection.modify_network_interface_attribute(
-                interaces_id=eni.id, attr='sourceDestCheck', value=source_dest_check)
+                interface_id=eni.id, attr='sourceDestCheck', value=source_dest_check)
             if not ret:
                 raise RuntimeError('Error setting sourceDestCheck for {0}. Value:"{1}"'
                                    .format(eni, source_dest_check))
@@ -4358,7 +4369,7 @@ disable_root: false"""
                 raise ValueError('Can not set delete on terminate flag if not attached:{0}, '
                                  'status:{1}'.format(eni.id, eni.status))
             ret = self.connection.modify_network_interface_attribute(
-                interaces_id=eni.id, attr='deleteOnTermination',
+                interface_id=eni.id, attr='deleteOnTermination',
                 value=delete_on_terminate, attachment_id=eni.attachment.id)
             if not ret:
                 raise RuntimeError('Error setting deleteOnTermination for {0}. Value:"{1}"'
@@ -4380,20 +4391,13 @@ disable_root: false"""
                                  .format(other_dict, type(other_dict)))
             for key, value in other_dict.iteritems():
                 ret = self.connection.modify_network_interface_attribute(
-                    interaces_id=eni.id, attr=key,
+                    interface_id=eni.id, attr=key,
                     value=value)
                 if not ret:
                     raise RuntimeError('Error setting {0} for {1}. Value:"{2}"'
                                        .format(eni, key, value))
             eni.update()
         return eni
-
-
-
-
-
-
-
 
     def create_network_interface_collection(self,
                                             eni=None,
