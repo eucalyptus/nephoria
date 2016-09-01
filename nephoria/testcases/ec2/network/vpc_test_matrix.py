@@ -3305,6 +3305,7 @@ class VpcBasics(CliTestRunner):
     def test6d1_eni_post_run_attach_detach_tests(self):
         """
         Test Attaching and detaching an ENI to running instances in each zone.
+        Note most checks are performed in the euinstance class attach/detach methods.
         Attach:
         Verify the ENI is reported correctly as attached.
         Verify the device is seen on the guest on attach.
@@ -3327,27 +3328,38 @@ class VpcBasics(CliTestRunner):
                                                                    count=1)[0]
                 vm1, vm2 = self.get_test_instances(zone=zone, subnet_id=subnet.id,
                                                    count=2, user=user, auto_connect=True)
+                for vm in [vm1, vm2]:
+                    if len(vm.instances) > 1:
+                        self.log.debug('Detaching all pre-existing ENIS other than index0 from '
+                                       '{0}'.format(vm.id))
+                        vm.detach_all_enis()
                 instances += [vm1, vm2]
 
                 self.status('Instance ENI info before attaching...')
                 for vm in [vm1, vm2]:
-                    eni  = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=1)
+                    enis  = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=2)
                     vm.show_enis()
                     vm.show_network_interfaces_table()
-                    self.status('Attaching ENIs to test VMs...')
-                    vm.attach_eni()
+                    self.status('Attaching two ENIs to test VMs...')
+                    for eni in enis:
+                        vm.attach_eni(eni)
                     vm.show_enis()
                     vm.show_network_interfaces_table()
-
-
-
-
+                self.status('All network interfaces attached correctly for zone:{0}'.format(zone))
+                self.status('Now attempting detach for all network interfacces...')
+                for vm in [vm1, vm2]:
+                    if len(vm.instances) > 1:
+                        self.log.debug('Detaching all ENIS other than index0 from '
+                                       '{0}'.format(vm.id))
+                        vm.detach_all_enis()
+                vm.show_enis()
+                vm.show_network_interfaces_table()
+                self.status('All network interfaces dettached correctly for zone:{0}'.format(zone))
+            self.status('Success. Basic attach/detach tests passed.')
         finally:
-            if instances:
-                self.status('Attempting to terminate the instances used in this test...')
-                user.ec2.terminate_instances(instances)
-
-
+            if subnet:
+                self.status('Attempting to delete subnet and dependency artifacts from this test')
+                user.ec2.delete_subnet_and_dependency_artifacts()
 
 
 
