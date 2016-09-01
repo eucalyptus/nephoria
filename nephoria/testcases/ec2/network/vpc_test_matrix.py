@@ -3328,15 +3328,17 @@ class VpcBasics(CliTestRunner):
                 vm1, vm2 = self.get_test_instances(zone=zone, subnet_id=subnet.id,
                                                    count=2, user=user, auto_connect=True)
                 instances += [vm1, vm2]
-                eni1, eni2 = self.get_test_enis_for_subnet(subnet=2, user=user)
-                vm1_pre_attach_interfaces = vm1.get_network_interfaces().keys()
-                vm1_pre_attach_interfaces = vm2.get_network_interfaces().keys()
+
                 self.status('Instance ENI info before attaching...')
-                for vm in [vm1, vm2]
+                for vm in [vm1, vm2]:
+                    eni  = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=1)
                     vm.show_enis()
                     vm.show_network_interfaces_table()
-                self.status('Attaching ENIs to test VMs...')
-                eni.attach()
+                    self.status('Attaching ENIs to test VMs...')
+                    vm.attach_eni()
+                    vm.show_enis()
+                    vm.show_network_interfaces_table()
+
 
 
 

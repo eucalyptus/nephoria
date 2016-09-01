@@ -2175,10 +2175,27 @@ class EuInstance(Instance, TaggedResource, Machine):
                            str(meta_devices.get(meta_dev)) + "' (Not found in Instance's BDM)"
             raise Exception(err_buf)
 
+    def get_network_device_info(self, prefix='/sys/class/net/'):
+        ret = {}
+        dev_names = self.sys('ls -1 {0}'.format(prefix), code=0)
+        for dev_name in dev_names:
+            dev = {}
+            dev_path = os.path.join(prefix, dev_name)
+            mac_path = os.path.join(dev_path, 'address')
+            mac_addr = self.sys('cat {0}'.format(mac_path))[0]
+            search = re.search("^\w\w:\w\w:\w\w:\w\w:\w\w:\w\w$", mac_addr.strip())
+            if search:
+                dev['address'] = search.group()
+            else:
+                self.log.warning('Failed to parse MAC info for:{0}'.format(dev_name))
+                dev['address'] = None
+            ret[dev_name] = dev
+        return ret
+
+
     def attach_eni(self, eni, index=None, local_dev_timeout=60):
         """
         Attaches an ENI to this instance and peforms basic validation on the attachment.
-        If the local device is discovered, the ENI is tagged with {attachment-id:local dev name}.
         Checks the attachment info,  device index in the response for the ENI and instance, etc.
         Checks the local guest, polls waiting for the device to show up.
         Args:
@@ -2277,26 +2294,30 @@ class EuInstance(Instance, TaggedResource, Machine):
         while elapsed < local_dev_timeout and not dev_found:
             elapsed = int(time.time() - start)
             attempts += 1
-            post_attach_net_devs = self.get_network_interfaces().keys()
-            diff = list(set(post_attach_net_devs) - set(pre_attach_net_devs))
-            if not diff:
-                self.log.debug('Found network devs:"{0}"'
-                               .format(", ".join(str(x) for x in post_attach_net_devs)))
-                self.log.debug('Waiting for local device to appear for ENI:{0}, attempts:{1}, '
-                               'elapsed:{2}'.format(eni.id, attempts, elapsed))
+            net_devs = self.get_network_device_info()
+            for dev, info in net_devs.iteritems():
+                if info.get('address') == eni.mac_address:
+                    break
+                else:
+                    dev = None
+
+
+            if not dev:
+                eth_info = ", ".join(["{0}:{1}"
+                                     .format(x, y.get('address')) for x, y in net_devs.iteritems()])
+                self.log.debug('Found Net DEVS:"{0}"'.format(eth_info))
+                self.log.debug('Still waiting for local device to appear for ENI:{0},'
+                               ' attempts:{1}, elapsed:{2}'.format(eni.id, attempts, elapsed))
                 time.sleep(5)
             else:
-                if len(diff) == 1:
-                    local_dev = diff[0]
-                    self.log.debug('Found device:{0} for ENI:{1} attachment:{2}'
-                                   .format(local_dev, eni.id, eni.attachment.id))
-                    eni.add_tag(eni.attachment.id, value=local_dev)
-                    return eni
+                self.log.debug('Found device:{0} for ENI:{1} attachment:{2}'
+                               .format(dev, eni.id, eni.attachment.id))
+                return eni
         raise RuntimeError('Network device for ENI:{0} did not appear on guest after '
                            'attempts:{1}, elapsed{2}'.format(eni.id, attempts, elapsed))
 
 
-    def detach_eni(self, eni, local_dev=None, local_dev_timeout=60):
+    def detach_eni(self, eni,  local_dev_timeout=60):
         """
         Attempts to detach the provided ENI from this instance.
         Checks to see if this eni is indeed attached and found in self.instances first.
@@ -2329,25 +2350,9 @@ class EuInstance(Instance, TaggedResource, Machine):
             raise('{0}.instances has the eni in the list of attached ENI, but the ENI '
                   'attachment.instance_id:{1} != {2}'.format(self.id, eni.attachment.instance_id,
                                                              self.id))
-        if not local_dev:
-            dev_tag = eni.tags.get(eni.attachment.id, None)
-            if dev_tag:
-                self.log.debug('Found local device:{0} per attachment tag:{1}'
-                               .format(dev_tag, eni.attachment.id))
-                local_dev = dev_tag
-
         pre_detach_net_devices = self.get_network_interfaces().keys()
         self.log.debug('Devices on this instance before ENI:{0} detach:"{1}"'
                        .format(eni.id, pre_detach_net_devices))
-        if local_dev and local_dev not in pre_detach_net_devices:
-            errmsg = ('Device name:{0} not found on:{1}. ENI attachment tag can be removed, and'
-                      'local_dev can be left None, so autodiscovery can be attempted.'
-                      .format(local_dev))
-            if local_dev_timeout is None:
-                self.log.warning(errmsg)
-            else:
-                raise ValueError(errmsg + " local_dev_timeout can be set to None to avoid these "
-                                          "checks.")
         self.log.debug('sending {0} detach now...'.format(eni.id))
         eni.detach()
         eni.update()
@@ -2393,23 +2398,24 @@ class EuInstance(Instance, TaggedResource, Machine):
         while elapsed < local_dev_timeout and dev_found:
             elapsed = int(time.time() - start)
             attempts += 1
-            post_detach_net_devs = self.get_network_interfaces().keys()
-            self.log.debug('Found network devs:"{0}"'
-                          .format(", ".join(str(x) for x in post_detach_net_devs)))
+            net_devs = self.get_network_device_info()
+            for dev, info in net_devs.iteritems():
+                if info.get('address') == eni.mac_address:
+                    break
+                else:
+                    dev = None
 
-            if local_dev and local_dev not in post_detach_net_devs:
-                self.log.debug('Local dev:{0} for ENI:{1} no longer found on guest after, '
-                               'attempts:{2}, elapsed:{3}'.format(local_dev, eni.id, attempts,
-                                                                 elapsed))
-                eni.remove_tags({attachment_id: local_dev})
-                eni.update()
+            if not dev:
+                eth_info = ", ".join(["{0}:{1}"
+                                     .format(x, y.get('address')) for x, y in net_devs.iteritems()])
+                self.log.debug('Found Net DEVS:"{0}"'.format(eth_info))
+                self.log.debug('Device is no longer found on guest for detached ENI:{0},'
+                               ' attempts:{1}, elapsed:{2}'.format(eni.id, attempts, elapsed))
                 return eni
-            if not local_dev and len(pre_detach_net_devices) > len(post_detach_net_devs):
-                diff = list(set(pre_detach_net_devices) - set(post_detach_net_devs))
-                self.log.debug('local device unknown but at least one less network device was'
-                               'detected after detach:"{0}", attempts:{1}, elapsed:{2}'
-                               .format(diff, attempts, elapsed))
-                return eni
+            else:
+                self.log.debug('Still waiting. Found device:{0} for detached ENI:{1} '
+                               'attachment:{2}'.format(dev, eni.id, eni.attachment.id))
+                time.sleep(5)
         raise RuntimeError('Network device for ENI:{0} still on guest after detach. '
                            'attempts:{1}, elapsed{2}'.format(eni.id, attempts, elapsed))
 
