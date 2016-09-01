@@ -3302,7 +3302,7 @@ class VpcBasics(CliTestRunner):
         if vpc:
             user.ec2.delete_vpc_and_dependency_artifacts(vpc)
 
-    def test6d1_eni_post_run_attach_detach_tests(self):
+    def test6d1_eni__multiple_post_run_attach_detach_tests(self):
         """
         Test Attaching and detaching an ENI to running instances in each zone.
         Note most checks are performed in the euinstance class attach/detach methods.
@@ -3366,10 +3366,6 @@ class VpcBasics(CliTestRunner):
                 self.status('Attempting to delete subnet and dependency artifacts from this test')
                 user.ec2.delete_subnet_and_dependency_artifacts()
 
-
-
-    def test6d2_eni_multiple_post_run_attach_detach(self):
-        raise NotImplementedError()
 
     def test6d3_eni_delete_on_terminate(self):
         raise NotImplementedError()

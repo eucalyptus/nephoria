@@ -1175,7 +1175,8 @@ class EuInstance(Instance, TaggedResource, Machine):
             self.log.error('{0}\n{1}Error closing instances fds'.format(errors, self.id))
         super(EuInstance, self).terminate(dry_run=dry_run)
 
-    def terminate_and_verify(self, verify_vols=True, volto=180, timeout=300, poll_interval=10):
+    def terminate_and_verify(self, verify_vols=True, verify_eni=True,
+                             volto=180, timeout=300, poll_interval=10):
         '''
         Attempts to terminate the instance and verify delete on terminate state of an ebs root
         block dev if any. If flagged will attempt to verify the correct
@@ -1192,7 +1193,9 @@ class EuInstance(Instance, TaggedResource, Machine):
         :type timeout: integer
         :param timeout: timeout in seconds when waiting for an instance to go to terminated state.
         '''
+        self.update()
         all_vols = []
+        enis = self.interfaces
         err_buff = ""
         elapsed = 0
         if verify_vols:
@@ -1219,57 +1222,127 @@ class EuInstance(Instance, TaggedResource, Machine):
                         volume.delete_on_termination = dev_map.delete_on_termination
         self.terminate()
         self.ec2ops.wait_for_instance(self, state='terminated', timeout=timeout)
-        start = time.time()
-        while all_vols and elapsed < volto:
-            elapsed = int(time.time() - start)
-            loop_vols = copy.copy(all_vols)
-            for vol in loop_vols:
-                vol_status = 'available'
-                fail_fast_status = 'deleted'
-                if hasattr(vol, 'delete_on_termination'):
-                    if vol.delete_on_termination:
-                        vol_status = 'deleted'
-                        fail_fast_status = 'available'
-                    self.log.debug('volume:' + str(vol.id) + "/" + str(vol.status) +
-                               ", from BDM, D.O.T.:" + str(vol.delete_on_termination) +
-                               ", waiting on status:" + str(vol_status) + ", elapsed:" +
-                               str(elapsed) + "/" + str(volto))
+        if verify_vols:
+            start = time.time()
+            while all_vols and elapsed < volto:
+                elapsed = int(time.time() - start)
+                loop_vols = copy.copy(all_vols)
+                for vol in loop_vols:
+                    vol_status = 'available'
+                    fail_fast_status = 'deleted'
+                    if hasattr(vol, 'delete_on_termination'):
+                        if vol.delete_on_termination:
+                            vol_status = 'deleted'
+                            fail_fast_status = 'available'
+                        self.log.debug('volume:' + str(vol.id) + "/" + str(vol.status) +
+                                   ", from BDM, D.O.T.:" + str(vol.delete_on_termination) +
+                                   ", waiting on status:" + str(vol_status) + ", elapsed:" +
+                                   str(elapsed) + "/" + str(volto))
+                    else:
+                        self.log.debug('volume:' + str(vol.id) + "/" + str(vol.status) +
+                                   ", was attached, waiting on status:" +
+                                   str(vol_status) + ", elapsed:" + str(elapsed) + "/" + str(volto))
+                    vol.expected_status = vol_status
+                    vol.update()
+                    # If volume has reached it's intended status or
+                    # the volume is no longer on the system and it's intended status is 'deleted'
+                    if vol.status == vol_status or \
+                            (not self.ec2ops.get_volume(volume_id=vol.id, eof=False) and
+                             vol_status == 'deleted'):
+                        self.log.debug(str(self.id) + ' terminated, ' + str(vol.id) +
+                                   "/" + str(vol.status) + ": volume entered expected state:" +
+                                   str(vol_status))
+                        all_vols.remove(vol)
+                        if vol in self.attached_vols:
+                            self.attached_vols.remove(vol)
+                    if vol.status == fail_fast_status and elapsed >= 30:
+                        self.log.debug('Incorrect status for volume:' + str(vol.id) + ', status:' +
+                                   str(vol.status))
+                        all_vols.remove(vol)
+                        err_buff += "\n" + str(self.id) + ":" + str(vol.id) + \
+                                    " Volume incorrect status:" + str(vol.status) + \
+                                    ", expected status:" + str(vol.expected_status) + \
+                                    ", elapsed:" + str(elapsed)
+                if all_vols:
+                    time.sleep(poll_interval)
+            for vol in all_vols:
+                err_buff += "\n" + str(self.id) + ":" + str(vol.id) + \
+                            " Volume timeout on current status:" + str(vol.status) + \
+                            ", expected status:" + str(vol.expected_status) + \
+                            ", elapsed:" + str(elapsed)
+        if verify_eni:
+            self.log.debug('Checking previously attached ENI status post instance terminate...')
+            good_enis = []
+            start = time.time()
+            elapsed = 0
+            attempts = 0
+            last_errors = ""
+            # Set the dot flag in the main eni obj, in case the attachment disappears...
+            for eni in enis:
+                eni.dot = eni.attachment.delete_on_termination
+            def eni_check(eni):
+                """
+                Perform Post termination checks on ENI...
+                """
+                dot = eni.attachment.delete_on_termination
+                try:
+                    eni.update()
+                except EC2ResponseError as EE:
+                    if int(E.status) == 400 and E.reason == 'InvalidNetworkInterfaceID.NotFound':
+                        if eni.dot:
+                            self.log.debug('{0} was properly deleted per "delete_on_terminate" '
+                                           'flag'.format(eni.id))
+                            return
+                        else:
+                            self.log.error("{0} not found on update, and delete on terminate flag"
+                                           "was not set?".format(eni.id))
+                            raise EE
+
+                if eni.status != 'available':
+                    raise ValueError('{0} status != "available" post {1} termination'
+                                     .format(eni.id, self.id))
+                if eni.attachment:
+                    if eni.attachment.instance_id != self.id:
+                        if eni.dot:
+                            raise ValueError('ENI {0} should have been "deleted on termination" '
+                                             'of {1} but is now attached to {2}'
+                                             .format(eni.id, self.id, eni.attachment.instance_id))
+                    raise ValueError('{0} attachment is still present post termination of {1}, '
+                                     'attachment status:{2}'.format(eni.id, self.id,
+                                                                    eni.attachment.status))
                 else:
-                    self.log.debug('volume:' + str(vol.id) + "/" + str(vol.status) +
-                               ", was attached, waiting on status:" +
-                               str(vol_status) + ", elapsed:" + str(elapsed) + "/" + str(volto))
-                vol.expected_status = vol_status
-                vol.update()
-                # If volume has reached it's intended status or
-                # the volume is no longer on the system and it's intended status is 'deleted'
-                if vol.status == vol_status or \
-                        (not self.ec2ops.get_volume(volume_id=vol.id, eof=False) and
-                         vol_status == 'deleted'):
-                    self.log.debug(str(self.id) + ' terminated, ' + str(vol.id) +
-                               "/" + str(vol.status) + ": volume entered expected state:" +
-                               str(vol_status))
-                    all_vols.remove(vol)
-                    if vol in self.attached_vols:
-                        self.attached_vols.remove(vol)
-                if vol.status == fail_fast_status and elapsed >= 30:
-                    self.log.debug('Incorrect status for volume:' + str(vol.id) + ', status:' +
-                               str(vol.status))
-                    all_vols.remove(vol)
-                    err_buff += "\n" + str(self.id) + ":" + str(vol.id) + \
-                                " Volume incorrect status:" + str(vol.status) + \
-                                ", expected status:" + str(vol.expected_status) + \
-                                ", elapsed:" + str(elapsed)
-            if all_vols:
-                time.sleep(poll_interval)
-        for vol in all_vols:
-            err_buff += "\n" + str(self.id) + ":" + str(vol.id) + \
-                        " Volume timeout on current status:" + str(vol.status) + \
-                        ", expected status:" + str(vol.expected_status) + \
-                        ", elapsed:" + str(elapsed)
+                    if eni.dot:
+                        raise ValueError('ENI {0} "delete_on_terminate" flag was set but ENI is '
+                                         'still present post {1} termination'.format(eni.id,
+                                                                                     self.id))
+
+
+            while good_enis < len(enis) and elapsed < timeout:
+                last_errors = ""
+                elapsed = int(time.time() - start)
+                attempts += 1
+                for eni in enis:
+                    if eni in good_enis:
+                        continue
+                    else:
+                        try:
+                            eni_check(eni)
+                            good_enis.append(eni)
+                        except Exception as E:
+                            last_errors += 'ERROR {0}: "{1}"\n'.format(E)
+                self.log.debug('Waiting on {0} ENIs to enter proper status post {2} terminate. '
+                               'Attempts: {3} Elapsed:{4}.\nLatest ENI errors:\n{5}'
+                               .format(len(enis) - len(good_enis), self.id, attempts, elapsed,
+                                       last_errors))
+
+            if len(good_enis) != len(enis):
+                err_buff += "\nENI Errors detected post terminate:{0}".format(last_errors)
 
         if err_buff:
-            raise Exception(str(self.id) + ", volume errors found during instance "
-                                           "terminate_and_verify:\n" + str(err_buff))
+            self.log.error("{0}, errors found during instance terminate_and_verify:\n{1}"
+                            .format(self.id,err_buff))
+            raise RuntimeError("{0}, errors found during instance terminate_and_verify:\n{1}"
+                               .format(self.id,err_buff))
 
     def get_guestdevs_inuse_by_vols(self):
         retlist = []
