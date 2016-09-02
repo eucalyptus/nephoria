@@ -1952,7 +1952,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                             self.attach_volume(self, self, vol, dev)
 
     def stop_instance_and_verify(self, timeout=200, state='stopped', failstate='terminated',
-                                 check_vols=True):
+                                 check_vols=True, check_enis=True):
         '''
         Attempts to stop instance and verify the state has gone to stopped state
         timeout -optional-time to wait on instance to go to state 'state' before failing
@@ -1985,10 +1985,13 @@ class EuInstance(Instance, TaggedResource, Machine):
                     raise Exception(str(self.id) + ', Volume ' + str(volume.id) + ':' +
                                     str(volume.status) +
                                     ' state did not remain in-use during stop')
+        if check_enis:
+            self.check_eni_attachments(local_dev_timeout=timeout)
         self.log.debug(self.id + " stop_instance_and_verify Success")
 
     def start_instance_and_verify(self, timeout=300, state='running', failstates=['terminated'],
-                                  failfasttime=30, connect=True, checkvolstatus=True):
+                                  failfasttime=30, connect=True, checkvolstatus=True,
+                                  check_enis=True):
         '''
         Attempts to start instance and verify state, and reconnects ssh session
         timeout -optional-time to wait on instance to go to state 'state' before failing
@@ -2044,6 +2047,8 @@ class EuInstance(Instance, TaggedResource, Machine):
                     for vol in badvols:
                         msg = msg + "\nVolume:" + vol.id + " Local Dev:" + vol.guestdev
                     raise Exception("Missing volumes post reboot:" + str(msg) + "\n")
+            if check_enis:
+                self.check_eni_attachments(local_dev_timeout=timeout)
         self.log.debug(self.id + " start_instance_and_verify Success")
 
     def mount_attached_volume(self,
@@ -2515,7 +2520,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         else:
             self.log.debug('System is showing ENI:{0} attached. Moving on to guest checks...'
                            .format(eni.id))
-        if local_dev_timeout is None or not self.ssh:
+        if local_dev_timeout is None or not self.ssh or self.status != 'running':
             self.log.debug('local_dev_timeout or self.ssh is None, not waiting for device to'
                            ' appear on guest')
             return (eni, None)
@@ -2620,7 +2625,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         else:
             self.log.debug('System is showing ENI:{0} detached. Moving on to guest checks...'
                            .format(eni.id))
-        if local_dev_timeout is None or not self.ssh:
+        if local_dev_timeout is None or not self.ssh or self.status != 'running':
             self.log.debug('local_dev_timeout or self.ssh is None. Skipping local device '
                            'checks on ENI:{0} detach'.format(eni.id))
             return eni

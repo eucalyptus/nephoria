@@ -3427,12 +3427,11 @@ class VpcBasics(CliTestRunner):
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
 
-    def test6e0_eni_runtime_attach_detach_mutiple_eni_w_eip_and_terminate(self):
+    def test6e0_eni_runtime_attach_mutiple_eni_w_eip_and_delete_on_terminate(self):
         """
         Request multiple ENIs during the run instance request.
         Verify the network devices on are present on the guests, and the ENI attributes have
         the correct values.
-        A gateway instance within the subnet is used to proxy ssh traffic over the private
         subnet of the primary ENI to the instance under test.
         """
         user = self.user
@@ -3476,11 +3475,64 @@ class VpcBasics(CliTestRunner):
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
 
-    def test6e1_eni_multiple_attach_on_run_detach(self):
-        raise NotImplementedError()
-
     def test6e2_eni_ebs_multiple_attach_on_run_stop_start_detach(self):
-        raise NotImplementedError()
+        """
+            Using an EBS backed Instance...
+            Request multiple ENIs during the run instance request.
+            Verify the network devices on are present on the guests, and the ENI attributes have
+            the correct values.
+            subnet of the primary ENI to the instance under test.
+            """
+        user = self.user
+        emi = user.ec2.get_emi(root_device_type='ebs', not_platform='windows')
+        if not emi:
+            raise SkipTestException('Could not find an EBS backed image for this test?')
+        vpc = self.test6b0_get_vpc_for_eni_tests()
+        subnets = []
+        group = self.get_test_security_groups(vpc=vpc, count=1, user=user)[0]
+
+        try:
+            for zone in self.zones:
+                subnet = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
+                                                                   count=1)[0]
+                subnets.append(subnet)
+
+                eni1, eni2, eni3 = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=2)
+                eip = user.ec2.allocate_address()
+                eip.associate(network_interface_id=eni1.id)
+                eni_collection = user.ec2.create_network_interface_collection(eni=eni1,
+                                                                              subnet=subnet,
+                                                                              zone=zone,
+                                                                              groups=group)
+                eni_collection.add_eni(eni2, groups=[group.id], delete_on_termination=True)
+                eni_collection.add_eni(eni3, groups=[group.id], delete_on_termination=False)
+
+                test_vm = self.create_test_instances(subnet=subnet,
+                                                     count=1,
+                                                     monitor_to_running=True,
+                                                     network_interace_collection=eni_collection,
+                                                     auto_connect=True)[0]
+                test_vm.show_enis()
+                for eni in [eni1, eni2, eni3]:
+                    if not test_vm.get_network_local_device_for_eni(eni):
+                        test_vm.show_network_device_info()
+                        raise RuntimeError('Device for {0} not found on guest:{1} in running '
+                                           'state'.format(eni, test_vm.id))
+                self.status('Stopping instance:{0} and checking eni status'.format(test_vm.id))
+                # euinstance stop_start methods contain eni checks...
+                test_vm.stop_instance_and_verify()
+                self.status('Starting intance:{0} and checking eni status'.format(test_vm.id))
+                test_vm.start_instance_and_verify()
+                self.status('Done with. Stop / Start checks. Terminating VM:{0} and checking '
+                            'ENI status'.format(test_vm.id))
+                test_vm.terminate_and_verify()
+                self.status('Success. EBS stop/start multiple ENI verification complete for '
+                            'zone:{0}'.format(zone))
+
+        finally:
+            for subnet in subnets:
+                self.status('Attempting to delete subnet and dependency artifacts from this test')
+                user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
     def test6f1_eni_per_vmtype_test(self):
         """
