@@ -487,7 +487,6 @@ class EuInstance(Instance, TaggedResource, Machine):
                 enipt.align[title] = 'l'
                 enipt.padding_width = 0
                 enipt.horizontal_char = "="
-                dot = "?"
                 eni_info_pt = PrettyTable(['key', 'value'])
                 eni_info_pt.header = False
                 key_len = 8
@@ -496,6 +495,9 @@ class EuInstance(Instance, TaggedResource, Machine):
                 eni_info_pt.padding_width = 1
                 eni_info_pt.border = False
                 eni_info_pt.align = 'l'
+                dot = "?"
+                if eni.attachment:
+                    dot = eni.attachment.delete_on_termination
                 eni_info_pt.add_row(['ID:'.ljust(key_len), str(eni.id).ljust(val_len)])
                 eni_info_pt.add_row(['VPC:', getattr(eni, 'vpc_id', None)])
                 eni_info_pt.add_row(['SUBNET:', getattr(eni, 'subnet_id', None)])
@@ -1284,40 +1286,53 @@ class EuInstance(Instance, TaggedResource, Machine):
                 """
                 Perform Post termination checks on ENI...
                 """
-                dot = eni.attachment.delete_on_termination
+                self.log.debug('Checking ENI:{0} status post {1} termination. '
+                               'Status:{2}, Attachment-Status:{3}'
+                               .format(eni, self.id, getattr(eni, 'status', None),
+                                       getattr(getattr(eni, 'attachment', None), 'status', None)))
+                # Check delete on terminate attribute we applied beforehand...
+                dot = eni.dot
                 try:
                     eni.update()
                 except EC2ResponseError as EE:
-                    if int(E.status) == 400 and E.reason == 'InvalidNetworkInterfaceID.NotFound':
+                    if int(EE.status) == 400 and EE.reason == 'InvalidNetworkInterfaceID.NotFound':
                         if eni.dot:
                             self.log.debug('{0} was properly deleted per "delete_on_terminate" '
                                            'flag'.format(eni.id))
-                            return
+                            eni.status = 'deleted'
+                            eni.attachment = None
                         else:
                             self.log.error("{0} not found on update, and delete on terminate flag"
                                            "was not set?".format(eni.id))
                             raise EE
-
-                if eni.status != 'available':
-                    raise ValueError('{0} status != "available" post {1} termination'
-                                     .format(eni.id, self.id))
-                if eni.attachment:
-                    if eni.attachment.instance_id != self.id:
+                if eni.status != 'deleted':
+                    if eni.status != 'available':
+                        raise ValueError('{0} status != "available" post {1} termination'
+                                         .format(eni.id, self.id))
+                    if eni.attachment:
+                        if eni.attachment.instance_id != self.id:
+                            if eni.dot:
+                                raise ValueError('ENI {0} should have been "deleted on '
+                                                 'termination" of {1} but is now attached to {2}'
+                                                 .format(eni.id, self.id,
+                                                         eni.attachment.instance_id))
+                        raise ValueError('{0} attachment is still present post termination of {1},'
+                                         ' eni status:{2}'.format(eni.id,
+                                                                  self.id,
+                                                                  getattr(eni, 'status', None)))
+                    else:
                         if eni.dot:
-                            raise ValueError('ENI {0} should have been "deleted on termination" '
-                                             'of {1} but is now attached to {2}'
-                                             .format(eni.id, self.id, eni.attachment.instance_id))
-                    raise ValueError('{0} attachment is still present post termination of {1}, '
-                                     'attachment status:{2}'.format(eni.id, self.id,
-                                                                    eni.attachment.status))
-                else:
-                    if eni.dot:
-                        raise ValueError('ENI {0} "delete_on_terminate" flag was set but ENI is '
-                                         'still present post {1} termination'.format(eni.id,
-                                                                                     self.id))
+                            raise ValueError('ENI {0} "delete_on_terminate" flag was set but '
+                                             'ENI is still present post {1} termination'
+                                             .format(eni.id, self.id))
+                self.log.debug('SUCCESS: ENI:{0} entered correct state post {1} termination. '
+                               'Status:{2}, Attachment-Status:{3}'
+                               .format(eni, self.id, getattr(eni, 'status', None),
+                                       getattr(getattr(eni, 'attachment', None), 'status', None)))
 
-
-            while good_enis < len(enis) and elapsed < timeout:
+            eni = None
+            # Poll ENI status until all ENIs are good, or the timeout is reached...
+            while len(good_enis) < len(enis) and elapsed < timeout:
                 last_errors = ""
                 elapsed = int(time.time() - start)
                 attempts += 1
@@ -1329,15 +1344,29 @@ class EuInstance(Instance, TaggedResource, Machine):
                             eni_check(eni)
                             good_enis.append(eni)
                         except Exception as E:
-                            last_errors += 'ERROR {0}: "{1}"\n'.format(E)
-                self.log.debug('Waiting on {0} ENIs to enter proper status post {2} terminate. '
-                               'Attempts: {3} Elapsed:{4}.\nLatest ENI errors:\n{5}'
-                               .format(len(enis) - len(good_enis), self.id, attempts, elapsed,
-                                       last_errors))
-
+                            self.log.debug(get_traceback())
+                            msg = 'ENI:{0}, ERROR: "{1}"\n'.format(eni.id, E)
+                            self.log.debug(msg)
+                            last_errors += msg
+                if last_errors:
+                    self.log.debug('Waiting on {0} ENIs to enter proper status post {1} terminate. '
+                                   'Attempts: {2} Elapsed:{3}.\nLatest ENI errors:\n{4}'
+                                   .format(len(enis) - len(good_enis), self.id, attempts, elapsed,
+                                           last_errors))
+                    try:
+                        self.log.debug(self.show_enis(printme=False))
+                    except Exception as SE:
+                        self.log.warning('{0}\nIGNORING ERROR in show_enis() attempt:{1}'
+                                         .format(get_traceback(), SE))
+                    time.sleep(2)
+            # Check to see if all the ENIs were considered 'good'...
             if len(good_enis) != len(enis):
-                err_buff += "\nENI Errors detected post terminate:{0}".format(last_errors)
+                self.log.error('Elapsed:{0}, Good ENIs:"{1}", TOTAL ENIS:"{2}"'.
+                               format(elapsed, good_enis, enis))
+                err_buff += '\nENI Errors detected post terminate after elapsed:{0}/{1}. ' \
+                            'Errors:"{1}"'.format(elapsed, timeout, last_errors)
 
+        # Report the sum of errors if any...
         if err_buff:
             self.log.error("{0}, errors found during instance terminate_and_verify:\n{1}"
                             .format(self.id,err_buff))
@@ -2433,8 +2462,9 @@ class EuInstance(Instance, TaggedResource, Machine):
         else:
             self.log.debug('System is showing ENI:{0} attached. Moving on to guest checks...'
                            .format(eni.id))
-        if local_dev_timeout is None:
-            self.log.debug('local_dev_timeout is None, not waiting for device to appear on guest')
+        if local_dev_timeout is None or not self.ssh:
+            self.log.debug('local_dev_timeout or self.ssh is None, not waiting for device to'
+                           ' appear on guest')
             return (eni, None)
         start = time.time()
         elapsed = 0
@@ -2537,8 +2567,9 @@ class EuInstance(Instance, TaggedResource, Machine):
         else:
             self.log.debug('System is showing ENI:{0} detached. Moving on to guest checks...'
                            .format(eni.id))
-        if local_dev_timeout is None:
-            self.log.debug('Skipping local device checks on ENI:{0} detach'.format(eni.id))
+        if local_dev_timeout is None or not self.ssh:
+            self.log.debug('local_dev_timeout or self.ssh is None. Skipping local device '
+                           'checks on ENI:{0} detach'.format(eni.id))
             return eni
         start = time.time()
         elapsed = 0
