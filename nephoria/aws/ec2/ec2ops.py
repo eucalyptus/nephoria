@@ -3938,7 +3938,7 @@ disable_root: false"""
                   image=None,
                   keypair=None,
                   group="default",
-                  type=None,
+                  vmtype=None,
                   zone=None,
                   min=1,
                   max=1,
@@ -3963,7 +3963,7 @@ disable_root: false"""
         :param image: image object or string image_id to create instances with
         :param keypair: keypair to create instances with
         :param group: security group (or list of groups) to run instances in
-        :param type: vmtype to run instances as
+        :param vmtype: vmtype to run instances as
         :param zone: availability zone (aka cluster, aka parition) to run instances in
         :param min: minimum amount of instances to try to run
         :param max: max amount of instances to try to run
@@ -4039,7 +4039,7 @@ disable_root: false"""
                         else:
                             raise ValueError('Unknown arg passed for group to RunImage,'
                                              ' group: "{0}", (type:{1})'
-                                             .format(group, type(group)))
+                                             .format(group, vmtype(group)))
                         secgroups.append(group)
 
 
@@ -4118,18 +4118,18 @@ disable_root: false"""
             try:
                 self.connection.debuglevel = boto_debug_level
                 reservation = self.connection.run_instances(image_id = image.id,
-                                                     key_name=keypair,
-                                                     security_group_ids=secgroups,
-                                                     instance_type=type,
-                                                     placement=zone,
-                                                     min_count=min,
-                                                     max_count=max,
-                                                     user_data=user_data,
-                                                     addressing_type=addressing_type,
-                                                     block_device_map=block_device_map,
-                                                     subnet_id=subnet_id,
-                                                     network_interfaces=network_interfaces,
-                                                     **boto_run_args)
+                                                            key_name=keypair,
+                                                            security_group_ids=secgroups,
+                                                            instance_type=vmtype,
+                                                            placement=zone,
+                                                            min_count=min,
+                                                            max_count=max,
+                                                            user_data=user_data,
+                                                            addressing_type=addressing_type,
+                                                            block_device_map=block_device_map,
+                                                            subnet_id=subnet_id,
+                                                            network_interfaces=network_interfaces,
+                                                            **boto_run_args)
             except:
                 self.connection.debuglevel = orig_boto_debug_level
                 raise
@@ -4472,6 +4472,8 @@ disable_root: false"""
                                  'and/or default not found. Zone filter:"{0}")'.format(zone))
             subnet_id = subnet.id
             groups = groups or []
+            if not isinstance(groups, list):
+                groups = [groups]
             security_group_ids = []
             # sanitize the groups param
             for group in groups:

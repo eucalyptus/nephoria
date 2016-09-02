@@ -174,10 +174,10 @@ class VpcBasics(CliTestRunner):
                                  .format(zone))
             subnet = subnet[0]
             pi = user.ec2.run_image(image=self.emi, keypair=self.get_keypair(user),
-                                         group=self.group,
-                                         subnet_id = subnet.id, zone=zone,
-                                         type=self.args.proxy_vmtype,
-                                         systemconnection=self.tc.sysadmin)[0]
+                                    group=self.group,
+                                    subnet_id = subnet.id, zone=zone,
+                                    vmtype=self.args.proxy_vmtype,
+                                    systemconnection=self.tc.sysadmin)[0]
             proxy_instances[zone] = pi
             self._proxy_instances = proxy_instances
         return pi
@@ -677,7 +677,7 @@ class VpcBasics(CliTestRunner):
     @printinfo
     def create_test_instances(self, emi=None, key=None, group=None, zone=None, subnet=None,
                               count=1, monitor_to_running=True, auto_connect=True, tag=True,
-                              user=None):
+                              network_interface_collection=None, user=None):
         """
         Creates test instances using the criteria provided. This method is intended to be
         called from 'get_test_instances()'.
@@ -687,7 +687,8 @@ class VpcBasics(CliTestRunner):
         :param group: group obj or id
         :param zone: zone name
         :param subnet: subnet obj or id
-        :param count: numer of VMs to run
+        :param count: number of VMs to run
+        :param network_interface_collection: boto NetworkInterfaceCollection() object
         :param monitor_to_running: bool, if True will monitor instances and verify they are in a
                                   correct working and accessible state.
         "param auto_connect: bool, if True will attempt to automatically setup ssh connections
@@ -730,6 +731,7 @@ class VpcBasics(CliTestRunner):
                                        max=count,
                                        auto_connect=auto_connect,
                                        monitor_to_running=False,
+                                       network_interface_collection=network_interface_collection,
                                        systemconnection=self.tc.sysadmin)
         for instance in instances:
             assert isinstance(instance, EuInstance)
@@ -3425,8 +3427,53 @@ class VpcBasics(CliTestRunner):
                 user.ec2.delete_subnet_and_dependency_artifacts()
 
 
-    def test6e0_eni_attach_on_run_detach(self):
-        raise NotImplementedError()
+    def test6e0_eni_runtime_attach_detach_mutiple_eni_w_eip_and_terminate(self):
+        """
+        Request multiple ENIs during the run instance request.
+        Verify the network devices on are present on the guests, and the ENI attributes have
+        the correct values.
+        A gateway instance within the subnet is used to proxy ssh traffic over the private
+        subnet of the primary ENI to the instance under test.
+        """
+        user = self.user
+        vpc = self.test6b0_get_vpc_for_eni_tests()
+        instances = []
+        subnets = []
+        group = self.get_test_security_groups(vpc=vpc, count=1, user=user)[0]
+
+        try:
+            for zone in self.zones:
+                subnet = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
+                                                                   count=1)[0]
+                subnets.append(subnet)
+
+                eni1, eni2, eni3 = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=2)
+                eip = user.ec2.allocate_address()
+                eip.associate(network_interface_id=eni1.id)
+                eni_collection = user.ec2.create_network_interface_collection(eni=eni1,
+                                                                              subnet=subnet,
+                                                                              zone=zone,
+                                                                              groups=group)
+                eni_collection.add_eni(eni2, groups=[group.id], delete_on_termination=True)
+                eni_collection.add_eni(eni3, groups=[group.id], delete_on_termination=False)
+
+                test_vm = self.create_test_instances(subnet=subnet,
+                                                     count=1,
+                                                     monitor_to_running=True,
+                                                     network_interace_collection=eni_collection,
+                                                     auto_connect=True)[0]
+                test_vm.show_enis()
+                for eni in [eni1, eni2, eni3]:
+                    if not test_vm.get_network_local_device_for_eni(eni):
+                        test_vm.show_network_device_info()
+                        raise RuntimeError('Device for {0} not found on guest:{1} in running '
+                                           'state'.forat(eni, test_vm.id))
+                test_vm.terminate_and_verify()
+
+        finally:
+            for subnet in subnets:
+                self.status('Attempting to delete subnet and dependency artifacts from this test')
+                user.ec2.delete_subnet_and_dependency_artifacts()
 
     def test6e1_eni_multiple_attach_on_run_detach(self):
         raise NotImplementedError()

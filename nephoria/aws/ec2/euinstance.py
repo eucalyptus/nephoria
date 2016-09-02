@@ -54,7 +54,7 @@ from cloud_utils.net_utils import get_network_info_for_cidr, test_port_status
 from cloud_utils.net_utils.sshconnection import SshConnection, CommandExitCodeException, \
     CommandTimeoutException
 from cloud_utils.system_utils.machine import Machine
-from cloud_utils.log_utils import get_traceback, markup, TextStyle, ForegroundColor, \
+from cloud_utils.log_utils import get_traceback, markup, TextStyle, ForegroundColor, red, \
     BackGroundColor
 from nephoria.aws.ec2.euvolume import EuVolume
 from nephoria.euca.taggedresource import TaggedResource
@@ -2250,12 +2250,17 @@ class EuInstance(Instance, TaggedResource, Machine):
 
     def get_network_device_info(self, name=None, prefix='/sys/class/net/'):
         ret = {}
+        ipv4_info = self.get_network_ipv4_info()
         dev_names = self.sys('ls -1 {0}'.format(prefix), code=0)
         for dev_name in dev_names:
+            dev = {}
             dev_name = str(dev_name).strip()
             if name and dev_name != name:
                 continue
-            dev = {}
+            dev_ipv4_info = ipv4_info.get(dev_name) or {}
+            dev['local_ip'] = dev_ipv4_info.get('ip', None)
+            dev['local_cidr'] = dev_ipv4_info.get('network_cidr', None)
+
             dev_path = os.path.join(prefix, dev_name)
 
             # Get MAC address...
@@ -2267,6 +2272,19 @@ class EuInstance(Instance, TaggedResource, Machine):
             else:
                 self.log.warning('Failed to parse MAC info for:{0}'.format(dev_name))
                 dev['address'] = None
+            dev['eni_index'] = None
+            dev['eni'] = None
+            dev['eni_private_ips'] = None
+            dev['eni_public_ip'] = None
+            if dev['address']:
+                for interface in self.interfaces:
+                    if interface.mac_address == dev['address']:
+                        dev['eni'] = interface.id
+                        dev['eni_private_ips'] = [str(x.private_ip_address) for x in
+                                                  interface.private_ip_addresses]
+                        dev['eni_public_ip'] = getattr(interface, 'publicIp', None)
+                        if interface.attachment:
+                            dev['eni_index'] = interface.attachment.device_index
             # Get the operation state...
             oper_path = os.path.join(dev_path, 'operstate')
             try:
@@ -2275,7 +2293,24 @@ class EuInstance(Instance, TaggedResource, Machine):
                 self.log.debug(TE)
                 dev['operstate'] = None
             ret[dev_name] = dev
+        macs = [x.get('address') for x in ret.values()]
+        for interface in self.interfaces:
+            if interface.mac_address not in macs:
+                self.log.warning(red('ENI:{0} MAC:{1} not found on this instance'
+                                     .format(interface.id, interface.mac_address)))
         return ret
+
+    def get_network_local_device_for_eni(self, eni):
+        if isinstance(eni, basestring):
+            enis = self.connection.get_all_network_interfaces([eni])
+            if not enis:
+                raise ValueError('Could not fetch ENI for {0}'.format(eni))
+            eni = enis[0]
+        net_info = self.get_network_device_info()
+        for dev, info in net_info.iteritems():
+            if eni.mac_address and eni.mac_address == info.get('address', None):
+                return info
+        return None
 
     def show_network_device_info(self, dev_name=None, dev_info=None,  printme=True,
                                  printmethod=None):
