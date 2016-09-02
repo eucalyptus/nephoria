@@ -3512,13 +3512,25 @@ class VpcBasics(CliTestRunner):
                 for eni in enis[1:]:
                     eni_collection.add_eni(eni, groups=[group.id], delete_on_termination=True)
 
-
+                self.status('Running instance with {0} enis, vmtype limit:{1}. Performing eni '
+                            'attachment verification post run...'.format(len(enis),
+                                                                         vmtype.networkinterfaces))
                 test_vm = self.create_test_instances(subnet=subnet,
                                                      count=1,
                                                      monitor_to_running=True,
                                                      network_interace_collection=eni_collection,
                                                      auto_connect=True)[0]
                 test_vm.show_enis()
+                self.status('Successfully attached {0} enis to {1}, vmtype limit:{2}'
+                            .format(len(test_vm.interfaces), test_vm.id, vmtype.networkinterfaces))
+                self.status('Attempting to exceed the vmtype limit by attached 1 additional eni')
+                try:
+                    bad_eni = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=1)[0]
+                    test_vm.attach_eni(bad_eni)
+                except EC2ResponseError as EE:
+                    if int(EE.status) == 400 and EE.reason == 'AttachmentLimitExceeded':
+                        self.status('Success. Was not able to exceed vmtype:{0} limit:{1}'
+                                    .format(vmtype.name, vmtype.networkinterfaces))
 
         finally:
             for subnet in subnets:

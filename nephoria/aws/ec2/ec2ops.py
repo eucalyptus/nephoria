@@ -3954,6 +3954,7 @@ disable_root: false"""
                   return_reservation=False,
                   auto_create_eni=True,
                   network_interfaces=None,
+                  check_enis=True,
                   timeout=480,
                   systemconnection=None,
                   boto_debug_level=2,
@@ -4183,14 +4184,27 @@ disable_root: false"""
                                     ", err:\n" + str(e))
             if monitor_to_running:
                 instances = self.monitor_euinstances_to_running(instances, timeout=timeout)
+            if check_enis:
+                for instance in instances:
+                    instance.check_eni_attachments()
+                    if network_interfaces:
+                        expected_eni = len(network_interfaces)
+                    else:
+                        expected_eni = 1
+                    if expected_eni != len(instance.intefaces):
+                        raise ValueError('Network interfaces:{0} in request, expected {1} '
+                                         'interfaces on resulting VM. Got:{2}'
+                                         .format(len(network_interfaces),
+                                                 expected_eni,
+                                                 len(instance.interfaces)))
             if return_reservation:
                 reservation.instances = instances
                 return reservation
             return instances
         except Exception as E:
             trace = get_traceback()
-            self.log.error('{0}\n!!! Run_instance failed, terminating reservation. Error: {1}'
-                           .format(trace, E))
+            self.log.error('{0}\n!!! Run_instance failed, terminating reservation:{1}. Error: {2}'
+                           .format(trace, clean_on_fail, E))
             if reservation and clean_on_fail:
                 self.terminate_instances(reservation=reservation)
             raise E
