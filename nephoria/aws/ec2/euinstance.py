@@ -2371,8 +2371,28 @@ class EuInstance(Instance, TaggedResource, Machine):
             printmethod = printmethod or self.log.info
             printmethod("\n{0}\n".format(pt))
 
+    def check_eni_attachments(self, verbose=True, local_dev_timeout=60):
+        """
+        Checks all eni attached ENI using the list currenntly in self.interfaces.
+        If local_dev_timeout is not None then the local guest is polled for a device with
+        matching mac address until found or timeout is reached.
 
-    def attach_eni(self, eni, index=None, local_dev_timeout=60):
+        Args:
+            local_dev_timeout: The time to wait for the device to show up on the guest before
+                               erroring out. If this timeout is None, this check is not performed.
+
+        Returns: list of updated eni objs
+
+        """
+        if verbose:
+            self.show_enis()
+        enis = []
+        for eni in self.interfaces:
+            enis.append(self.check_eni_attachment(eni, local_dev_timeout=local_dev_timeout))
+        return enis
+
+
+    def attach_eni(self, eni, index=None, check_only=False, local_dev_timeout=60):
         """
         Attaches an ENI to this instance and peforms basic validation on the attachment.
         Checks the attachment info,  device index in the response for the ENI and instance, etc.
@@ -2381,6 +2401,8 @@ class EuInstance(Instance, TaggedResource, Machine):
             eni: eni id, or boto obj.
             index: Device index to provide in the attach request. If 'None' this method will
                    attempt to provide a free index value.
+            check_only: Boolean, will send an attach request but instead will run the attachment
+                        checks.
             local_dev_timeout: The time to wait for the device to show up on the guest before
                                erroring out. If this timeout is None, this check is not performed.
 
@@ -2411,10 +2433,41 @@ class EuInstance(Instance, TaggedResource, Machine):
             raise ValueError('Could not find free network device index on this instance?')
         self.log.debug('Devices on guest before ENI:{0} attach:"{1}"'.format(eni.id,
                                                                              pre_attach_net_devs))
-        self.log.debug('Sending attach request now for ENI:{0}'.format(eni.id))
-        eni.attach(self.id, indx)
-        eni.update()
+        if check_only:
+            self.log.debug('check_only: {0}, not sending attach request...')
+        else:
+            self.log.debug('Sending attach request now for ENI:{0}'.format(eni.id))
+            eni.attach(self.id, indx)
+            eni.update()
+        return self.check_eni_attachment(eni, index=indx, local_dev_timeout=local_dev_timeout)
+
+
+    def check_eni_attachment(self, eni, index=None, local_dev_timeout=60):
+        """
+        Checks a give ENI for the proper attribute status.
+        If local_dev_timeout is not None then the local guest is polled for a device with
+        matching mac address until found or timeout is reached.
+        Args:
+            eni: an eni id or eni obj to check
+            index: The expected attachment index for this eni, by default this is derived
+                   from the local self.interfaces information.
+            local_dev_timeout: The time to wait for the device to show up on the guest before
+                               erroring out. If this timeout is None, this check is not performed.
+
+        Returns: update eni obj
+
+        """
+        if isinstance(eni, basestring):
+            enis = self.connection.get_all_network_interfaces([str(eni)])
+            if not enis:
+                raise ValueError('Could not fetch ENI for provided value:{0}'.format(eni))
+            eni = enis[0]
+            self.log.debug('Found ENI: {0}'.format(eni.id))
         self.update()
+        eni.update()
+        if not eni.attachment:
+            raise ValueError('ENI:{0} does not have attachment data after update()'.format(eni.id))
+        indx = index or eni.attachment.device_index
         start = time.time()
         elapsed = 0
         attempts = 0
@@ -2470,7 +2523,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         elapsed = 0
         attempts = 0
         dev_found = False
-
+        dev = None
         while elapsed < local_dev_timeout and not dev_found:
             elapsed = int(time.time() - start)
             attempts += 1

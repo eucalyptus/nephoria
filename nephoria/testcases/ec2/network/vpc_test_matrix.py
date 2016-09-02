@@ -3467,13 +3467,14 @@ class VpcBasics(CliTestRunner):
                     if not test_vm.get_network_local_device_for_eni(eni):
                         test_vm.show_network_device_info()
                         raise RuntimeError('Device for {0} not found on guest:{1} in running '
-                                           'state'.forat(eni, test_vm.id))
+                                           'state'.format(eni, test_vm.id))
                 test_vm.terminate_and_verify()
 
         finally:
             for subnet in subnets:
                 self.status('Attempting to delete subnet and dependency artifacts from this test')
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)
+
 
     def test6e1_eni_multiple_attach_on_run_detach(self):
         raise NotImplementedError()
@@ -3482,7 +3483,48 @@ class VpcBasics(CliTestRunner):
         raise NotImplementedError()
 
     def test6f1_eni_per_vmtype_test(self):
-        raise NotImplementedError()
+        """
+        Verify that a user can attach the number of ENIs the vmtype allows.
+        Verify that if a user attemtps to exceed the # of ENIs the proper error is returned.
+        "AttachmentLimitExceeded"
+        """
+        user = self.user
+        vpc = self.test6b0_get_vpc_for_eni_tests()
+        instances = []
+        subnets = []
+        group = self.get_test_security_groups(vpc=vpc, count=1, user=user)[0]
+        vmtype = user.ec2.get_vm_type_info('m1.large')
+
+        try:
+            for zone in self.zones:
+                subnet = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
+                                                                   count=1)[0]
+                subnets.append(subnet)
+                enis = self.get_test_enis_for_subnet(subnet=subnet, user=user,
+                                                     count=vmtype.networkinterfaces)
+                eni1 =enis[0]
+                eip = user.ec2.allocate_address()
+                eip.associate(network_interface_id=eni1.id)
+                eni_collection = user.ec2.create_network_interface_collection(eni=eni1,
+                                                                              subnet=subnet,
+                                                                              zone=zone,
+                                                                              groups=group)
+                for eni in enis[1:]:
+                    eni_collection.add_eni(eni, groups=[group.id], delete_on_termination=True)
+
+
+                test_vm = self.create_test_instances(subnet=subnet,
+                                                     count=1,
+                                                     monitor_to_running=True,
+                                                     network_interace_collection=eni_collection,
+                                                     auto_connect=True)[0]
+                test_vm.show_enis()
+
+        finally:
+            for subnet in subnets:
+                self.status('Attempting to delete subnet and dependency artifacts from this test')
+                user.ec2.delete_subnet_and_dependency_artifacts(subnet)
+
 
     def test6h1_eni_eip_basic_test(self):
         """
