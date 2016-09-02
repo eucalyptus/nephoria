@@ -2520,7 +2520,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         else:
             self.log.debug('System is showing ENI:{0} attached. Moving on to guest checks...'
                            .format(eni.id))
-        if local_dev_timeout is None or not self.ssh or self.status != 'running':
+        if local_dev_timeout is None or not self.ssh or self.state != 'running':
             self.log.debug('local_dev_timeout or self.ssh is None, not waiting for device to'
                            ' appear on guest')
             return (eni, None)
@@ -2625,7 +2625,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         else:
             self.log.debug('System is showing ENI:{0} detached. Moving on to guest checks...'
                            .format(eni.id))
-        if local_dev_timeout is None or not self.ssh or self.status != 'running':
+        if local_dev_timeout is None or not self.ssh or self.state != 'running':
             self.log.debug('local_dev_timeout or self.ssh is None. Skipping local device '
                            'checks on ENI:{0} detach'.format(eni.id))
             return eni

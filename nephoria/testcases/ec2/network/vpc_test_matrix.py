@@ -3720,7 +3720,11 @@ class VpcBasics(CliTestRunner):
     def test6m1_eni_migration_test(self):
         raise NotImplementedError()
 
-    def test6n1_eni_swap_between_vms(self):
+    def test6n1_eni_swap_between_vms_packet_test(self):
+        """
+        Verify connectivity moving a network interface between two or more VMs, and back.
+        Check ENI attribute state and verify packets are going to the correct recipient. 
+        """
         raise NotImplementedError()
 
     def test6p1_eni_secondary_eni_basic_packet_tests(self):
