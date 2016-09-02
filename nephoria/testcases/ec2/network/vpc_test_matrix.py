@@ -731,7 +731,7 @@ class VpcBasics(CliTestRunner):
                                        max=count,
                                        auto_connect=auto_connect,
                                        monitor_to_running=False,
-                                       network_interface_collection=network_interface_collection,
+                                       network_interfaces=network_interface_collection,
                                        systemconnection=self.tc.sysadmin)
         for instance in instances:
             assert isinstance(instance, EuInstance)
@@ -3538,11 +3538,132 @@ class VpcBasics(CliTestRunner):
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
 
-    def test6h1_eni_eip_basic_test(self):
+    def test6h1_eni_eip_reassociate_basic_test(self):
         """
-        assoc /diss-assoc EIP test
+        Test running a VM with an eip associated with the primary ENI.
+        Verify connectivity to the EIP using ssh/ping.
+        Swap in another EIP and verifiy connectivity using ssh/ping.
+        Move the EIP to another VM's ENI and verify connectivity to the new instance using
+        ssh/ping.
         """
-        raise NotImplementedError()
+        user = self.user
+        vpc = self.test6b0_get_vpc_for_eni_tests()
+        subnets = []
+        group = self.get_test_security_groups(vpc=vpc, count=1, user=user)[0]
+        def check_tcp_status(vm, timeout=30):
+            vm.update()
+            ip = vm.ip_address
+            start = time.time()
+            elapsed = 0
+            attempts = 0
+            while elapsed < timeout:
+                attempts += 1
+                elapsed = int(time.time() - start)
+                try:
+                    test_port_status(ip, port=22)
+                    self.status('Success. TCP port 22 status is good. IP:{0}, Attempt:{1}, '
+                                   'Elapsed:{2}'.format(ip, attempts, elapsed))
+                    self.status('Checking instance ID in ssh login dir..')
+                    vm.sys('cat testfile | grep {0}'.format(vm.id), code=0)
+                    return vm
+                except (socket.error, socket.timeout) as SE:
+                    self.log.debug('TCP port 22 status failed for ip:"{0}". Attempt:{1}, '
+                                   'elapsed:{2}/{3}'.format(ip, attempts, elapsed, timeout ))
+                    time.sleep(1)
+            raise RuntimeError('TCP port 22 status failed for ip:"{0}". Attempt:{1}, '
+                               'elapsed:{2}/{3}'.format(ip, attempts, elapsed, timeout ))
+        try:
+            for zone in self.zones:
+                subnet = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
+                                                                   count=1)[0]
+                subnets.append(subnet)
+                eni = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=1)[0]
+                eip1 = user.ec2.allocate_address()
+                eip2 = user.ec2.allocate_address()
+                eip1.associate(network_interface_id=eni.id)
+                eni_collection = user.ec2.create_network_interface_collection(eni=eni,
+                                                                               subnet=subnet,
+                                                                               zone=zone,
+                                                                               groups=group)
+
+                self.status('Creating first Test VM with EIP provided in ENI collection at '
+                            'run time...')
+                vm1 = self.create_test_instances(subnet=subnet,
+                                                     count=1,
+                                                     monitor_to_running=True,
+                                                     network_interace_collection=eni_collection,
+                                                     auto_connect=True)[0]
+                vm1.show_enis()
+                self.status('Creating second Test VM...')
+                vm2 = self.create_test_instances(subnet=subnet,
+                                                 count=1,
+                                                 monitor_to_running=True,
+                                                 auto_connect=True)[0]
+                self.status('Testing tcp port 22 status for each VM, this should work on the'
+                            'first attempt. Writing instance ID to login directory for each'
+                            'vm...')
+
+                for vm in [vm1, vm2]:
+                    test_port_status(vm1.ip_address, port=22)
+                    vm.sys('echo "{0}" > testfile'.format(vm.id))
+                self.status('Swapping in eip:{0} for test vm1: {1}'.format(eip2,
+                                                                           vm1.interfaces[0].id))
+                self.status('vm1 {0} before eip {1} swap...'.format(vm1.id, eip2))
+                vm1.show_enis()
+                eip2.associate(network_interface_id=vm1.interfaces[0].id)
+                vm1.update()
+                self.status('VM1 {0} after eip swap...')
+                vm1.show_enis()
+                vm1 = check_tcp_status(vm1)
+
+                self.status('Associating vm1:{0}s original eip:{1} with vm2:{2}...'
+                            .format(vm1.id, eip1, vm2.id))
+                vm2.update()
+                self.status('vm2 {0} before ip {1} association...'.format(vm2.id, eip1))
+                vm2.show_enis()
+                eip1.associate(network_interface_id=vm2.interfaces[0].id)
+                vm2.update()
+                self.status('vm2 {0} after ip {1} association...'.format(vm2.id, eip1))
+                vm2.show_enis()
+                vm2 = check_tcp_status(vm2)
+                self.status('Associating vm1:{0} original eip:{1} nback to vm1:{0}'
+                            .format(vm1.id, eip1))
+
+                self.status('vm1 {0} before eip {1} swap...'.format(vm1.id, eip1))
+                vm1.show_enis()
+                eip1.associate(network_interface_id=vm1.interfaces[0].id)
+                vm1.update()
+                self.status('VM1 {0} after eip swap...')
+                vm1.show_enis()
+                vm1 = check_tcp_status(vm1)
+
+                self.status('Associating vm1:{0}s original eip:{1} with vm2:{2} for the 2nd '
+                            'time...'.format(vm1.id, eip1, vm2.id))
+                vm2.update()
+                self.status('vm2 {0} before ip {1} association...'.format(vm2.id, eip1))
+                vm2.show_enis()
+                eip1.associate(network_interface_id=vm2.interfaces[0].id)
+                vm2.update()
+                self.status('vm2 {0} after ip {1} association...'.format(vm2.id, eip1))
+                vm2.show_enis()
+                vm2 = check_tcp_status(vm2)
+
+                self.status('Associating eip2:{0} with vm2:{1}...'
+                            .format(eip2, vm2.id))
+                vm2.update()
+                self.status('vm2 {0} before ip {1} association...'.format(vm2.id, eip2))
+                vm2.show_enis()
+                eip2.associate(network_interface_id=vm2.interfaces[0].id)
+                vm2.update()
+                self.status('vm2 {0} after ip {1} association...'.format(vm2.id, eip2))
+                vm2.show_enis()
+                vm2 = check_tcp_status(vm2)
+
+                self.status('Success. EIP toggle tests have passed')
+        finally:
+            for subnet in subnets:
+                self.status('Attempting to delete subnet and dependency artifacts from this test')
+                user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
     def test6m1_eni_migration_test(self):
         raise NotImplementedError()

@@ -4191,7 +4191,7 @@ disable_root: false"""
                         expected_eni = len(network_interfaces)
                     else:
                         expected_eni = 1
-                    if expected_eni != len(instance.intefaces):
+                    if expected_eni != len(instance.interfaces):
                         raise ValueError('Network interfaces:{0} in request, expected {1} '
                                          'interfaces on resulting VM. Got:{2}'
                                          .format(len(network_interfaces),
@@ -4373,7 +4373,7 @@ disable_root: false"""
                 raise RuntimeError('Error setting sourceDestCheck for {0}. Value:"{1}"'
                                    .format(eni, source_dest_check))
             eni.update()
-            if str(eni.source_dest_check).uppder() != str(eni.source_dest_check).upper():
+            if str(eni.source_dest_check).upper() != str(eni.source_dest_check).upper():
                 raise ValueError('ENI sourceDestCheck:"{0}" != requsted:"{1}"'
                                  .format(str(eni.source_dest_check).upper(),
                                          str(source_dest_check).upper()))
