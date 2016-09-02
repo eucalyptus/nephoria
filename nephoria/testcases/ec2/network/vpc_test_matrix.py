@@ -3377,7 +3377,7 @@ class VpcBasics(CliTestRunner):
         finally:
             for subnet in subnets:
                 self.status('Attempting to delete subnet and dependency artifacts from this test')
-                user.ec2.delete_subnet_and_dependency_artifacts()
+                user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
     def test6d2_eni_attribute_delete_on_terminate(self):
         """
@@ -3424,7 +3424,7 @@ class VpcBasics(CliTestRunner):
         finally:
             for subnet in subnets:
                 self.status('Attempting to delete subnet and dependency artifacts from this test')
-                user.ec2.delete_subnet_and_dependency_artifacts()
+                user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
 
     def test6e0_eni_runtime_attach_detach_mutiple_eni_w_eip_and_terminate(self):
@@ -3473,7 +3473,7 @@ class VpcBasics(CliTestRunner):
         finally:
             for subnet in subnets:
                 self.status('Attempting to delete subnet and dependency artifacts from this test')
-                user.ec2.delete_subnet_and_dependency_artifacts()
+                user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
     def test6e1_eni_multiple_attach_on_run_detach(self):
         raise NotImplementedError()
