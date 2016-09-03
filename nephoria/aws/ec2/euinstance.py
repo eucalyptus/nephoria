@@ -2343,6 +2343,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         net_info = self.get_network_device_info()
         for dev, info in net_info.iteritems():
             if eni.mac_address and eni.mac_address == info.get('address', None):
+                info['dev_name'] = dev
                 return info
         return None
 
@@ -2867,7 +2868,51 @@ class EuInstance(Instance, TaggedResource, Machine):
 
     def sync_enis_etc_default(self, prefix='eth'):
         # For debian/ubuntu based systems
-        pass
+        raise NotImplementedError('This method needs to be implemented')
+
+    def sync_enis_static(self, exclude_indexes=None):
+        """
+        Attempts to assign ip addresses to interfaces using ifconfig.
+        By default will exclude device index '0'.
+        Args:
+            exclude_indexes: list of device indexes (integers) to exclude. By default (None) the
+            method will exclude device index 0.
+
+        """
+        errors = ""
+        self.update()
+        for eni in self.interfaces:
+            try:
+                dev_info = self.get_network_local_device_for_eni(eni)
+                if not dev_info:
+                    raise RuntimeError('Local dev not found for eni:{0}'.format(eni.id))
+                dev_name = dev_info.get('dev_name')
+                subnet = self.ec2ops.get_subnet(eni.subnet_id)
+                cidr_mask = subnet.cidr_block.split('/')[1]
+                ip_cidr = "{0}/{1}".format(eni.private_ip_address, cidr_mask)
+                self.sys('ifconfig {0} {1}; ifconfig {0} up'.format(dev_name, ip_cidr))
+                new_ip_info = self.get_network_ipv4_info()
+                if not dev_name in new_ip_info:
+                    raise ValueError('IP info not found for dev:{0} on VM:{1}'.format(dev_name,
+                                                                                      self.id))
+                guest_ip = new_ip_info[dev_name].get('ipcidr')
+                if guest_ip != ip_cidr:
+                    raise ValueError('Guest IP:"{0}" != ENIs IP Private IP:{2} '
+                                     'applying changes on guest'
+                                     .format(guest_ip, eni.id, ip_cidr))
+            except Exception as E:
+                self.log.debug(get_traceback())
+                error = 'Error syncing IP info for ENI:{0}, ' \
+                        'ERROR:"{1}"\n'.format(eni.id, E)
+                self.log.warning(error)
+                errors += error
+        self.show_network_device_info()
+
+
+
+
+
+
 
 
 

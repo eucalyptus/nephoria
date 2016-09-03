@@ -3723,7 +3723,7 @@ class VpcBasics(CliTestRunner):
     def test6n1_eni_swap_between_vms_packet_test(self):
         """
         Verify connectivity moving a network interface between two or more VMs, and back.
-        Check ENI attribute state and verify packets are going to the correct recipient. 
+        Check ENI attribute state and verify packets are going to the correct recipient.
         """
         raise NotImplementedError()
 
