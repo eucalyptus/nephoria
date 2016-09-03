@@ -3950,6 +3950,16 @@ class VpcBasics(CliTestRunner):
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
     def test6p1_eni_secondary_eni_basic_packet_tests(self):
+        """
+        Launches 2 VMs each with secondary ENIs. The VMs will have separate subnets for their
+        primary and secondary ENIs.
+        The VMs will attempt to run a simple packet test between ENIs within the same
+        subnet.
+        The packet tests will include udp, tcp, icmp and sctp.
+        The test will adjust the security group rules to allow the traffic type and port(s) for
+        the tests. 
+
+        """
         raise NotImplementedError()
 
 
