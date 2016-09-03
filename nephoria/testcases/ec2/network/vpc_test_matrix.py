@@ -3534,7 +3534,7 @@ class VpcBasics(CliTestRunner):
                 self.status('Attempting to delete subnet and dependency artifacts from this test')
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
-    def test6f1_eni_per_vmtype_test(self):
+    def test6f1_eni_per_vmtype_test(self, vmtype='m1.large'):
         """
         Verify that a user can attach the number of ENIs the vmtype allows.
         Verify that if a user attemtps to exceed the # of ENIs the proper error is returned.
@@ -3545,7 +3545,7 @@ class VpcBasics(CliTestRunner):
         instances = []
         subnets = []
         group = self.get_test_security_groups(vpc=vpc, count=1, user=user)[0]
-        vmtype = user.ec2.get_vm_type_info('m1.large')
+        vmtype = user.ec2.get_vm_type_info(vmtype)
 
         try:
             for zone in self.zones:
@@ -3717,8 +3717,77 @@ class VpcBasics(CliTestRunner):
                 self.status('Attempting to delete subnet and dependency artifacts from this test')
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
-    def test6m1_eni_migration_test(self):
-        raise NotImplementedError()
+    def test6m1_eni_migration_test_with_secondary_eni(self):
+        """
+        Attempts to migrate an instance in each zone with a secondary ENI attached and
+        verify the VMs and their ENIs migrate correctly.
+        """
+        user = self.user
+        vpc = self.test6b0_get_vpc_for_eni_tests()
+        instances = []
+        subnets = []
+        group = self.get_test_security_groups(vpc=vpc, count=1, user=user)[0]
+        def ping_eni_private_ip_from_clc_net_namespace(eni):
+            self.status('Checking eni:{0} private ip:{1} from VPC:{2}\'s network namespace '
+                        'on the CLC...'.format(eni.id, eni.private_ip_address, eni.vpc_id))
+            clc = self.tc.sysadmin.clc_machine
+            ret = clc.ping_cmd(eni.private_ip_address, net_namespace=eni.vpc_id)
+            status = ret.get('status')
+            output = ret.get('output')
+            cmd = ret.get('cmd')
+            if status:
+                raise RuntimeError('Error. Cmd:"{0}", failed with status:{1}. Output:"{2}"'
+                                   .format(cmd, status, output))
+        try:
+            for zone in self.zones:
+                subnet1, subnet2 = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
+                                                                             count=2)
+                subnets += [subnet1, subnet2]
+                eni1, eni2 = self.get_test_enis_for_subnet(subnet=subnet2, user=user, count=2)
+                self.status('Creating VMs for this test...')
+                vm1, vm2 = self.get_test_instances(zone=zone, group_id=group.id, vpc_id=vpc.id,
+                                                   subnet_id=subnet1.id, count=2)
+                self.status('Attaching secondary enis to the test VMs...')
+                vm1.attach_eni(eni1)
+                vm2.attach_eni(eni2)
+                self.status('Configuring secondary ENIs with static IP info on VMs...')
+                vm1.sync_static_ip_config(exclude_indexes=[0])
+                vm2.sync_static_ip_config(exclude_indexes=[0])
+                self.status('Checking the secondary ENI by pinging eachother VM to VM as well'
+                            'as from the CLCs VPC network namespace...')
+                for eni in [eni1, eni2]:
+                    ping_eni_private_ip_from_clc_net_namespace(eni)
+                vm1.sys('ping -c1 -t5 {0}'.format(eni2.private_ip_address))
+                vm2.sys('ping -c1 -t5 {0}'.format(eni1.private_ip_address))
+                self.status('Starting migration for VM:{0} ...'.format(vm1.id))
+                nodes = self.tc.sysadmin.get_hosts_for_node_controllers(instanceid=vm1.id)
+                if not nodes:
+                    raise RuntimeError('Node Controller for vm:{0} not found before migration?')
+                start_node = nodes[0]
+                self.tc.sysadmin.migrate_instance(instance_id=vm1.id)
+                nodes = self.tc.sysadmin.get_hosts_for_node_controllers(instanceid=vm1.id)
+                if not nodes:
+                    raise RuntimeError('Node Controller for vm:{0} not found after migration?')
+                end_node = nodes[0]
+                self.log.debug('VM:{0} migrated from node:{0} to node:{1}'.format(vm1.id,
+                                                                                  start_node,
+                                                                                  end_node))
+                if start_node.hostname != end_node.hostname:
+                    raise ValueError('ERROR: VM:{0} ended up on the same node post migration.'
+                                     ' Starting node:{0}, ending node:{1}'.format(vm1.id,
+                                                                                  start_node,
+                                                                                  end_node))
+                vm1.refresh_ssh()
+                vm1.check_eni_attachments()
+                for eni in [eni1, eni2]:
+                    ping_eni_private_ip_from_clc_net_namespace(eni)
+                vm1.sys('ping -c1 -t5 {0}'.format(eni2.private_ip_address))
+                vm2.sys('ping -c1 -t5 {0}'.format(eni1.private_ip_address))
+                self.status('Migration ENI tests complete for zone:{0}'.format(zone))
+        finally:
+            for subnet in subnets:
+                self.status('Attempting to delete subnet and dependency artifacts from this test')
+                user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
     def test6n1_eni_swap_between_vms_packet_test(self):
         """
@@ -3735,10 +3804,11 @@ class VpcBasics(CliTestRunner):
         Check the testfiles for proper VM ids.
         Swap the ENIs on the 2 non-proxy VMs.
         Re-connect through the proxy vm to the 2 test VMs and verify the testfiles for proper ids.
-        Swap the ENIs back and re-verify.
+        Swap the ENIs back and repeat verifications
         """
         user = self.user
         vpc = self.test6b0_get_vpc_for_eni_tests()
+        instances = []
         subnets = []
         group = self.get_test_security_groups(vpc=vpc, count=1, user=user)[0]
 
@@ -3753,10 +3823,13 @@ class VpcBasics(CliTestRunner):
                 subnet1, subnet2 = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
                                                                              count=2)
                 subnets += [subnet1, subnet2]
-                eni1, eni2, eni3 = self.get_test_enis_for_subnet(subnet=subnet2, user=user, count=3)
+                eni1, eni2, eni3 = self.get_test_enis_for_subnet(subnet=subnet2, user=user,
+                                                                 count=3)
+                self.status('Creating VMs for this test...')
                 vm1, vm2, proxyvm = self.get_test_instances(zone=zone, group_id=group.id,
                                                         vpc_id=vpc.id, subnet_id=subnet1.id,
                                                         count=3)
+                instances = [vm1, vm2, proxyvm]
                 self.status('Writing Instance ID files to guests')
                 for vm in [vm1, vm2, proxyvm]:
                     vm.sys('echo "{0}" > testfile'.format(vm.id))
@@ -3765,13 +3838,15 @@ class VpcBasics(CliTestRunner):
                 vm1.attach_eni(eni1)
                 vm2.attach_eni(eni2)
                 proxyvm.attach_eni(eni3)
+                self.status('Setting up ENI interface IPs with static configurations...')
                 for vm in [vm1, vm2, proxyvm]:
-                    vm.sync_enis_static(exclude_indexes=[0])
+                    vm.sync_enis_static_ip_config(exclude_indexes=[0])
                 self.status('Shutting down the primary interfaces on vm1 and vm2 to ensure '
                             'packet path uses secondary ENIs...')
                 for vm in [vm1, vm2]:
                     net_info = vm.get_network_local_device_for_eni(vm.interfaces[0].id)
                     dev_name = net_info.get('dev_name')
+                    vm.primary_dev = dev_name
                     vm.sys('ifconfig {0} down'.format(dev_name), code=0)
                 self.status('Creating new ssh sessions to vm1 and vm2 through proxy VM3:{0}'
                             .format(proxyvm.id))
@@ -3784,17 +3859,34 @@ class VpcBasics(CliTestRunner):
                 self.status('Proxy SSH connections established, checking id files on guests...')
                 vm_id_check(vm1_ssh, vm1.id)
                 vm_id_check(vm2_ssh, vm2.id)
-                self.status('Swapping ENIs on VM1:{0} and VM2:{2} ...'.format(vm1.id, vm2.id))
+                self.status('Bringing the primary interfaces back up temporarily to allow ssh '
+                            'to connect on those interfaces during secondary eni swap out...')
+
+                vm1_ssh.sys('ifconfig {0} up'.format(vm1.primary_dev), code=0)
+                vm1.refresh_ssh()
+                vm1_ssh.sys('ifconfig {0} up'.format(vm1.primary_dev), code=0)
+                vm2.refresh_ssh()
+                self.status('Swapping secondary ENIs on VM1:{0} and VM2:{2} ...'
+                            .format(vm1.id, vm2.id))
                 self.status('VM1 before swap...')
                 vm1.show_enis()
                 self.status('VM2 before swap...')
                 vm2.show_enis()
-                vm1.detach_eni(eni1, local_dev_timeout=None)
-                vm2.detach_eni(eni2, local_dev_timeout=None)
-                vm1.attach_eni(eni2, local_dev_timeout=None)
-                vm2.attach_eni(eni1, local_dev_timeout=None)
+                vm1.detach_eni(eni1)
+                vm2.detach_eni(eni2)
+                vm1.attach_eni(eni2)
+                vm2.attach_eni(eni1)
+                self.status('Setting up secondary interface IPs with static configurations...')
+                for vm in [vm1, vm2]:
+                    vm.sync_enis_static_ip_config(exclude_indexes=[0])
+                    vm.show_network_device_info()
+                self.status('Shutting down the primary interfaces on vm1 and vm2 to ensure '
+                            'packet path uses secondary ENIs...')
+                for vm in [vm1, vm2]:
+                    vm.sys('ifconfig {0} down'.format(vm.primary_dev), code=0)
+
                 self.status('ENIS have been swapped. Attempting to establish ssh sessions'
-                            'to new ENI attachments...')
+                            'to new secondary ENI attachments through proxy vm...')
                 vm1_ssh = SshConnection(host=vm1.interfaces[1].private_ip_address,
                                         keypath=vm1.keypath, proxy=proxyvm.ip_address,
                                         proxy_keypath=proxyvm.keypath)
@@ -3807,15 +3899,30 @@ class VpcBasics(CliTestRunner):
                 vm_id_check(vm1_ssh, vm1.id)
                 vm_id_check(vm2_ssh, vm2.id)
                 self.status('First ENI swap and packet path checks succeeded...')
+                self.status('Bringing the primary interfaces back up temporarily to allow ssh '
+                            'to connect on those interfaces during secondary eni swap out...')
+
+                vm1_ssh.sys('ifconfig {0} up'.format(vm1.primary_dev), code=0)
+                vm1.refresh_ssh()
+                vm1_ssh.sys('ifconfig {0} up'.format(vm1.primary_dev), code=0)
+                vm2.refresh_ssh()
                 self.status('Swapping ENIs back again...')
                 self.status('VM1 before swap...')
                 vm1.show_enis()
                 self.status('VM2 before swap...')
                 vm2.show_enis()
-                vm1.detach_eni(eni1, local_dev_timeout=None)
-                vm2.detach_eni(eni2, local_dev_timeout=None)
-                vm1.attach_eni(eni2, local_dev_timeout=None)
-                vm2.attach_eni(eni1, local_dev_timeout=None)
+                vm1.detach_eni(eni1)
+                vm2.detach_eni(eni2)
+                vm1.attach_eni(eni2)
+                vm2.attach_eni(eni1)
+                self.status('Setting up secondary interface IPs with static configurations...')
+                for vm in [vm1, vm2]:
+                    vm.sync_enis_static_ip_config(exclude_indexes=[0])
+                    vm.show_network_device_info()
+                self.status('Shutting down the primary interfaces on vm1 and vm2 to ensure '
+                                'packet path uses secondary ENIs...')
+                for vm in [vm1, vm2]:
+                    vm.sys('ifconfig {0} down'.format(vm.primary_dev), code=0)
                 self.status('ENIS have been swapped. Attempting to establish ssh sessions'
                             'to new ENI attachments...')
                 vm1_ssh = SshConnection(host=vm1.interfaces[1].private_ip_address,
@@ -3833,6 +3940,11 @@ class VpcBasics(CliTestRunner):
                 self.status('ENI swap tests complete for zone:{0}'.format(zone))
 
         finally:
+            for vm in instances:
+                try:
+                    vm.terminate_and_verify()
+                except Exception as E:
+                    self.log.debug('{0}\nError:{1}'.format(get_traceback(), E))
             for subnet in subnets:
                 self.status('Attempting to delete subnet and dependency artifacts from this test')
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)

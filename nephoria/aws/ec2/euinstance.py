@@ -2568,7 +2568,8 @@ class EuInstance(Instance, TaggedResource, Machine):
         Args:
             eni: eni id, or boto eni object to detach
             local_dev_timeout: Time to wait for the local guest device to disappear after detaching
-                               the ENI before raising an error.
+                               the ENI before raising an error. If local_dev_timeout is None,
+                               the checks for local devices are skipped.
 
         Returns: The updated detached ENI
 
@@ -2870,7 +2871,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         # For debian/ubuntu based systems
         raise NotImplementedError('This method needs to be implemented')
 
-    def sync_enis_static(self, exclude_indexes=None):
+    def sync_enis_static_ip_config(self, exclude_indexes=None):
         """
         Attempts to assign ip addresses to interfaces using ifconfig.
         By default will exclude device index '0'.
