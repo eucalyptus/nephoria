@@ -42,7 +42,7 @@ from nephoria.testcase_utils.cli_test_runner import CliTestRunner, TestResult, S
 from nephoria.aws.ec2.euinstance import EuInstance
 from cloud_utils.net_utils import packet_test, is_address_in_network, test_port_status, \
     get_network_info_for_cidr
-from cloud_utils.net_utils.sshconnection import CommandExitCodeException
+from cloud_utils.net_utils.sshconnection import CommandExitCodeException, SshConnection
 from cloud_utils.log_utils import markup, printinfo, get_traceback, red, ForegroundColor, \
     BackGroundColor, yellow
 from boto.exception import BotoServerError, EC2ResponseError
@@ -3724,8 +3724,118 @@ class VpcBasics(CliTestRunner):
         """
         Verify connectivity moving a network interface between two or more VMs, and back.
         Check ENI attribute state and verify packets are going to the correct recipient.
+        Run 3 VMs with the primary interfaces in the same subnet, group and with public ips.
+        Write the Instance IDs to files on the guest to use for confirming IP ownership.
+        Create 3 new ENIs in a second subnet and attach 1 ENI to each of the 3 VMs.
+        No public IPs on the 2nd ENIS.
+        Configure the Guests with Static IP assignments using the ENI's private IPS.
+        Shut down the guest interfaces for the primary ENIs on 2 VMs, the 3rd VM will act as
+        an SSH proxy/gateway for the machine running this test.
+        Verify SSH connectivity through the Proxy VM to the guests 2nd ENIs private interfaces.
+        Check the testfiles for proper VM ids.
+        Swap the ENIs on the 2 non-proxy VMs.
+        Re-connect through the proxy vm to the 2 test VMs and verify the testfiles for proper ids.
+        Swap the ENIs back and re-verify.
         """
-        raise NotImplementedError()
+        user = self.user
+        vpc = self.test6b0_get_vpc_for_eni_tests()
+        subnets = []
+        group = self.get_test_security_groups(vpc=vpc, count=1, user=user)[0]
+
+        def vm_id_check(ssh, id):
+            out = ssh.sys('cat testfile'.format(vm.id))[0]
+            out = str(out).strip()
+            if out != id:
+                raise ValueError('Testfile id:"{0}" != "{1}" on host:{2}'
+                                 .format(out, id, ssh.host))
+        try:
+            for zone in self.zones:
+                subnet1, subnet2 = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
+                                                                             count=2)
+                subnets += [subnet1, subnet2]
+                eni1, eni2, eni3 = self.get_test_enis_for_subnet(subnet=subnet2, user=user, count=3)
+                vm1, vm2, proxyvm = self.get_test_instances(zone=zone, group_id=group.id,
+                                                        vpc_id=vpc.id, subnet_id=subnet1.id,
+                                                        count=3)
+                self.status('Writing Instance ID files to guests')
+                for vm in [vm1, vm2, proxyvm]:
+                    vm.sys('echo "{0}" > testfile'.format(vm.id))
+                self.status('Attaching Secondary ENIs and setting up static IP '
+                            'config for the secondary ENIs')
+                vm1.attach_eni(eni1)
+                vm2.attach_eni(eni2)
+                proxyvm.attach_eni(eni3)
+                for vm in [vm1, vm2, proxyvm]:
+                    vm.sync_enis_static(exclude_indexes=[0])
+                self.status('Shutting down the primary interfaces on vm1 and vm2 to ensure '
+                            'packet path uses secondary ENIs...')
+                for vm in [vm1, vm2]:
+                    net_info = vm.get_network_local_device_for_eni(vm.interfaces[0].id)
+                    dev_name = net_info.get('dev_name')
+                    vm.sys('ifconfig {0} down'.format(dev_name), code=0)
+                self.status('Creating new ssh sessions to vm1 and vm2 through proxy VM3:{0}'
+                            .format(proxyvm.id))
+                vm1_ssh = SshConnection(host=vm1.interfaces[1].private_ip_address,
+                                        keypath=vm1.keypath, proxy=proxyvm.ip_address,
+                                        proxy_keypath=proxyvm.keypath)
+                vm2_ssh = SshConnection(host=vm2.interfaces[1].private_ip_address,
+                                        keypath=vm2.keypath, proxy=proxyvm.ip_address,
+                                        proxy_keypath=proxyvm.keypath)
+                self.status('Proxy SSH connections established, checking id files on guests...')
+                vm_id_check(vm1_ssh, vm1.id)
+                vm_id_check(vm2_ssh, vm2.id)
+                self.status('Swapping ENIs on VM1:{0} and VM2:{2} ...'.format(vm1.id, vm2.id))
+                self.status('VM1 before swap...')
+                vm1.show_enis()
+                self.status('VM2 before swap...')
+                vm2.show_enis()
+                vm1.detach_eni(eni1, local_dev_timeout=None)
+                vm2.detach_eni(eni2, local_dev_timeout=None)
+                vm1.attach_eni(eni2, local_dev_timeout=None)
+                vm2.attach_eni(eni1, local_dev_timeout=None)
+                self.status('ENIS have been swapped. Attempting to establish ssh sessions'
+                            'to new ENI attachments...')
+                vm1_ssh = SshConnection(host=vm1.interfaces[1].private_ip_address,
+                                        keypath=vm1.keypath, proxy=proxyvm.ip_address,
+                                        proxy_keypath=proxyvm.keypath)
+                vm2_ssh = SshConnection(host=vm2.interfaces[1].private_ip_address,
+                                        keypath=vm2.keypath, proxy=proxyvm.ip_address,
+                                        proxy_keypath=proxyvm.keypath)
+
+                self.status('Proxy SSH connections established through proxy, '
+                            'checking id files on guests...')
+                vm_id_check(vm1_ssh, vm1.id)
+                vm_id_check(vm2_ssh, vm2.id)
+                self.status('First ENI swap and packet path checks succeeded...')
+                self.status('Swapping ENIs back again...')
+                self.status('VM1 before swap...')
+                vm1.show_enis()
+                self.status('VM2 before swap...')
+                vm2.show_enis()
+                vm1.detach_eni(eni1, local_dev_timeout=None)
+                vm2.detach_eni(eni2, local_dev_timeout=None)
+                vm1.attach_eni(eni2, local_dev_timeout=None)
+                vm2.attach_eni(eni1, local_dev_timeout=None)
+                self.status('ENIS have been swapped. Attempting to establish ssh sessions'
+                            'to new ENI attachments...')
+                vm1_ssh = SshConnection(host=vm1.interfaces[1].private_ip_address,
+                                        keypath=vm1.keypath, proxy=proxyvm.ip_address,
+                                        proxy_keypath=proxyvm.keypath)
+                vm2_ssh = SshConnection(host=vm2.interfaces[1].private_ip_address,
+                                        keypath=vm2.keypath, proxy=proxyvm.ip_address,
+                                        proxy_keypath=proxyvm.keypath)
+
+                self.status('Proxy SSH connections established through proxy, '
+                            'checking id files on guests...')
+                vm_id_check(vm1_ssh, vm1.id)
+                vm_id_check(vm2_ssh, vm2.id)
+                self.status('Second ENI swap and packet path checks succeeded...')
+                self.status('ENI swap tests complete for zone:{0}'.format(zone))
+
+        finally:
+            for subnet in subnets:
+                self.status('Attempting to delete subnet and dependency artifacts from this test')
+                user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
     def test6p1_eni_secondary_eni_basic_packet_tests(self):
         raise NotImplementedError()

@@ -2880,8 +2880,14 @@ class EuInstance(Instance, TaggedResource, Machine):
 
         """
         errors = ""
+        if exclude_indexes and not isinstance(exclude_indexes, list):
+            exclude_indexes = [exclude_indexes]
         self.update()
         for eni in self.interfaces:
+            if exclude_indexes and eni.attachment.device_index in exclude_indexes:
+                self.log.debug('Skipping IP config for ENI:{0} at device_index:{1}'
+                               .format(eni.id, eni.attachment.device_index))
+                continue
             try:
                 dev_info = self.get_network_local_device_for_eni(eni)
                 if not dev_info:
