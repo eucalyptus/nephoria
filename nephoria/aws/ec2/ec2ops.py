@@ -4822,7 +4822,7 @@ disable_root: false"""
             if s:
                 s.close()
 
-    def get_security_group(self, name=None, id=None, vpc_id=None, verbose=None):
+    def get_security_group(self, name=None, id=None, vpc_id=None, verbose=None, debug=True):
         """
          Adding this as both a convienence to the user to separate euare groups
          from security groups
@@ -4869,10 +4869,13 @@ disable_root: false"""
         for group in groups:
             if not group_id or (group_id and group.id == group_id):
                 if not group_name or (group_name and group.name == group_name):
-                    self.log.debug('Found matching security group for name:' + str(name) +
-                                   ' and id:' + str(id))
+                    if debug:
+                        self.log.debug('Found matching security group for name:{0} and id:{1}'
+                                       .format(name, id))
                     return group
-        self.log.debug('No matching security group found for name:'+str(name)+' and id:'+str(id))
+        if debug:
+            self.log.debug('No matching security group found for name:{0} and id:{1}'
+                           .format(name, id))
         return None
         
     @printinfo                    
@@ -4894,7 +4897,7 @@ disable_root: false"""
         self.log.debug('Security group:' + str(group.name) + ", src ip:" +
                    str(src_addr) + ", src_group:" + str(src_group) +
                    ", proto:" + str(protocol) + ", port:" + str(port))
-        group = self.get_security_group(id=group.id, name=group.name)
+        group = self.get_security_group(id=group.id, name=group.name, debug=False)
         for rule in group.rules:
             g_buf =""
             if str(rule.ip_protocol).strip().lower() == protocol:
@@ -4946,7 +4949,7 @@ disable_root: false"""
                    .format(group.name, src_addr, src_group, protocol, port))
         return False
                     
-    def get_instance_security_groups(self,instance):
+    def get_instance_security_groups(self, instance):
         """
         Definition: Look up and return all security groups this instance is referencing.
 
@@ -4954,10 +4957,6 @@ disable_root: false"""
         :return:
         """
         secgroups = []
-        groups = []
-        if hasattr(instance, 'security_groups') and instance.security_groups:
-            return instance.security_groups
-
         if hasattr(instance, 'groups') and instance.groups:
             groups = instance.groups
         else:
@@ -4965,10 +4964,11 @@ disable_root: false"""
                 res = instance.reservation
             else:
                 res = self.get_reservation_for_instance(instance)
-            groups = res.groups
+            groups = res.groups or []
         for group in groups:
-            secgroups.extend(self.connection.get_all_security_groups(
-                groupnames=[str(group.name)]))
+            fetched = self.connection.get_all_security_groups(group_ids=[str(group.id)]) or []
+            if fetched:
+                secgroups += fetched
         return secgroups
     
     def get_reservation_for_instance(self, instance):

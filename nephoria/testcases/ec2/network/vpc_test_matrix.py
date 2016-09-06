@@ -3190,7 +3190,8 @@ class VpcBasics(CliTestRunner):
             net_info = get_network_info_for_cidr(sub.cidr_block)
             network = net_info.get('network')
             octets = network.split('.')
-            valid_ip = ".".join(str(x) for x in (octets[:2])) + "." + str(int(octets[3]) + 10)
+            valid_ip = "{0}.{1}.{2}.{3}".format(octets[0], octets[1], octets[2],
+                                                    (int(octets[3]) + 10))
             self.status('Attempting to remove all existing artifacts from subnet:{0}'
                         .format(sub.id))
 
@@ -3201,17 +3202,17 @@ class VpcBasics(CliTestRunner):
                 valid_ip = "{0}.{1}.{2}.{3}".format(octets[0], octets[1], octets[2],
                                                     (int(octets[3]) + 11))
 
-            self.status('Attempting to create an valid eni providing the private ip:{0}'
+            self.status('Attempting to create a valid eni providing the private ip:{0}'
                         .format(valid_ip))
             eni = user.ec2.create_network_interface(subnet_id=sub.id, private_ip_address=valid_ip)
             enis.append(eni)
             groups = self.get_test_security_groups(vpc=vpc, count=3)
-            self.status('Attempting to create an valid eni providing a list of security groups:{0}'
+            self.status('Attempting to create a valid eni providing a list of security groups:{0}'
                         .format(",".join(str(x.id) for x in groups)))
             eni = user.ec2.create_network_interface(subnet_id=sub.id, groups=groups)
             enis.append(eni)
             description = 'TEST ENI DESCRIPTION for subnet:{0}'.format(sub.id)
-            self.status('Attempting to create an valid eni with a description:{0}'
+            self.status('Attempting to create a valid eni with a description:{0}'
                         .format(description))
             eni = user.ec2.create_network_interface(subnet_id=sub.id, description=description)
             enis.append(eni)
@@ -3458,7 +3459,7 @@ class VpcBasics(CliTestRunner):
                 self.status('All network interfaces attached correctly for zone:{0}'.format(zone))
                 self.status('Now attempting detach for all network interfacces...')
                 for vm in [vm1, vm2]:
-                    if len(vm.instances) > 1:
+                    if len(vm.interfaces) > 1:
                         self.log.debug('Detaching all ENIS other than index0 from '
                                        '{0}'.format(vm.id))
                         vm.detach_all_enis()
@@ -3845,6 +3846,7 @@ class VpcBasics(CliTestRunner):
                 vm1, vm2 = self.get_test_instances(zone=zone, group_id=group.id, vpc_id=vpc.id,
                                                    subnet_id=subnet1.id, instance_type='m1.small',
                                                    count=2)
+                instances += [vm1, vm2]
                 self.status('Prepping test Vms. '
                             'Detaching all ENIs other than the primary before beginning this test')
                 for vm in [vm1, vm2]:
@@ -3885,6 +3887,28 @@ class VpcBasics(CliTestRunner):
         finally:
             self.restore_vm_types()
             if clean:
+                start = time.time()
+                elapsed = 0
+                timeout = 60
+                while instances and elapsed > timeout:
+                    elapsed = int(time.time() - start)
+                    retry = []
+                    for instance in instances:
+                        try:
+                            instance.update()
+                        except:
+                            continue
+                        if instance.state in ['running', 'pending', 'stopped']:
+                            try:
+                                instance.terminate()
+                            except EC2ResponseError as EE:
+                                self.log.debug('Error deleting {0}, elapsed:{1}/{2}. Error:{3}'
+                                               .format(instance.id, elapsed, timeout, EE))
+                                retry.append(instance)
+                    instances = retry
+                    if instances:
+                        time.sleep(5)
+
                 for subnet in subnets:
                     self.status('Attempting to delete subnet and dependency artifacts from '
                                 'this test')
