@@ -42,7 +42,8 @@ from nephoria.testcase_utils.cli_test_runner import CliTestRunner, TestResult, S
 from nephoria.aws.ec2.euinstance import EuInstance
 from cloud_utils.net_utils import packet_test, is_address_in_network, test_port_status, \
     get_network_info_for_cidr
-from cloud_utils.net_utils.sshconnection import CommandExitCodeException, SshConnection
+from cloud_utils.net_utils.sshconnection import CommandExitCodeException, SshConnection, \
+    CommandTimeoutException
 from cloud_utils.log_utils import markup, printinfo, get_traceback, red, ForegroundColor, \
     BackGroundColor, yellow
 from boto.exception import BotoServerError, EC2ResponseError
@@ -131,6 +132,7 @@ class VpcBasics(CliTestRunner):
         self._proxy_instances = {}
         self._security_groups = {}
         self._test_enis = {}
+        self._original_vmtypes = {}
 
 
     @property
@@ -140,13 +142,35 @@ class VpcBasics(CliTestRunner):
             tc = TestController(hostname=self.args.clc,
                                 environment_file=self.args.environment_file,
                                 password=self.args.password,
-                                log_level=self.args.log_level)
+                                log_level=self.args.log_level,
+                                log_file=self.args.log_file,
+                                log_file_level=self.args.log_file_level)
             setattr(self, '_tc', tc)
         return tc
 
     @property
     def my_tag_name(self):
         return '{0}_CREATED_TESTID'.format(self.__class__.__name__)
+
+    def modify_vm_type_store_orig(self, vmtype, cpu=None, disk=None, memory=None,
+                                  network_interfaces=None):
+        if not isinstance(vmtype, basestring):
+            vmtype = vmtype.name
+        orig = self._original_vmtypes.get(vmtype) or \
+               self.tc.admin.ec2.get_instance_type_info(vmtype)
+        if not orig:
+            raise ValueError('No vmtype info found for type:{0}'.format(vmtype))
+        self._original_vmtypes[vmtype] = orig
+        return self.tc.admin.ec2.modify_instance_type(vmtype, cpu=cpu, disk=disk,
+                                                      memory=memory,
+                                                      network_interfaces=network_interfaces)
+
+    def restore_vm_types(self):
+        for vmtype, info in self._original_vmtypes.iteritems():
+            self.tc.admin.ec2.modify_instance_type(vmtype, cpu=info.cpu, disk=info.disk,
+                                                   memory=info.memory,
+                                                   network_interfaces=info.networkinterfaces)
+        self._original_vmtypes = {}
 
     def get_proxy_instance(self, zone, user=None):
         user = user or self.user
@@ -393,7 +417,7 @@ class VpcBasics(CliTestRunner):
             user.ec2.show_vpc(new_vpc)
         return test_vpcs
 
-    def create_test_subnets(self, vpc, zones=None, count_per_zone=1, user=None):
+    def create_test_subnets(self, vpc, zones=None, count_per_zone=1, user=None, verbose=False):
         """
         This method is intended to provided the convenience of returning a number of subnets per
         zone equal to the provided 'count_per_zone'. The intention is this method will
@@ -431,9 +455,11 @@ class VpcBasics(CliTestRunner):
                     for sub in subnets:
                         if sub.cidr_block == subnet_cidr or \
                                 is_address_in_network(subnet_cidr.strip('/24'), sub.cidr_block):
-                            self.log.debug('Subnet: {0} conflicts with existing:{1}, '
-                                           'attempt:{0}/{1}'.format(subnet_cidr, sub.cidr_block,
-                                                                    attempts, max_net))
+                            if verbose:
+                                self.log.debug('Subnet: {0} conflicts with existing:{1}, '
+                                               'attempt:{0}/{1}'.format(subnet_cidr,
+                                                                        sub.cidr_block,
+                                                                        attempts, max_net))
                             subnet_cidr = None
                             break
                 try:
@@ -442,7 +468,7 @@ class VpcBasics(CliTestRunner):
                                                                availability_zone=zone)
                 except:
                     try:
-                        self.log.error('Existing subnets during create request:')
+                        self.log.error('Existing subnets during failed create request:')
                         user.ec2.show_subnets(subnets, printmethod=self.log.error)
                     except:
                         pass
@@ -570,7 +596,8 @@ class VpcBasics(CliTestRunner):
     @printinfo
     def get_test_instances(self, zone, group_id, vpc_id=None, subnet_id=None,
                            state='running', count=None, monitor_to_running=True,
-                           auto_connect=True, timeout=480, user=None, exclude=None):
+                           instance_type=None, auto_connect=True, timeout=480, user=None,
+                           exclude=None):
         """
         Finds existing instances created by this test which match the criteria provided,
         or creates new ones to meet the count requested.
@@ -623,6 +650,8 @@ class VpcBasics(CliTestRunner):
             filters['vpc-id'] = vpc_id
         if state:
             filters['instance-state-name'] = state
+        if instance_type:
+            filters['instance-type'] = instance_type
         queried_instances = user.ec2.get_instances(filters=filters)
         self.log.debug('queried_instances:{0}'.format(queried_instances))
         for q_instance in queried_instances:
@@ -677,7 +706,7 @@ class VpcBasics(CliTestRunner):
     @printinfo
     def create_test_instances(self, emi=None, key=None, group=None, zone=None, subnet=None,
                               count=1, monitor_to_running=True, auto_connect=True, tag=True,
-                              network_interface_collection=None, user=None):
+                              network_interface_collection=None, vmtype='m1.small', user=None):
         """
         Creates test instances using the criteria provided. This method is intended to be
         called from 'get_test_instances()'.
@@ -732,6 +761,7 @@ class VpcBasics(CliTestRunner):
                                        auto_connect=auto_connect,
                                        monitor_to_running=False,
                                        network_interfaces=network_interface_collection,
+                                       vmtype=vmtype,
                                        systemconnection=self.tc.sysadmin)
         for instance in instances:
             assert isinstance(instance, EuInstance)
@@ -742,6 +772,33 @@ class VpcBasics(CliTestRunner):
         if monitor_to_running:
             return user.ec2.monitor_euinstances_to_running(instances=instances)
         return instances
+
+    def ping_primary_eni_private_ip_from_clc_net_namespace(self, eni, timeout=30):
+        start = time.time()
+        elapsed = 0
+        attempts = 0
+        error = None
+        while elapsed < timeout:
+            error = None
+            attempts += 1
+            elapsed = int(time.time() - start)
+            self.status('Checking eni:{0} private ip:{1} from VPC:{2}\'s network namespace '
+                        'on the CLC. Attempt: {3}, Elapsed:{4}'
+                        .format(eni.id, eni.private_ip_address, eni.vpc_id, attempts, elapsed))
+            clc = self.tc.sysadmin.clc_machine
+            ret = clc.ping_cmd(eni.private_ip_address, net_namespace=eni.vpc_id)
+            status = ret.get('status')
+            output = ret.get('output')
+            cmd = ret.get('cmd')
+
+            msg = 'Attempt:{0}. Elapsed:{1}. Cmd:"{2}", exited with status:{3}. Output:"{4}"' \
+                .format(attempts, elapsed, cmd, status, output)
+            if status:
+                error = "ERROR: {0}".format(msg)
+            self.log.debug(msg)
+
+        if error:
+            raise RuntimeError(error)
 
     def check_user_supported_platforms(self, user=user):
         user = user or self.user
@@ -887,8 +944,8 @@ class VpcBasics(CliTestRunner):
             if subnet:
                 subnet = subnet[0]
             instances.extend(self.get_test_instances(zone=zone,
-                                                     subnet_id=subnet.id,
                                                      group_id=sec_group.id,
+                                                     subnet_id=subnet.id,
                                                      vpc_id=vpc.id,
                                                      count=instance_count,
                                                      monitor_to_running=False,
@@ -1900,7 +1957,7 @@ class VpcBasics(CliTestRunner):
             # if force main is setup, disassociate all other router so the test is forced
             # to use the main table
             for rt in rts:
-                for ass in rt.associtations:
+                for ass in rt.associations:
                     if ass.subnet_id == subnet.id:
                         user.ec2.connection.disassociate_route_table(ass.id)
             rts = []
@@ -1933,8 +1990,8 @@ class VpcBasics(CliTestRunner):
             current_route = new_route
         group = self.get_test_security_groups(vpc=vpc, rules = [('tcp', 22, 22, '0.0.0.0/0'),
                                                                 ('icmp', -1, -1, '0.0.0.0/0')])[0]
-        vm = self.get_test_instances(zone=subnet.availability_zone, subnet_id=subnet.id,
-                                               group_id=group.id, user=user, count=1)[0]
+        vm = self.get_test_instances(zone=subnet.availability_zone, group_id=group.id,
+                                     subnet_id=subnet.id, user=user, count=1)[0]
         self.status('Attempting to ping the VM from the UFS using the default IGW route...')
         ufs = self.tc.sysadmin.get_hosts_for_ufs()[0]
         ufs.sys('ping -c1 -t5 ' + vm.ip_address, code=0)
@@ -2122,7 +2179,7 @@ class VpcBasics(CliTestRunner):
             filters={'attachment.vpc-id': vpc.id})[0]
         for rt in user.ec2.connection.get_all_route_tables(
                 filters={'association.subnet_id': subnet.id}):
-            for ass in rt.associtations:
+            for ass in rt.associations:
                 if ass.subnet_id == subnet.id:
                     user.ec2.connection.disassociate_route_table(association_id=ass.id)
         new_rt = user.ec2.connection.create_route_table(subnet.vpc_id)
@@ -2133,8 +2190,8 @@ class VpcBasics(CliTestRunner):
         group = self.get_test_security_groups(vpc=vpc, rules=[('tcp', 22, 22, '0.0.0.0/0'),
                                                               ('icmp', -1, -1, '0.0.0.0/0')])[0]
 
-        vm_tx, vm_rx = self.get_test_instances(zone=subnet.availability_zone, subnet_id=subnet.id,
-                                               group_id=group.id, user=user, count=2)
+        vm_tx, vm_rx = self.get_test_instances(zone=subnet.availability_zone, group_id=group.id,
+                                               subnet_id=subnet.id, user=user, count=2)
         vm_tx = user.ec2.convert_instance_to_euinstance(vm_tx.id, auto_connect=True)
         vm_rx = user.ec2.convert_instance_to_euinstance(vm_rx.id, auto_connect=True)
 
@@ -2166,7 +2223,8 @@ class VpcBasics(CliTestRunner):
             raise ValueError('Could not find available ip for test?')
         interfaces = vm_rx.sys("ip -o link show | awk -F': ' '{print $2}' | grep 'eth\|em'",
                                code=0) or []
-        eth_itfc = None
+        eth_itfc = 'dummy0'
+        """
         virt_eth = None
         for x in [0, 1]:
             if eth_itfc:
@@ -2180,14 +2238,19 @@ class VpcBasics(CliTestRunner):
         if not eth_itfc:
             raise ValueError('Could not find test interface (eth0, eth1, em0, em1, etc) on '
                              'vm:{0}, interfaces:{1}'.format(vm_rx.id, ",".join(interfaces)))
-        ethdummy = None
+        """
+        ethdummy = 'dummy0'
+
         try:
-            for x in xrange(1, 100):
-                ethdummy = "eth{0}".format(10 + x)
-                if ethdummy not in interfaces:
+            vm_rx.sys('lsmod | grep dummy || modprobe dummy', code=0)
+            for x in xrange(0, 10):
+                try:
+                    vm_rx.sys('lsmod | grep dummy', code=0)
                     break
-            vm_rx.sys('modprobe dummy', code=0)
-            vm_rx.sys('ip link set name {0} dev dummy0'.format(ethdummy), code=0)
+                except CommandExitCodeException as DE:
+                    self.log.debug('Couldnt find loaded dummy module, sleeping + retrying...')
+                    time.sleep(2)
+            #vm_rx.sys('ip link set name {0} dev dummy0'.format(ethdummy), code=0)
             vm_rx.sys('ifconfig {0} {1}'.format(ethdummy, test_ip), code=0)
             vm_rx.sys('ifconfig {0} up'.format(ethdummy), code=0)
         except CommandExitCodeException as CE:
@@ -2243,7 +2306,7 @@ class VpcBasics(CliTestRunner):
                         raise CommandExitCodeException(msg)
                     self.status('Attempting to ping test ip after new route has been ADDED. '
                                 'Attempt: {0}, Elapsed:{1}/{2}'.format(attempt, elapsed, timeout))
-                    vm_tx.sys('ping -c2 {0}'.format(test_ip), code=0)
+                    vm_tx.sys('ping -c2 -t5 {0}'.format(test_ip), code=0)
                     success = True
                     break
                 except CommandExitCodeException as CE:
@@ -2275,7 +2338,7 @@ class VpcBasics(CliTestRunner):
                 try:
                     self.status('Attempting to ping test ip after new route has been DELETED. '
                                 'Attempt: {0}, Elapsed:{1}/{2}'.format(attempt, elapsed, timeout))
-                    vm_tx.sys('ping -c2 {0}'.format(test_ip), code=0)
+                    vm_tx.sys('ping -c2 -t5 {0}'.format(test_ip), code=0)
                 except CommandExitCodeException as CE:
                     msg = 'SUCCESS, Ping vm:{0} to vm:{1} test_ip:{2} failed on attempt:{3} ' \
                           'elapsed::{4}/{5}. Err:{6}'.format(vm_tx.id, vm_rx.id, test_ip, attempt,
@@ -2293,10 +2356,11 @@ class VpcBasics(CliTestRunner):
                         .format(vm_tx.id))
 
         finally:
-            vm_rx.sys('ifconfig {0} down'.format(virt_eth, test_ip))
+            vm_rx.sys('ifconfig {0} down'.format(ethdummy, test_ip))
 
     def test4b12_route_table_instance_id_with_multiple_eni_test(self,
-                                                                test_route='192.168.191.0/24'):
+                                                                test_route='192.168.191.0/24',
+                                                                clean=True):
         """
         Test intends to verify routes which reference an INSTANCE ID as the route point/gateway.
         - The test will first attempt an instance with more than a single ENI, this should not
@@ -2313,7 +2377,7 @@ class VpcBasics(CliTestRunner):
             filters={'attachment.vpc-id': vpc.id})[0]
         for rt in user.ec2.connection.get_all_route_tables(
                 filters={'association.subnet_id': subnet.id}):
-            for ass in rt.associtations:
+            for ass in rt.associations:
                 if ass.subnet_id == subnet.id:
                     user.ec2.connection.disassociate_route_table(association_id=ass.id)
         new_rt = user.ec2.connection.create_route_table(subnet.vpc_id)
@@ -2325,9 +2389,9 @@ class VpcBasics(CliTestRunner):
                                                               ('icmp', -1, -1, '0.0.0.0/0')])[0]
 
         vm_rx = self.get_test_instances(zone=subnet.availability_zone, subnet_id=subnet.id,
-                                        group_id=group.id, user=user, auto_connect=False,
+                                        group_id=group.id, user=user, auto_connect=True,
                                         count=1)[0]
-        vm_rx = user.ec2.convert_instance_to_euinstance(vm_rx.id, auto_connect=False)
+        vm_rx = user.ec2.convert_instance_to_euinstance(vm_rx.id, auto_connect=True)
         self.status('Attempting to attach an additional eni to the the VM:{0} used in the route'
                     .format(vm_rx.id))
         eni = self.get_test_enis_for_subnet(subnet=subnet, count=1)[0]
@@ -2361,18 +2425,43 @@ class VpcBasics(CliTestRunner):
                 self.status('Detaching any additional network interfaces other than device index 0'
                             'on the rx vm...')
                 for eni in vm_rx.interfaces:
-                    if eni.attachment.device_index != 0:
-                        eni.detach()
+                    if int(eni.attachment.device_index) != 0:
+                        vm_rx.detach_eni(eni)
                 self.status('Sleeping for 5 seconds to allow detachments to settle. Then attempting'
                             'to create a route referencing the previous instance now with a '
                             'single ENI. This should work...')
 
                 time.sleep(5)
-                route = user.ec2.create_route(route_table_id=new_rt.id,
-                                                         destination_cidr_block=test_route,
-                                                         instance_id=vm_rx.id)
+                attempts = 0
+                elapsed = 0
+                start = time.time()
+                error = None
+                while elapsed < 60:
+                    attempts += 1
+                    elapsed = int(time.time() - start)
+                    error = None
+                    try:
+                        self.log.debug('Attempting to create route. table:{0}, dest_cidr:{1}, '
+                                       'instance:{2}. Attempt:{3}, elapsed:{4}'
+                                       .format(new_rt.id, test_route, vm_rx.id, attempts, elapsed))
+                        route = user.ec2.create_route(route_table_id=new_rt.id,
+                                                      destination_cidr_block=test_route,
+                                                      instance_id=vm_rx.id)
+                        break
+                    except Exception as E:
+                        if isinstance(E, EC2ResponseError) and int(E.status) == 400 and \
+                                        E.reason == 'InvalidInstanceID':
+                            self.status('Elapsed:{0}, Attempt:{1} to create a route referencing an '
+                                        'instance returned error:{2}'.format(elapsed, attempts, E))
+                            self.log.debug('Sleeping and retrying...')
+                            time.sleep(5)
+                        error = E
+                if not route:
+                    raise RuntimeError('Create_route failed. Returned:"{0}". Attempt:{1}, '
+                                       'Elapsed:{2}. Error:"{3}"'
+                                       .format(route, attempts, elapsed, error))
                 route_found = False
-                new_rt = user.ec2.connection.get_all_route_tables(new_rt.id)
+                new_rt = user.ec2.connection.get_all_route_tables(new_rt.id)[0]
                 for route in new_rt.routes:
                     if route.destination_cidr_block == test_route and \
                                     route.instance_id == vm_rx.id:
@@ -2384,12 +2473,13 @@ class VpcBasics(CliTestRunner):
                                        'table:{2}.'.format(test_route, vm_rx.id, new_rt.id))
             except Exception as E:
                 vm_rx.show_enis()
-                self.log.error('Error while attempting to create a route to an instance which'
-                               'previously had multiple ENIs but now does not. Error:{0}'
-                               .format(E))
+                self.log.error(red('{0}\nError while attempting to create a route to an instance which'
+                               'previously had multiple ENIs but now does not. Error:{1}'
+                               .format(get_traceback(), E)))
                 raise E
+            self.status('Test Completed Successfully ')
         finally:
-            if vpc:
+            if clean and vpc:
                 user.ec2.delete_vpc_and_dependency_artifacts(vpc)
 
 
@@ -2413,7 +2503,7 @@ class VpcBasics(CliTestRunner):
             filters={'attachment.vpc-id': vpc.id})[0]
         for rt in user.ec2.connection.get_all_route_tables(
                 filters={'association.subnet_id': subnet.id}):
-            for ass in rt.associtations:
+            for ass in rt.associations:
                 if ass.subnet_id == subnet.id:
                     user.ec2.connection.disassociate_route_table(association_id=ass.id)
         new_rt = user.ec2.connection.create_route_table(subnet.vpc_id)
@@ -2540,7 +2630,7 @@ class VpcBasics(CliTestRunner):
                         raise CommandExitCodeException(msg)
                     self.status('Attempting to ping test ip after new route has been ADDED. '
                                 'Attempt: {0}, Elapsed:{1}/{2}'.format(attempt, elapsed, timeout))
-                    vm_tx.sys('ping -c2 {0}'.format(test_ip), code=0)
+                    vm_tx.sys('ping -c2  -t5 {0}'.format(test_ip), code=0)
                     success = True
                     break
                 except CommandExitCodeException as CE:
@@ -2572,7 +2662,7 @@ class VpcBasics(CliTestRunner):
                 try:
                     self.status('Attempting to ping test ip after new route has been DELETED. '
                                 'Attempt: {0}, Elapsed:{1}/{2}'.format(attempt, elapsed, timeout))
-                    vm_tx.sys('ping -c2 {0}'.format(test_ip), code=0)
+                    vm_tx.sys('ping -c2  -t5 {0}'.format(test_ip), code=0)
                 except CommandExitCodeException as CE:
                     msg = 'SUCCESS, Ping vm:{0} to vm:{1} test_ip:{2} failed on attempt:{3} ' \
                           'elapsed::{4}/{5}. Err:{6}'.format(vm_tx.id, vm_rx.id, test_ip, attempt,
@@ -2597,6 +2687,7 @@ class VpcBasics(CliTestRunner):
             vm_rx.sys('ifconfig {0} down'.format(virt_eth, test_ip))
             if vpc:
                 user.ec2.delete_vpc_and_dependency_artifacts(vpc)
+        self.status('Test Completed Successfully')
 
 
     def test4c1_route_table_max_tables_per_vpc(self):
@@ -3078,17 +3169,17 @@ class VpcBasics(CliTestRunner):
 
     def test6b5_basic_create_and_delete_eni_test(self):
         """
-        Create a set of valid ENIs with different attributes and checks the ENI attributes
-        in the response.
-         see ec2ops.create_network_interface for specifics on attribute checks.
+        Create a set of valid ENIs with different attributes
+        check the ENI attributes in the response.
+        Example Attributes: subnet id, w/ and w/o a private ip, eni description, etc..
+        see ec2ops.create_network_interface for specifics on attribute checks.
 
         """
         user = self.user
         vpc = self.test6b0_get_vpc_for_eni_tests()
         zones = self.zones
         subnets = []
-        for zone in zones:
-            subnets.append(self.get_non_default_test_subnets_for_vpc(vpc, zone=zone,  count=1)[0])
+        subnets = self.create_test_subnets(vpc=vpc, zones=zones, user=user, count_per_zone=1)
         if not subnets:
             raise RuntimeError('No subnets found or created for this eni-test vpc:{0}'
                                .format(vpc.id))
@@ -3099,16 +3190,16 @@ class VpcBasics(CliTestRunner):
             net_info = get_network_info_for_cidr(sub.cidr_block)
             network = net_info.get('network')
             octets = network.split('.')
-            valid_ip = ".".join(str(x) for x in (octets[:2])) + "." + str(octets[3] + 10)
+            valid_ip = ".".join(str(x) for x in (octets[:2])) + "." + str(int(octets[3]) + 10)
             self.status('Attempting to remove all existing artifacts from subnet:{0}'
                         .format(sub.id))
-            user.ec2.delete_subnet_and_dependency_artifacts(subnet=sub)
 
             self.status('Attempting to create valid eni without specifying the private ip...')
             eni = user.ec2.create_network_interface(subnet_id=sub.id, show_eni=True)
             enis.append(eni)
             if eni.private_ip_address == valid_ip:
-                valid_ip = ".".join(str(x) for x in (octets[:2])) + "." + str(octets[3] + 11)
+                valid_ip = "{0}.{1}.{2}.{3}".format(octets[0], octets[1], octets[2],
+                                                    (int(octets[3]) + 11))
 
             self.status('Attempting to create an valid eni providing the private ip:{0}'
                         .format(valid_ip))
@@ -3153,7 +3244,7 @@ class VpcBasics(CliTestRunner):
                                .format(",".join(delete_me)))
         self.status('Passed. Basic create and delete ENI checks complete')
 
-    def test6c0_eni_basic__creation_deletion_tests_extended(self):
+    def test6c0_eni_basic_creation_deletion_tests_extended(self):
         """
         Test will attempt to create ENIs using invalid requests/attributes.
         - Request a private ip outside the subnet range
@@ -3183,7 +3274,7 @@ class VpcBasics(CliTestRunner):
                     if test_count > 100:
                         break
                     test_octets = copy.copy(octets)
-                    test_octets[3] = test_octets[3] + 100
+                    test_octets[3] = str(int(test_octets[3]) + 100)
                     for x in range(1, 254):
                         test_octets[octet] = x
                         invalid_ip = ".".join([str(x) for x in test_octets])
@@ -3204,8 +3295,8 @@ class VpcBasics(CliTestRunner):
                                                    'subnet:{1} cidr:{2} was either allowed or did not'
                                                    'respond with an error'
                                                    .format(invalid_ip, sub.id, sub.cidr_block))
-                self.status('Verified system responded with proper errors for {0} out of range IPs'
-                            'in ENI creation requests'.format(test_count))
+                self.status('Verified system responded with proper errors for {0} out of range '
+                            'IPs in ENI creation requests'.format(test_count))
                 self.log.debug('Attempting to create initial ENI for duplicate ENI test...')
                 eni1 = user.ec2.connection.create_network_interface(sub.id)
                 self.status('Attempting to create an ENI with an address already in use by another '
@@ -3314,7 +3405,7 @@ class VpcBasics(CliTestRunner):
         if vpc:
             user.ec2.delete_vpc_and_dependency_artifacts(vpc)
 
-    def test6d1_eni__multiple_post_run_attach_detach_and_terminate_tests(self):
+    def test6d1_eni_multiple_post_run_attach_detach_and_terminate_tests(self):
         """
         Test Attaching and detaching an ENI to running instances in each zone.
         Note most checks are performed in the euinstance class attach/detach methods.
@@ -3338,14 +3429,16 @@ class VpcBasics(CliTestRunner):
         vpc = self.test6b0_get_vpc_for_eni_tests()
         instances = []
         subnets = []
-
+        group = self.get_test_security_groups(vpc=vpc, user=user, count=1)[0]
         try:
+            self.modify_vm_type_store_orig('m1.small', network_interfaces=3)
             for zone in self.zones:
-                subnet = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
+                subnet = self.get_non_default_test_subnets_for_vpc(vpc=vpc, user=user, zone=zone,
                                                                    count=1)[0]
                 subnets.append(subnet)
-                vm1, vm2 = self.get_test_instances(zone=zone, subnet_id=subnet.id,
-                                                   count=2, user=user, auto_connect=True)
+                vm1, vm2 = self.create_test_instances(zone=zone, group=group,
+                                                      subnet=subnet.id,
+                                                      count=2, user=user, auto_connect=True)
                 instances += [vm1, vm2]
 
                 for vm in [vm1, vm2]:
@@ -3375,6 +3468,7 @@ class VpcBasics(CliTestRunner):
             for instance in instances:
                 instance.terminate_and_verify()
         finally:
+            self.restore_vm_types()
             for subnet in subnets:
                 self.status('Attempting to delete subnet and dependency artifacts from this test')
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)
@@ -3391,14 +3485,16 @@ class VpcBasics(CliTestRunner):
         vpc = self.test6b0_get_vpc_for_eni_tests()
         instances = []
         subnets = []
-
+        group = self.get_test_security_groups(vpc=vpc, user=user, count=1)[0]
         try:
+            self.modify_vm_type_store_orig('m1.small', network_interfaces=3)
             for zone in self.zones:
-                subnet = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
+                subnet = self.get_non_default_test_subnets_for_vpc(vpc=vpc, user=user, zone=zone,
                                                                    count=1)[0]
                 subnets.append(subnet)
-                vm = self.get_test_instances(zone=zone, subnet_id=subnet.id,
-                                                   count=1, user=user, auto_connect=True)[0]
+                vm = self.get_test_instances(zone=zone, group_id=group, subnet_id=subnet.id,
+                                             count=1, user=user, auto_connect=True,
+                                             instance_type='m1.small')[0]
                 instances.append(vm)
 
                 if len(vm.interfaces) > 1:
@@ -3422,6 +3518,7 @@ class VpcBasics(CliTestRunner):
                 vm.terminate_and_verify()
                 self.status('Done Verifying DOT flag for zone:{0}'.format(zone))
         finally:
+            self.restore_vm_types()
             for subnet in subnets:
                 self.status('Attempting to delete subnet and dependency artifacts from this test')
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)
@@ -3441,16 +3538,17 @@ class VpcBasics(CliTestRunner):
         group = self.get_test_security_groups(vpc=vpc, count=1, user=user)[0]
 
         try:
+            self.modify_vm_type_store_orig('m1.small', network_interfaces=3)
             for zone in self.zones:
-                subnet = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
+                subnet = self.get_non_default_test_subnets_for_vpc(vpc=vpc, user=user, zone=zone,
                                                                    count=1)[0]
                 subnets.append(subnet)
 
-                eni1, eni2, eni3 = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=2)
+                eni1, eni2, eni3 = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=3)
                 eip = user.ec2.allocate_address()
                 eip.associate(network_interface_id=eni1.id)
                 eni_collection = user.ec2.create_network_interface_collection(eni=eni1,
-                                                                              subnet=subnet,
+                                                                              subnet_id=subnet,
                                                                               zone=zone,
                                                                               groups=group)
                 eni_collection.add_eni(eni2, groups=[group.id], delete_on_termination=True)
@@ -3459,7 +3557,7 @@ class VpcBasics(CliTestRunner):
                 test_vm = self.create_test_instances(subnet=subnet,
                                                      count=1,
                                                      monitor_to_running=True,
-                                                     network_interace_collection=eni_collection,
+                                                     network_interface_collection=eni_collection,
                                                      auto_connect=True)[0]
                 test_vm.show_enis()
                 for eni in [eni1, eni2, eni3]:
@@ -3470,6 +3568,7 @@ class VpcBasics(CliTestRunner):
                 test_vm.terminate_and_verify()
 
         finally:
+            self.restore_vm_types()
             for subnet in subnets:
                 self.status('Attempting to delete subnet and dependency artifacts from this test')
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)
@@ -3492,16 +3591,17 @@ class VpcBasics(CliTestRunner):
         group = self.get_test_security_groups(vpc=vpc, count=1, user=user)[0]
 
         try:
+            self.modify_vm_type_store_orig('m1.small', network_interfaces=3)
             for zone in self.zones:
-                subnet = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
+                subnet = self.get_non_default_test_subnets_for_vpc(vpc=vpc, user=user, zone=zone,
                                                                    count=1)[0]
                 subnets.append(subnet)
 
-                eni1, eni2, eni3 = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=2)
+                eni1, eni2, eni3 = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=3)
                 eip = user.ec2.allocate_address()
                 eip.associate(network_interface_id=eni1.id)
                 eni_collection = user.ec2.create_network_interface_collection(eni=eni1,
-                                                                              subnet=subnet,
+                                                                              subnet_id=subnet,
                                                                               zone=zone,
                                                                               groups=group)
                 eni_collection.add_eni(eni2, groups=[group.id], delete_on_termination=True)
@@ -3510,7 +3610,7 @@ class VpcBasics(CliTestRunner):
                 test_vm = self.create_test_instances(subnet=subnet,
                                                      count=1,
                                                      monitor_to_running=True,
-                                                     network_interace_collection=eni_collection,
+                                                     network_interface_collection=eni_collection,
                                                      auto_connect=True)[0]
                 test_vm.show_enis()
                 for eni in [eni1, eni2, eni3]:
@@ -3530,6 +3630,7 @@ class VpcBasics(CliTestRunner):
                             'zone:{0}'.format(zone))
 
         finally:
+            self.restore_vm_types()
             for subnet in subnets:
                 self.status('Attempting to delete subnet and dependency artifacts from this test')
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)
@@ -3548,17 +3649,18 @@ class VpcBasics(CliTestRunner):
         vmtype = user.ec2.get_vm_type_info(vmtype)
 
         try:
+            self.modify_vm_type_store_orig('m1.small', network_interfaces=3)
             for zone in self.zones:
-                subnet = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
+                subnet = self.get_non_default_test_subnets_for_vpc(vpc=vpc, user=user, zone=zone,
                                                                    count=1)[0]
                 subnets.append(subnet)
                 enis = self.get_test_enis_for_subnet(subnet=subnet, user=user,
-                                                     count=vmtype.networkinterfaces)
+                                                     count=int(vmtype.networkinterfaces))
                 eni1 =enis[0]
                 eip = user.ec2.allocate_address()
                 eip.associate(network_interface_id=eni1.id)
                 eni_collection = user.ec2.create_network_interface_collection(eni=eni1,
-                                                                              subnet=subnet,
+                                                                              subnet_id=subnet,
                                                                               zone=zone,
                                                                               groups=group)
                 for eni in enis[1:]:
@@ -3570,7 +3672,7 @@ class VpcBasics(CliTestRunner):
                 test_vm = self.create_test_instances(subnet=subnet,
                                                      count=1,
                                                      monitor_to_running=True,
-                                                     network_interace_collection=eni_collection,
+                                                     network_interface_collection=eni_collection,
                                                      auto_connect=True)[0]
                 test_vm.show_enis()
                 self.status('Successfully attached {0} enis to {1}, vmtype limit:{2}'
@@ -3585,6 +3687,7 @@ class VpcBasics(CliTestRunner):
                                     .format(vmtype.name, vmtype.networkinterfaces))
 
         finally:
+            self.restore_vm_types()
             for subnet in subnets:
                 self.status('Attempting to delete subnet and dependency artifacts from this test')
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)
@@ -3625,8 +3728,9 @@ class VpcBasics(CliTestRunner):
             raise RuntimeError('TCP port 22 status failed for ip:"{0}". Attempt:{1}, '
                                'elapsed:{2}/{3}'.format(ip, attempts, elapsed, timeout ))
         try:
+            self.modify_vm_type_store_orig('m1.small', network_interfaces=3)
             for zone in self.zones:
-                subnet = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
+                subnet = self.get_non_default_test_subnets_for_vpc(vpc=vpc, user=user, zone=zone,
                                                                    count=1)[0]
                 subnets.append(subnet)
                 eni = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=1)[0]
@@ -3634,7 +3738,7 @@ class VpcBasics(CliTestRunner):
                 eip2 = user.ec2.allocate_address()
                 eip1.associate(network_interface_id=eni.id)
                 eni_collection = user.ec2.create_network_interface_collection(eni=eni,
-                                                                               subnet=subnet,
+                                                                               subnet_id=subnet.id,
                                                                                zone=zone,
                                                                                groups=group)
 
@@ -3643,7 +3747,7 @@ class VpcBasics(CliTestRunner):
                 vm1 = self.create_test_instances(subnet=subnet,
                                                      count=1,
                                                      monitor_to_running=True,
-                                                     network_interace_collection=eni_collection,
+                                                     network_interface_collection=eni_collection,
                                                      auto_connect=True)[0]
                 vm1.show_enis()
                 self.status('Creating second Test VM...')
@@ -3713,11 +3817,12 @@ class VpcBasics(CliTestRunner):
 
                 self.status('Success. EIP toggle tests have passed')
         finally:
+            self.restore_vm_types()
             for subnet in subnets:
                 self.status('Attempting to delete subnet and dependency artifacts from this test')
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
-    def test6m1_eni_migration_test_with_secondary_eni(self):
+    def test6m1_eni_migration_test_with_secondary_eni(self, clean=True):
         """
         Attempts to migrate an instance in each zone with a secondary ENI attached and
         verify the VMs and their ENIs migrate correctly.
@@ -3726,37 +3831,32 @@ class VpcBasics(CliTestRunner):
         vpc = self.test6b0_get_vpc_for_eni_tests()
         instances = []
         subnets = []
+
         group = self.get_test_security_groups(vpc=vpc, count=1, user=user)[0]
-        def ping_eni_private_ip_from_clc_net_namespace(eni):
-            self.status('Checking eni:{0} private ip:{1} from VPC:{2}\'s network namespace '
-                        'on the CLC...'.format(eni.id, eni.private_ip_address, eni.vpc_id))
-            clc = self.tc.sysadmin.clc_machine
-            ret = clc.ping_cmd(eni.private_ip_address, net_namespace=eni.vpc_id)
-            status = ret.get('status')
-            output = ret.get('output')
-            cmd = ret.get('cmd')
-            if status:
-                raise RuntimeError('Error. Cmd:"{0}", failed with status:{1}. Output:"{2}"'
-                                   .format(cmd, status, output))
+
         try:
+            self.modify_vm_type_store_orig('m1.small', network_interfaces=3)
             for zone in self.zones:
-                subnet1, subnet2 = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
-                                                                             count=2)
+                subnet1, subnet2 = self.get_non_default_test_subnets_for_vpc(vpc=vpc, user=user,
+                                                                             zone=zone, count=2)
                 subnets += [subnet1, subnet2]
                 eni1, eni2 = self.get_test_enis_for_subnet(subnet=subnet2, user=user, count=2)
                 self.status('Creating VMs for this test...')
                 vm1, vm2 = self.get_test_instances(zone=zone, group_id=group.id, vpc_id=vpc.id,
-                                                   subnet_id=subnet1.id, count=2)
+                                                   subnet_id=subnet1.id, instance_type='m1.small',
+                                                   count=2)
+                self.status('Prepping test Vms. '
+                            'Detaching all ENIs other than the primary before beginning this test')
+                for vm in [vm1, vm2]:
+                    vm.detach_all_enis(exclude_indexes=[0])
                 self.status('Attaching secondary enis to the test VMs...')
                 vm1.attach_eni(eni1)
                 vm2.attach_eni(eni2)
                 self.status('Configuring secondary ENIs with static IP info on VMs...')
-                vm1.sync_static_ip_config(exclude_indexes=[0])
-                vm2.sync_static_ip_config(exclude_indexes=[0])
-                self.status('Checking the secondary ENI by pinging eachother VM to VM as well'
+                vm1.sync_enis_static_ip_config(exclude_indexes=[0])
+                vm2.sync_enis_static_ip_config(exclude_indexes=[0])
+                self.status('Checking the secondary ENI by pinging each other VM to VM as well '
                             'as from the CLCs VPC network namespace...')
-                for eni in [eni1, eni2]:
-                    ping_eni_private_ip_from_clc_net_namespace(eni)
                 vm1.sys('ping -c1 -t5 {0}'.format(eni2.private_ip_address))
                 vm2.sys('ping -c1 -t5 {0}'.format(eni1.private_ip_address))
                 self.status('Starting migration for VM:{0} ...'.format(vm1.id))
@@ -3764,7 +3864,7 @@ class VpcBasics(CliTestRunner):
                 if not nodes:
                     raise RuntimeError('Node Controller for vm:{0} not found before migration?')
                 start_node = nodes[0]
-                self.tc.sysadmin.migrate_instance(instance_id=vm1.id)
+                self.tc.sysadmin.migrate_instances(instance_id=vm1.id)
                 nodes = self.tc.sysadmin.get_hosts_for_node_controllers(instanceid=vm1.id)
                 if not nodes:
                     raise RuntimeError('Node Controller for vm:{0} not found after migration?')
@@ -3779,15 +3879,16 @@ class VpcBasics(CliTestRunner):
                                                                                   end_node))
                 vm1.refresh_ssh()
                 vm1.check_eni_attachments()
-                for eni in [eni1, eni2]:
-                    ping_eni_private_ip_from_clc_net_namespace(eni)
                 vm1.sys('ping -c1 -t5 {0}'.format(eni2.private_ip_address))
                 vm2.sys('ping -c1 -t5 {0}'.format(eni1.private_ip_address))
                 self.status('Migration ENI tests complete for zone:{0}'.format(zone))
         finally:
-            for subnet in subnets:
-                self.status('Attempting to delete subnet and dependency artifacts from this test')
-                user.ec2.delete_subnet_and_dependency_artifacts(subnet)
+            self.restore_vm_types()
+            if clean:
+                for subnet in subnets:
+                    self.status('Attempting to delete subnet and dependency artifacts from '
+                                'this test')
+                    user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
     def test6n1_eni_swap_between_vms_packet_test(self):
         """
@@ -3819,16 +3920,17 @@ class VpcBasics(CliTestRunner):
                 raise ValueError('Testfile id:"{0}" != "{1}" on host:{2}'
                                  .format(out, id, ssh.host))
         try:
+            self.modify_vm_type_store_orig('m1.small', network_interfaces=3)
             for zone in self.zones:
-                subnet1, subnet2 = self.get_non_default_test_subnets_for_vpc(user=user, zone=zone,
-                                                                             count=2)
+                subnet1, subnet2 = self.get_non_default_test_subnets_for_vpc(vpc=vpc, user=user,
+                                                                             zone=zone, count=2)
                 subnets += [subnet1, subnet2]
                 eni1, eni2, eni3 = self.get_test_enis_for_subnet(subnet=subnet2, user=user,
                                                                  count=3)
                 self.status('Creating VMs for this test...')
                 vm1, vm2, proxyvm = self.get_test_instances(zone=zone, group_id=group.id,
                                                         vpc_id=vpc.id, subnet_id=subnet1.id,
-                                                        count=3)
+                                                        instance_type='m1.small', count=3)
                 instances = [vm1, vm2, proxyvm]
                 self.status('Writing Instance ID files to guests')
                 for vm in [vm1, vm2, proxyvm]:
@@ -3847,7 +3949,10 @@ class VpcBasics(CliTestRunner):
                     net_info = vm.get_network_local_device_for_eni(vm.interfaces[0].id)
                     dev_name = net_info.get('dev_name')
                     vm.primary_dev = dev_name
-                    vm.sys('ifconfig {0} down'.format(dev_name), code=0)
+                    try:
+                        vm.sys('ifconfig {0} down'.format(dev_name), code=0, timeout=2)
+                    except CommandTimeoutException:
+                        pass
                 self.status('Creating new ssh sessions to vm1 and vm2 through proxy VM3:{0}'
                             .format(proxyvm.id))
                 vm1_ssh = SshConnection(host=vm1.interfaces[1].private_ip_address,
@@ -3883,7 +3988,10 @@ class VpcBasics(CliTestRunner):
                 self.status('Shutting down the primary interfaces on vm1 and vm2 to ensure '
                             'packet path uses secondary ENIs...')
                 for vm in [vm1, vm2]:
-                    vm.sys('ifconfig {0} down'.format(vm.primary_dev), code=0)
+                    try:
+                        vm.sys('ifconfig {0} down'.format(vm.primary_dev), code=0, timeout=2)
+                    except CommandTimeoutException:
+                        pass
 
                 self.status('ENIS have been swapped. Attempting to establish ssh sessions'
                             'to new secondary ENI attachments through proxy vm...')
@@ -3922,7 +4030,10 @@ class VpcBasics(CliTestRunner):
                 self.status('Shutting down the primary interfaces on vm1 and vm2 to ensure '
                                 'packet path uses secondary ENIs...')
                 for vm in [vm1, vm2]:
-                    vm.sys('ifconfig {0} down'.format(vm.primary_dev), code=0)
+                    try:
+                        vm.sys('ifconfig {0} down'.format(vm.primary_dev), code=0, timeout=2)
+                    except CommandTimeoutException:
+                        pass
                 self.status('ENIS have been swapped. Attempting to establish ssh sessions'
                             'to new ENI attachments...')
                 vm1_ssh = SshConnection(host=vm1.interfaces[1].private_ip_address,
@@ -3940,6 +4051,7 @@ class VpcBasics(CliTestRunner):
                 self.status('ENI swap tests complete for zone:{0}'.format(zone))
 
         finally:
+            self.restore_vm_types()
             for vm in instances:
                 try:
                     vm.terminate_and_verify()
@@ -3957,7 +4069,10 @@ class VpcBasics(CliTestRunner):
         subnet.
         The packet tests will include udp, tcp, icmp and sctp.
         The test will adjust the security group rules to allow the traffic type and port(s) for
-        the tests. 
+        the tests.
+        During the test the devices associated with the secondary ENIs should be temporarily
+        shutdown on the guests and management/ssh traffic should use a proxy VM to tunnel the
+        ssh sessions into the subnets under test.
 
         """
         raise NotImplementedError()
@@ -4052,7 +4167,7 @@ class VpcBasics(CliTestRunner):
 
     def clean_method(self):
         self.user.ec2.clean_all_test_resources()
-        if self.new_ephemeral_user:
+        if self.new_ephemeral_user and self.new_ephemeral_user != self.user:
             self.log.debug('deleting new user account:"{0}"'
                        .format(self.new_ephemeral_user.account_name))
             self.tc.admin.iam.delete_account(account_name=self.new_ephemeral_user.account_name,

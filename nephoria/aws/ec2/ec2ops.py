@@ -212,6 +212,14 @@ class EucaVmType(EC2Object):
                 if not self.availability:
                     self.availability  = EucaZoneAvailability()
                 setattr(self.availability, ename, value)
+            if ename == 'networkinterfaces':
+                self.networkinterfaces = int(value)
+            if ename == 'cpu':
+                self.cpu = int(value)
+            if ename == 'disk':
+                self.disk = int(value)
+            if ename == 'memory':
+                self.memory = int(value)
             else:
                 setattr(self, ename.lower(), value)
 
@@ -1528,7 +1536,7 @@ disable_root: false"""
         if dry_run:
             params['DryRun'] = 'true'
 
-        status = self.get_status('CreateRoute', params)
+        status = self.connection.get_status('CreateRoute', params)
 
         routes = self.get_routes_from_route_table(
             route_table=route_table_id, destination_cidr_block=destination_cidr_block,
@@ -4241,7 +4249,6 @@ disable_root: false"""
         :return: The newly created network interface.
 
         """
-        self.create_network_interface.__doc__ += self.connection.create_network_interface.__doc__
         group_ids = None
         if groups:
             group_ids = []
@@ -4303,6 +4310,8 @@ disable_root: false"""
 
         return eni
 
+    create_network_interface.__doc__ += \
+        "{0}".format(VPCConnection.create_network_interface.__doc__)
 
     def modify_network_interface_attributes(self, eni, description=None, group_set=None,
                                             source_dest_check=None, delete_on_terminate=None,
@@ -6409,6 +6418,47 @@ disable_root: false"""
         my_hmac = hmac.new(self.connection.aws_secret_access_key, policy, digestmod=hashlib.sha1)
         return base64.b64encode(my_hmac.digest())
 
+    ###############################################################################################
+    #                           Modify Instance Type Attributes
+    ###############################################################################################
+
+    def modify_instance_type(self, instance_type, cpu=None, disk=None, memory=None,
+                             network_interfaces=None):
+        """
+        Modify instance type attributes such as cpu, disk, memory, and network interface
+        counts.
+
+        :param instance_type: string name of instance type. (ie. 'm1.small')
+        :param cpu: int number of CPUs
+        :param disk: int number of disks
+        :param memory: int Gigs of memory
+        :param network_interfaces: int number of network interfaces (ENIs)
+        """
+        ret_prop = None
+        params = {'Name': instance_type}
+        action = 'ModifyInstanceTypeAttribute'
+
+        if cpu is not None:
+            params['Cpu'] = int(cpu)
+        if disk is not None:
+            params['Disk'] = int(disk)
+        if memory is not None:
+            params['Memory'] = int(memory)
+        if network_interfaces is not None:
+            params['NetworkInterfaces'] = int(network_interfaces)
+
+        self.log.debug("Modify Instance Type Params: " + str(params))
+        modified = self.connection.get_object(action, params, cls=EucaVmType)
+        try:
+            self.show_vm_types(vmtypes=modified)
+        except Exception as E:
+            self.log.warning('Failed to print vmtype info:"{0}"'.format(E))
+        return modified
+
+
+    def get_instance_types(self):
+        return self.get_vm_types()
+
     def get_vm_types(self):
         params = {}
         usercontext = getattr(self, '_user_context', None)
@@ -6450,6 +6500,49 @@ disable_root: false"""
         for  vtype in self.get_vm_types():
             if vtype.name == vmtype:
                 return vtype
+
+    def get_instance_type_info(self, instance_type):
+        return self.get_vm_type_info(vmtype=instance_type)
+
+    def show_vm_types(self, vmtypes=None, zone=None, debugmethod=None, printme=True):
+        debugmethod = debugmethod or self.log.info
+        header = markup('VMTYPE INFO', [1, 4, 31])
+        vmtypes = vmtypes or self.get_vm_types()
+        if not isinstance(vmtypes, list):
+            vmtypes = [vmtypes]
+
+        pt = PrettyTable([markup('NAME', [1, 4]).ljust(20), markup('CPU', [1, 4]).ljust(7),
+                          markup('DISK', [1, 4]).ljust(10), markup('RAM', [1, 4]).ljust(10),
+                          markup('ENI', [1, 4]).ljust(4),
+                          markup('ZONE (AVAILABILE/MAX)', [1, 4]).ljust(45)])
+        pt.align = 'l'
+        pt.hrules = 1
+        pt.padding_width = 0
+        pt.junction_char = "-"
+        pt.vertical_char = " "
+        pt.horizontal_char = "-"
+        for vm in vmtypes:
+            if not vm.availability:
+                availability = "???"
+            else:
+                apt = PrettyTable(['zone', 'available'])
+                apt.header = False
+                apt.border = False
+                apt.align = 'l'
+                for zonename, info in vm.availability.iteritems():
+                    apt.add_row(["zone: {0}"
+                                .format(markup(info.zonename, [TextStyle.BOLD,
+                                                               ForegroundColor.YELLOW,
+                                                               BackGroundColor.BG_BLACK])),
+                                 "({0}/{1})".format(info.available, info.max)])
+                availability = apt.get_string()
+
+            pt.add_row([markup(vm.name), vm.cpu, vm.disk, vm.memory, vm.networkinterfaces,
+                        availability])
+        if printme:
+            debugmethod("\n{0}\n".format(pt))
+        else:
+            return pt
 
     def print_block_device_map(self,block_device_map, printmethod=None ):
         printmethod = printmethod or self.log.debug
@@ -6495,6 +6588,7 @@ disable_root: false"""
                    str(bdm.status).center(status_w) + "\n"
         buf += line
         printmethod(buf)
+
 
 
     def monitor_instances(self, instance_ids):
@@ -6922,42 +7016,6 @@ disable_root: false"""
         else:
             return main_pt
 
-    def show_vm_types(self, zone=None, debugmethod=None, printme=True):
-        debugmethod = debugmethod or self.log.info
-        header = markup('VMTYPE INFO', [1, 4, 31])
-
-        pt = PrettyTable([markup('NAME', [1, 4]).ljust(20), markup('CPU', [1, 4]).ljust(7),
-                          markup('DISK', [1, 4]).ljust(10), markup('RAM', [1, 4]).ljust(10),
-                          markup('ENI', [1, 4]).ljust(4),
-                          markup('ZONE (AVAILABILE/MAX)', [1, 4]).ljust(45)])
-        pt.align = 'l'
-        pt.hrules = 1
-        pt.padding_width = 0
-        pt.junction_char = "-"
-        pt.vertical_char = " "
-        pt.horizontal_char = "-"
-        for vm in self.get_vm_types():
-            if not vm.availability:
-                availability = "???"
-            else:
-                apt = PrettyTable(['zone', 'available'])
-                apt.header = False
-                apt.border = False
-                apt.align = 'l'
-                for zonename, info in vm.availability.iteritems():
-                    apt.add_row(["zone: {0}"
-                                .format(markup(info.zonename, [TextStyle.BOLD,
-                                                               ForegroundColor.YELLOW,
-                                                               BackGroundColor.BG_BLACK])),
-                                 "({0}/{1})".format(info.available, info.max)])
-                availability = apt.get_string()
-
-            pt.add_row([markup(vm.name), vm.cpu, vm.disk, vm.memory, vm.networkinterfaces,
-                        availability])
-        if printme:
-            debugmethod("\n{0}\n".format(pt))
-        else:
-            return pt
 
     def show_security_groups(self, groups=None, printme=True):
         ret_buf = ""

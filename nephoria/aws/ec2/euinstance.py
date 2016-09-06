@@ -2448,7 +2448,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         return self.check_eni_attachment(eni, index=indx, local_dev_timeout=local_dev_timeout)
 
 
-    def check_eni_attachment(self, eni, index=None, local_dev_timeout=60):
+    def check_eni_attachment(self, eni, index=None, api_timeout=60, local_dev_timeout=60):
         """
         Checks a give ENI for the proper attribute status.
         If local_dev_timeout is not None then the local guest is polled for a device with
@@ -2457,6 +2457,8 @@ class EuInstance(Instance, TaggedResource, Machine):
             eni: an eni id or eni obj to check
             index: The expected attachment index for this eni, by default this is derived
                    from the local self.interfaces information.
+            api_timeout: int. Time to wait for attributes in the response related to the
+                         eni, instance, etc. to report the correct status before timing out.
             local_dev_timeout: The time to wait for the device to show up on the guest before
                                erroring out. If this timeout is None, this check is not performed.
 
@@ -2477,7 +2479,6 @@ class EuInstance(Instance, TaggedResource, Machine):
         start = time.time()
         elapsed = 0
         attempts = 0
-        api_timeout = 30
         api_is_good = False
         last_error = None
         while elapsed < api_timeout and not api_is_good:
@@ -2546,17 +2547,19 @@ class EuInstance(Instance, TaggedResource, Machine):
                                      .format(x, y.get('address')) for x, y in net_devs.iteritems()])
                 self.log.debug('Found Net DEVS:"{0}"'.format(eth_info))
                 self.log.debug('Still waiting for local device to appear for ENI:{0},'
-                               ' attempts:{1}, elapsed:{2}'.format(eni.id, attempts, elapsed))
+                               ' attempts:{1}, elapsed:{2}/{3}'.format(eni.id, attempts, elapsed,
+                                                                   local_dev_timeout))
                 time.sleep(5)
             else:
                 self.log.debug('Found device:{0} for ENI:{1} attachment:{2}'
                                .format(dev, eni.id, eni.attachment.id))
                 return eni
         raise RuntimeError('Network device for ENI:{0} did not appear on guest after '
-                           'attempts:{1}, elapsed{2}'.format(eni.id, attempts, elapsed))
+                           'attempts:{1}, elapsed{2}/{3}'.format(eni.id, attempts, elapsed,
+                                                             local_dev_timeout))
 
 
-    def detach_eni(self, eni,  local_dev_timeout=60):
+    def detach_eni(self, eni,  api_timeout=90, local_dev_timeout=60):
         """
         Attempts to detach the provided ENI from this instance.
         Checks to see if this eni is indeed attached and found in self.instances first.
@@ -2567,6 +2570,8 @@ class EuInstance(Instance, TaggedResource, Machine):
         If local_dev_timeout is None, this check is skipped.
         Args:
             eni: eni id, or boto eni object to detach
+            api_timeout: int. Time to wait for attributes in the response related to the
+                         eni, instance, etc. to report the correct status before timing out.
             local_dev_timeout: Time to wait for the local guest device to disappear after detaching
                                the ENI before raising an error. If local_dev_timeout is None,
                                the checks for local devices are skipped.
@@ -2590,9 +2595,13 @@ class EuInstance(Instance, TaggedResource, Machine):
             raise('{0}.instances has the eni in the list of attached ENI, but the ENI '
                   'attachment.instance_id:{1} != {2}'.format(self.id, eni.attachment.instance_id,
                                                              self.id))
-        pre_detach_net_devices = self.get_network_interfaces().keys()
-        self.log.debug('Devices on this instance before ENI:{0} detach:"{1}"'
-                       .format(eni.id, pre_detach_net_devices))
+        if self.ssh and local_dev_timeout is not None and self.state == 'running':
+            try:
+                pre_detach_net_devices = self.get_network_interfaces().keys()
+                self.log.debug('Devices on this instance before ENI:{0} detach:"{1}"'
+                               .format(eni.id, pre_detach_net_devices))
+            except:
+                pass
         self.log.debug('sending {0} detach now...'.format(eni.id))
         eni.detach()
         eni.update()
@@ -2600,7 +2609,6 @@ class EuInstance(Instance, TaggedResource, Machine):
         start = time.time()
         elapsed = 0
         attempts = 0
-        api_timeout = 30
         api_is_good = False
         last_error = None
         while elapsed < api_timeout and not api_is_good:
@@ -2616,11 +2624,15 @@ class EuInstance(Instance, TaggedResource, Machine):
                 break
             except ValueError as VE:
                 last_error = str(VE)
-                self.log.debug('{0}\nERROR:"{1}", attempts:{2}, elapsed:{3}'
+                self.log.debug('{0}\nDETACH ERROR:"{1}", attempts:{2}, elapsed:{3}'
                                .format(get_traceback(), VE, attempts, elapsed))
-                time.sleep(2)
-                eni.update()
+                time.sleep(3)
+                enis = self.connection.get_all_network_interfaces([eni.id])
+                if not enis:
+                    raise ValueError('Could not fetch updated ENI:{0}'.format(eni.id))
+                eni = enis[0]
                 self.update()
+                self.ec2ops.show_network_interfaces(eni)
         if not api_is_good:
             raise ValueError('ERRORS after elapsed:{0}:"{1}"'.format(elapsed,
                                                                      last_error or "UNKNOWN?"))
@@ -2661,11 +2673,27 @@ class EuInstance(Instance, TaggedResource, Machine):
                            'attempts:{1}, elapsed{2}'.format(eni.id, attempts, elapsed))
 
 
-    def detach_all_enis(self, local_dev_timeout=60):
+    def detach_all_enis(self, exclude_indexes=None, local_dev_timeout=60):
+        """
+        Attempts to detach all enis which are not included in the exlude_indexes list.
+        If exclude_indexes is None, the primary or ENI at index 0 will be excluded.
+        Args:
+            exclude_indexes: list of eni device indexes to exclude
+            local_dev_timeout: time to wait for local device to be removed. If this value is None
+                               the checks for the local/guest device will be skipped.
+
+        """
+        if exclude_indexes is None:
+            exclude_indexes = [0]
+        elif not isinstance(exclude_indexes, list):
+            exclude_indexes = [exclude_indexes]
         self.update()
         for eni in self.interfaces:
-            if int(eni.attachment.device_index) != 0:
+            if int(eni.attachment.device_index) not in exclude_indexes:
                 self.detach_eni(eni=eni, local_dev_timeout=local_dev_timeout)
+            else:
+                self.log.debug('Skipping eni:{0} as device index:{1} is in the exclude list:{2}'
+                               .format(eni.id, eni.attachment.device_index, exclude_indexes))
         self.log.debug('Done detaching all non-primary index ENIs from this instance')
 
     def sync_enis_etc_sysconfig(self, prefix='eth'):
@@ -2871,7 +2899,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         # For debian/ubuntu based systems
         raise NotImplementedError('This method needs to be implemented')
 
-    def sync_enis_static_ip_config(self, exclude_indexes=None):
+    def sync_enis_static_ip_config(self, exclude_indexes=None, timeout=30):
         """
         Attempts to assign ip addresses to interfaces using ifconfig.
         By default will exclude device index '0'.
@@ -2897,23 +2925,48 @@ class EuInstance(Instance, TaggedResource, Machine):
                 subnet = self.ec2ops.get_subnet(eni.subnet_id)
                 cidr_mask = subnet.cidr_block.split('/')[1]
                 ip_cidr = "{0}/{1}".format(eni.private_ip_address, cidr_mask)
-                self.sys('ifconfig {0} {1}; ifconfig {0} up'.format(dev_name, ip_cidr))
-                new_ip_info = self.get_network_ipv4_info()
-                if not dev_name in new_ip_info:
-                    raise ValueError('IP info not found for dev:{0} on VM:{1}'.format(dev_name,
-                                                                                      self.id))
-                guest_ip = new_ip_info[dev_name].get('ipcidr')
-                if guest_ip != ip_cidr:
-                    raise ValueError('Guest IP:"{0}" != ENIs IP Private IP:{2} '
-                                     'applying changes on guest'
-                                     .format(guest_ip, eni.id, ip_cidr))
+                self.sys('ifconfig {0} up'.format(dev_name), code=0)
+                self.sys('ifconfig {0} {1}'.format(dev_name, ip_cidr), code=0)
             except Exception as E:
-                self.log.debug(get_traceback())
+                self.show_network_device_info()
                 error = 'Error syncing IP info for ENI:{0}, ' \
                         'ERROR:"{1}"\n'.format(eni.id, E)
-                self.log.warning(error)
+                self.log.error(red("{0}\n{1}".format(get_traceback(), error)))
+                raise E
+            # Now wait for device IP info to appear...
+            error = None
+            start = time.time()
+            elapsed = 0
+            attempts = 0
+            while elapsed < timeout:
+                attempts += 1
+                elapsed = int(time.time() - start)
+                error = None
+                try:
+                    new_ip_info = self.get_network_ipv4_info(cache_interval=0)
+                    if not dev_name in new_ip_info:
+                        raise ValueError('IP info not found for dev:{0} on VM:{1}'.format(dev_name,
+                                                                                          self.id))
+                    guest_ip = new_ip_info[dev_name].get('ipcidr')
+                    if guest_ip != ip_cidr:
+                        raise ValueError('Guest IP:"{0}" != ENIs IP Private IP:{2} '
+                                         'applying changes on guest. Attempts:{3}, Elapsed:{4}'
+                                         .format(guest_ip, eni.id, ip_cidr, attempts, elapsed))
+                    break
+                except Exception as E:
+                    self.show_network_device_info()
+                    error = 'Attempts:{0}, Elapsed:{1}, Error waiting for IP info to ' \
+                            'sync for ENI:{0}, ERROR:"{1}"\n'.format(attempts, elapsed, eni.id, E)
+                    self.log.error(red("{0}\n{1}".format(get_traceback(), error)))
+                    time.sleep(5)
+            if error:
+                self.log.warning(red(error))
                 errors += error
+        if errors:
+            raise RuntimeError('Errors detected while attempting to configure guest net devices'
+                               'with cloud ENI info. Errors:{0}'.format(errors))
         self.show_network_device_info()
+        self.log.debug('Done with syncing ENI ip info with static config')
 
 
 

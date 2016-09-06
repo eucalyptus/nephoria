@@ -22,7 +22,8 @@ class TestController(object):
                  clouduser_account='nephotest', clouduser_name='sys_admin', clouduser_credpath=None,
                  clouduser_accesskey=None, clouduser_secretkey=None,
                  cloudadmin_credpath=None, cloudadmin_accesskey=None, cloudadmin_secretkey=None,
-                 timeout=10, log_level='DEBUG', environment_file=None, https=True,
+                 timeout=10, log_level='DEBUG', log_file=None, log_file_level='DEBUG',
+                 environment_file=None, https=True,
                  cred_depot_hostname=None, cred_depot_username='root', cred_depot_password=None,
                  api_version=None):
 
@@ -45,7 +46,8 @@ class TestController(object):
         """
         if isinstance(log_level, basestring):
             log_level = getattr(logging, log_level.upper(), logging.DEBUG)
-        self.log = Eulogger("TESTER:{0}".format(hostname), stdout_level=log_level)
+        self.log = Eulogger("TESTER:{0}".format(hostname), stdout_level=log_level,
+                            logfile=log_file, logfile_level=log_file_level)
         if not hostname and environment_file:
             component = self.get_component_from_topology(environment_file, 'clc-1')
             hostname = component['clc-1']
