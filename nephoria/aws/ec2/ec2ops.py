@@ -4359,12 +4359,13 @@ disable_root: false"""
             eni.update()
             if not isinstance(group_set, list):
                 group_set = []
+            request_groups = []
             for group in group_set:
                 if isinstance(group, basestring):
-                    group_set.append(group)
+                    request_groups.append(group)
                 else:
-                    group_set.append(group.id)
-            group_set.sort()
+                    request_groups.append(group.id)
+            request_groups.sort()
             eni_groups = [str(x.id) for x in eni.groups]
             eni_groups.sort()
             for eni_group in eni_groups:
@@ -4372,7 +4373,7 @@ disable_root: false"""
                     if eni_group.id not in group_set:
                         group_set.append(eni_group.id)
             eni_groups.sort()
-            if eni_groups != group_set:
+            if eni_groups != request_groups:
                 raise ValueError('ENI groups:"{0}" do not match requested group_set:{1}'
                                  .format(", ".join(eni_groups), ", ".join(group_set)))
         if source_dest_check is not None:
@@ -4438,6 +4439,7 @@ disable_root: false"""
         """
         Helper method for create network interfaces.
         :param eni: Existing Net Interface obj or id. If provided a new ENI will not be created.
+                    And the ENIs attributes will not be modified.
         :param subnet_id: subnet or subnet.id, if not provided the method will attempt to look
                           for the default subnet in the zone provided.
         :param zone: zone, used to look up the subnet to be used.
@@ -4470,7 +4472,18 @@ disable_root: false"""
             if not eni:
                 raise ValueError('Could not retrieve existing eni:"{0}" from system'.format(eni))
             eni = eni[0]
+        groups = groups or []
+        if not isinstance(groups, list):
+            groups = [groups]
+        security_group_ids = []
+        # sanitize the groups param
+        for group in groups:
+            if isinstance(group, basestring):
+                security_group_ids.append(group)
+            else:
+                security_group_ids.append(group.id)
         if not eni:
+
             subnet = None
             if subnet_id:
                 if isinstance(subnet, Subnet):
@@ -4494,19 +4507,10 @@ disable_root: false"""
                 raise ValueError('Subnet not found (Either not provided, '
                                  'and/or default not found. Zone filter:"{0}")'.format(zone))
             subnet_id = subnet.id
-            groups = groups or []
-            if not isinstance(groups, list):
-                groups = [groups]
-            security_group_ids = []
-            # sanitize the groups param
-            for group in groups:
-                if isinstance(group, basestring):
-                    security_group_ids.append(group)
-                else:
-                    security_group_ids.append(group.id)
             eni = self.connection.create_network_interface(subnet_id=subnet_id,
                                                            groups=security_group_ids,
                                                            description=description)
+
         # If an EIP was provided or requested associate it with the ENI now...
         if eip or auto_eip:
             if not eip:

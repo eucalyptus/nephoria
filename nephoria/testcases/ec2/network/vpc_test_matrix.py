@@ -3536,9 +3536,12 @@ class VpcBasics(CliTestRunner):
         vpc = self.test6b0_get_vpc_for_eni_tests()
         instances = []
         subnets = []
-        group = self.get_test_security_groups(vpc=vpc, count=1, user=user)[0]
-
+        group = self.get_test_security_groups(vpc=vpc, count=1, rules=self.DEFAULT_SG_RULES,
+                                              user=user)[0]
+        self.log.debug('Using Security group:{0}'.format(group.id))
+        user.ec2.show_security_group(group)
         try:
+            # Temporarily bump up the default VM type ENI count...
             self.modify_vm_type_store_orig('m1.small', network_interfaces=3)
             for zone in self.zones:
                 subnet = self.get_non_default_test_subnets_for_vpc(vpc=vpc, user=user, zone=zone,
@@ -3546,15 +3549,19 @@ class VpcBasics(CliTestRunner):
                 subnets.append(subnet)
 
                 eni1, eni2, eni3 = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=3)
+                user.ec2.modify_network_interface_attributes(eni1, group_set=[group])
                 eip = user.ec2.allocate_address()
+                self.log.debug('Using EIP:{0}'.format(eip))
                 eip.associate(network_interface_id=eni1.id)
+                self.log.debug('Creating ENI collection containing 3 test ENIs...')
                 eni_collection = user.ec2.create_network_interface_collection(eni=eni1,
+                                                                              device_index=0,
                                                                               subnet_id=subnet,
                                                                               zone=zone,
                                                                               groups=group)
                 eni_collection.add_eni(eni2, groups=[group.id], delete_on_termination=True)
                 eni_collection.add_eni(eni3, groups=[group.id], delete_on_termination=False)
-
+                self.log.debug('Creating test instance...')
                 test_vm = self.create_test_instances(subnet=subnet,
                                                      count=1,
                                                      monitor_to_running=True,
@@ -3599,6 +3606,7 @@ class VpcBasics(CliTestRunner):
                 subnets.append(subnet)
 
                 eni1, eni2, eni3 = self.get_test_enis_for_subnet(subnet=subnet, user=user, count=3)
+                user.ec2.modify_network_interface_attributes(eni1, group_set=[group])
                 eip = user.ec2.allocate_address()
                 eip.associate(network_interface_id=eni1.id)
                 eni_collection = user.ec2.create_network_interface_collection(eni=eni1,
@@ -3658,6 +3666,7 @@ class VpcBasics(CliTestRunner):
                 enis = self.get_test_enis_for_subnet(subnet=subnet, user=user,
                                                      count=int(vmtype.networkinterfaces))
                 eni1 =enis[0]
+                user.ec2.modify_network_interface_attributes(eni1, group_set=[group])
                 eip = user.ec2.allocate_address()
                 eip.associate(network_interface_id=eni1.id)
                 eni_collection = user.ec2.create_network_interface_collection(eni=eni1,
@@ -3828,6 +3837,51 @@ class VpcBasics(CliTestRunner):
         Attempts to migrate an instance in each zone with a secondary ENI attached and
         verify the VMs and their ENIs migrate correctly.
         """
+
+        def migrate_and_monitor_state(vm, timeout=300):
+            if not isinstance(vm, basestring)
+                vm_id = vm
+            else:
+                vm_id = vm.id
+            self.tc.sysadmin.migrate_instances(instance_id=vm_id)
+            vm = self.tc.admin.ec2.get_instances(vm_id)[0]
+            start = time.time()
+            elapsed = 0
+            done = False
+            source_node = None
+            dest_node = None
+            while (not source_node or not dest_node) and elapsed < 30:
+                elapsed = int(time.time() - start)
+                source_node = vm.tags.get('euca:node:migration:source', None)
+                dest_node = vm.tags.get('euca:node:migration:destination', None)
+                if not source_node or not dest_node:
+                    time.sleep(5)
+                    vm.update()
+            if not source_node or not dest_node:
+                self.tc.admin.ec2.show_tags(vm.tags)
+                raise ValueError('{0} tags did not have source and dest info after elapsed:{1}'
+                                 .format(vm.id, elapsed))
+            elapsed = 0
+            start = time.time()
+            migrate_state = None
+            while not done and elapsed < timeout:
+                elapsed = int(time.time() - start)
+
+                migrate_state = vm.tags.get('euca:node:migration:state', None)
+                current_node = vm.tags.get('euca:node', None)
+                if not current_node:
+                    node = self.tc.sysadmin.get_hosts_for_node_controllers(instanceid=vm.id)[0]
+                    current_node = node.hostname
+                if str(current_node).lower().strip() != str(dest_node).lower().strip():
+                    self.log.debug('Success. Migrated VM:{0} from {1} to {2}'
+                                   .format(vm.id, source_node, dest_node))
+                    return
+                self.log.debug('Still monitoring vm:{0} migration status:{1}, elapsed:{2}/{3}'
+                               .format(vm.id, migrate_state, elapsed, timeout))
+
+            raise RuntimeError('Instance: {0} Failed to migrate after {1} seconds. '
+                               'Last migration state:{2}'.format(vm.id, elapsed, migrate_state))
+
         user = self.user
         vpc = self.test6b0_get_vpc_for_eni_tests()
         instances = []
@@ -3866,7 +3920,7 @@ class VpcBasics(CliTestRunner):
                 if not nodes:
                     raise RuntimeError('Node Controller for vm:{0} not found before migration?')
                 start_node = nodes[0]
-                self.tc.sysadmin.migrate_instances(instance_id=vm1.id)
+                migrate_and_monitor_state(vm1)
                 nodes = self.tc.sysadmin.get_hosts_for_node_controllers(instanceid=vm1.id)
                 if not nodes:
                     raise RuntimeError('Node Controller for vm:{0} not found after migration?')
@@ -3889,25 +3943,28 @@ class VpcBasics(CliTestRunner):
             if clean:
                 start = time.time()
                 elapsed = 0
-                timeout = 60
-                while instances and elapsed > timeout:
+                timeout = 90
+                retry = instances
+                while retry and elapsed < timeout:
                     elapsed = int(time.time() - start)
-                    retry = []
+                    # Send an initial terminate to all instances, do not wait for state yet...
                     for instance in instances:
                         try:
-                            instance.update()
+                            instance = self.tc.admin.ec2.get_instances(instance.id)[0]
+                            if instance.tags.get('euca:node:migration:state'):
+                                self.log.debug('Waiting on instance {0} to clear migration '
+                                               'state. Elapsed:{0}'.format(instance.id, elapsed))
+                                self.tc.admin.ec2.show_tags(instance.tags)
+                            else:
+                                for i in retry:
+                                    if i.id == instance.id:
+                                        retry.remove(i)
                         except:
-                            continue
-                        if instance.state in ['running', 'pending', 'stopped']:
-                            try:
-                                instance.terminate()
-                            except EC2ResponseError as EE:
-                                self.log.debug('Error deleting {0}, elapsed:{1}/{2}. Error:{3}'
-                                               .format(instance.id, elapsed, timeout, EE))
-                                retry.append(instance)
-                    instances = retry
-                    if instances:
+                            pass
+                    if retry:
                         time.sleep(5)
+                for instance in instances:
+                    instance.terminate_and_verify()
 
                 for subnet in subnets:
                     self.status('Attempting to delete subnet and dependency artifacts from '
