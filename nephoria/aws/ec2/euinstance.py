@@ -2287,46 +2287,60 @@ class EuInstance(Instance, TaggedResource, Machine):
         ipv4_info = self.get_network_ipv4_info()
         dev_names = self.sys('ls -1 {0}'.format(prefix), code=0)
         for dev_name in dev_names:
-            dev = {}
-            dev_name = str(dev_name).strip()
-            if name and dev_name != name:
-                continue
-            dev_ipv4_info = ipv4_info.get(dev_name) or {}
-            dev['local_ip'] = dev_ipv4_info.get('ip', None)
-            dev['local_cidr'] = dev_ipv4_info.get('network_cidr', None)
+            attempt = 0
+            good = False
+            max_attempts = 3
+            while attempt < max_attempts and not good:
+                attempt += 1
+                try:
+                    dev = {}
+                    dev_name = str(dev_name).strip()
+                    if name and dev_name != name:
+                        continue
+                    dev_ipv4_info = ipv4_info.get(dev_name) or {}
+                    dev['local_ip'] = dev_ipv4_info.get('ip', None)
+                    dev['local_cidr'] = dev_ipv4_info.get('network_cidr', None)
 
-            dev_path = os.path.join(prefix, dev_name)
+                    dev_path = os.path.join(prefix, dev_name)
 
-            # Get MAC address...
-            mac_path = os.path.join(dev_path, 'address')
-            mac_addr = self.sys('cat {0}'.format(mac_path))[0]
-            search = re.search("^\w\w:\w\w:\w\w:\w\w:\w\w:\w\w$", mac_addr.strip())
-            if search:
-                dev['address'] = search.group()
-            else:
-                self.log.warning('Failed to parse MAC info for:{0}'.format(dev_name))
-                dev['address'] = None
-            dev['eni_index'] = None
-            dev['eni'] = None
-            dev['eni_private_ips'] = None
-            dev['eni_public_ip'] = None
-            if dev['address']:
-                for interface in self.interfaces:
-                    if interface.mac_address == dev['address']:
-                        dev['eni'] = interface.id
-                        dev['eni_private_ips'] = [str(x.private_ip_address) for x in
-                                                  interface.private_ip_addresses]
-                        dev['eni_public_ip'] = getattr(interface, 'publicIp', None)
-                        if interface.attachment:
-                            dev['eni_index'] = interface.attachment.device_index
-            # Get the operation state...
-            oper_path = os.path.join(dev_path, 'operstate')
-            try:
-                dev['operstate'] = self.sys('cat {0}'.format(oper_path), code=0, timeout=2)[0]
-            except CommandTimeoutException as TE:
-                self.log.debug(TE)
-                dev['operstate'] = None
-            ret[dev_name] = dev
+                    # Get MAC address...
+                    mac_path = os.path.join(dev_path, 'address')
+                    mac_addr = self.sys('cat {0}'.format(mac_path), code=0)[0]
+                    search = re.search("^\w\w:\w\w:\w\w:\w\w:\w\w:\w\w$", mac_addr.strip())
+                    if search:
+                        dev['address'] = search.group()
+                    else:
+                        self.log.warning('Failed to parse MAC info for:{0}'.format(dev_name))
+                        dev['address'] = None
+                    dev['eni_index'] = None
+                    dev['eni'] = None
+                    dev['eni_private_ips'] = None
+                    dev['eni_public_ip'] = None
+                    if dev['address']:
+                        for interface in self.interfaces:
+                            if interface.mac_address == dev['address']:
+                                dev['eni'] = interface.id
+                                dev['eni_private_ips'] = [str(x.private_ip_address) for x in
+                                                          interface.private_ip_addresses]
+                                dev['eni_public_ip'] = getattr(interface, 'publicIp', None)
+                                if interface.attachment:
+                                    dev['eni_index'] = interface.attachment.device_index
+                    # Get the operation state...
+                    oper_path = os.path.join(dev_path, 'operstate')
+                    try:
+                        dev['operstate'] = self.sys('cat {0}'.format(oper_path), code=0,
+                                                    timeout=2)[0]
+                    except (CommandTimeoutException, CommandExitCodeException) as TE:
+                        self.log.debug(TE)
+                        dev['operstate'] = None
+                    ret[dev_name] = dev
+                    good = True
+                except Exception as E:
+                    self.log.debug('{0}\nError while gathering device info for:{1}, Err:"{2}"'
+                                     .format(get_traceback(), dev_name, E))
+                    if attempt >= max_attempts:
+                        raise
+                    time.sleep(1.5)
         macs = [x.get('address') for x in ret.values()]
         for interface in self.interfaces:
             if interface.mac_address not in macs:
@@ -2909,6 +2923,8 @@ class EuInstance(Instance, TaggedResource, Machine):
 
         """
         errors = ""
+        if exclude_indexes is None:
+            exclude_indexes = [0]
         if exclude_indexes and not isinstance(exclude_indexes, list):
             exclude_indexes = [exclude_indexes]
         self.update()
@@ -2955,9 +2971,10 @@ class EuInstance(Instance, TaggedResource, Machine):
                     break
                 except Exception as E:
                     self.show_network_device_info()
-                    error = 'Attempts:{0}, Elapsed:{1}, Error waiting for IP info to ' \
-                            'sync for ENI:{0}, ERROR:"{1}"\n'.format(attempts, elapsed, eni.id, E)
-                    self.log.error(red("{0}\n{1}".format(get_traceback(), error)))
+                    error = 'Attempt:{0}, Elapsed:{1}/{2}, Error waiting for IP info to ' \
+                            'sync for ENI:{3}, ERROR:"{4}"\n'.format(attempts, elapsed, timeout,
+                                                                     eni.id, E)
+                    self.log.warning("{0}\n{1}".format(get_traceback(), error))
                     time.sleep(5)
             if error:
                 self.log.warning(red(error))

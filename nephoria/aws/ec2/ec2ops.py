@@ -4366,12 +4366,15 @@ disable_root: false"""
                 else:
                     request_groups.append(group.id)
             request_groups.sort()
+
+            # The default sec group will be added if a group was not provided in the request
+            if not group_set:
+                group_set = []
+                for sg in eni.groups:
+                    if sg.name == 'default':
+                        if sg.id not in group_set:
+                            group_set.append(sg.id)
             eni_groups = [str(x.id) for x in eni.groups]
-            eni_groups.sort()
-            for eni_group in eni_groups:
-                if eni_group.name == 'default':
-                    if eni_group.id not in group_set:
-                        group_set.append(eni_group.id)
             eni_groups.sort()
             if eni_groups != request_groups:
                 raise ValueError('ENI groups:"{0}" do not match requested group_set:{1}'
@@ -4856,10 +4859,14 @@ disable_root: false"""
             elif isinstance(group, basestring):
                 group_name = group
             else:
-                raise ValueError('Could not find or format group arg for revoke. group:"{0}:{1}"'
+                raise ValueError('Could not find or format parameter for group:"{0}:{1}"'
                                  .format(group, type(group)))
             if group_id:
                 break
+        if self.vpc_supported and not group_id and not (vpc_id and group_name):
+            raise ValueError('VPC mode requires either "group id" or "name + vpc id" to look up '
+                             'security groups, got: name:{0}, id:{1}, vpc_id:{2}'
+                             .format(name, id, vpc_id))
 
         if group_id:
             ids = [group_id]

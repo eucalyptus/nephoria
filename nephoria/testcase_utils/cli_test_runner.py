@@ -292,6 +292,11 @@ class CliTestRunner(object):
         'test_list': {'args': ['--test-list'],
                       'kwargs': {"help": "comma or space delimited list of test names to run",
                                  "default": None}},
+        'test_regex': {'args': ['--test-regex'],
+                      'kwargs': {'help': 'regex to use when creating the list of local test '
+                                         'methods to run.'
+                                         'Will use this regex in a search of the method name',
+                                 'default': None}},
         'environment_file': {'args': ['--environment-file'],
                         'kwargs': {"help": "Environment file that describes Eucalyptus topology,"
                                            "e.g Environment file that was used by Calyptos.",
@@ -599,7 +604,8 @@ class CliTestRunner(object):
     ##############################################################################################
     # "Run" test methods
     ##############################################################################################
-    def run(self, testlist=None, eof=False, clean_on_exit=None, printresults=True):
+    def run(self, testlist=None, eof=False, clean_on_exit=None, test_regex=None,
+            printresults=True):
         '''
         Desscription: wrapper to execute a list of ebsTestCase objects
 
@@ -615,6 +621,12 @@ class CliTestRunner(object):
         :param clean_on_exit: Flag to indicate if clean_on_exit should be ran at end of test
                               list execution.
 
+        : type test_regex: string
+        :param test_regex: string representing regex to be used against test methods found in this
+                           class (ie methods prefixed with the word 'test'), or provided in
+                           the test_list cli arg. Matching methods will be sorted alphabetically
+                           and added to the run list.
+
         :type printresults: boolean
         :param printresults: Flag to indicate whether or not to print a summary of results upon
                              run_test_case_list completion.
@@ -622,6 +634,18 @@ class CliTestRunner(object):
         :rtype: integer
         :returns: integer exit code to represent pass/fail of the list executed.
         '''
+        regex = test_regex or self.args.test_regex
+
+        def apply_regex(testnames):
+            if not regex:
+                return testnames
+            else:
+                new_list = []
+                for testname in testnames:
+                    if re.search(regex, testname):
+                        new_list.append(testname)
+                return new_list
+
         if clean_on_exit is None:
             clean_on_exit = not(getattr(self.args, 'no_clean', False))
 
@@ -630,6 +654,7 @@ class CliTestRunner(object):
             # and run them
             if getattr(self.args, 'test_list', None):
                 test_names = str(self.args.test_list).replace(',', " ").split()
+                test_names = apply_regex(test_names)
                 testlist = []
                 for test_name in test_names:
                     test_name = test_name.strip(',')
@@ -644,11 +669,13 @@ class CliTestRunner(object):
                 for name in dir(self):
                     if name.startswith('test'):
                         attr_names.append(name)
+                attr_names = apply_regex(attr_names)
                 for name in sorted(attr_names, key=key):
                     attr = getattr(self, name, None)
                     if hasattr(attr, '__call__'):
                         testlist.append(self.create_testunit_from_method(method=attr,
                                                                          test_unit_name=name))
+
         self._testlist = testlist
         if not self._testlist:
             self.log.warning('No tests were provided or found to run?')

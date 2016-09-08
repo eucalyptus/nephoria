@@ -915,7 +915,7 @@ class VpcBasics(CliTestRunner):
             raise ValueError('{0}: Default route for IGW:{1} not found'
                              .format(vpc.id, igw.id))
 
-    def check_user_default_security_group_rules(self, user=None):
+    def check_user_default_security_group_rules(self, user=None, vpc=None):
         """
         A users VPC includes a default security group whose initial rules are to deny all
         inbound traffic, allow all outbound traffic, and allow all traffic between
@@ -928,7 +928,8 @@ class VpcBasics(CliTestRunner):
 
         """
         user = user or self.user
-        default_group = user.ec2.get_security_group('default')
+        vpc = vpc or self.check_user_default_vpcs(user=user)
+        default_group = user.ec2.get_security_group(name='default', vpc_id=vpc.id)
         user.ec2.show_security_group(default_group)
 
 
@@ -3226,7 +3227,8 @@ class VpcBasics(CliTestRunner):
         start = time.time()
         elapsed = 0
         attempts = 0
-        while delete_me and elapsed > timeout:
+        errors = ""
+        while delete_me and elapsed < timeout:
             attempts += 1
             self.log.info('Attempting to delete enis:"{0}", attempt:{1}'
                           .format(",".join([str(x.id) for x in enis]), attempts))
@@ -3241,8 +3243,8 @@ class VpcBasics(CliTestRunner):
                             delete_me.remove(eni.id)
                         self.log.debug('Deleted eni:{0}'.format(eni.id))
         if delete_me:
-            raise RuntimeError('Failed to delete the following ENIs:{0}'
-                               .format(",".join(delete_me)))
+            raise RuntimeError('Attempts:{0}, Elapsed:{1}. Failed to delete the following ENIs:{2}'
+                               .format(attempts, elapsed, ",".join(delete_me)))
         self.status('Passed. Basic create and delete ENI checks complete')
 
     def test6c0_eni_basic_creation_deletion_tests_extended(self):
@@ -3616,7 +3618,8 @@ class VpcBasics(CliTestRunner):
                 eni_collection.add_eni(eni2, groups=[group.id], delete_on_termination=True)
                 eni_collection.add_eni(eni3, groups=[group.id], delete_on_termination=False)
 
-                test_vm = self.create_test_instances(subnet=subnet,
+                test_vm = self.create_test_instances(emi=emi,
+                                                     subnet=subnet,
                                                      count=1,
                                                      monitor_to_running=True,
                                                      network_interface_collection=eni_collection,
@@ -3747,6 +3750,7 @@ class VpcBasics(CliTestRunner):
                 eip1 = user.ec2.allocate_address()
                 eip2 = user.ec2.allocate_address()
                 eip1.associate(network_interface_id=eni.id)
+                user.ec2.modify_network_interface_attributes(eni, group_set=[group])
                 eni_collection = user.ec2.create_network_interface_collection(eni=eni,
                                                                                subnet_id=subnet.id,
                                                                                zone=zone,
@@ -3839,7 +3843,7 @@ class VpcBasics(CliTestRunner):
         """
 
         def migrate_and_monitor_state(vm, timeout=300):
-            if not isinstance(vm, basestring)
+            if isinstance(vm, basestring):
                 vm_id = vm
             else:
                 vm_id = vm.id
@@ -3938,6 +3942,11 @@ class VpcBasics(CliTestRunner):
                 vm1.sys('ping -c1 -t5 {0}'.format(eni2.private_ip_address))
                 vm2.sys('ping -c1 -t5 {0}'.format(eni1.private_ip_address))
                 self.status('Migration ENI tests complete for zone:{0}'.format(zone))
+        except Exception as E:
+            self.log.error(red('{0}\nError during ENI migration tests:{1}'
+                               .format(get_traceback(), E)))
+            raise E
+
         finally:
             self.restore_vm_types()
             if clean:
@@ -3953,7 +3962,7 @@ class VpcBasics(CliTestRunner):
                             instance = self.tc.admin.ec2.get_instances(instance.id)[0]
                             if instance.tags.get('euca:node:migration:state'):
                                 self.log.debug('Waiting on instance {0} to clear migration '
-                                               'state. Elapsed:{0}'.format(instance.id, elapsed))
+                                               'state. Elapsed:{1}'.format(instance.id, elapsed))
                                 self.tc.admin.ec2.show_tags(instance.tags)
                             else:
                                 for i in retry:
@@ -3993,38 +4002,95 @@ class VpcBasics(CliTestRunner):
         instances = []
         subnets = []
         group = self.get_test_security_groups(vpc=vpc, count=1, user=user)[0]
+        self.last_status_msg = ""
+        def status(msg):
+            self.last_status_msg = msg
+            self.status(msg)
+        def bring_vm_primary_interface_up(vm, vm_ssh):
+            status('Bringing up primary interface for:{0}'.format(vm.id))
+            vm_ssh.sys('ifconfig {0} up'.format(vm.primary_dev), code=0, verbose=True)
+            vm.ssh = vm_ssh
+            status('Syncing ENI info for vm:{0}...'.format(vm.id))
+            vm.sync_enis_static_ip_config()
+            vm.show_network_device_info()
+            vm_ssh.sys('route add -net 0.0.0.0/0 gw {0}'.format(gateway))
+            self.log.debug(vm_ssh.sys('netstat -rn', listformat=False))
+            status('Attempting to connect to vm1 @ {0}'.format(vm.ip_address))
+            vm1.connect_to_instance()
+            status('Done Bringing up primary interface for:{0}'.format(vm.id))
 
         def vm_id_check(ssh, id):
-            out = ssh.sys('cat testfile'.format(vm.id))[0]
-            out = str(out).strip()
-            if out != id:
-                raise ValueError('Testfile id:"{0}" != "{1}" on host:{2}'
-                                 .format(out, id, ssh.host))
+            try:
+                self.status('Checking host "{0}" for testfile id:"{1}"'.format(ssh.host, id))
+                out = ssh.sys('cat testfile'.format(id), verbose=True,
+                              listformat=False)
+                self.log.debug('Got testfile output from host:{0}. id{1}, output:"{2}"'
+                               .format(ssh.host, id, out))
+                if not out:
+                    raise Exception('Testfile not found or empty on ssh host:{0}, id:{1}'
+                                    .format(ssh.host, id))
+                instance_id = re.search('i-\w{8}', out)
+                if instance_id:
+                    instance_id = instance_id.group()
+                    if instance_id != id:
+                        msg = 'Connected to wrong instance in ENI check. Instance ID found in ' \
+                              'testfile:{0} does not match expected:{1} on ' \
+                              'host:{2}'.format(instance_id, id, ssh.host)
+                        self.log.error(red(msg))
+                        try:
+                            vm = user.ec2.convert_instance_to_euinstance(id)
+                            self.log.error('ENI info for the expected owner of {0} instance:{1}'
+                                           '...'.format(ssh.host, id))
+                            vm.show_enis()
+                            test_file_vm = user.ec2.convert_instance_to_euinstance(instance_id)
+                            self.log.error('ENI info for the VM ID:{0} the test connected to at'
+                                           'IP:{1}'.format(instance_id, ssh.host))
+                            test_file_vm.show_enis()
+                        except Exception as OOPS:
+                            self.log.warning('{0}\nIgnoring error while printing ENI debug '
+                                             'info. Error:{1}'.format(get_traceback(), OOPS))
+
+                        raise ValueError(msg)
+            except Exception as E:
+                self.log.error(red('{0}\nvm_id_check failed for host:{1}, id:{2}. Error:"{3}"'
+                                   .format(get_traceback(), ssh.host, id, E)))
+                try:
+                    out = ssh.sys('hostname; ifconfig', listformat=False)
+                    self.log.error('hostname and ifconfig from failed vm_id_check guest:\n{0}'
+                                   .format(out))
+                except:
+                    pass
+                raise E
         try:
             self.modify_vm_type_store_orig('m1.small', network_interfaces=3)
             for zone in self.zones:
                 subnet1, subnet2 = self.get_non_default_test_subnets_for_vpc(vpc=vpc, user=user,
                                                                              zone=zone, count=2)
                 subnets += [subnet1, subnet2]
+                net_info = get_network_info_for_cidr(subnet1.cidr_block)
+                net_octets = net_info.get('network').split('.')
+                gateway = "{0}.{1}.{2}.{3}".format(net_octets[0], net_octets[1], net_octets[2],
+                                                   (int(net_octets[3]) + 1))
                 eni1, eni2, eni3 = self.get_test_enis_for_subnet(subnet=subnet2, user=user,
                                                                  count=3)
                 self.status('Creating VMs for this test...')
                 vm1, vm2, proxyvm = self.get_test_instances(zone=zone, group_id=group.id,
                                                         vpc_id=vpc.id, subnet_id=subnet1.id,
-                                                        instance_type='m1.small', count=3)
+                                                        instance_type='m1.small',
+                                                        auto_connect=True, count=3)
                 instances = [vm1, vm2, proxyvm]
-                self.status('Writing Instance ID files to guests')
+                status('Writing Instance ID files to guests')
                 for vm in [vm1, vm2, proxyvm]:
-                    vm.sys('echo "{0}" > testfile'.format(vm.id))
-                self.status('Attaching Secondary ENIs and setting up static IP '
+                    vm.sys('echo "{0}" > testfile'.format(vm.id), code=0)
+                status('Attaching Secondary ENIs and setting up static IP '
                             'config for the secondary ENIs')
                 vm1.attach_eni(eni1)
                 vm2.attach_eni(eni2)
                 proxyvm.attach_eni(eni3)
-                self.status('Setting up ENI interface IPs with static configurations...')
+                status('Setting up ENI interface IPs with static configurations...')
                 for vm in [vm1, vm2, proxyvm]:
                     vm.sync_enis_static_ip_config(exclude_indexes=[0])
-                self.status('Shutting down the primary interfaces on vm1 and vm2 to ensure '
+                status('Shutting down the primary interfaces on vm1 and vm2 to ensure '
                             'packet path uses secondary ENIs...')
                 for vm in [vm1, vm2]:
                     net_info = vm.get_network_local_device_for_eni(vm.interfaces[0].id)
@@ -4034,7 +4100,7 @@ class VpcBasics(CliTestRunner):
                         vm.sys('ifconfig {0} down'.format(dev_name), code=0, timeout=2)
                     except CommandTimeoutException:
                         pass
-                self.status('Creating new ssh sessions to vm1 and vm2 through proxy VM3:{0}'
+                status('Creating new ssh sessions to vm1 and vm2 through proxy VM3:{0}'
                             .format(proxyvm.id))
                 vm1_ssh = SshConnection(host=vm1.interfaces[1].private_ip_address,
                                         keypath=vm1.keypath, proxy=proxyvm.ip_address,
@@ -4042,96 +4108,106 @@ class VpcBasics(CliTestRunner):
                 vm2_ssh = SshConnection(host=vm2.interfaces[1].private_ip_address,
                                         keypath=vm2.keypath, proxy=proxyvm.ip_address,
                                         proxy_keypath=proxyvm.keypath)
-                self.status('Proxy SSH connections established, checking id files on guests...')
+                status('Proxy SSH connections established, checking id files on guests...')
                 vm_id_check(vm1_ssh, vm1.id)
                 vm_id_check(vm2_ssh, vm2.id)
-                self.status('Bringing the primary interfaces back up temporarily to allow ssh '
-                            'to connect on those interfaces during secondary eni swap out...')
+                status('ID file check passed')
+                status('Bringing the primary interfaces back up temporarily to allow ssh '
+                       'to connect on those interfaces during secondary eni swap out...')
+                bring_vm_primary_interface_up(vm1, vm1_ssh)
+                bring_vm_primary_interface_up(vm2, vm2_ssh)
 
-                vm1_ssh.sys('ifconfig {0} up'.format(vm1.primary_dev), code=0)
-                vm1.refresh_ssh()
-                vm1_ssh.sys('ifconfig {0} up'.format(vm1.primary_dev), code=0)
-                vm2.refresh_ssh()
-                self.status('Swapping secondary ENIs on VM1:{0} and VM2:{2} ...'
+
+                status('Swapping secondary ENIs on VM1:{0} and VM2:{1} ...'
                             .format(vm1.id, vm2.id))
-                self.status('VM1 before swap...')
+                status('VM1 before swap...')
                 vm1.show_enis()
-                self.status('VM2 before swap...')
+                status('VM2 before swap...')
                 vm2.show_enis()
                 vm1.detach_eni(eni1)
                 vm2.detach_eni(eni2)
                 vm1.attach_eni(eni2)
                 vm2.attach_eni(eni1)
-                self.status('Setting up secondary interface IPs with static configurations...')
+                status('Setting up secondary interface IPs with static configurations...')
                 for vm in [vm1, vm2]:
                     vm.sync_enis_static_ip_config(exclude_indexes=[0])
                     vm.show_network_device_info()
-                self.status('Shutting down the primary interfaces on vm1 and vm2 to ensure '
+                status('Shutting down the primary interfaces on vm1 and vm2 to ensure '
                             'packet path uses secondary ENIs...')
                 for vm in [vm1, vm2]:
                     try:
-                        vm.sys('ifconfig {0} down'.format(vm.primary_dev), code=0, timeout=2)
+                        vm.sys('ifconfig {0} down'.format(vm.primary_dev), code=0, timeout=2,
+                               verbose=True)
                     except CommandTimeoutException:
                         pass
 
-                self.status('ENIS have been swapped. Attempting to establish ssh sessions'
+                status('ENIS have been swapped. Attempting to establish ssh sessions'
                             'to new secondary ENI attachments through proxy vm...')
                 vm1_ssh = SshConnection(host=vm1.interfaces[1].private_ip_address,
                                         keypath=vm1.keypath, proxy=proxyvm.ip_address,
-                                        proxy_keypath=proxyvm.keypath)
+                                        proxy_keypath=proxyvm.keypath, logger=vm1.log)
                 vm2_ssh = SshConnection(host=vm2.interfaces[1].private_ip_address,
                                         keypath=vm2.keypath, proxy=proxyvm.ip_address,
-                                        proxy_keypath=proxyvm.keypath)
+                                        proxy_keypath=proxyvm.keypath, logger=vm2.log)
 
-                self.status('Proxy SSH connections established through proxy, '
+                status('Proxy SSH connections established through proxy, '
                             'checking id files on guests...')
                 vm_id_check(vm1_ssh, vm1.id)
                 vm_id_check(vm2_ssh, vm2.id)
-                self.status('First ENI swap and packet path checks succeeded...')
-                self.status('Bringing the primary interfaces back up temporarily to allow ssh '
+                status('First ENI swap and packet path checks succeeded...')
+                status('Bringing the primary interfaces back up temporarily to allow ssh '
                             'to connect on those interfaces during secondary eni swap out...')
-
-                vm1_ssh.sys('ifconfig {0} up'.format(vm1.primary_dev), code=0)
-                vm1.refresh_ssh()
-                vm1_ssh.sys('ifconfig {0} up'.format(vm1.primary_dev), code=0)
-                vm2.refresh_ssh()
-                self.status('Swapping ENIs back again...')
-                self.status('VM1 before swap...')
+                bring_vm_primary_interface_up(vm1, vm1_ssh)
+                bring_vm_primary_interface_up(vm2, vm2_ssh)
+                status('Swapping ENIs back again...')
+                status('VM1 before swap...')
                 vm1.show_enis()
-                self.status('VM2 before swap...')
+                status('VM2 before swap...')
                 vm2.show_enis()
+                status('swapping ENIs back again now...')
                 vm1.detach_eni(eni1)
                 vm2.detach_eni(eni2)
                 vm1.attach_eni(eni2)
                 vm2.attach_eni(eni1)
-                self.status('Setting up secondary interface IPs with static configurations...')
+                status('Setting up secondary interface IPs with static configurations...')
                 for vm in [vm1, vm2]:
                     vm.sync_enis_static_ip_config(exclude_indexes=[0])
                     vm.show_network_device_info()
-                self.status('Shutting down the primary interfaces on vm1 and vm2 to ensure '
+                status('Shutting down the primary interfaces on vm1 and vm2 to ensure '
                                 'packet path uses secondary ENIs...')
                 for vm in [vm1, vm2]:
                     try:
                         vm.sys('ifconfig {0} down'.format(vm.primary_dev), code=0, timeout=2)
                     except CommandTimeoutException:
                         pass
-                self.status('ENIS have been swapped. Attempting to establish ssh sessions'
+                status('ENIS have been swapped. Attempting to establish ssh sessions'
                             'to new ENI attachments...')
-                vm1_ssh = SshConnection(host=vm1.interfaces[1].private_ip_address,
-                                        keypath=vm1.keypath, proxy=proxyvm.ip_address,
+                try:
+                    vm1_ssh = SshConnection(host=vm1.interfaces[1].private_ip_address,
+                                            keypath=vm1.keypath, proxy=proxyvm.ip_address,
+                                            proxy_keypath=proxyvm.keypath)
+                    vm2_ssh = SshConnection(host=vm2.interfaces[1].private_ip_address,
+                                            keypath=vm2.keypath, proxy=proxyvm.ip_address,
                                         proxy_keypath=proxyvm.keypath)
-                vm2_ssh = SshConnection(host=vm2.interfaces[1].private_ip_address,
-                                        keypath=vm2.keypath, proxy=proxyvm.ip_address,
-                                        proxy_keypath=proxyvm.keypath)
+                except Exception as SE:
+                    self.log.error(red('{0}\nError trying to establish SSH sessions post 2nd ENI '
+                                       'swap:{1}'.format(get_traceback(), SE)))
+                    raise
 
-                self.status('Proxy SSH connections established through proxy, '
+                status('Proxy SSH connections established through proxy, '
                             'checking id files on guests...')
                 vm_id_check(vm1_ssh, vm1.id)
                 vm_id_check(vm2_ssh, vm2.id)
-                self.status('Second ENI swap and packet path checks succeeded...')
-                self.status('ENI swap tests complete for zone:{0}'.format(zone))
+                status('Second ENI swap and packet path checks succeeded...')
+                status('ENI swap tests complete for zone:{0}'.format(zone))
+        except Exception as E:
+            self.log.error(red('{0}\nTest Failed. Last Status Msg:{1}, error:{2}'
+                               .format(get_traceback(), self.last_status_msg, E)))
+            raise E
 
         finally:
+            self.status('Beginning test cleanup. Last Status msg:"{0}"...'
+                            .format(self.last_status_msg))
             self.restore_vm_types()
             for vm in instances:
                 try:
