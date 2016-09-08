@@ -2291,6 +2291,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             good = False
             max_attempts = 3
             while attempt < max_attempts and not good:
+                self.log.debug('Attempting to fetch info for device {0}'.format(dev_name))
                 attempt += 1
                 try:
                     dev = {}
@@ -2534,12 +2535,12 @@ class EuInstance(Instance, TaggedResource, Machine):
             raise ValueError('ERRORS after elapsed:{0}:"{1}"'.format(elapsed,
                                                                      last_error or "UNKNOWN?"))
         else:
-            self.log.debug('System is showing ENI:{0} attached. Moving on to guest checks...'
-                           .format(eni.id))
+            self.log.debug('System is showing ENI:{0} attached'.format(eni.id))
         if local_dev_timeout is None or not self.ssh or self.state != 'running':
             self.log.debug('local_dev_timeout or self.ssh is None, not waiting for device to'
                            ' appear on guest')
             return (eni, None)
+        self.log.debug(' Moving on to guest checks...')
         start = time.time()
         elapsed = 0
         attempts = 0
@@ -2603,8 +2604,9 @@ class EuInstance(Instance, TaggedResource, Machine):
         attachment_id = eni.attachment.id
 
         if eni.id not in [str(x.id) for x in self.interfaces]:
-            raise ValueError('ENI:{0} not found as attached in self.interfaces:"{1}"'
-                             .format(eni.id, ", ".join([str(x.id) for x in self.interfaces])))
+            raise ValueError('ENI:{0} not found as attached in {1}.interfaces:"{2}"'
+                             .format(eni.id, self.id,
+                                     ", ".join([str(x.id) for x in self.interfaces])))
         if not eni.attachment or eni.attachment.instance_id != self.id:
             raise('{0}.instances has the eni in the list of attached ENI, but the ENI '
                   'attachment.instance_id:{1} != {2}'.format(self.id, eni.attachment.instance_id,
@@ -2934,7 +2936,12 @@ class EuInstance(Instance, TaggedResource, Machine):
                                .format(eni.id, eni.attachment.device_index))
                 continue
             try:
-                dev_info = self.get_network_local_device_for_eni(eni)
+                for attempt in xrange(0, 3):
+                    dev_info = self.get_network_local_device_for_eni(eni)
+                    if not dev_info:
+                        time.sleep(2)
+                    else:
+                        break
                 if not dev_info:
                     raise RuntimeError('Local dev not found for eni:{0}'.format(eni.id))
                 dev_name = dev_info.get('dev_name')

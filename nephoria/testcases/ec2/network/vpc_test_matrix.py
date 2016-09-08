@@ -3980,7 +3980,7 @@ class VpcBasics(CliTestRunner):
                                 'this test')
                     user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
-    def test6n1_eni_swap_between_vms_packet_test(self):
+    def test6n1_eni_swap_between_vms_packet_test(self, clean=True):
         """
         Verify connectivity moving a network interface between two or more VMs, and back.
         Check ENI attribute state and verify packets are going to the correct recipient.
@@ -4011,13 +4011,14 @@ class VpcBasics(CliTestRunner):
             vm_ssh.sys('ifconfig {0} up'.format(vm.primary_dev), code=0, verbose=True)
             vm.ssh = vm_ssh
             status('Syncing ENI info for vm:{0}...'.format(vm.id))
-            vm.sync_enis_static_ip_config()
+            vm.sync_enis_static_ip_config(exclude_indexes=[1,2])
             vm.show_network_device_info()
             vm_ssh.sys('route add -net 0.0.0.0/0 gw {0}'.format(gateway))
             self.log.debug(vm_ssh.sys('netstat -rn', listformat=False))
             status('Attempting to connect to vm1 @ {0}'.format(vm.ip_address))
-            vm1.connect_to_instance()
+            vm.connect_to_instance()
             status('Done Bringing up primary interface for:{0}'.format(vm.id))
+
 
         def vm_id_check(ssh, id):
             try:
@@ -4124,10 +4125,20 @@ class VpcBasics(CliTestRunner):
                 vm1.show_enis()
                 status('VM2 before swap...')
                 vm2.show_enis()
-                vm1.detach_eni(eni1)
-                vm2.detach_eni(eni2)
-                vm1.attach_eni(eni2)
-                vm2.attach_eni(eni1)
+                try:
+                    self.status('Detaching ENI1 from VM1 for swap...')
+                    vm1.detach_eni(eni1)
+                    self.status('Detaching ENI2 from VM2 for swap...')
+                    vm2.detach_eni(eni2)
+                    self.status('Attaching swapped ENI2 to VM1')
+                    vm1.attach_eni(eni2)
+                    self.status('Attaching swapped ENI1 to VM2')
+                    vm2.attach_eni(eni1)
+                except Exception as E:
+                    self.log.error('{0}\nERROR:{1}\nset self.bad_instances now...'
+                                   .format(get_traceback(), E))
+                    self.bad_instances = [vm1, vm2]
+                    return
                 status('Setting up secondary interface IPs with static configurations...')
                 for vm in [vm1, vm2]:
                     vm.sync_enis_static_ip_config(exclude_indexes=[0])
@@ -4165,10 +4176,14 @@ class VpcBasics(CliTestRunner):
                 status('VM2 before swap...')
                 vm2.show_enis()
                 status('swapping ENIs back again now...')
-                vm1.detach_eni(eni1)
-                vm2.detach_eni(eni2)
-                vm1.attach_eni(eni2)
-                vm2.attach_eni(eni1)
+                self.status('Detaching ENI2 from VM1 for swap back...')
+                vm1.detach_eni(eni2)
+                self.status('Detaching ENI1 from VM2 for swap back...')
+                vm2.detach_eni(eni1)
+                self.status('Attaching ENI1 to VM1 for swap back...')
+                vm1.attach_eni(eni1)
+                self.status('Attaching ENI2 to VM2 for swap back...')
+                vm2.attach_eni(eni2)
                 status('Setting up secondary interface IPs with static configurations...')
                 for vm in [vm1, vm2]:
                     vm.sync_enis_static_ip_config(exclude_indexes=[0])
@@ -4206,17 +4221,18 @@ class VpcBasics(CliTestRunner):
             raise E
 
         finally:
-            self.status('Beginning test cleanup. Last Status msg:"{0}"...'
-                            .format(self.last_status_msg))
-            self.restore_vm_types()
-            for vm in instances:
-                try:
-                    vm.terminate_and_verify()
-                except Exception as E:
-                    self.log.debug('{0}\nError:{1}'.format(get_traceback(), E))
-            for subnet in subnets:
-                self.status('Attempting to delete subnet and dependency artifacts from this test')
-                user.ec2.delete_subnet_and_dependency_artifacts(subnet)
+            if clean:
+                self.status('Beginning test cleanup. Last Status msg:"{0}"...'
+                                .format(self.last_status_msg))
+                self.restore_vm_types()
+                for vm in instances:
+                    try:
+                        vm.terminate_and_verify()
+                    except Exception as E:
+                        self.log.debug('{0}\nError:{1}'.format(get_traceback(), E))
+                for subnet in subnets:
+                    self.status('Attempting to delete subnet and dependency artifacts from this test')
+                    user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
     def test6p1_eni_secondary_eni_basic_packet_tests(self):
         """
