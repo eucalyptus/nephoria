@@ -70,6 +70,11 @@ import __builtin__
 openfiles = set()
 oldfile = __builtin__.file
 
+"""
+# Debug for monitoring files open by python. When running the packet test matrix(s) the OS
+# can complain about too many open FDs per user. 
+# Python may be leaking FDs sockets, files, etc from it's sub processes despite closing all
+# related FDs (including stdin, out, err etc for pipes, etc)
 def printOpenFiles():
     print yellow("\n### %d OPEN FILES: [%s]\n" % (len(openfiles), ", ".join(f.x for f in openfiles)))
 
@@ -92,6 +97,8 @@ def newopen(*args):
     return newfile(*args)
 __builtin__.file = newfile
 __builtin__.open = newopen
+
+"""
 
 class VpcSuite(CliTestRunner):
 
@@ -3706,7 +3713,7 @@ class VpcSuite(CliTestRunner):
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
 
-    def test6h1_eni_eip_reassociate_basic_test(self):
+    def test6h1_eni_eip_reassociate_toggle_basic_test(self):
         """
         Test running a VM with an eip associated with the primary ENI.
         Verify connectivity to the EIP using ssh/ping.
