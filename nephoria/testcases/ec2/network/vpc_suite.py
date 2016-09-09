@@ -3842,49 +3842,98 @@ class VpcSuite(CliTestRunner):
         verify the VMs and their ENIs migrate correctly.
         """
 
-        def migrate_and_monitor_state(vm, timeout=300):
+        def migrate_and_monitor_state(vm, start_node=None, timeout=360):
             if isinstance(vm, basestring):
                 vm_id = vm
             else:
                 vm_id = vm.id
+            if not start_node:
+                nodes = self.tc.sysadmin.get_hosts_for_node_controllers(instanceid=vm_id)
+                if not nodes:
+                    raise RuntimeError('Node Controller for vm:{0} not found before migration?')
+                start_node = nodes[0]
+            self.status('Sending migrate request for:{0}, starting on node:{1}'
+                        .format(vm_id, start_node))
             self.tc.sysadmin.migrate_instances(instance_id=vm_id)
+            self.status('Migrate request complete now monitoring migration for:{0}'
+                        .format(vm_id))
             vm = self.tc.admin.ec2.get_instances(vm_id)[0]
             start = time.time()
             elapsed = 0
-            done = False
             source_node = None
             dest_node = None
-            while (not source_node or not dest_node) and elapsed < 30:
+            migrate_state = None
+            self.status('Waiting for source and dest migration tags to appear for:{0}'
+                        .format(vm_id))
+            while (not migrate_state or not dest_node) and elapsed < 60:
                 elapsed = int(time.time() - start)
+                self.tc.admin.ec2.show_tags(vm.tags)
                 source_node = vm.tags.get('euca:node:migration:source', None)
                 dest_node = vm.tags.get('euca:node:migration:destination', None)
+                current_node = vm.tags.get('euca:node', None)
+                migrate_state = vm.tags.get('euca:node:migration:state', None)
                 if not source_node or not dest_node:
                     time.sleep(5)
                     vm.update()
-            if not source_node or not dest_node:
-                self.tc.admin.ec2.show_tags(vm.tags)
-                raise ValueError('{0} tags did not have source and dest info after elapsed:{1}'
-                                 .format(vm.id, elapsed))
+            self.status('Wait for tags complete. Tags state:{0}, dest:{1}'
+                        .format(migrate_state, dest_node))
+            self.tc.admin.ec2.show_tags(vm.tags)
+            if not migrate_state or not dest_node:
+                raise ValueError('{0} tags did not have migration state and dest info after'
+                                 ' elapsed:{1}'.format(vm.id, elapsed))
             elapsed = 0
             start = time.time()
             migrate_state = None
+            done = False
+            state_passes = 0
+            self.status('Monitor {0} tag info for migration status...'.format(vm_id))
             while not done and elapsed < timeout:
+                self.log.debug('{0} migration status:"{1}" after elapsed {2}/{3}'
+                               .format(vm_id, migrate_state, elapsed, timeout))
+                vm.update()
+                self.tc.admin.ec2.show_tags(vm.tags)
                 elapsed = int(time.time() - start)
-
                 migrate_state = vm.tags.get('euca:node:migration:state', None)
                 current_node = vm.tags.get('euca:node', None)
-                if not current_node:
-                    node = self.tc.sysadmin.get_hosts_for_node_controllers(instanceid=vm.id)[0]
-                    current_node = node.hostname
-                if str(current_node).lower().strip() != str(dest_node).lower().strip():
-                    self.log.debug('Success. Migrated VM:{0} from {1} to {2}'
-                                   .format(vm.id, source_node, dest_node))
-                    return
-                self.log.debug('Still monitoring vm:{0} migration status:{1}, elapsed:{2}/{3}'
+                self.log.debug('Still monitoring vm:{0} migration status:"{1}", elapsed:{2}/{3}'
                                .format(vm.id, migrate_state, elapsed, timeout))
+                # Tags may briefly disappear.
+                # Use state passes to ensure the tags are consistent across multiple monitoring
+                # intervals.
+                if not migrate_state:
+                    if state_passes:
+                        done = True
+                        break
+                    else:
+                        time.sleep(5)
+                    state_passes += 1
+                else:
+                    time.sleep(5)
+                    state_passes = 0
+            self.status('Monitoring complete. State tag was either missing or we timed out. '
+                        'Migration state:{0}, elapsed:{1}/{2}'
+                        .format(migrate_state, elapsed, timeout))
+            self.status('Checking to see if the VM actually moved to the correct node now...')
+            nodes = self.tc.sysadmin.get_hosts_for_node_controllers(instanceid=vm_id)
+            if not nodes:
+                raise RuntimeError('Node Controller for vm:{0} not found after migration?')
+            current_node = nodes[0]
+            if str(dest_node).strip() != str(current_node.hostname).strip():
+                self.log.error(red('{0}\nFinal node:{1} != tag destination:{2} for {3} migration'
+                                   .format(get_traceback(), current_node.hostname, dest_node,
+                                           vm_id)))
+            if current_node.hostname != start_node.hostname:
+                self.log.debug('Success. Migrated VM:{0} from {1} to {2}'
+                               .format(vm.id, source_node, dest_node))
+                return
+            self.log.error(red('{0} ended on the same node:{1} that it started on:{2} post migration'
+                               .format(vm_id, current_node.hostname, start_node.hostname)))
 
-            raise RuntimeError('Instance: {0} Failed to migrate after {1} seconds. '
-                               'Last migration state:{2}'.format(vm.id, elapsed, migrate_state))
+            errmsg = ('Instance: {0} Failed to migrate after {1}/{2} seconds. '
+                               'Last migration state:{3}'.format(vm.id, elapsed, timeout,
+                                                                 migrate_state))
+            self.log.error(red(errmsg))
+            raise RuntimeError(errmsg)
 
         user = self.user
         vpc = self.test6b0_get_vpc_for_eni_tests()
@@ -3924,17 +3973,17 @@ class VpcSuite(CliTestRunner):
                 if not nodes:
                     raise RuntimeError('Node Controller for vm:{0} not found before migration?')
                 start_node = nodes[0]
-                migrate_and_monitor_state(vm1)
+                migrate_and_monitor_state(vm1, start_node=start_node)
                 nodes = self.tc.sysadmin.get_hosts_for_node_controllers(instanceid=vm1.id)
                 if not nodes:
                     raise RuntimeError('Node Controller for vm:{0} not found after migration?')
                 end_node = nodes[0]
-                self.log.debug('VM:{0} migrated from node:{0} to node:{1}'.format(vm1.id,
+                self.log.debug('VM:{0} migrated from node:{1} to node:{2}'.format(vm1.id,
                                                                                   start_node,
                                                                                   end_node))
-                if start_node.hostname != end_node.hostname:
+                if start_node.hostname == end_node.hostname:
                     raise ValueError('ERROR: VM:{0} ended up on the same node post migration.'
-                                     ' Starting node:{0}, ending node:{1}'.format(vm1.id,
+                                     ' Starting node:{1}, ending node:{2}'.format(vm1.id,
                                                                                   start_node,
                                                                                   end_node))
                 vm1.refresh_ssh()
