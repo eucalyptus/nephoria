@@ -4248,7 +4248,7 @@ class VpcSuite(CliTestRunner):
         ssh sessions into the subnets under test.
 
         """
-        raise NotImplementedError()
+        raise SkipTestException('Test Not Completed at this time')
 
 
     def test6z0_test_clean_up_eni_test_vpc_dependencies(self):
@@ -4290,10 +4290,10 @@ class VpcSuite(CliTestRunner):
         the Internet by using a network address translation (NAT) gateway that resides in
         the public subnet.
         """
-        raise NotImplementedError()
+        raise SkipTestException('Test Not Completed at this time')
 
     def test8t1_nat_gw_multiple_nat_gw_packet_test(self):
-        raise NotImplementedError()
+        raise SkipTestException('Test Not Completed at this time')
 
 
     def test8x0_nat_gw_max_gw_per_zone_limit(self):
@@ -4301,18 +4301,21 @@ class VpcSuite(CliTestRunner):
         Test the eucalyptus property:cloud.vpc.natgatewaysperavailabilityzone
         Confirm the limit can be reached and not exceeded.
         """
-        raise NotImplementedError()
+        raise SkipTestException('Test Not Completed at this time')
 
 
     def test8z0_test_clean_up_nat_gw_test_vpc_dependencies(self):
         """
         Delete the VPC and dependency artifacts created for the security group testing.
         """
+        raise SkipTestException('Test Not Completed at this time')
+        """
         if not self.args.no_clean:
             user = self.user
             vpc = self.test8b0_get_vpc_for_nat_gw_tests()
             if vpc:
                 user.ec2.delete_vpc_and_dependency_artifacts(vpc)
+        """
 
 
     ###############################################################################################
