@@ -93,9 +93,9 @@ def newopen(*args):
 __builtin__.file = newfile
 __builtin__.open = newopen
 
-class VpcBasics(CliTestRunner):
+class VpcSuite(CliTestRunner):
 
-    _CLI_DESCRIPTION = "Test the Eucalyptus EC2 instance store image functionality."
+    _CLI_DESCRIPTION = "Tests for Eucalyptus EC2 VPC functionality."
 
     _DEFAULT_CLI_ARGS = copy.copy(CliTestRunner._DEFAULT_CLI_ARGS)
 
@@ -4354,7 +4354,7 @@ class VpcBasics(CliTestRunner):
 
 
 if __name__ == "__main__":
-    testcase = VpcBasics()
+    testcase = VpcSuite()
     # Create a single testcase to wrap and run the image creation tasks.
     result = testcase.run()
     if result:
