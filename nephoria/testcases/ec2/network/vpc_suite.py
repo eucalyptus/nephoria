@@ -44,8 +44,8 @@ from cloud_utils.net_utils import packet_test, is_address_in_network, test_port_
     get_network_info_for_cidr
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException, SshConnection, \
     CommandTimeoutException
-from cloud_utils.log_utils import markup, printinfo, get_traceback, red, ForegroundColor, \
-    BackGroundColor, yellow
+from cloud_utils.log_utils import markup, printinfo, get_traceback, TextStyle, ForegroundColor, \
+    BackGroundColor, yellow, red, cyan, blue
 from boto.exception import BotoServerError, EC2ResponseError
 from boto.vpc.subnet import Subnet
 from boto.vpc.vpc import VPC
@@ -213,7 +213,8 @@ class VpcSuite(CliTestRunner):
             self._proxy_instances = proxy_instances
         return pi
 
-    def get_test_enis_for_subnet(self, subnet, status='available', count=0, user=None):
+    def get_test_enis_for_subnet(self, subnet, status='available', apply_groups=None, count=0,
+                                 user=None):
         """
         Attempts to fetch enis for a given subnet which are tagged with self.test_tag_name and
         self.id.
@@ -252,6 +253,10 @@ class VpcSuite(CliTestRunner):
                 user.ec2.create_tags(eni.id, {self.my_tag_name: self.id})
                 eni.update()
                 enis.append(eni)
+        if apply_groups:
+            for eni in enis:
+                user.ec2.modify_network_interface_attributes(eni, group_set=[apply_groups])
+                eni.update()
         return enis
 
     def add_subnet_interface_to_proxy_vm(self, subnet):
@@ -964,7 +969,33 @@ class VpcSuite(CliTestRunner):
 
 
     def vm_packet_test(self, vm_tx, vm_rx, dest_ip, protocol='icmp', port=100, packet_count=2,
-                       src_addrs=None, user=None, auto_add_rule=True, verbose=True):
+                       src_addrs=None, user=None, verbose=True):
+        """
+        Basic VM to VM packet test. Test sets up a simple client (on vm_tx) and server  (on vm_rx)
+        to send, recieve, and filter packets between 2 VMs using a provided protocol and
+        port (if applicable). The test allows for 4 protocols; icmp, udp, tcp, and sctp.
+
+        Args:
+            vm_tx: nephoria euinstance obj
+            vm_rx: nephoria euinstance obj
+            dest_ip: Destination IP to run this test. Note: The test will attempt to determine the
+                     outgoing interface on vm_tx based on this ip.
+            protocol: Protocol to use for this test; icmp, udp, tcp or sctp. Name or number can
+                      be provided.
+            port: port to send and received packets on. Note: if using ICMP the port will be set
+                  to None.
+            packet_count: Number of packets to send
+            src_addrs: IP string or list of IP strings for the vm_rx side to use to filter
+                       incoming packets. By default the test attempts to determine the outgoing
+                       interface on vm_tx and set this as the filter. Set this to '[]' if no
+                       filtering on source address is desired.
+            user: nephoria user_context obj.
+            verbose: send test output on each euinstance obj to debug log.
+
+        Returns: set containing: (dictionary of packets received, pass/fail boolean,
+        Prettytable of results)
+
+        """
         user = user or self.user
         proto_dict = {'icmp': 1,
                       'tcp': 6,
@@ -1026,31 +1057,73 @@ class VpcSuite(CliTestRunner):
         total_pkts = 0
         if packet_dict:
             for src, dest_dict in packet_dict.iteritems():
-                for dest_ip, port in dest_dict.iteritems():
-                    for name, count in port.iteritems():
+                for dest_ip, port_dict in dest_dict.iteritems():
+                    for port, count in port_dict.iteritems():
                         total_pkts += int(count)
         if total_pkts != packet_count:
-            test_result = 'FAILED'
+            test_passed = False
+            test_result = markup('FAILED', markups=[ForegroundColor.WHITE,
+                                                    BackGroundColor.BG_RED])
             result['error'] = "{0}, {1}".format(result.get('error') or "",
                                                 "Rx'd packets:{0} != sent packets:{1}"
                                                 .format(total_pkts, packet_count))
         else:
-            test_result = 'PASSED'
+            test_passed  = True
+            test_result = markup('PASSED', markups=[ForegroundColor.WHITE,
+                                                    BackGroundColor.BG_GREEN])
         main_pt = PrettyTable(['PACKET TEST RESULTS'])
-        pt = PrettyTable(['ROLE', 'VM', 'ENI', 'SUBNET', 'GROUPS', 'IP', 'PROTO', 'TX_PKTS',
-                          'RX_PKTS', 'RESULT'])
-
-        pt.add_row(['TX', vm_tx.id, "({0}){1}".format(eni_tx.attachment.device_index, eni_tx.id),
-                    eni_tx.subnet_id, ",".join([x.id for x in vm_tx.groups]),
-                    eni_tx.private_ip_address, proto_name, packet_count, "--", test_result])
-        pt.add_row(['RX', vm_rx.id, "({0}){1}".format(eni_rx.attachment.device_index, eni_rx.id),
-                    eni_rx.subnet_id, ",".join([x.id for x in vm_rx.groups]),
-                    eni_rx.private_ip_address, proto_name, "--", total_pkts, test_result])
+        main_pt.padding_width = 0
+        # pt = PrettyTable(['ROLE', 'VM', 'ENI', 'SUBNET', 'GROUPS', 'IP', 'PROTO', 'TX_PKTS',
+        #                  'RX_PKTS', 'RESULT'])
+        pt = PrettyTable(['-','SENDER', 'RECEIVER'])
+        pt.hrules = 1
+        pt.vrules = 1
+        pt.horizontal_char = '.'
+        pt.junction_char = '.'
+        pt.align = 'l'
+        same = markup('SAME', markups=[TextStyle.BOLD, ForegroundColor.BLUE,
+                                       BackGroundColor.BG_WHITE])
+        diff = markup('DIFF', markups=[TextStyle.BOLD, ForegroundColor.CYAN,
+                                       BackGroundColor.BG_WHITE])
+        if eni_tx.subnet_id != eni_rx.subnet_id:
+            sub_diff = diff
+        else:
+            sub_diff = same
+        tx_groups = [x.id for x in eni_tx.groups]
+        tx_groups.sort()
+        rx_groups = [x.id for x in eni_rx.groups]
+        rx_groups.sort()
+        if tx_groups != rx_groups:
+            group_diff = diff
+        else:
+            group_diff = same
+        if vm_tx.placement != vm_rx.placement:
+            zone_diff = diff
+        else:
+            zone_diff = same
+        # Add the client side info...
+        pt.add_row(['VM_ID', vm_tx.id, vm_rx.id])
+        pt.add_row(['ENI INDEX', "({0}){1}".format(eni_tx.attachment.device_index, eni_tx.id),
+                    "({0}){1}".format(eni_rx.attachment.device_index, eni_rx.id)])
+        pt.add_row(['ZONE', "{0}\n{1}".format(zone_diff, vm_tx.placement),
+                    "{0}\n{1}".format(zone_diff, vm_rx.placement)])
+        pt.add_row(['SUBNET', "{0}\n{1}".format(sub_diff, eni_tx.subnet_id),
+                    "{0}\n{1}".format(sub_diff, eni_rx.subnet_id),])
+        pt.add_row(['GROUPS', "{0}\n{1}".format(group_diff, ",".join(tx_groups)),
+                    "{0}\n{1}".format(group_diff, ",".join(rx_groups))])
+        pt.add_row(['PRIV_IP', eni_tx.private_ip_address, eni_rx.private_ip_address])
+        pt.add_row(['PUB_IP', getattr(eni_tx, 'publicIp', None),
+                    getattr(eni_rx, 'publicIp', None)])
+        pt.add_row(['PROTOCOL', proto_name, proto_name])
+        pt.add_row(['TX PKTS', packet_count, "--"])
+        pt.add_row(["RX PKTS", "--", total_pkts])
+        pt.add_row(['RESULT', test_result, test_result])
         main_pt.add_row(["\n{0}".format(pt)])
         if result.get('error', None):
             main_pt.add_row(['TEST ERRORS:{0}'.format(result.get('error'))])
-        self.log.debug("\n{0}\n".format(main_pt))
-        return (result, main_pt)
+        if verbose:
+            self.log.debug("\n{0}\n".format(main_pt))
+        return (result, test_passed, main_pt)
 
     @printinfo
     def packet_test_scenario(self, zone_tx, zone_rx, sec_group_tx, sec_group_rx, subnet_tx,
@@ -4380,27 +4453,59 @@ class VpcSuite(CliTestRunner):
                     self.status('Attempting to delete subnet and dependency artifacts from this test')
                     user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
-    def test6p1_eni_tcp_icmp_udp_sctp_secondary_eni_basic_packet_tests(self, clean=True,
-                                                                       icmp=True, udp=True,
-                                                                       tcp=True, sctp=True):
+    def test6p1_eni_sec_group_tcp_icmp_udp_sctp_inner_vpc_eni_packet_tests(self, clean=True,
+                                                                           icmp=True, udp=True,
+                                                                           tcp=True, sctp=True):
         """
-        Launches 2 VMs each with secondary ENIs. The VMs will have separate subnets for their
-        primary and secondary ENIs.
-        The VMs will attempt to run a simple packet test between ENIs within the same
-        subnet.
-        The packet tests will include udp, tcp, icmp and sctp.
-        The test will adjust the security group rules to allow the traffic type and port(s) for
-        the tests.
-        During the test the devices associated with the secondary ENIs should be temporarily
-        shutdown on the guests and management/ssh traffic should use a proxy VM to tunnel the
-        ssh sessions into the subnets under test.
+        Launches 2 VMs in the same VPC to test VM to VM traffic of types ICMP, UDP, TCP and SCTP.
 
+        -The primary ENIS will be in the same subnet and security group.
+        -The test will create multiple ENIs to attach/detach to the test VMs.
+         These ENIs will test variations of packet tests between ENIs within the same and different
+         subnets and security groups using a simple packet test between ENIs within the same
+        subnet.
+        -The packet tests will include udp, tcp, icmp and sctp.
+        -The test will adjust the security group rules to allow the traffic type and port(s) for
+         the tests.
+        -At this time the test does not test revoking these rules, although this functionality is
+         covered in other tests in this suite.
         """
         user = self.user
         vpc = self.test6b0_get_vpc_for_eni_tests()
         instances = []
         subnets = []
-        group = self.get_test_security_groups(vpc=vpc, count=1, user=user)[0]
+        protocols = []
+
+        test_rules = [('tcp', 22, 22, '0.0.0.0/0'), ('icmp', -1, -1, '0.0.0.0/0')]
+        if tcp:
+            protocols.append('tpc')
+            test_rules.append(('tcp', 100, 100, '0.0.0.0/0'))
+        if icmp:
+            protocols.append('icmp')
+            test_rules.append(('icmp', -1, -1, '0.0.0.0/0'))
+        if udp:
+            protocols.append('udp')
+            test_rules.append(('udp', 100, 100, '0.0.0.0/0'))
+        if sctp:
+            protocols.append('sctp')
+            test_rules.append((132, 22, 22, '0.0.0.0/0'))
+
+        def run_tests(vm_tx, vm_rx, dest_ip):
+            res_dict = {}
+            for protocol in protocols:
+                test_dict, passed, table = self.vm_packet_test(vm_tx=vm_tx, vm_rx=vm_rx,
+                                                             dest_ip=dest_ip, protocol=protocol,
+                                                             packet_count=5)
+
+                res_dict[protocol] = {'test_dict': test_dict, 'passed': passed, 'table': table}
+            return res_dict
+
+
+        primary_group = self.get_test_security_groups(vpc=vpc, count=1, rules=test_rules,
+                                                      user=user)[0]
+        eni_group1 = self.get_test_security_groups(vpc=vpc, count=1, rules=test_rules, user=user)[0]
+        eni_group2 = self.get_test_security_groups(vpc=vpc, count=1, rules=test_rules, user=user)[0]
+
         self.last_status_msg = ""
 
         def status(msg):
@@ -4415,17 +4520,29 @@ class VpcSuite(CliTestRunner):
                     vpc=vpc, user=user, zone=zone, count=3)
                 subnets += [subnet1, subnet2, subnet3]
                 status('Creating test ENIs')
-                eni1, eni2 = self.get_test_enis_for_subnet(subnet=subnet2, user=user, count=2)
-                eni3 = self.get_test_enis_for_subnet(subnet=subnet2, user=user, count=1)[0]
+                eni1_s1_g1 = self.get_test_enis_for_subnet(subnet=subnet2,
+                                                           apply_groups=[eni_group1],
+                                                           user=user, count=1)[0]
+                eni2_s1_g1 = self.get_test_enis_for_subnet(subnet=subnet2,
+                                                           apply_groups=[eni_group1],
+                                                           user=user, count=1)[0]
+                eni3_s1_g2 = self.get_test_enis_for_subnet(subnet=subnet2,
+                                                           apply_groups=[eni_group2],
+                                                           user=user, count=1)[0]
+                eni4_s2_g2 = self.get_test_enis_for_subnet(subnet=subnet2,
+                                                           apply_groups=[eni_group2],
+                                                           user=user, count=1)[0]
                 status('Creating VMs for this test...')
-                vm1, vm2  = self.get_test_instances(zone=zone, group_id=group.id,
+                vm1, vm2  = self.get_test_instances(zone=zone, group_id=primary_group,
                                                             vpc_id=vpc.id, subnet_id=subnet1.id,
                                                             instance_type='m1.small',
                                                             auto_connect=True, count=2)
                 instances = [vm1, vm2]
 
+                self.status('Testing VM to VM to VM primary ENI same group same subnet ')
 
 
+                raise NotImplementedError('Do this')
 
         except Exception as SE:
             self.log.error(red('{0}\nError trying to establish SSH sessions post 2nd ENI '
