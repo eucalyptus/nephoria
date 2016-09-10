@@ -996,6 +996,9 @@ class VpcSuite(CliTestRunner):
         Prettytable of results)
 
         """
+
+        def bold(txt):
+            return markup(txt, markups=TextStyle.BOLD)
         user = user or self.user
         proto_dict = {'icmp': 1,
                       'tcp': 6,
@@ -1041,11 +1044,20 @@ class VpcSuite(CliTestRunner):
             # Assume the packet will be sent to the default GW on the primary interface
             eni_tx = vm_tx.interfaces[0]
         if src_addrs is None:
-            src_addrs = eni_tx.private_ip_address
+            # If the test is not using the rx VM's private IP, and the expected source address
+            # was not provided, remove the src_addrs filter since the src could be unknown.
+            if not private:
+                src_addrs = []
+            else:
+                src_addrs = eni_tx.private_ip_address
+
         self.status('Sending from ENI:{0} to ENI:{1} DEST_IP:{2}'.format(eni_rx.id, eni_tx.id,
                                                                          dest_ip))
         user.ec2.show_network_interfaces([eni_rx, eni_tx])
         result = {}
+        tx_dev_info = vm_tx.get_network_local_device_for_eni(eni_tx)
+        rx_dev_info = vm_rx.get_network_local_device_for_eni(eni_rx)
+
         try:
             result = packet_test(vm_tx.ssh, vm_rx.ssh, dest_ip=dest_ip,
                                  protocol=protocol, bind=bind, port=port, count=packet_count,
@@ -1071,16 +1083,18 @@ class VpcSuite(CliTestRunner):
             test_passed  = True
             test_result = markup('PASSED', markups=[ForegroundColor.WHITE,
                                                     BackGroundColor.BG_GREEN])
-        main_pt = PrettyTable(['PACKET TEST RESULTS'])
+        main_pt = PrettyTable([markup('{0} PACKET TEST RESULTS'.format(proto_name.upper()),
+                                      [TextStyle.INVERSE, TextStyle.BOLD])])
         main_pt.padding_width = 0
         # pt = PrettyTable(['ROLE', 'VM', 'ENI', 'SUBNET', 'GROUPS', 'IP', 'PROTO', 'TX_PKTS',
         #                  'RX_PKTS', 'RESULT'])
-        pt = PrettyTable(['-','SENDER', 'RECEIVER'])
+        pt = PrettyTable(['-',bold('SENDER'), bold('RECEIVER')])
         pt.hrules = 1
         pt.vrules = 1
         pt.horizontal_char = '.'
         pt.junction_char = '.'
         pt.align = 'l'
+
         same = markup('SAME', markups=[TextStyle.BOLD, ForegroundColor.BLUE,
                                        BackGroundColor.BG_WHITE])
         diff = markup('DIFF', markups=[TextStyle.BOLD, ForegroundColor.CYAN,
@@ -1101,24 +1115,36 @@ class VpcSuite(CliTestRunner):
             zone_diff = diff
         else:
             zone_diff = same
+        tx_guest_ip = tx_dev_info.get('local_ip')
+        if tx_guest_ip != eni_tx.private_ip_address:
+            tx_guest_ip = red(tx_guest_ip)
+        rx_guest_ip = rx_dev_info.get('local_ip')
+        if rx_guest_ip != eni_rx.private_ip_address:
+            rx_guest_ip = red(rx_guest_ip)
         # Add the client side info...
         pt.add_row(['VM_ID', vm_tx.id, vm_rx.id])
-        pt.add_row(['ENI INDEX', "({0}){1}".format(eni_tx.attachment.device_index, eni_tx.id),
-                    "({0}){1}".format(eni_rx.attachment.device_index, eni_rx.id)])
-        pt.add_row(['ZONE', "{0}\n{1}".format(zone_diff, vm_tx.placement),
-                    "{0}\n{1}".format(zone_diff, vm_rx.placement)])
+        pt.add_row(['ENI', eni_tx.id, eni_rx.id])
+        pt.add_row(['INDEX-DEV', "{0}-{1} ({2})".format(eni_tx.attachment.device_index,
+                                                       tx_dev_info.get('dev_name'),
+                                                       tx_dev_info.get('operstate')),
+                    "{0}-{1} ({2})".format(eni_rx.attachment.device_index,
+                                          rx_dev_info.get('dev_name'),
+                                          rx_dev_info.get('operstate'))])
+        pt.add_row(['ZONE', "{0}\n'{1}'".format(zone_diff, vm_tx.placement),
+                    "{0}\n'{1}'".format(zone_diff, vm_rx.placement)])
         pt.add_row(['SUBNET', "{0}\n{1}".format(sub_diff, eni_tx.subnet_id),
                     "{0}\n{1}".format(sub_diff, eni_rx.subnet_id),])
         pt.add_row(['GROUPS', "{0}\n{1}".format(group_diff, ",".join(tx_groups)),
                     "{0}\n{1}".format(group_diff, ",".join(rx_groups))])
-        pt.add_row(['PRIV_IP', eni_tx.private_ip_address, eni_rx.private_ip_address])
+        pt.add_row(['ENI-IP', eni_tx.private_ip_address, eni_rx.private_ip_address])
+        pt.add_row(['GUEST IP', tx_guest_ip, rx_guest_ip    ])
         pt.add_row(['PUB_IP', getattr(eni_tx, 'publicIp', None),
                     getattr(eni_rx, 'publicIp', None)])
         pt.add_row(['PROTOCOL', proto_name, proto_name])
-        pt.add_row(['TX PKTS', packet_count, "--"])
-        pt.add_row(["RX PKTS", "--", total_pkts])
-        pt.add_row(['RESULT', test_result, test_result])
-        main_pt.add_row(["\n{0}".format(pt)])
+        pt.add_row([bold('TX PKTS'), packet_count, "--"])
+        pt.add_row([bold("RX PKTS"), "--", total_pkts])
+        pt.add_row([bold('RESULT'), test_result, test_result])
+        main_pt.add_row([pt.get_string()])
         if result.get('error', None):
             main_pt.add_row(['TEST ERRORS:{0}'.format(result.get('error'))])
         if verbose:
