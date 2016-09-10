@@ -2345,7 +2345,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         macs = [x.get('address') for x in ret.values()]
         for interface in self.interfaces:
             if interface.mac_address not in macs:
-                self.log.warning(red('ENI:{0} MAC:{1} not found on this instance'
+                self.log.warning(red('ENI:{0} MAC:{1} not found on instance at this time'
                                      .format(interface.id, interface.mac_address)))
         return ret
 

@@ -72,7 +72,7 @@ oldfile = __builtin__.file
 
 """
 # Debug for monitoring files open by python. When running the packet test matrix(s) the OS
-# can complain about too many open FDs per user. 
+# can complain about too many open FDs per user.
 # Python may be leaking FDs sockets, files, etc from it's sub processes despite closing all
 # related FDs (including stdin, out, err etc for pipes, etc)
 def printOpenFiles():
@@ -961,6 +961,96 @@ class VpcSuite(CliTestRunner):
         user.ec2.monitor_euinstances_to_running(instances=instances)
         self.log.info('basic_instance_ssh_default_vpc passed')
         return instances
+
+
+    def vm_packet_test(self, vm_tx, vm_rx, dest_ip, protocol='icmp', port=100, packet_count=2,
+                       src_addrs=None, user=None, auto_add_rule=True, verbose=True):
+        user = user or self.user
+        proto_dict = {'icmp': 1,
+                      'tcp': 6,
+                      'udp': 17,
+                      'sctp': 132}
+        proto_names = {1: 'icmp',
+                      6: 'tcp',
+                      17: 'udp',
+                      132: 'sctp'}
+        if protocol and str(protocol).lower() in proto_dict.keys():
+            protocol = proto_dict[protocol]
+        protocol = int(protocol)
+        if protocol not in proto_dict.values():
+            raise ValueError('Protocol:"{0}" not supported. Only protocols:"{1}"'
+                             .format(protocol, proto_dict))
+        if protocol == 1:
+            port = None
+        if protocol in [6, 132]:
+            bind = True
+        else:
+            bind = False
+        proto_name = proto_names[protocol]
+        eni_rx = None
+        private = None
+        for eni in vm_rx.interfaces:
+            if eni.private_ip_address == dest_ip:
+                eni_rx = eni
+                private = True
+                break
+            if dest_ip == str(getattr(eni, 'publicIp', None)):
+                eni_rx = eni
+                private = False
+                break
+        if not eni_rx:
+            raise ValueError('Could not find ENI on {0} for dest_ip:{1}'.format(vm_rx, dest_ip))
+        eni_tx = None
+        for eni in vm_tx.interfaces:
+            subnet = user.ec2.get_subnet(eni.subnet_id)
+            if is_address_in_network(eni_rx.private_ip_address, subnet.cidr_block):
+                eni_tx = eni
+                break
+        if eni_tx is None:
+            # Assume the packet will be sent to the default GW on the primary interface
+            eni_tx = vm_tx.interfaces[0]
+        if src_addrs is None:
+            src_addrs = eni_tx.private_ip_address
+        self.status('Sending from ENI:{0} to ENI:{1} DEST_IP:{2}'.format(eni_rx.id, eni_tx.id,
+                                                                         dest_ip))
+        user.ec2.show_network_interfaces([eni_rx, eni_tx])
+        result = {}
+        try:
+            result = packet_test(vm_tx.ssh, vm_rx.ssh, dest_ip=dest_ip,
+                                 protocol=protocol, bind=bind, port=port, count=packet_count,
+                                 verbose=True, src_addrs=src_addrs)
+        except Exception as DOH:
+            self.log.error("{0}\nError in packet test:{1}".format(get_traceback(), DOH))
+            result['error'] = "{0}, {1}".format(result.get('error') or "", DOH)
+        packet_dict = result.get('packets')
+        total_pkts = 0
+        if packet_dict:
+            for src, dest_dict in packet_dict.iteritems():
+                for dest_ip, port in dest_dict.iteritems():
+                    for name, count in port.iteritems():
+                        total_pkts += int(count)
+        if total_pkts != packet_count:
+            test_result = 'FAILED'
+            result['error'] = "{0}, {1}".format(result.get('error') or "",
+                                                "Rx'd packets:{0} != sent packets:{1}"
+                                                .format(total_pkts, packet_count))
+        else:
+            test_result = 'PASSED'
+        main_pt = PrettyTable(['PACKET TEST RESULTS'])
+        pt = PrettyTable(['ROLE', 'VM', 'ENI', 'SUBNET', 'GROUPS', 'IP', 'PROTO', 'TX_PKTS',
+                          'RX_PKTS', 'RESULT'])
+
+        pt.add_row(['TX', vm_tx.id, "({0}){1}".format(eni_tx.attachment.device_index, eni_tx.id),
+                    eni_tx.subnet_id, ",".join([x.id for x in vm_tx.groups]),
+                    eni_tx.private_ip_address, proto_name, packet_count, "--", test_result])
+        pt.add_row(['RX', vm_rx.id, "({0}){1}".format(eni_rx.attachment.device_index, eni_rx.id),
+                    eni_rx.subnet_id, ",".join([x.id for x in vm_rx.groups]),
+                    eni_rx.private_ip_address, proto_name, "--", total_pkts, test_result])
+        main_pt.add_row(["\n{0}".format(pt)])
+        if result.get('error', None):
+            main_pt.add_row(['TEST ERRORS:{0}'.format(result.get('error'))])
+        self.log.debug("\n{0}\n".format(main_pt))
+        return (result, main_pt)
 
     @printinfo
     def packet_test_scenario(self, zone_tx, zone_rx, sec_group_tx, sec_group_rx, subnet_tx,
@@ -4290,7 +4380,9 @@ class VpcSuite(CliTestRunner):
                     self.status('Attempting to delete subnet and dependency artifacts from this test')
                     user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
-    def test6p1_eni_secondary_eni_basic_packet_tests(self):
+    def test6p1_eni_tcp_icmp_udp_sctp_secondary_eni_basic_packet_tests(self, clean=True,
+                                                                       icmp=True, udp=True,
+                                                                       tcp=True, sctp=True):
         """
         Launches 2 VMs each with secondary ENIs. The VMs will have separate subnets for their
         primary and secondary ENIs.
@@ -4304,6 +4396,56 @@ class VpcSuite(CliTestRunner):
         ssh sessions into the subnets under test.
 
         """
+        user = self.user
+        vpc = self.test6b0_get_vpc_for_eni_tests()
+        instances = []
+        subnets = []
+        group = self.get_test_security_groups(vpc=vpc, count=1, user=user)[0]
+        self.last_status_msg = ""
+
+        def status(msg):
+            self.last_status_msg = msg
+            self.status(msg)
+
+        try:
+            self.modify_vm_type_store_orig('m1.small', network_interfaces=3)
+            for zone in self.zones:
+                status('Creating test subnets...')
+                subnet1, subnet2, subnet3 = self.get_non_default_test_subnets_for_vpc(
+                    vpc=vpc, user=user, zone=zone, count=3)
+                subnets += [subnet1, subnet2, subnet3]
+                status('Creating test ENIs')
+                eni1, eni2 = self.get_test_enis_for_subnet(subnet=subnet2, user=user, count=2)
+                eni3 = self.get_test_enis_for_subnet(subnet=subnet2, user=user, count=1)[0]
+                status('Creating VMs for this test...')
+                vm1, vm2  = self.get_test_instances(zone=zone, group_id=group.id,
+                                                            vpc_id=vpc.id, subnet_id=subnet1.id,
+                                                            instance_type='m1.small',
+                                                            auto_connect=True, count=2)
+                instances = [vm1, vm2]
+
+
+
+
+        except Exception as SE:
+            self.log.error(red('{0}\nError trying to establish SSH sessions post 2nd ENI '
+                               'swap:{1}'.format(get_traceback(), SE)))
+            raise
+        finally:
+            if clean:
+                self.status('Beginning test cleanup. Last Status msg:"{0}"...'
+                            .format(self.last_status_msg))
+                self.restore_vm_types()
+                for vm in instances:
+                    try:
+                        vm.terminate_and_verify()
+                    except Exception as E:
+                        self.log.debug('{0}\nError:{1}'.format(get_traceback(), E))
+                for subnet in subnets:
+                    self.status(
+                        'Attempting to delete subnet and dependency artifacts from this test')
+                    user.ec2.delete_subnet_and_dependency_artifacts(subnet)
+
         raise SkipTestException('Test Not Completed at this time')
 
 
