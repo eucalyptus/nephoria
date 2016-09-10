@@ -51,6 +51,7 @@ class ASops(BotoBaseOps):
         #Source ip on local test machine used to reach instances
         self.as_source_ip = None
 
+
     def setup_resource_trackers(self):
         self.log.warning('No resource trackers have been implemented for: {0}'
                          .format(self.__class__.__name__))
@@ -77,11 +78,11 @@ class ASops(BotoBaseOps):
                                  block_device_mappings=block_device_mappings,
                                  instance_monitoring=instance_monitoring,
                                  instance_profile_name=instance_profile_name)
-        self.debug("Creating launch config: " + name)
+        self.log.debug("Creating launch config: " + name)
         self.connection.create_launch_configuration(lc)
         if len(self.describe_launch_config([name])) != 1:
             raise Exception('Launch Config not created')
-        self.debug('SUCCESS: Created Launch Config: ' +
+        self.log.debug('SUCCESS: Created Launch Config: ' +
                    self.describe_launch_config([name])[0].name)
 
     def describe_launch_config(self, names=None):
@@ -94,11 +95,11 @@ class ASops(BotoBaseOps):
         return self.connection.get_all_launch_configurations(names=names)
 
     def delete_launch_config(self, launch_config_name):
-        self.debug("Deleting launch config: " + launch_config_name)
+        self.log.debug("Deleting launch config: " + launch_config_name)
         self.connection.delete_launch_configuration(launch_config_name)
         if len(self.describe_launch_config([launch_config_name])) != 0:
             raise Exception('Launch Config not deleted')
-        self.debug('SUCCESS: Deleted Launch Config: ' + launch_config_name)
+        self.log.debug('SUCCESS: Deleted Launch Config: ' + launch_config_name)
 
     def create_as_group(self, group_name, launch_config, availability_zones, min_size, max_size, load_balancers=None,
                         desired_capacity=None, termination_policies=None, default_cooldown=None, health_check_type=None,
@@ -113,7 +114,7 @@ class ASops(BotoBaseOps):
         :param min_size:  Minimum size of group (required).
         :param max_size: Maximum size of group (required).
         """
-        self.debug("Creating Auto Scaling group: " + group_name)
+        self.log.debug("Creating Auto Scaling group: " + group_name)
         as_group = AutoScalingGroup(connection=self.connection,
                                     group_name=group_name,
                                     load_balancers=load_balancers,
@@ -131,7 +132,7 @@ class ASops(BotoBaseOps):
 
         as_group = self.describe_as_group(group_name)
 
-        self.debug("SUCCESS: Created Auto Scaling Group: " + as_group.name)
+        self.log.debug("SUCCESS: Created Auto Scaling Group: " + as_group.name)
         return as_group
 
     def describe_as_group(self, name=None):
@@ -151,15 +152,15 @@ class ASops(BotoBaseOps):
         return groups[0]
 
     def delete_as_group(self, name=None, force=None):
-        self.debug("Deleting Auto Scaling Group: " + name)
-        self.debug("Forcing: " + str(force))
+        self.log.debug("Deleting Auto Scaling Group: " + name)
+        self.log.debug("Forcing: " + str(force))
         # self.autoscale.set_desired_capacity(group_name=names, desired_capacity=0)
         self.connection.delete_auto_scaling_group(name=name, force_delete=force)
         try:
             self.describe_as_group([name])
             raise Exception('Auto Scaling Group not deleted')
         except:
-            self.debug('SUCCESS: Deleted Auto Scaling Group: ' + name)
+            self.log.debug('SUCCESS: Deleted Auto Scaling Group: ' + name)
 
     def create_as_policy(self, name, adjustment_type, scaling_adjustment, as_name, cooldown=None):
         """
@@ -176,7 +177,7 @@ class ASops(BotoBaseOps):
                                        as_name=as_name,
                                        scaling_adjustment=scaling_adjustment,
                                        cooldown=cooldown)
-        self.debug("Creating Auto Scaling Policy: " + name)
+        self.log.debug("Creating Auto Scaling Policy: " + name)
         self.connection.create_scaling_policy(scaling_policy)
 
     def describe_as_policies(self, as_group=None, policy_names=None):
@@ -190,11 +191,11 @@ class ASops(BotoBaseOps):
         self.connection.get_all_policies(as_group=as_group, policy_names=policy_names)
 
     def execute_as_policy(self, policy_name=None, as_group=None, honor_cooldown=None):
-        self.debug("Executing Auto Scaling Policy: " + policy_name)
+        self.log.debug("Executing Auto Scaling Policy: " + policy_name)
         self.connection.execute_policy(policy_name=policy_name, as_group=as_group, honor_cooldown=honor_cooldown)
 
     def delete_as_policy(self, policy_name=None, autoscale_group=None):
-        self.debug("Deleting Policy: " + policy_name + " from group: " + autoscale_group)
+        self.log.debug("Deleting Policy: " + policy_name + " from group: " + autoscale_group)
         self.connection.delete_policy(policy_name=policy_name, autoscale_group=autoscale_group)
 
     def cleanup_autoscaling_groups(self, asg_list = None):
@@ -207,7 +208,7 @@ class ASops(BotoBaseOps):
         else:
             auto_scaling_groups = asg_list
         for asg in auto_scaling_groups:
-            self.debug("Found Auto Scaling Group: " + asg.name)
+            self.log.debug("Found Auto Scaling Group: " + asg.name)
             self.delete_as_group(name=asg.name, force=True)
 
     def delete_all_autoscaling_groups(self):
@@ -216,12 +217,12 @@ class ASops(BotoBaseOps):
         """
         ### clear all ASGs
         for asg in self.describe_as_group():
-            self.debug("Found Auto Scaling Group: " + asg.name)
+            self.log.debug("Found Auto Scaling Group: " + asg.name)
             self.delete_as_group(name=asg.name, force=True)
         if len(self.describe_as_group(asg.name)) != 0:
-            self.debug("Some AS groups remain")
+            self.log.debug("Some AS groups remain")
             for asg in self.describe_as_group():
-                self.debug("Found Auto Scaling Group: " + asg.name)
+                self.log.debug("Found Auto Scaling Group: " + asg.name)
 
     def cleanup_launch_configs(self):
         """
@@ -230,10 +231,10 @@ class ASops(BotoBaseOps):
         launch_configurations=self.test_resources['launch-configurations']
 
         if not launch_configurations:
-            self.debug("Launch configuration list is empty")
+            self.log.debug("Launch configuration list is empty")
         else:
             for lc in launch_configurations:
-                self.debug("Found Launch Config:" + lc.name)
+                self.log.debug("Found Launch Config:" + lc.name)
                 self.delete_launch_config(lc.name)
 
     def delete_all_launch_configs(self):
@@ -242,12 +243,12 @@ class ASops(BotoBaseOps):
         Attempt to remove all launch configs
         """
         for lc in self.describe_launch_config():
-            self.debug("Found Launch Config:" + lc.name)
+            self.log.debug("Found Launch Config:" + lc.name)
             self.delete_launch_config(lc.name)
         if len(self.describe_launch_config()) != 0:
-            self.debug("Some Launch Configs Remain")
+            self.log.debug("Some Launch Configs Remain")
             for lc in self.describe_launch_config():
-                self.debug("Found Launch Config:" + lc.name)
+                self.log.debug("Found Launch Config:" + lc.name)
 
     def get_last_instance_id(self, tester=None):
         reservations = tester.ec2.connection.get_all_instances()
@@ -267,14 +268,14 @@ class ASops(BotoBaseOps):
         tag = Tag(key=key, value=value, propagate_at_launch=propagate_at_launch, resource_id=resource_id)
         self.connection.create_or_update_tags([tag])
         if len(self.connection.get_all_tags(filters=key)) != 1:
-            self.debug("Number of tags: " + str(len(self.connection.get_all_tags(filters=key))))
+            self.log.debug("Number of tags: " + str(len(self.connection.get_all_tags(filters=key))))
             raise Exception('Tag not created')
-        self.debug("created or updated tag: " + str(self.connection.get_all_tags(filters=key)[0]))
+        self.log.debug("created or updated tag: " + str(self.connection.get_all_tags(filters=key)[0]))
 
     def delete_all_group_tags(self):
         all_tags = self.connection.get_all_tags()
         self.connection.delete_tags(all_tags)
-        self.debug("Number of tags: " + str(len(self.connection.get_all_tags())))
+        self.log.debug("Number of tags: " + str(len(self.connection.get_all_tags())))
 
     def delete_all_policies(self):
         policies = self.connection.get_all_policies()
@@ -282,7 +283,7 @@ class ASops(BotoBaseOps):
             self.delete_as_policy(policy_name=policy.name, autoscale_group=policy.as_name)
         if len(self.connection.get_all_policies()) != 0:
             raise Exception('Not all auto scaling policies deleted')
-        self.debug("SUCCESS: Deleted all auto scaling policies")
+        self.log.debug("SUCCESS: Deleted all auto scaling policies")
 
     def update_as_group(self, group_name, launch_config, min_size, max_size, availability_zones=None,
                         desired_capacity=None, termination_policies=None, default_cooldown=None, health_check_type=None,
@@ -300,7 +301,7 @@ class ASops(BotoBaseOps):
         :param health_check_type:
         :param health_check_period:
         """
-        self.debug("Updating ASG: " + group_name)
+        self.log.debug("Updating ASG: " + group_name)
         return AutoScalingGroup(connection=self.connection,
                                 name=group_name,
                                 launch_config=launch_config,
@@ -317,17 +318,17 @@ class ASops(BotoBaseOps):
         asg = self.describe_as_group(group_name)
         instances = asg.instances
         if not instances:
-            self.debug("No instances in ASG")
+            self.log.debug("No instances in ASG")
             return False
         if len(asg.instances) != number:
-            self.debug("Instances not yet allocated")
+            self.log.debug("Instances not yet allocated")
             return False
         for instance in instances:
             assert isinstance(instance, Instance)
             instance = tester.ec2.get_instances(idstring=instance.instance_id)[0]
             if instance.state != "running":
-                self.debug("Instance: " + str(instance) + " still in " + instance.state + " state")
+                self.log.debug("Instance: " + str(instance) + " still in " + instance.state + " state")
                 return False
             else:
-                self.debug("Instance: " + str(instance) + " now running")
+                self.log.debug("Instance: " + str(instance) + " now running")
         return True
