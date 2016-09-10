@@ -969,7 +969,7 @@ class VpcSuite(CliTestRunner):
 
 
     def vm_packet_test(self, vm_tx, vm_rx, dest_ip, protocol='icmp', port=100, packet_count=2,
-                       src_addrs=None, user=None, verbose=True):
+                       src_addrs=None, user=None, expected_count=None, verbose=True):
         """
         Basic VM to VM packet test. Test sets up a simple client (on vm_tx) and server  (on vm_rx)
         to send, recieve, and filter packets between 2 VMs using a provided protocol and
@@ -985,17 +985,26 @@ class VpcSuite(CliTestRunner):
             port: port to send and received packets on. Note: if using ICMP the port will be set
                   to None.
             packet_count: Number of packets to send
+            expected_count: Number of packets expected to be received on vm_rx. The default/None,
+                            will set this equal to the sent 'packet_count' value.
             src_addrs: IP string or list of IP strings for the vm_rx side to use to filter
                        incoming packets. By default the test attempts to determine the outgoing
                        interface on vm_tx and set this as the filter. Set this to '[]' if no
                        filtering on source address is desired.
             user: nephoria user_context obj.
-            verbose: send test output on each euinstance obj to debug log.
+            verbose: send test output on each euinstance obj to log.debug, and print table to
+                     log.info.
 
         Returns: set containing: (dictionary of packets received, pass/fail boolean,
         Prettytable of results)
 
         """
+        for vm in [vm_tx, vm_rx]:
+            if not vm.ssh:
+                self.log.error('{0}\nPacket test requires vm_tx and vm_rx to have established SSH '
+                                 'sessions. {0} did not'.format(get_traceback(), vm.id))
+                raise ValueError('Packet test requires vm_tx and vm_rx to have established SSH '
+                                 'sessions. {0} did not'.format(vm.id))
 
         def bold(txt):
             return markup(txt, markups=TextStyle.BOLD)
@@ -1008,6 +1017,8 @@ class VpcSuite(CliTestRunner):
                       6: 'tcp',
                       17: 'udp',
                       132: 'sctp'}
+        if expected_count is None:
+            expected_count = packet_count
         if protocol and str(protocol).lower() in proto_dict.keys():
             protocol = proto_dict[protocol]
         protocol = int(protocol)
@@ -1023,15 +1034,18 @@ class VpcSuite(CliTestRunner):
         proto_name = proto_names[protocol]
         eni_rx = None
         private = None
-        for eni in vm_rx.interfaces:
-            if eni.private_ip_address == dest_ip:
-                eni_rx = eni
-                private = True
-                break
-            if dest_ip == str(getattr(eni, 'publicIp', None)):
-                eni_rx = eni
-                private = False
-                break
+        if vm_tx.vpc_id != vm_rx.vpc_id:
+            private = False
+        else:
+            for eni in vm_rx.interfaces:
+                if eni.private_ip_address == dest_ip:
+                    eni_rx = eni
+                    private = True
+                    break
+                if dest_ip == str(getattr(eni, 'publicIp', None)):
+                    eni_rx = eni
+                    private = False
+                    break
         if not eni_rx:
             raise ValueError('Could not find ENI on {0} for dest_ip:{1}'.format(vm_rx, dest_ip))
         eni_tx = None
@@ -1072,28 +1086,32 @@ class VpcSuite(CliTestRunner):
                 for dest_ip, port_dict in dest_dict.iteritems():
                     for port, count in port_dict.iteritems():
                         total_pkts += int(count)
-        if total_pkts != packet_count:
+        if total_pkts != expected_count:
             test_passed = False
             test_result = markup('FAILED', markups=[ForegroundColor.WHITE,
                                                     BackGroundColor.BG_RED])
             result['error'] = "{0}, {1}".format(result.get('error') or "",
-                                                "Rx'd packets:{0} != sent packets:{1}"
-                                                .format(total_pkts, packet_count))
+                                                "Rx'd packets:{0} != expected_packets:{1}"
+                                                .format(total_pkts, expected_count))
         else:
             test_passed  = True
             test_result = markup('PASSED', markups=[ForegroundColor.WHITE,
                                                     BackGroundColor.BG_GREEN])
-        main_pt = PrettyTable([markup('{0} PACKET TEST RESULTS'.format(proto_name.upper()),
-                                      [TextStyle.INVERSE, TextStyle.BOLD])])
-        main_pt.padding_width = 0
-        # pt = PrettyTable(['ROLE', 'VM', 'ENI', 'SUBNET', 'GROUPS', 'IP', 'PROTO', 'TX_PKTS',
-        #                  'RX_PKTS', 'RESULT'])
-        pt = PrettyTable(['-',bold('SENDER'), bold('RECEIVER')])
+        # Build the results table...
+        column_width = 25
+        info_hdr = ''.center(column_width)
+        tx_hdr = bold('SENDER').center(column_width)
+        rx_hdr = bold('RECEIVER').center(column_width)
+        pt = PrettyTable([info_hdr, tx_hdr, rx_hdr])
         pt.hrules = 1
         pt.vrules = 1
-        pt.horizontal_char = '.'
-        pt.junction_char = '.'
+        pt.horizontal_char = '-'
+        pt.vertical_char = " "
+        pt.junction_char = '+'
         pt.align = 'l'
+        pt.max_width[info_hdr] = column_width
+        pt.max_width[tx_hdr] = column_width
+        pt.max_width[rx_hdr] = column_width
 
         same = markup('SAME', markups=[TextStyle.BOLD, ForegroundColor.BLUE,
                                        BackGroundColor.BG_WHITE])
@@ -1121,8 +1139,12 @@ class VpcSuite(CliTestRunner):
         rx_guest_ip = rx_dev_info.get('local_ip')
         if rx_guest_ip != eni_rx.private_ip_address:
             rx_guest_ip = red(rx_guest_ip)
+        rx_pkts = "{0} / {1}".format(total_pkts, expected_count)
+        if not test_passed:
+            rx_pkts = red(rx_pkts)
         # Add the client side info...
-        pt.add_row(['VM_ID', vm_tx.id, vm_rx.id])
+        pt.add_row(['VM_ID'.ljust(column_width), str(vm_tx.id).ljust(column_width),
+                    str(vm_rx.id).ljust(column_width)])
         pt.add_row(['ENI', eni_tx.id, eni_rx.id])
         pt.add_row(['INDEX-DEV', "{0}-{1} ({2})".format(eni_tx.attachment.device_index,
                                                        tx_dev_info.get('dev_name'),
@@ -1142,11 +1164,26 @@ class VpcSuite(CliTestRunner):
                     getattr(eni_rx, 'publicIp', None)])
         pt.add_row(['PROTOCOL', proto_name, proto_name])
         pt.add_row([bold('TX PKTS'), packet_count, "--"])
-        pt.add_row([bold("RX PKTS"), "--", total_pkts])
+        pt.add_row([bold("RX PKTS"), "--", rx_pkts])
         pt.add_row([bold('RESULT'), test_result, test_result])
+
+        title = markup('{0} PACKET TEST RESULTS'.format(proto_name.upper()),
+                       [TextStyle.INVERSE, TextStyle.BOLD])
+
+        max_width = (column_width * 3) + 10
+        title = markup('{0} PACKET TEST RESULTS'.format(proto_name.upper()).center(max_width-10),
+                       [TextStyle.INVERSE, TextStyle.BOLD])
+        main_pt = PrettyTable([title])
+
+        main_pt.padding_width = 0
+        main_pt.hrules = 1
+        main_pt.horizontal_char = "="
+        main_pt.max_width[title] = max_width
         main_pt.add_row([pt.get_string()])
         if result.get('error', None):
-            main_pt.add_row(['TEST ERRORS:{0}'.format(result.get('error'))])
+            main_pt.add_row([red('TEST ERRORS:{0}'.format(result.get('error')))])
+        else:
+            main_pt.add_row(['TEST ERRORS: None'])
         if verbose:
             self.log.debug("\n{0}\n".format(main_pt))
         return (result, test_passed, main_pt)
