@@ -4496,6 +4496,7 @@ class VpcSuite(CliTestRunner):
         -At this time the test does not test revoking these rules, although this functionality is
          covered in other tests in this suite.
         """
+        raise SkipTestException('This test is not complete yet')
         user = self.user
         vpc = self.test6b0_get_vpc_for_eni_tests()
         instances = []
