@@ -4879,7 +4879,7 @@ class VpcSuite(CliTestRunner):
                 self.status('PACKET TEST PASSED')
         return tables
 
-    def test6q0_eni_attach_detach_ping_multiple_enis_subnets_groups(self, clean=True):
+    def test6q0_eni_attach_detach_ping_multiple_enis_subnets_groups(self, ping=False, clean=True):
         """
         Attempts to attach and quickly detach several ENIs to a single VM in each zone verifying
         the private IP of each ENI with PING from a 2nd VM with ENIs in each subnet of the VM
@@ -4925,18 +4925,21 @@ class VpcSuite(CliTestRunner):
                                               count=2)
                 for eni in [eni1b, eni2b]:
                     vm2.attach_eni(eni)
+                    user.ec2.modify_network_interface_attributes(eni, source_dest_check=False)
                 vm2.sync_enis_static_ip_config()
                 instances += [vm1, vm2]
                 enis = [eni1, eni2]
                 for eni in enis:
+                    user.ec2.modify_network_interface_attributes(eni, source_dest_check=False)
                     status('Test#:{0}/{1},Attempting quick attach and detach of eni:{2} to {3}'
                            .format(enis.index(eni), len(enis), eni.id, vm1.id))
                     vm1.attach_eni(eni=eni)
                     status('Syncing IP info for {0}'.format(vm1.id))
                     vm1.sync_enis_static_ip_config()
-                    status('Pinging eni:{0} private_ip:{1} on {2} from {3}'
-                           .format(eni.id, eni.private_ip_address, vm1.id, vm2.id))
-                    vm2.sys('ping -c2 -t5 {0}'.format(eni.private_ip_address))
+                    if ping:
+                        status('Pinging eni:{0} private_ip:{1} on {2} from {3}'
+                               .format(eni.id, eni.private_ip_address, vm1.id, vm2.id))
+                        vm2.sys('ping -c2 -t5 {0}'.format(eni.private_ip_address))
                     status('Detaching ENI:{0} from {1}'.format(eni.id, vm1.id))
                     vm1.detach_eni(eni=eni)
         except Exception as SE:
