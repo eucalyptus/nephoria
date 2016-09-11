@@ -2574,7 +2574,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                                                              local_dev_timeout))
 
 
-    def detach_eni(self, eni,  api_timeout=90, local_dev_timeout=60):
+    def detach_eni(self, eni,  api_timeout=180, ignore_missing=True, local_dev_timeout=60):
         """
         Attempts to detach the provided ENI from this instance.
         Checks to see if this eni is indeed attached and found in self.instances first.
@@ -2587,6 +2587,8 @@ class EuInstance(Instance, TaggedResource, Machine):
             eni: eni id, or boto eni object to detach
             api_timeout: int. Time to wait for attributes in the response related to the
                          eni, instance, etc. to report the correct status before timing out.
+            ignore_missing: bool, if True will not raise error if eni is not reported as
+                            attached to this instance.
             local_dev_timeout: Time to wait for the local guest device to disappear after detaching
                                the ENI before raising an error. If local_dev_timeout is None,
                                the checks for local devices are skipped.
@@ -2604,13 +2606,18 @@ class EuInstance(Instance, TaggedResource, Machine):
         attachment_id = eni.attachment.id
 
         if eni.id not in [str(x.id) for x in self.interfaces]:
-            raise ValueError('ENI:{0} not found as attached in {1}.interfaces:"{2}"'
+            msg = ('ENI:{0} not found as attached in {1}.interfaces:"{2}"'
                              .format(eni.id, self.id,
                                      ", ".join([str(x.id) for x in self.interfaces])))
+            if ignore_missing:
+                self.log.warning(msg)
+                return eni
+            else:
+                raise ValueError(msg)
         if not eni.attachment or eni.attachment.instance_id != self.id:
-            raise('{0}.instances has the eni in the list of attached ENI, but the ENI '
-                  'attachment.instance_id:{1} != {2}'.format(self.id, eni.attachment.instance_id,
-                                                             self.id))
+            raise ValueError('{0}.instances has the eni in the list of attached ENI, but the ENI '
+                             'attachment.instance_id:{1} != {2}'
+                             .format(self.id, eni.attachment.instance_id, self.id))
         if self.ssh and local_dev_timeout is not None and self.state == 'running':
             try:
                 pre_detach_net_devices = self.get_network_interfaces().keys()
@@ -2640,8 +2647,8 @@ class EuInstance(Instance, TaggedResource, Machine):
                 break
             except ValueError as VE:
                 last_error = str(VE)
-                self.log.debug('{0}\nDETACH ERROR:"{1}", attempts:{2}, elapsed:{3}'
-                               .format(get_traceback(), VE, attempts, elapsed))
+                self.log.debug('{0}\nDETACH ERROR:"{1}", attempts:{2}, elapsed:{3}/{4}'
+                               .format(get_traceback(), VE, attempts, elapsed, api_timeout))
                 time.sleep(3)
                 enis = self.connection.get_all_network_interfaces([eni.id])
                 if not enis:
@@ -2650,8 +2657,8 @@ class EuInstance(Instance, TaggedResource, Machine):
                 self.update()
                 self.ec2ops.show_network_interfaces(eni)
         if not api_is_good:
-            raise ValueError('ERRORS after elapsed:{0}:"{1}"'.format(elapsed,
-                                                                     last_error or "UNKNOWN?"))
+            raise ValueError('ERRORS after elapsed:{0}/{1}:"{2}"'.format(elapsed, api_timeout,
+                                                                         last_error or "UNKNOWN?"))
         else:
             self.log.debug('System is showing ENI:{0} detached. Moving on to guest checks...'
                            .format(eni.id))

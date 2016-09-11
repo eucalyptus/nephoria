@@ -214,7 +214,7 @@ class VpcSuite(CliTestRunner):
         return pi
 
     def get_test_enis_for_subnet(self, subnet, status='available', apply_groups=None, count=0,
-                                 user=None):
+                                 exclude=None, user=None):
         """
         Attempts to fetch enis for a given subnet which are tagged with self.test_tag_name and
         self.id.
@@ -230,6 +230,7 @@ class VpcSuite(CliTestRunner):
             returns list of ENIs
         """
         user = user or self.user
+
         if count and status != 'available':
             raise ValueError('Count argument can only be used with status "available" got: '
                              'count:{0}, status:{1}'.format(count, status))
@@ -242,10 +243,24 @@ class VpcSuite(CliTestRunner):
         if not isinstance(subnet, Subnet):
             raise ValueError('Must provide type Subnet() or subnet id for get_eni_subnet. '
                              'Got:"{0}"'.format(subnet))
+        exclude = exclude or []
+        if exclude and not isinstance(exclude, list):
+            exclude = [exclude]
+        exclude_ids = []
+        for xeni in exclude:
+            if isinstance(xeni, basestring):
+                exclude_ids.append(xeni)
+            else:
+                exclude_ids.append(xeni.id)
         filters = {'subnet-id': subnet.id, 'tag-key': self.my_tag_name, 'tag-value': self.id}
         if status:
             filters['status'] = status
         enis = user.ec2.connection.get_all_network_interfaces(filters=filters) or []
+        keep = []
+        for eni in enis:
+            if eni.id not in exclude_ids:
+                keep.append(eni)
+        enis = keep
         if count and len(enis) < count:
             for x in xrange(0, (count-len(enis))):
                 eni = user.ec2.connection.create_network_interface(
@@ -1005,6 +1020,7 @@ class VpcSuite(CliTestRunner):
                                  'sessions. {0} did not'.format(get_traceback(), vm.id))
                 raise ValueError('Packet test requires vm_tx and vm_rx to have established SSH '
                                  'sessions. {0} did not'.format(vm.id))
+            vm.update()
 
         def bold(txt):
             return markup(txt, markups=TextStyle.BOLD)
@@ -4533,16 +4549,17 @@ class VpcSuite(CliTestRunner):
         -At this time the test does not test revoking these rules, although this functionality is
          covered in other tests in this suite.
         """
-        raise SkipTestException('This test is not complete yet')
         user = self.user
         vpc = self.test6b0_get_vpc_for_eni_tests()
         instances = []
         subnets = []
         protocols = []
+        tables = []
+        self.test_count = 0
 
         test_rules = [('tcp', 22, 22, '0.0.0.0/0'), ('icmp', -1, -1, '0.0.0.0/0')]
         if tcp:
-            protocols.append('tpc')
+            protocols.append('tcp')
             test_rules.append(('tcp', 100, 100, '0.0.0.0/0'))
         if icmp:
             protocols.append('icmp')
@@ -4554,13 +4571,15 @@ class VpcSuite(CliTestRunner):
             protocols.append('sctp')
             test_rules.append((132, 22, 22, '0.0.0.0/0'))
 
-        def run_tests(vm_tx, vm_rx, dest_ip):
+        def run_tests(vm_tx, vm_rx, dest_ip, expected=None):
             res_dict = {}
             for protocol in protocols:
                 test_dict, passed, table = self.vm_packet_test(vm_tx=vm_tx, vm_rx=vm_rx,
-                                                             dest_ip=dest_ip, protocol=protocol,
-                                                             packet_count=5)
-
+                                                               dest_ip=dest_ip, protocol=protocol,
+                                                               packet_count=5,
+                                                               expected_count=expected)
+                tables.append(table)
+                self.test_count += 1
                 res_dict[protocol] = {'test_dict': test_dict, 'passed': passed, 'table': table}
             return res_dict
 
@@ -4575,42 +4594,267 @@ class VpcSuite(CliTestRunner):
         def status(msg):
             self.last_status_msg = msg
             self.status(msg)
+        test_errors = []
 
         try:
             self.modify_vm_type_store_orig('m1.small', network_interfaces=3)
             for zone in self.zones:
                 status('Creating test subnets...')
-                subnet1, subnet2, subnet3 = self.get_non_default_test_subnets_for_vpc(
+                primary_subnet, subnet1, subnet2 = self.get_non_default_test_subnets_for_vpc(
                     vpc=vpc, user=user, zone=zone, count=3)
-                subnets += [subnet1, subnet2, subnet3]
+                subnets += [primary_subnet, subnet1, subnet2]
                 status('Creating test ENIs')
-                eni1_s1_g1 = self.get_test_enis_for_subnet(subnet=subnet2,
-                                                           apply_groups=[eni_group1],
-                                                           user=user, count=1)[0]
-                eni2_s1_g1 = self.get_test_enis_for_subnet(subnet=subnet2,
-                                                           apply_groups=[eni_group1],
-                                                           user=user, count=1)[0]
-                eni3_s1_g2 = self.get_test_enis_for_subnet(subnet=subnet2,
-                                                           apply_groups=[eni_group2],
-                                                           user=user, count=1)[0]
+                eni1_s1_g1, eni2_s1_g1 = self.get_test_enis_for_subnet(subnet=subnet1,
+                                                           apply_groups=eni_group1.id,
+                                                           user=user, count=2)
+                eni3_s1_g2 = self.get_test_enis_for_subnet(subnet=subnet1,
+                                                           apply_groups=eni_group2.id,
+                                                           user=user, count=1,
+                                                           exclude=[eni1_s1_g1, eni2_s1_g1])[0]
                 eni4_s2_g2 = self.get_test_enis_for_subnet(subnet=subnet2,
-                                                           apply_groups=[eni_group2],
+                                                           apply_groups=eni_group2.id,
                                                            user=user, count=1)[0]
+                eni5_s2_g1 = self.get_test_enis_for_subnet(subnet=subnet2,
+                                                           apply_groups=eni_group1.id,
+                                                           user=user, count=1,
+                                                           exclude=[eni4_s2_g2])[0]
                 status('Creating VMs for this test...')
-                vm1, vm2  = self.get_test_instances(zone=zone, group_id=primary_group,
-                                                            vpc_id=vpc.id, subnet_id=subnet1.id,
-                                                            instance_type='m1.small',
-                                                            auto_connect=True, count=2)
-                instances = [vm1, vm2]
+                vm_tx, vm_rx  = self.get_test_instances(zone=zone, group_id=primary_group.id,
+                                                        vpc_id=vpc.id, subnet_id=primary_subnet.id,
+                                                        instance_type='m1.small',
+                                                        auto_connect=True, count=2)
+                instances = [vm_tx, vm_rx]
 
-                self.status('Testing VM to VM to VM primary ENI same group same subnet ')
+                status('Test scenario Primary ENIs same group same subnet '
+                       'private IP')
+                try:
+                    results = run_tests(vm_rx, vm_tx, vm_tx.private_ip_address)
+                    for protocol, res_dict in results:
+                        if not res_dict.get('passed'):
+                            test_errors.append("{0}, {1}:{2}".format(self.last_status_msg,
+                                                                    protocol,
+                                                                    res_dict.get('passed')))
+                except Exception as E:
+                    test_errors.append("{0}, ERROR:{1}".format(self.last_status_msg, E))
 
+                status('Test scenario Primary ENIs same group same subnet '
+                       'public IP')
+                try:
+                    results = run_tests(vm_rx, vm_tx, vm_tx.ip_address)
+                    for protocol, res_dict in results:
+                        if not res_dict.get('passed'):
+                            test_errors.append("{0}, {1}:{2}".format(self.last_status_msg,
+                                                                     protocol,
+                                                                     res_dict.get('passed')))
+                except Exception as E:
+                    test_errors.append("{0}, ERROR:{1}".format(self.last_status_msg, E))
 
-                raise NotImplementedError('Do this')
+                status('Test scenario Secondary ENIs same group same subnet '
+                       'private IP')
+                try:
+                    vm_tx.attach_eni(eni1_s1_g1)
+                    vm_tx.sync_enis_static_ip_config()
+                    vm_rx.attach_eni(eni2_s1_g1)
+                    vm_rx.sync_enis_static_ip_config()
+                    results = run_tests(vm_rx, vm_tx, eni2_s1_g1.private_ip_address)
+                    for protocol, res_dict in results:
+                        if not res_dict.get('passed'):
+                            test_errors.append("{0}, {1}:{2}".format(self.last_status_msg,
+                                                                     protocol,
+                                                                     res_dict.get('passed')))
+                except Exception as E:
+                    self.log.error(red('{0}\nERROR during:"{1}", error:"{2}"'
+                                   .format(get_traceback(), self.last_status_msg, E)))
+                    test_errors.append("{0}, ERROR:{1}".format(self.last_status_msg, E))
+                finally:
+                    vm_rx.detach_eni(eni2_s1_g1, ignore_missing=True)
+
+                status('Test scenario Secondary ENI different group same subnet '
+                       'private IP')
+                try:
+                    vm_rx.attach_eni(eni3_s1_g2)
+                    vm_rx.sync_enis_static_ip_config()
+                    results = run_tests(vm_rx, vm_tx, eni3_s1_g2.private_ip_address)
+                    for protocol, res_dict in results:
+                        if not res_dict.get('passed'):
+                            test_errors.append("{0}, {1}:{2}".format(self.last_status_msg,
+                                                                     protocol,
+                                                                     res_dict.get('passed')))
+                except Exception as E:
+                    self.log.error(red('{0}\nERROR during:"{1}", error:"{2}"'
+                                       .format(get_traceback(), self.last_status_msg, E)))
+                    test_errors.append("{0}, ERROR:{1}".format(self.last_status_msg, E))
+                finally:
+                    vm_rx.detach_eni(eni3_s1_g2, ignore_missing=True)
+
+                status('Test scenario Secondary ENIs same group different subnet '
+                       'private IP')
+                try:
+                    vm_rx.attach_eni(eni5_s2_g1)
+                    vm_rx.sync_enis_static_ip_config()
+                    results = run_tests(vm_rx, vm_tx, eni2_s1_g1.private_ip_address)
+                    for protocol, res_dict in results:
+                        if not res_dict.get('passed'):
+                            test_errors.append("{0}, {1}:{2}".format(self.last_status_msg,
+                                                                     protocol,
+                                                                     res_dict.get('passed')))
+                except Exception as E:
+                    self.log.error(red('{0}\nERROR during:"{1}", error:"{2}"'
+                                       .format(get_traceback(), self.last_status_msg, E)))
+                    test_errors.append("{0}, ERROR:{1}".format(self.last_status_msg, E))
+                finally:
+                    vm_rx.detach_eni(eni5_s2_g1, ignore_missing=True)
+
+                status('Test scenario Secondary ENIs different group different subnet '
+                       'private IP')
+                try:
+                    vm_rx.attach_eni(eni4_s2_g2)
+                    vm_rx.sync_enis_static_ip_config()
+                    results = run_tests(vm_rx, vm_tx, eni2_s1_g1.private_ip_address)
+                    for protocol, res_dict in results:
+                        if not res_dict.get('passed'):
+                            test_errors.append("{0}, {1}:{2}".format(self.last_status_msg,
+                                                                     protocol,
+                                                                     res_dict.get('passed')))
+                except Exception as E:
+                    self.log.error(red('{0}\nERROR during:"{1}", error:"{2}"'
+                                       .format(get_traceback(), self.last_status_msg, E)))
+                    test_errors.append("{0}, ERROR:{1}".format(self.last_status_msg, E))
+                finally:
+                    vm_rx.detach_eni(eni4_s2_g2, ignore_missing=True)
+
+                status('Beginning negative, revoke tests...')
+                status('Revoking all security group rules from sec groups, leaving ssh on the'
+                       'primary interface')
+
+                user.ec2.revoke_all_rules(primary_group)
+                user.ec2.authorize_group(primary_group, protocol='tcp', port=22)
+                user.ec2.revoke_all_rules(eni_group1)
+                user.ec2.revoke_all_rules(eni_group2)
+                status('Using ping to test for when rules are applied...')
+                start = time.time()
+                elapsed = 0
+                timeout = 90
+                good = False
+                while not good and elapsed < timeout:
+                    elapsed = int(time.time() - start)
+                    try:
+                        vm_tx.sys('ping -c1 -t5 {0}'.format(vm_rx.ip_address), code=0)
+                        self.log.debug('Was able to ping VM after revoking rules after elapsed: '
+                                       '{0}/{1}'.format(elapsed, timeout))
+                        time.sleep(5)
+                    except CommandExitCodeException:
+                        good = True
+                        break
+                if not good:
+                    raise RuntimeError('Security group rules were not applied after {0} seconds'
+                                       .format(elapsed))
+
+                status('NEGATIVE Test scenario Primary ENIs same group same subnet '
+                       'private IP')
+                try:
+                    results = run_tests(vm_rx, vm_tx, vm_tx.private_ip_address, expected=0)
+                    for protocol, res_dict in results:
+                        if not res_dict.get('passed'):
+                            test_errors.append("{0}, {1}:{2}".format(self.last_status_msg,
+                                                                     protocol,
+                                                                     res_dict.get('passed')))
+                except Exception as E:
+                    self.log.error(red('{0}\nERROR during:"{1}", error:"{2}"'
+                                       .format(get_traceback(), self.last_status_msg, E)))
+                    test_errors.append("{0}, ERROR:{1}".format(self.last_status_msg, E))
+
+                status('NEGATIVE Test scenario Primary ENIs same group same subnet '
+                       'public IP')
+                try:
+                    results = run_tests(vm_rx, vm_tx, vm_tx.ip_address, expected=0)
+                    for protocol, res_dict in results:
+                        if not res_dict.get('passed'):
+                            test_errors.append("{0}, {1}:{2}".format(self.last_status_msg,
+                                                                     protocol,
+                                                                     res_dict.get('passed')))
+                except Exception as E:
+                    self.log.error(red('{0}\nERROR during:"{1}", error:"{2}"'
+                                       .format(get_traceback(), self.last_status_msg, E)))
+                    test_errors.append("{0}, ERROR:{1}".format(self.last_status_msg, E))
+
+                status('NEGATIVE Test scenario Secondary ENIs same group same subnet '
+                       'private IP')
+                try:
+                    vm_tx.attach_eni(eni1_s1_g1)
+                    vm_tx.sync_enis_static_ip_config()
+                    vm_rx.attach_eni(eni2_s1_g1)
+                    vm_rx.sync_enis_static_ip_config()
+                    results = run_tests(vm_rx, vm_tx, eni2_s1_g1.private_ip_address, expected=0)
+                    for protocol, res_dict in results:
+                        if not res_dict.get('passed'):
+                            test_errors.append("{0}, {1}:{2}".format(self.last_status_msg,
+                                                                     protocol,
+                                                                     res_dict.get('passed')))
+                except Exception as E:
+                    self.log.error(red('{0}\nERROR during:"{1}", error:"{2}"'
+                                       .format(get_traceback(), self.last_status_msg, E)))
+                    test_errors.append("{0}, ERROR:{1}".format(self.last_status_msg, E))
+                finally:
+                    vm_rx.detach_eni(eni2_s1_g1, ignore_missing=True)
+
+                status('NEGATIVE Test scenario Secondary ENI different group same subnet '
+                       'private IP')
+                try:
+                    vm_rx.attach_eni(eni3_s1_g2)
+                    vm_rx.sync_enis_static_ip_config()
+                    results = run_tests(vm_rx, vm_tx, eni3_s1_g2.private_ip_address, expected=0)
+                    for protocol, res_dict in results:
+                        if not res_dict.get('passed'):
+                            test_errors.append("{0}, {1}:{2}".format(self.last_status_msg,
+                                                                     protocol,
+                                                                     res_dict.get('passed')))
+                except Exception as E:
+                    self.log.error(red('{0}\nERROR during:"{1}", error:"{2}"'
+                                       .format(get_traceback(), self.last_status_msg, E)))
+                    test_errors.append("{0}, ERROR:{1}".format(self.last_status_msg, E))
+                finally:
+                    vm_rx.detach_eni(eni3_s1_g2, ignore_missing=True)
+
+                status('NEGATIVE Test scenario Secondary ENIs same group different subnet '
+                       'private IP')
+                try:
+                    vm_rx.attach_eni(eni5_s2_g1)
+                    vm_rx.sync_enis_static_ip_config()
+                    results = run_tests(vm_rx, vm_tx, eni2_s1_g1.private_ip_address, expected=0)
+                    for protocol, res_dict in results:
+                        if not res_dict.get('passed'):
+                            test_errors.append("{0}, {1}:{2}".format(self.last_status_msg,
+                                                                     protocol,
+                                                                     res_dict.get('passed')))
+                except Exception as E:
+                    self.log.error(red('{0}\nERROR during:"{1}", error:"{2}"'
+                                       .format(get_traceback(), self.last_status_msg, E)))
+                    test_errors.append("{0}, ERROR:{1}".format(self.last_status_msg, E))
+                finally:
+                    vm_rx.detach_eni(eni5_s2_g1, ignore_missing=True)
+
+                status('NEGATIVE Test scenario Secondary ENIs different group different subnet '
+                       'private IP')
+                try:
+                    vm_rx.attach_eni(eni4_s2_g2)
+                    vm_rx.sync_enis_static_ip_config()
+                    results = run_tests(vm_rx, vm_tx, eni2_s1_g1.private_ip_address, expected=0)
+                    for protocol, res_dict in results:
+                        if not res_dict.get('passed'):
+                            test_errors.append("{0}, {1}:{2}".format(self.last_status_msg,
+                                                                     protocol,
+                                                                     res_dict.get('passed')))
+                except Exception as E:
+                    self.log.error(red('{0}\nERROR during:"{1}", error:"{2}"'
+                                       .format(get_traceback(), self.last_status_msg, E)))
+                    test_errors.append("{0}, ERROR:{1}".format(self.last_status_msg, E))
+                finally:
+                    vm_rx.detach_eni(eni4_s2_g2, ignore_missing=True)
+
 
         except Exception as SE:
-            self.log.error(red('{0}\nError trying to establish SSH sessions post 2nd ENI '
-                               'swap:{1}'.format(get_traceback(), SE)))
+            self.log.error(red('{0}\nERROR DURING PACKET TEST:"{1}"'.format(get_traceback(), SE)))
             raise
         finally:
             if clean:
@@ -4626,8 +4870,93 @@ class VpcSuite(CliTestRunner):
                     self.status(
                         'Attempting to delete subnet and dependency artifacts from this test')
                     user.ec2.delete_subnet_and_dependency_artifacts(subnet)
+            if test_errors:
+                self.log.error(red('{0}/{1} TESTS FAILED DURING PACKET TEST:{2}'
+                                   .format(len(test_errors), self.test_count, "\n".join(test_errors))))
+                raise RuntimeError('{0}/{1} ERRORS DURING PACKET TEST'.format(len(test_errors),
+                                                                              self.test_count))
+            else:
+                self.status('PACKET TEST PASSED')
+        return tables
 
-        raise SkipTestException('Test Not Completed at this time')
+    def test6q0_eni_attach_detach_ping_multiple_enis_subnets_groups(self, clean=True):
+        """
+        Attempts to attach and quickly detach several ENIs to a single VM in each zone verifying
+        the private IP of each ENI with PING from a 2nd VM with ENIs in each subnet of the VM
+        under test.
+        The test will repeat the following attach, detach sequence 3 times each time with a
+        different ENI.
+        Upon attach the test will wait for the ENI(s) and Instance to report the correct attached state, as well
+        as check the guest and wait for the guest device to appear.
+        Upon detach the test will wait for the ENI(s) and Instance to report the correct detached
+        state, as well as wait for the guest device to be removed.
+        """
+
+        user = self.user
+        vpc = self.test6b0_get_vpc_for_eni_tests()
+        instances = []
+        subnets = []
+        test_rules = [('tcp', 22, 22, '0.0.0.0/0'), ('icmp', -1, -1, '0.0.0.0/0')]
+        test_rules.append(('tcp', 100, 100, '0.0.0.0/0'))
+        test_rules.append(('icmp', -1, -1, '0.0.0.0/0'))
+        test_rules.append(('udp', 100, 100, '0.0.0.0/0'))
+        test_rules.append((132, 22, 22, '0.0.0.0/0'))
+        primary_group = self.get_test_security_groups(vpc=vpc, rules=test_rules, count=1,
+                                                      user=user)[0]
+        group1 = self.get_test_security_groups(vpc=vpc, count=1, rules=test_rules, user=user)[0]
+        group2 = self.get_test_security_groups(vpc=vpc, count=1, rules=test_rules, user=user)[0]
+        def status(msg):
+            self.last_status_msg = msg
+            self.status(msg)
+        try:
+            status('Modifying instance type m1.small to allow for more ENIs...')
+            self.modify_vm_type_store_orig('m1.small', network_interfaces=3)
+            for zone in self.zones:
+                primary_sub, subnet1, subnet2 = self.get_non_default_test_subnets_for_vpc(
+                    vpc=vpc, user=user, zone=zone, count=3)
+                subnets += [primary_sub, subnet1, subnet2]
+                eni1, eni1b = self.get_test_enis_for_subnet(subnet=subnet1, user=user,
+                                                     apply_groups=group1, count=2)
+                eni2, eni2b = self.get_test_enis_for_subnet(subnet=subnet2, user=user,
+                                                     apply_groups=group2, count=2)
+                status('Creating VM in zone:{0} for this test...'.format(zone))
+                vm1, vm2 = self.get_test_instances(zone=zone, group_id=primary_group.id, vpc_id=vpc.id,
+                                              subnet_id=primary_sub.id, instance_type='m1.small',
+                                              count=2)
+                for eni in [eni1b, eni2b]:
+                    vm2.attach_eni(eni)
+                vm2.sync_enis_static_ip_config()
+                instances += [vm1, vm2]
+                enis = [eni1, eni2]
+                for eni in enis:
+                    status('Test#:{0}/{1},Attempting quick attach and detach of eni:{2} to {3}'
+                           .format(enis.index(eni), len(enis), eni.id, vm1.id))
+                    vm1.attach_eni(eni=eni)
+                    status('Syncing IP info for {0}'.format(vm1.id))
+                    vm1.sync_enis_static_ip_config()
+                    status('Pinging eni:{0} private_ip:{1} on {2} from {3}'
+                           .format(eni.id, eni.private_ip_address, vm1.id, vm2.id))
+                    vm2.sys('ping -c2 -t5 {0}'.format(eni.private_ip_address))
+                    status('Detaching ENI:{0} from {1}'.format(eni.id, vm1.id))
+                    vm1.detach_eni(eni=eni)
+        except Exception as SE:
+            self.log.error(red('{0}\nERROR DURING QUICK ATTACH/DETACH TEST:"{1}"'
+                               .format(get_traceback(), SE)))
+            raise
+        finally:
+            if clean:
+                self.status('Beginning test cleanup. Last Status msg:"{0}"...'
+                            .format(self.last_status_msg))
+                self.restore_vm_types()
+                for vm in instances:
+                    try:
+                        vm.terminate_and_verify()
+                    except Exception as E:
+                        self.log.debug('{0}\nError:{1}'.format(get_traceback(), E))
+                for subnet in subnets:
+                    self.status(
+                        'Attempting to delete subnet and dependency artifacts from this test')
+                    user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
 
     def test6z0_test_clean_up_eni_test_vpc_dependencies(self):
