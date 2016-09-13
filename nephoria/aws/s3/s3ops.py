@@ -151,6 +151,7 @@ class S3ops(BotoBaseOps):
     def delete_all_buckets(self):
         '''
         Deletes all buckets.
+        Returns: list of all buckets, which should be an empty list.
         '''
         buckets = self.get_all_bucket_names()
         l = len(buckets)
@@ -168,6 +169,8 @@ class S3ops(BotoBaseOps):
                 self.delete_bucket(buckets[0])
             except S3opsException:
                 pass
+
+        return self.connection.get_all_buckets()
 
     def get_all_bucket_names(self):
         """
