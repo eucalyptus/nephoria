@@ -31,14 +31,16 @@
 # Author: tony@eucalyptus.com
 import re
 import copy
-
+import time
 import boto
 from boto.ec2.autoscale import ScalingPolicy, Instance
 from boto.ec2.autoscale import Tag
 from boto.ec2.autoscale import LaunchConfiguration
 from boto.ec2.autoscale import AutoScalingGroup, AutoScaleConnection
 from boto.ec2.regioninfo import RegionInfo
+from boto.connection import BotoServerError
 from nephoria.baseops.botobaseops import BotoBaseOps
+from nephoria.aws.ec2.ec2ops import EC2ops
 
 
 class ASops(BotoBaseOps):
@@ -93,6 +95,21 @@ class ASops(BotoBaseOps):
         :return:
         """
         return self.connection.get_all_launch_configurations(names=names)
+
+    def get_all_launch_config_names(self):
+        """
+        Returns a list of all launch configuration names.
+        :return:
+        """
+        lc = self.connection.get_all_launch_configurations()
+
+        if len(lc) > 1:
+            l = len(lc)
+            for i in (0, l - 1):
+                lc[i] = str(lc[i].name)
+        elif len(lc) == 1:
+            lc[0] = str(lc[0].name)
+        return lc
 
     def delete_launch_config(self, launch_config_name):
         self.log.debug("Deleting launch config: " + launch_config_name)
@@ -150,6 +167,64 @@ class ASops(BotoBaseOps):
         if len(groups) == 0:
             raise Exception("No group found with name: " + name)
         return groups[0]
+
+    def get_all_group_names(self):
+        """
+        Returns a list of all autoscaling group names.
+        :return:
+        """
+        groups = self.connection.get_all_groups()
+
+        if len(groups) > 1:
+            l=len(groups)
+            for i in (0,l-1):
+                groups[i] = str(groups[i].name)
+        elif len(groups) == 1:
+            groups[0] = str(groups[0].name)
+
+        return groups
+
+    def wipe_out_all_groups(self):
+        """
+         Terminates autoscaling instances. Deletes all autoscaling groups and launch configs.
+        """
+
+        groups=self.get_all_group_names()
+        lcs = self.get_all_launch_config_names()
+        g = len(groups)
+        if len(groups) > 0:
+            if len(lcs) == 0:
+                emi = EC2ops.get_emi()
+                self.create_launch_config(name='lc-helper', instance_type='m1.small', image_id=emi)
+                lcs = self.get_all_launch_config_names()
+            for i in range(g):
+                try:
+                    self.update_as_group(group_name=groups[i], min_size=0, max_size=0, desired_capacity=0, launch_config=lcs[0])
+                except BotoServerError:
+                    self.log.debug('Could not update autoscaling group')
+                    pass
+
+                for j in range(10):
+                    try:
+                        self.describe_as_group(groups[i])
+                        try:
+                            self.delete_as_group(groups[i])
+                            break
+                        except BotoServerError:
+                            time.sleep(30)
+                            pass
+                    except BotoServerError:
+                        pass
+
+
+        lcs = self.get_all_launch_config_names()
+        l = len(lcs)
+        if l > 1:
+            for i in (0, l-1):
+                self.connection.delete_launch_configuration(lcs[i])
+        elif l == 1:
+            self.connection.delete_launch_configuration(lcs[0])
+
 
     def delete_as_group(self, name=None, force=None):
         self.log.debug("Deleting Auto Scaling Group: " + name)
