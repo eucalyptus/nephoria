@@ -148,6 +148,30 @@ class S3ops(BotoBaseOps):
             raise S3opsException('Bucket (%s) still exists after delete operation' % bucket_name )
         self.log.debug("Bucket %s is deleted successfully." % bucket_name)
 
+    def delete_all_buckets(self):
+        '''
+        Deletes all buckets.
+        '''
+        buckets = self.get_all_bucket_names()
+        l = len(buckets)
+        if l > 0:
+            for i in range(l):
+                self.clear_bucket(buckets[i])
+            for i in range(l):
+                self.delete_bucket(buckets[i])
+
+    def get_all_bucket_names(self):
+        """
+        Returns: list of all bucket names
+        """
+        buckets = self.connection.get_all_buckets()
+        l = len(buckets)
+        if l > 0:
+            for i in range(l):
+                buckets[i] = str(buckets[i].name)
+        return buckets
+
+
     def get_bucket_by_name(self, bucket_name):
         """
         Lookup a bucket by name, if it does not exist raise an exception
