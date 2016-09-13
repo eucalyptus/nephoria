@@ -152,7 +152,7 @@ class ASops(BotoBaseOps):
         self.log.debug("SUCCESS: Created Auto Scaling Group: " + as_group.name)
         return as_group
 
-    def describe_as_group(self, name=None):
+    def describe_as_group(self, name):
         """
         Returns a full description of each Auto Scaling group in the given
         list. This includes all Amazon EC2 instances that are members of the
@@ -161,11 +161,13 @@ class ASops(BotoBaseOps):
         :param name:
         :return:
         """
+        if not name:
+            raise ValueError('No name provided for as group, got:{0}'.format(name))
         groups = self.connection.get_all_groups(names=[name])
         if len(groups) > 1:
-            raise Exception("More than one group with name: " + name)
+            raise Exception("More than one group with name: " + str(name))
         if len(groups) == 0:
-            raise Exception("No group found with name: " + name)
+            raise Exception("No group found with name: " + str(name))
         return groups[0]
 
     def get_all_group_names(self):
@@ -184,9 +186,9 @@ class ASops(BotoBaseOps):
 
         return groups
 
-    def wipe_out_all_groups(self):
+    def delete_all_groups_and_launch_configs(self):
         """
-         Terminates autoscaling instances. Deletes all autoscaling groups and launch configs.
+         Terminates all autoscaling instances. Deletes all autoscaling groups and all launch configs.
         """
 
         groups=self.get_all_group_names()
