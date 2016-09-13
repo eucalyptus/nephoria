@@ -194,6 +194,24 @@ disable_root: false"""
         for resource_type in self.test_resources_clean_methods.keys():
             self.test_resources[resource_type] = []
 
+
+    def delete_all_ec2_resources(self):
+        '''
+        Terminates all instances. Deletes all volumes. Deletes all snapshots.
+        '''
+        self.terminate_instances()
+        self.delete_all_volumes()
+        snap = self.get_snapshots()
+        self.delete_snapshots(snap)
+        groups = self.connection.get_all_security_groups()
+        self.delete_ec2_resources(groups)
+        keys = self.connection.get_all_key_pairs()
+        self.delete_ec2_resources(keys)
+        eips = self.connection.get_all_addresses()
+        self.delete_ec2_resources(eips)
+
+
+
     def delete_ec2_resources(self, resources):
         failcount = 0
         failmsg = ""
@@ -1200,7 +1218,6 @@ disable_root: false"""
                 return subnet
         return None
 
-
     def get_default_subnets(self, zone=None):
         ret_list = []
         filters = None
@@ -1763,8 +1780,6 @@ disable_root: false"""
         else:
             return str(maintable)
 
-
-
     def show_snapshots(self, eusnapshots=None, printme=True):
         """
         Creates and displays a table showing snapshot summary information
@@ -1800,7 +1815,6 @@ disable_root: false"""
             return None
         else:
             return str(maintable)
-
 
     def wait_for_volume(self, volume, status="available"):
         def get_volume_state():
@@ -1950,7 +1964,8 @@ disable_root: false"""
         Deletes all volumes on the cloud
         """
         volumes = self.connection.get_all_volumes()
-        self.delete_volumes(volumes)
+        if len(volumes) > 0:
+            self.delete_volumes(volumes)
 
         
     @printinfo    
@@ -2466,8 +2481,7 @@ disable_root: false"""
             raise('Created '+str(len(retlist))+'/'+str(mincount)+
                   ' snapshots is less than provided mincount, see debug output for more info')
         return retlist
-    
-    
+
     def get_snapshot(self,snapid=None):
         snaps = self.get_snapshots(snapid=snapid, maxcount=1)
         if snaps:
