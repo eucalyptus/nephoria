@@ -179,7 +179,7 @@ class S3ops(BotoBaseOps):
             key.set_contents_from_string(contents)
         else:
             key.set_contents_from_filename(path_to_file)
-        self.debug("Uploaded key: " + str(key_name) + " to bucket:" + str(bucket_name))    
+        self.log.debug("Uploaded key: " + str(key_name) + " to bucket:" + str(bucket_name))
         self.test_resources["keys"].append(key)
         return key
     
@@ -215,61 +215,61 @@ class S3ops(BotoBaseOps):
         try:
             bucket = self.connection.get_bucket(bucket_name=bucket_name)
         except S3ResponseError as e:
-            self.debug('No bucket' + bucket_name + ' found: ' + e.message)
+            self.log.debug('No bucket' + bucket_name + ' found: ' + e.message)
             raise Exception('Not found')
         
         try:
-            self.debug( "Getting bucket listing for " + bucket.name )     
-            self.debug(  "Iterating throught the bucket" )
+            self.log.debug( "Getting bucket listing for " + bucket.name )
+            self.log.debug(  "Iterating throught the bucket" )
             key_list = bucket.list()        
-            self.debug(  "Starting loop" )
+            self.log.debug(  "Starting loop" )
             for k in key_list:
                 if isinstance(k, Prefix):
-                    self.debug(  "Skipping prefix" )
+                    self.log.debug(  "Skipping prefix" )
                     continue
-                self.debug(  "Deleting key: " + k.name )
+                self.log.debug(  "Deleting key: " + k.name )
                 bucket.delete_key(k)
             bucket.delete()
         except S3ResponseError as e:
-            self.debug(  "Exception caught doing bucket cleanup." + e.message )
+            self.log.debug(  "Exception caught doing bucket cleanup." + e.message )
             #Todo: need to make this work with Walrus's non-S3-compliant error codes
             if e.status == 409:
                 #Do version cleanup
-                self.debug(  "Cleaning up versioning artifacts" )
+                self.log.debug(  "Cleaning up versioning artifacts" )
                 try:
                     keys = bucket.get_all_versions()
                     for k in keys:
                         if isinstance(k, Key):
-                            self.debug(  "Got version: " + k.name + "--" + k.version_id + "-- Delete marker? " + str(k.delete_marker) )
-                            self.debug(  "Deleting key: " + k.name )
+                            self.log.debug(  "Got version: " + k.name + "--" + k.version_id + "-- Delete marker? " + str(k.delete_marker) )
+                            self.log.debug(  "Deleting key: " + k.name )
                             bucket.delete_key(key_name=k.name,version_id=k.version_id)
                         elif isinstance(k, DeleteMarker):
-                            self.debug(  "Got marker: " + k.name + "--" + k.version_id + "--" + str(k.is_latest) )
-                            self.debug(  "Deleting delete marker" )
+                            self.log.debug(  "Got marker: " + k.name + "--" + k.version_id + "--" + str(k.is_latest) )
+                            self.log.debug(  "Deleting delete marker" )
                             bucket.delete_key(key_name=k.name,version_id=k.version_id)
-                    self.debug(  "Deleting bucket " + bucket.name )
+                    self.log.debug(  "Deleting bucket " + bucket.name )
                     bucket.delete()
                 except Exception as e:
-                    self.debug(  "Exception deleting versioning artifacts: " + e.message )
+                    self.log.debug(  "Exception deleting versioning artifacts: " + e.message )
             else:
-                self.debug('Got ' + e.message + ' and status ' + str(e.status))
+                self.log.debug('Got ' + e.message + ' and status ' + str(e.status))
                     
     def clear_keys_with_prefix(self, bucket, prefix):
         try :
             listing = self.connection.get_all_buckets()
             for bucket in listing:
                 if bucket.name.startswith(prefix):
-                    self.debug("Getting bucket listing for " + bucket.name)
+                    self.log.debug("Getting bucket listing for " + bucket.name)
                     key_list = bucket.list()
                     for k in key_list:
                         if isinstance(k, boto.s3.prefix.Prefix):
-                            self.debug("Skipping prefix")
+                            self.log.debug("Skipping prefix")
                             continue
-                        self.debug("Deleting key: " + k.name)
+                        self.log.debug("Deleting key: " + k.name)
                         bucket.delete_key(k)
                     bucket.delete()
                 else:
-                    self.debug("skipping bucket: " + bucket.name)
+                    self.log.debug("skipping bucket: " + bucket.name)
         except S3ResponseError as e:
             raise S3opsException("Exception caught doing bucket cleanup.")
 
