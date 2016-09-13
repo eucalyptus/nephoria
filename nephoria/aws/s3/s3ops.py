@@ -154,11 +154,20 @@ class S3ops(BotoBaseOps):
         '''
         buckets = self.get_all_bucket_names()
         l = len(buckets)
-        if l > 0:
+        if l > 1:
             for i in range(l):
                 self.clear_bucket(buckets[i])
             for i in range(l):
-                self.delete_bucket(buckets[i])
+                try:
+                    self.delete_bucket(buckets[i])
+                except S3opsException:
+                    pass
+        elif l == 0:
+            self.clear_bucket(buckets[0])
+            try:
+                self.delete_bucket(buckets[0])
+            except S3opsException:
+                pass
 
     def get_all_bucket_names(self):
         """
