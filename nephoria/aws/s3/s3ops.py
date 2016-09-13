@@ -162,7 +162,7 @@ class S3ops(BotoBaseOps):
                     self.delete_bucket(buckets[i])
                 except S3opsException:
                     pass
-        elif l == 0:
+        elif l == 1:
             self.clear_bucket(buckets[0])
             try:
                 self.delete_bucket(buckets[0])
