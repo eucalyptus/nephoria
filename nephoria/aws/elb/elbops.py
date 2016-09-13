@@ -49,6 +49,14 @@ class ELBops(BotoBaseOps):
     EUCARC_URL_NAME = 'elb_url'
     CONNECTION_CLASS = ELBConnection
 
+    def _sanitize_elb(self, elb):
+        if isinstance(elb, basestring):
+            elbs = self.connection.get_all_load_balancers(elb)
+            if not elbs:
+                raise ValueError('No ELB found for {0}'.format(elb))
+            elb = elbs[0]
+        return elb
+
     def setup_resource_trackers(self):
         """
         Setup keys in the test_resources hash in order to track artifacts created
@@ -150,8 +158,9 @@ class ELBops(BotoBaseOps):
             self.delete_load_balancer(lb, timeout)
 
     def delete_load_balancer(self, lb, timeout=60, poll_sleep=10):
+        lb = self._sanitize_elb(lb)
         self.log.debug("Deleting Loadbalancer: {0}".format(lb.name))
-        self.delete_load_balancer(lb.name)
+        self.connection.delete_load_balancer(lb.name)
         poll_count = timeout / poll_sleep
         for _ in range(poll_count):
             lbs = self.connection.get_all_load_balancers(load_balancer_names=[lb.name])
@@ -159,6 +168,10 @@ class ELBops(BotoBaseOps):
                 time.sleep(poll_sleep)
         if lb in self.test_resources["load_balancers"]:
             self.test_resources["load_balancers"].remove(lb)
+
+    def delete_all_load_balancers(self):
+        pass
+
 
     def create_app_cookie_stickiness_policy(self, name, lb_name, policy_name):
         self.log.debug("Create app cookie stickiness policy: " + str(policy_name))
