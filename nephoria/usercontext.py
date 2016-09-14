@@ -42,6 +42,7 @@ from nephoria.aws.ec2.ec2ops import EC2ops
 from nephoria.aws.ec2.b3_ec2ops import B3_EC2ops
 from nephoria.aws.elb.elbops import ELBops
 from nephoria.aws.sts.stsops import STSops
+from nephoria.aws.sqs.sqsops import SQSops
 from nephoria.aws.cloudformation.cfnops import CFNops
 from nephoria.aws.cloudwatch.cwops import CWops
 from nephoria.aws.autoscaling.asops import ASops
@@ -55,6 +56,7 @@ class UserContext(AutoCreds):
                  EC2ops.__name__: 'ec2',
                  ELBops.__name__: 'elb',
                  STSops.__name__: 'sts',
+                 SQSops.__name__: 'sqs',
                  CWops.__name__: 'cloudwatch',
                  CFNops.__name__: 'cloudformation',
                  ASops.__name__: 'autoscaling',
@@ -300,6 +302,23 @@ class UserContext(AutoCreds):
                 except Exception as CE:
                     self.log.error(red('{0}\nFailed to created "{1}" interface.\n'
                                    'Connection kwargs:\n{2}\nError:{3}'
+                                       .format(get_traceback(),
+                                               ops_class.__name__,
+                                               self._connection_kwargs,
+                                               CE)))
+        return self._connections.get(name, None)
+
+    @property
+    def sqs(self):
+        ops_class = SQSops
+        name = self.CLASS_MAP[ops_class.__name__]
+        if not self._connections.get(name, None):
+            if getattr(self, ops_class.EUCARC_URL_NAME, None):
+                try:
+                    self._connections[name] = ops_class(**self._connection_kwargs)
+                except Exception as CE:
+                    self.log.error(red('{0}\nFailed to created "{1}" interface.\n'
+                                       'Connection kwargs:\n{2}\nError:{3}'
                                        .format(get_traceback(),
                                                ops_class.__name__,
                                                self._connection_kwargs,
