@@ -76,14 +76,46 @@ class CFNops(BotoBaseOps):
     validate_template.__doc__ = CloudFormationConnection.validate_template.__doc__
 
     def delete_stack(self, stack_name_or_id, *args, **kwargs):
+        if not isinstance(stack_name_or_id, basestring):
+            stack_name_or_id = stack_name_or_id.stack_id
         self.log.info("Deleting stack: {0}".format(stack_name_or_id))
         return self.connection.delete_stack(stack_name_or_id, *args, **kwargs)
 
     delete_stack.__doc__ = CloudFormationConnection.delete_stack.__doc__
 
-    def describe_stacks(self, stack_name_or_id, *args, **kwargs):
-        self.log.info("Describing stack: {0}".format(stack_name_or_id))
-        return self.connection.describe_stacks(stack_name_or_id, *args, **kwargs)
+    def delete_all_stacks(self, timeout=360, poll_sleep=10):
+        """
+        Deletes all stacks.
+
+        Args:
+            timeout: default= 60
+            poll_sleep: 10 seconds
+
+        Returns: list of stacks, empty list if succeeded
+
+        """
+        stacks = self.describe_stacks()
+        poll_count = timeout / poll_sleep
+        if len(stacks) > 0:
+            for i in stacks:
+                self.log.debug("Deleting Stack: {0}".format(i))
+                self.delete_stack(i)
+            for _ in range(poll_count):
+                time.sleep(poll_sleep)
+                stacks = self.describe_stacks()
+                if len(stacks) == 0:
+                    break
+                for i in stacks:
+                    if i in stacks:
+                        self.delete_stack(i)
+        stacks = self.describe_stacks()
+        return stacks
+
+    def describe_stacks(self, stack_names_or_ids=None, *args, **kwargs):
+        if stack_names_or_ids and not isinstance(stack_names_or_ids, list):
+            stack_names_or_ids = [stack_names_or_ids]
+        self.log.info("Describing stack: {0}".format(stack_names_or_ids))
+        return self.connection.describe_stacks(stack_names_or_ids, *args, **kwargs)
 
     describe_stacks.__doc__ = CloudFormationConnection.describe_stacks.__doc__
 
