@@ -170,8 +170,10 @@ class ELBops(BotoBaseOps):
             self.test_resources["load_balancers"].remove(lb)
 
     def delete_all_load_balancers(self):
-        pass
-
+        elbs = self.connection.get_all_load_balancers()
+        for lb in elbs:
+            self.delete_load_balancer(lb)
+        return self.connection.get_all_load_balancers()
 
     def create_app_cookie_stickiness_policy(self, name, lb_name, policy_name):
         self.log.debug("Create app cookie stickiness policy: " + str(policy_name))
