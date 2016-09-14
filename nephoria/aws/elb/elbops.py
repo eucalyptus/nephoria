@@ -49,6 +49,14 @@ class ELBops(BotoBaseOps):
     EUCARC_URL_NAME = 'elb_url'
     CONNECTION_CLASS = ELBConnection
 
+    def _sanitize_elb(self, elb):
+        if isinstance(elb, basestring):
+            elbs = self.connection.get_all_load_balancers(elb)
+            if not elbs:
+                raise ValueError('No ELB found for {0}'.format(elb))
+            elb = elbs[0]
+        return elb
+
     def setup_resource_trackers(self):
         """
         Setup keys in the test_resources hash in order to track artifacts created
@@ -107,11 +115,11 @@ class ELBops(BotoBaseOps):
     def register_lb_instances(self, name, instances, timeout=360, poll_count=15):
         inst_ids = [inst.id for inst in instances]
         self.log.debug("Registering instances {0} with lb {1}".format(inst_ids, name))
-        self.register_instances(name, inst_ids)
+        self.connection.register_instances(name, inst_ids)
         poll_sleep = timeout / poll_count
         for _ in range(poll_count):
             self.log.debug("Checking instance health for {0}".format(inst_ids))
-            inst_states = self.describe_instance_health(name, instances=inst_ids)
+            inst_states = self.connection.describe_instance_health(name, instances=inst_ids)
             states = [state.state for state in inst_states]
             if not states or 'OutOfService' in states:
                 time.sleep(poll_sleep)
@@ -126,16 +134,16 @@ class ELBops(BotoBaseOps):
     def create_load_balancer(self, zones, name="test", load_balancer_port=80, instances=None):
         self.log.debug("Creating load balancer: " + name + " on port " + str(load_balancer_port))
         listener = self.create_listener(load_balancer_port=load_balancer_port)
-        super(ELBops, self).create_load_balancer(name, zones=zones, listeners=[listener])
+        super(ELBops, self).connection.create_load_balancer(name, zones=zones, listeners=[listener])
 
         healthcheck = self.create_healthcheck()
-        self.configure_health_check(name, healthcheck)
+        self.connection.configure_health_check(name, healthcheck)
 
         if instances:
-            self.register_instances(name, instances)
+            self.connection.register_instances(name, instances)
 
         ### Validate the creation of the load balancer
-        lbs = self.get_all_load_balancers(load_balancer_names=[name])
+        lbs = self.connection.get_all_load_balancers(load_balancer_names=[name])
         if not "load_balancers" in self.test_resources:
             self.test_resources["load_balancers"] = []
 
@@ -150,15 +158,22 @@ class ELBops(BotoBaseOps):
             self.delete_load_balancer(lb, timeout)
 
     def delete_load_balancer(self, lb, timeout=60, poll_sleep=10):
+        lb = self._sanitize_elb(lb)
         self.log.debug("Deleting Loadbalancer: {0}".format(lb.name))
-        self.delete_load_balancer(lb.name)
+        self.connection.delete_load_balancer(lb.name)
         poll_count = timeout / poll_sleep
         for _ in range(poll_count):
-            lbs = self.get_all_load_balancers(load_balancer_names=[lb.name])
+            lbs = self.connection.get_all_load_balancers(load_balancer_names=[lb.name])
             if lb in lbs:
                 time.sleep(poll_sleep)
         if lb in self.test_resources["load_balancers"]:
             self.test_resources["load_balancers"].remove(lb)
+
+    def delete_all_load_balancers(self):
+        elbs = self.connection.get_all_load_balancers()
+        for lb in elbs:
+            self.delete_load_balancer(lb)
+        return self.connection.get_all_load_balancers()
 
     def create_app_cookie_stickiness_policy(self, name, lb_name, policy_name):
         self.log.debug("Create app cookie stickiness policy: " + str(policy_name))
@@ -181,7 +196,7 @@ class ELBops(BotoBaseOps):
 
     def set_lb_policy(self, lb_name, lb_port, policy_name=None):
         self.log.debug("Set policy " + str(policy_name) + " for " + lb_name)
-        self.set_lb_policies_of_listener(lb_name=lb_name,
+        self.connection.set_lb_policies_of_listener(lb_name=lb_name,
                                              lb_port=lb_port,
                                              policies=policy_name)
 
@@ -191,23 +206,23 @@ class ELBops(BotoBaseOps):
                                   policy_name=policy_name)
 
     def describe_lb_policies(self, lb):
-        lbs = self.get_all_load_balancers(load_balancer_names=[lb])
+        lbs = self.connection.get_all_load_balancers(load_balancer_names=[lb])
         return lbs[0].policies
 
     def add_lb_listener(self, lb_name, listener):
         self.log.debug("adding listener")
-        self.create_load_balancer_listeners(name=lb_name, listeners=[listener])
+        self.connection.create_load_balancer_listeners(name=lb_name, listeners=[listener])
 
     def remove_lb_listener(self, lb_name, port):
         self.log.debug("removing listener")
-        self.delete_load_balancer_listeners(name=lb_name, ports=[port])
+        self.connection.delete_load_balancer_listeners(name=lb_name, ports=[port])
 
     def add_server_cert(self, cert_name, cert_dir="./cloudtests/cloud_user/elb/test_data",
                         cert_file="ssl_server_certs_basics.crt",
                         key_file="ssl_server_certs_basics.pem"):
         cert_body = open(join(cert_dir, cert_file)).read()
         cert_key = open(join(cert_dir, key_file)).read()
-        self.upload_server_cert(cert_name=cert_name, cert_body=cert_body, private_key=cert_key)
+        self.connection.upload_server_cert(cert_name=cert_name, cert_body=cert_body, private_key=cert_key)
         
     def cleanup_load_balancers(self, lbs=None):
         """
