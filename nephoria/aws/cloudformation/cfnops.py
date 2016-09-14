@@ -83,6 +83,34 @@ class CFNops(BotoBaseOps):
 
     delete_stack.__doc__ = CloudFormationConnection.delete_stack.__doc__
 
+    def delete_all_stacks(self, timeout=360, poll_sleep=10):
+        """
+        Deletes all stacks.
+
+        Args:
+            timeout: default= 60
+            poll_sleep: 10 seconds
+
+        Returns: list of stacks, empty list if succeeded
+
+        """
+        stacks = self.describe_stacks()
+        poll_count = timeout / poll_sleep
+        if len(stacks) > 0:
+            for i in stacks:
+                self.log.debug("Deleting Stack: {0}".format(i))
+                self.delete_stack(i)
+            for _ in range(poll_count):
+                time.sleep(poll_sleep)
+                stacks = self.describe_stacks()
+                if len(stacks) == 0:
+                    break
+                for i in stacks:
+                    if i in stacks:
+                        self.delete_stack(i)
+        stacks = self.describe_stacks()
+        return stacks
+
     def describe_stacks(self, stack_names_or_ids=None, *args, **kwargs):
         if stack_names_or_ids and not isinstance(stack_names_or_ids, list):
             stack_names_or_ids = [stack_names_or_ids]
