@@ -47,6 +47,7 @@ from nephoria.exceptions import EucaAdminRequired
 
 from boto.ec2.image import Image
 from boto.ec2.instance import Reservation, Instance
+from boto.ec2.ec2object import EC2Object
 from boto.ec2.keypair import KeyPair
 from boto.ec2.blockdevicemapping import BlockDeviceMapping, BlockDeviceType
 from boto.ec2.group import Group as BotoGroup
@@ -75,8 +76,37 @@ from nephoria.aws.ec2.euinstance import EuInstance
 from nephoria.aws.ec2.windows_instance import WinInstance
 from nephoria.aws.ec2.euvolume import EuVolume
 from nephoria.aws.ec2.eusnapshot import EuSnapshot
-from nephoria.aws.ec2.euzone import EuZone
 from nephoria.aws.ec2.conversiontask import ConversionTask
+
+class NephoriaNetworkInterfaceCollection(NetworkInterfaceCollection):
+
+    def add_eni(self, eni=None, device_index=None, subnet_id=None, description=None,
+                private_ip_address=None, groups=None, delete_on_termination=None,
+                private_ip_addresses=None, secondary_private_ip_address_count=None,
+                associate_public_ip_address=None):
+        if isinstance(eni, NetworkInterface):
+            eni = eni.id
+        if device_index is None:
+            dev_index_list = []
+            for ns in self:
+                dev_index_list.append(ns.device_index)
+            for device_index in range(0, 100):
+                if not device_index in dev_index_list:
+                    break
+            if device_index is None:
+                raise ValueError('Error could not find available device index in range 0-100')
+        new_spec = NetworkInterfaceSpecification(
+            network_interface_id=eni,
+            device_index=device_index,
+            subnet_id=subnet_id,
+            description=description,
+            private_ip_address=private_ip_address,
+            groups=groups,
+            delete_on_termination=delete_on_termination,
+            private_ip_addresses=private_ip_addresses,
+            secondary_private_ip_address_count=secondary_private_ip_address_count,
+            associate_public_ip_address=associate_public_ip_address)
+        self.append(new_spec)
 
 
 # Boto is lacking support for NatGateway...
@@ -150,6 +180,48 @@ class EucaSubnet(BotoSubnet):
             self.mapPublicIpOnLaunch = value
         elif name == 'defaultForAz':
             self.defaultForAz = value
+
+class EucaZoneAvailability(object):
+    def __init__(self):
+        self.zonename = None
+        self.available = None
+        self.max = None
+
+class EucaVmType(EC2Object):
+    # Base Class For Eucalyptus Vmtype Objects
+    def __init__(self, connection=None):
+        self.connection = connection
+        self.name = None
+        self.memory = None
+        self.cpu = None
+        self.disk = None
+        self.networkinterfaces = None
+        self.region = None
+        self.availability = None
+
+    def __repr__(self):
+        return str(self.__class__.__name__) + ":" + str(self.name)
+
+    def startElement(self, name, value, connection):
+        pass
+
+    def endElement(self, name, value, connection):
+        ename = name.lower().replace('euca:', '')
+        if ename:
+            if ename in ['zonename', 'available', 'max']:
+                if not self.availability:
+                    self.availability  = EucaZoneAvailability()
+                setattr(self.availability, ename, value)
+            if ename == 'networkinterfaces':
+                self.networkinterfaces = int(value)
+            if ename == 'cpu':
+                self.cpu = int(value)
+            if ename == 'disk':
+                self.disk = int(value)
+            if ename == 'memory':
+                self.memory = int(value)
+            else:
+                setattr(self, ename.lower(), value)
 
 
 EC2RegionData = {
@@ -349,16 +421,21 @@ disable_root: false"""
         on the server to help
         avoid producing additional keys in test dev.
 
+        :key_name: specific name of keypair to look for
         :param path: Filesystem path to search in
         :param extension: extension of private key file
         :return: list of key names
         """
         keylist = []
+        keys = []
         if key_name:
-            # this will error out here if key_name is not found on the cloud
+            # log warning if key is not found
             keys = self.connection.get_key_pair(key_name)
             if keys:
                 keys = [keys]
+            else:
+                self.log.warning('key: {0} not found by this user'.format(key_name))
+                keys = []
         else:
             keys = self.connection.get_all_key_pairs()
         keyfile = None
@@ -604,44 +681,80 @@ disable_root: false"""
             group_name=None,
             )
 
-    def revoke_all_rules(self, group):
+    def revoke_all_rules(self, group, egress=False):
 
-        if not isinstance(group, SecurityGroup):
+        if isinstance(group, SecurityGroup):
+            # fetch it since group obj does not have update() yet...
+            group = self.get_security_group(id=group.id)
+        elif isinstance(group, basestring):
             group = self.get_security_group(name=group)
         else:
-            # group obj does not have update() yet...
-            group = self.get_security_group(id=group.id)
+            raise ValueError('Unknown type passed for group: {0}/{1}'.format(group, type(group)))
+
         if not group:
             raise ValueError('Security group "{0}" not found'.format(group))
         self.show_security_group(group)
         assert isinstance(group, SecurityGroup)
-        rules = copy.copy(group.rules)
-        for r in rules:
+        # Remove ingress rules
+
+        name = getattr(group, 'name', None)
+        for r in group.rules:
+
+            ip_protocol = getattr(r, 'ip_protocol', None)
+            from_port = getattr(r, 'from_port', None)
+            to_port = getattr(r, 'to_port', None)
             self.log.debug('Attempting to revoke rule:{0}, grants:{1}'
                        .format(r, r.grants))
             assert isinstance(r, IPPermissions)
+
             for grant in r.grants:
+                self.connection.revoke_security_group(
+                    group_id=group.id,
+                    src_security_group_group_id=grant.group_id,
+                    ip_protocol=ip_protocol,
+                    from_port=from_port,
+                    to_port=to_port,
+                    cidr_ip=grant.cidr_ip)
+
+        for r in group.rules_egress:
+            for r in group.rules:
+                ip_protocol = getattr(r, 'ip_protocol', None)
+                from_port = getattr(r, 'from_port', None)
+                to_port = getattr(r, 'to_port', None)
+                self.log.debug('Attempting to revoke egress rule:{0}, grants:{1}'
+                               .format(r, r.grants))
+                assert isinstance(r, IPPermissions)
+                for grant in r.grants:
+                    self.connection.revoke_security_group_egress(
+                        group_id=group.id,
+                        src_group_id=grant.group_id,
+                        ip_protocol=ip_protocol,
+                        from_port=from_port,
+                        to_port=to_port,
+                        cidr_ip=grant.cidr_ip)
+                """
                 if grant.cidr_ip:
                     self.log.debug('{0}.revoke(ip_protocol:{1}, from_port:{2}, '
-                               'to_port{3}, cidr_ip:{4})'.format(group.name,
-                                                                 r.ip_protocol,
-                                                                 r.from_port,
-                                                                 r.to_port,
+                               'to_port{3}, cidr_ip:{4})'.format(name,
+                                                                 ip_protocol,
+                                                                 from_port,
+                                                                 to_port,
                                                                  grant))
-                    group.revoke(ip_protocol=r.ip_protocol, from_port=r.from_port,
-                                 to_port=r.to_port, cidr_ip=grant.cidr_ip)
+                    group.revoke(ip_protocol=ip_protocol, from_port=from_port,
+                                 to_port=to_port, cidr_ip=grant.cidr_ip)
                 if grant.name or grant.group_id:
-                    group.revoke(ip_protocol=r.ip_protocol,
-                                 from_port=r.from_port,
-                                 to_port=r.to_port,
+                    group.revoke(ip_protocol=ip_protocol,
+                                 from_port=from_port,
+                                 to_port=to_port,
                                  src_group=grant,
                                  cidr_ip=None )
                     self.log.debug('{0}.revoke(ip_protocol:{1}, from_port:{2}, '
                                'to_port:{3}, src_group:{4})'.format(group.name,
-                                                                   r.ip_protocol,
-                                                                   r.from_port,
-                                                                   r.to_port,
+                                                                   ip_protocol,
+                                                                   from_port,
+                                                                   to_port,
                                                                    grant))
+                """
         group = self.get_security_group(id=group.id)
         self.log.debug('AFTER removing all rules...')
         self.show_security_group(group)
@@ -746,12 +859,12 @@ disable_root: false"""
 
     def show_vpc(self, vpc, brief=False, printmethod=None, printme=True):
         table_width = 110
-        if isinstance(vpc, str):
+        if isinstance(vpc, basestring):
             vpcs = self.get_all_vpcs(vpc)
             if vpcs:
                 vpc = vpcs[0]
         if not isinstance(vpc, VPC):
-             raise ValueError('show_vpc passed on non VPC type: "{0}:{1}"'.format(vpc, type(vpc)))
+             raise ValueError('show_vpc was passed a non-VPC type: "{0}:{1}"'.format(vpc, type(vpc)))
         title = markup('  VPC SUMMARY: "{0}"'.format(vpc.id), markups=[1, 94]).ljust(table_width)
         main_pt = PrettyTable([title])
         main_pt.align[title] = 'l'
@@ -781,27 +894,47 @@ disable_root: false"""
         main_pt.add_row([mainbuf])
         if not brief:
             dhcp_line = markup("DHCP OPTION SET FOR {0}:".format(vpc.id),
-                               markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
+                               markups=[TextStyle.BOLD, TextStyle.UNDERLINE,
+                                        ForegroundColor.BLUE]).ljust(table_width)
             main_pt.add_row([".".ljust(table_width, ".")])
             main_pt.add_row([dhcp_line])
             if vpc.dhcp_options_id:
                 dopts = self.connection.get_all_dhcp_options([vpc.dhcp_options_id])
                 if dopts:
                     dopt = dopts[0]
-                main_pt.add_row([str(self.show_dhcp_option_set(dopt, printme=False))])
+                main_pt.add_row([self.show_dhcp_option_set(dopt,
+                                                           printme=False).get_string(border=False)])
+            main_rt_pt = ""
+            main_rt = self.connection.get_all_route_tables(filters={'association.main': 'true',
+                                                                    'vpc-id': vpc.id})
+
+            main_rt_line = markup("MAIN ROUTE TABLE ASSOCIATION FOR {0}:".format(vpc.id),
+                                  markups=[TextStyle.BOLD, TextStyle.UNDERLINE,
+                                           ForegroundColor.BLUE]).ljust(table_width)
+            main_pt.add_row([".".ljust(table_width, ".")])
+            main_pt.add_row([main_rt_line])
+            if main_rt:
+                main_rt = main_rt[0]
+                main_pt.add_row([self.show_route_table(main_rt,
+                                                       printme=False).get_string(border=False)])
+            else:
+                main_pt.add_row(['    (NONE)'])
             igws = self.connection.get_all_internet_gateways(filters={'attachment.vpc-id': vpc.id})
             igw_line = markup("INTERNET GATEWAYS FOR {0}:".format(vpc.id),
-                              markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
+                              markups=[TextStyle.BOLD, TextStyle.UNDERLINE,
+                                       ForegroundColor.BLUE]).ljust(table_width)
             main_pt.add_row([".".ljust(table_width, ".")])
             main_pt.add_row([igw_line])
+            igw = None
             if not igws:
                 main_pt.add_row(['    (NONE)'])
             else:
                 for igw in igws:
-                    main_pt.add_row([str(self.show_internet_gateway(igw, printme=False))])
+                    main_pt.add_row([
+                        self.show_internet_gateway(igw, printme=False).get_string(border=False)])
             # Add tag entries in sub-table...
             tag_pt = ""
-            if igw.tags:
+            if igw and vpc.tags:
                 tag_key_len = 30
                 tag_value_len = table_width - tag_key_len - 3
                 tag_key_hdr = markup('TAG KEY', [TextStyle.BOLD, ForegroundColor.BLUE])
@@ -811,16 +944,18 @@ disable_root: false"""
                 tag_pt.max_width[tag_key_hdr] = tag_key_len
                 tag_pt.max_width[tag_value_hdr] = tag_value_len
                 tag_pt.header = True
-                tag_pt.padding_width = 0
+                tag_pt.padding_width = 1
                 tag_pt.vrules = 1
                 tag_pt.hrules = 1
-                for key, value in igw.tags.iteritems():
-                    tag_pt.add_row([str(key).ljust(tag_key_len), str(value).ljust(tag_value_len)])
+                for key, value in vpc.tags.iteritems():
+                    tag_pt.add_row([str(key).ljust(tag_key_len),
+                                    str(value).ljust(tag_value_len)])
             tag_pt = "\n".join(str(x).strip('|')
                                for x in str(tag_pt).translate(string.maketrans("", "", ),
                                                               '+|').splitlines())
-            tag_line = markup("TAGS FOR {0}:".format(vpc.id),
-                               markups=[TextStyle.BOLD, ForegroundColor.BLUE]).ljust(table_width)
+            tag_line = markup("{0} TAGS:".format(vpc.id),
+                               markups=[TextStyle.BOLD, TextStyle.UNDERLINE,
+                                        ForegroundColor.BLUE]).ljust(table_width)
 
             main_pt.add_row([".".ljust(table_width, ".")])
             main_pt.add_row([tag_line])
@@ -882,6 +1017,175 @@ disable_root: false"""
         else:
             return ret_buf
 
+    def get_subnet_dependency_artifacts(self, subnet):
+        ret_dict = {}
+        if not isinstance(subnet, basestring):
+            subnet = subnet.id
+        ret_dict['route_tables'] = self.connection.get_all_route_tables(
+            filters={'association.subnet-id': subnet})
+        ret_dict['enis'] = self.connection.get_all_network_interfaces(
+            filters={'subnet-id': subnet})
+        ret_dict['instances'] = self.get_instances(filters={'subnet-id': subnet})
+        return ret_dict
+
+    def show_subnet_dependency_artifacts(self, subnet=None, artifacts=None, printmethod=None,
+                                          printme=True):
+        if not subnet and not artifacts:
+            raise ValueError('Need "vpc" and/or "artifacts" to show dependencies')
+        deps = artifacts or self.get_subnet_dependency_artifacts(subnet=subnet) or {}
+        pt = PrettyTable(['TYPE', 'ARTIFACTS'])
+        pt.align = 'l'
+        for key, value in deps.iteritems():
+            pt.add_row([key, "\n".join([str(x) for x in value or []])])
+        if printme:
+            printmethod = printmethod or self.log.info
+            printmethod("\n{0}\n".format(pt))
+        else:
+            return pt
+
+    def delete_subnet_and_dependency_artifacts(self, subnet, verbose=True):
+        if not isinstance(subnet, basestring):
+            subnet = subnet.id
+        deps = self.get_subnet_dependency_artifacts(subnet=subnet)
+        if verbose:
+            pt = self.show_subnet_dependency_artifacts(subnet, printme=False)
+            self.log.info('Attempting to delete SUBNET artifacts...\n{0}\n'.format(pt))
+        if deps['instances']:
+            self.log.debug('Attempting to delete vpc instances')
+            self.terminate_instances(deps['instances'])
+        if deps['route_tables']:
+            self.log.debug('Attempting to delete vpc route tables')
+            for rtb in deps['route_tables']:
+                main = False
+                for assoc in rtb.associations:
+                    self.connection.disassociate_route_table(assoc.id)
+                    if assoc.main:
+                        main = True
+                if not main:
+                    self.connection.delete_route_table(route_table_id=rtb.id)
+        if deps['enis']:
+            self.log.debug('Attempting to delete vpc enis')
+            for eni in deps['enis']:
+                eni.delete()
+        self.log.debug('Attempting to delete subnet:{0}'.format(subnet))
+        self.connection.delete_subnet(subnet)
+        self.log.debug('Deleted SUBNET and dependency artifacts')
+
+
+
+    def get_vpc_dependency_artifacts(self, vpc):
+        """
+        Convienence method to help with the pains of gathering vpc artifacts needed to
+        delete a VPC.
+        Args:
+            vpc: vpc obj or id
+
+        Returns: dict of dependency artifacts
+        """
+        ret_dict = {}
+        if not isinstance(vpc, basestring):
+            vpc = vpc.id
+        self.log.debug('Attempting to gather: instances ')
+        ret_dict['instances'] = self.get_instances(filters={'vpc_id': vpc})
+        self.log.debug('Attempting to gather: subnets')
+        ret_dict['subnets'] = self.get_all_subnets(filters={'vpc_id': vpc})
+        self.log.debug('Attempting to gather: enis')
+        ret_dict['enis'] = []
+        for sub in ret_dict['subnets']:
+            ret_dict['enis'] += self.connection.get_all_network_interfaces(
+                filters={'subnet_id': sub.id})
+        self.log.debug('Attempting to gather: internet gateways')
+        ret_dict['internet_gateways'] = self.connection.get_all_internet_gateways(
+            filters={'attachment.vpc-id': vpc})
+        self.log.debug('Attempting to gather: vpn gateways')
+        ret_dict['vpn_gateways'] = self.connection.get_all_vpn_gateways(
+            filters={'vpc_id': vpc})
+        self.log.debug('Attempting to gather: route tables')
+        ret_dict['route_tables'] = self.connection.get_all_route_tables(
+            filters={'vpc-id': vpc})
+        self.log.debug('Attempting to gather: network acls')
+        ret_dict['network_acls'] = self.connection.get_all_network_acls(
+            filters={'vpc_id': vpc})
+        self.log.debug('Attempting to gather: security groups')
+        ret_dict['security_groups'] = self.connection.get_all_security_groups(
+            filters={'vpc_id': vpc})
+        return ret_dict
+
+    def show_vpc_dependency_artifacts(self, vpc=None, artifacts=None, printmethod=None,
+                                      printme=True):
+        if not vpc and not artifacts:
+            raise ValueError('Need "vpc" and/or "artifacts" to show dependencies')
+        deps = artifacts or self.get_vpc_dependency_artifacts(vpc=vpc)
+        pt = PrettyTable(['TYPE', 'ARTIFACTS'])
+        pt.align = 'l'
+        for key, value in deps.iteritems():
+            pt.add_row([key, "\n".join([str(x) for x in value or []])])
+        if printme:
+            printmethod = printmethod or self.log.info
+            printmethod("\n{0}\n".format(pt))
+        else:
+            return pt
+
+    def delete_vpc_and_dependency_artifacts(self, vpc, verbose=True):
+        if not isinstance(vpc, basestring):
+            vpc = vpc.id
+        deps = self.get_vpc_dependency_artifacts(vpc=vpc)
+        if verbose:
+            pt = self.show_vpc_dependency_artifacts(vpc, printme=False)
+            self.log.info('Attempting to delete VPC artifacts...\n{0}\n'.format(pt))
+        if deps['instances']:
+            self.log.debug('Attempting to delete vpc instances')
+            self.terminate_instances(deps['instances'])
+        if deps['enis']:
+            self.log.debug('Attempting to delete vpc enis')
+            for eni in deps['enis']:
+                eni.delete()
+        if deps['internet_gateways']:
+            self.log.debug('Attempting to delete vpc internet gateways')
+            for igw in deps['internet_gateways']:
+                self.connection.delete_internet_gateway(internet_gateway_id=igw.id)
+        if deps['vpn_gateways']:
+            self.log.debug('Attempting to delete vpc vpn gateways')
+            for vpn_gw in deps['vpn_gateways']:
+                self.connection.delete_vpn_gateway(vpn_gateway_id=vpn_gw.id)
+
+        subnet_ids = [str(x.id) for x in deps['subnets']]
+        if deps['route_tables']:
+            self.log.debug('Attempting to delete vpc route tables')
+            for rtb in deps['route_tables']:
+                main = False
+                for assoc in rtb.associations:
+                    if assoc.subnet_id in subnet_ids:
+                        self.connection.disassociate_route_table(assoc.id)
+                    if assoc.main:
+                        main = True
+                if not main:
+                    self.connection.delete_route_table(route_table_id=rtb.id)
+        if deps['network_acls']:
+            self.log.debug('Attempting to delete vpc network acls')
+            for acl in deps['network_acls']:
+                for assoc in acl.associations:
+                    if assoc.subnet_id in subnet_ids:
+                        self.connection.disassociate_network_acl(subnet_id=assoc.subnet_id,
+                                                                 vpc_id=vpc)
+                if not acl.default:
+                    self.connection.delete_network_acl(network_acl_id=acl.id)
+        if deps['security_groups']:
+            self.log.debug('Attempting to delete vpc security groups')
+            for group in deps['security_groups']:
+                self.revoke_all_rules(group, egress=True)
+                if group.name != 'default':
+                    self.delete_group(group)
+        if deps['subnets']:
+            self.log.debug('Attempting to delete vpc subnets')
+            for sub in deps['subnets']:
+                self.connection.delete_subnet(subnet_id=sub.id)
+        self.log.debug('Attempting to delete vpc')
+        vpc = self.get_vpc(vpc)
+        vpc.delete()
+        self.log.debug('Deleted VPC and dependency artifacts')
+
+
     def show_internet_gateway(self, igw, printmethod=None, printme=True):
         if isinstance(igw, basestring):
             igws = self.connection.get_all_internet_gateways([igw])
@@ -893,7 +1197,7 @@ disable_root: false"""
             raise ValueError('Uknown type for internet gateway: "{0}/{1}"'.format(igw, type(igw)))
         printmethod = printmethod or self.log.info
         table_width = 110
-        key_len = 14
+        key_len = 18
         val_len = table_width - key_len - 3
         key_hdr = 'ATTRIBUTE'.ljust(key_len)
         val_hdr = 'VALUE'.ljust(val_len)
@@ -953,7 +1257,7 @@ disable_root: false"""
         tag_pt = "\n".join(str(x).strip('|')
                            for x in str(tag_pt).translate(string.maketrans("", "", ),
                                                           '+|').splitlines())
-        pt.add_row(['TAGS:', str(tag_pt)])
+        pt.add_row(['{0} TAGS:'.format(igw.id), str(tag_pt)])
 
         if printme:
             printmethod("\n{0}\n".format(pt))
@@ -991,6 +1295,8 @@ disable_root: false"""
         pt = PrettyTable([key_hdr, value_hdr])
         pt.header = False
         pt.align = 'l'
+        pt.max_width[key_hdr] = key_hdr_len
+        pt.max_width[value_hdr] = value_hdr_len
         pt.add_row(["ID:", markup(route_table.id, [TextStyle.BOLD]).ljust(value_hdr_len)])
         pt.add_row(["VPC ID:", str(route_table.vpc_id).ljust(value_hdr_len)])
         region = ""
@@ -1004,18 +1310,25 @@ disable_root: false"""
         assoc_pt = ""
         if route_table.associations:
             al = value_hdr_len/3
-            assoc_pt = PrettyTable(['ID:'.ljust(al),
-                                    'MAIN:'.ljust(6),
-                                    'SUBNET_ID:'.ljust(al)])
+            assoc_pt = PrettyTable(['ASSOC ID:'.ljust(27),
+                                    'IS MAIN:'.ljust(15),
+                                    'ASSOC SUBNET_ID:'.ljust(32)])
             assoc_pt.border = False
             assoc_pt.header = False
+            assoc_pt.align = 'l'
             assoc_pt.padding_width = 1
 
             for ass in route_table.associations:
-                assoc_pt.add_row(['ID: {0}'.format(ass.id).ljust(al),
-                                  'MAIN: {0}'.format(ass.main).ljust(6),
-                                  'SUBNET_ID: {0}'.format(ass.subnet_id).ljust(al)])
-        pt.add_row(["ASSOCIATIONS", str(assoc_pt)])
+                assoc_pt.add_row(['{0} {1}'.format(markup('ASSOC ID:',
+                                                          [TextStyle.BOLD,ForegroundColor.BLUE]),
+                                                   ass.id).ljust(27),
+                                  '{0} {1}'.format(markup('IS MAIN:',
+                                                          [TextStyle.BOLD,ForegroundColor.BLUE]),
+                                                   ass.main).ljust(15),
+                                  '{0} {1}'.format(markup('SUBNET ID:',
+                                                          [TextStyle.BOLD,ForegroundColor.BLUE]),
+                                                   ass.subnet_id).ljust(32)])
+        pt.add_row(["ASSOCIATIONS:", str(assoc_pt)])
         # Add Route Entries in sub-table...
         route_pt = "(NONE)"
         if route_table.routes:
@@ -1105,26 +1418,28 @@ disable_root: false"""
         key_len = 14
         val_len = table_width - key_len - 3
         pt = PrettyTable(['key', 'value'])
+        pt.max_width['key'] = key_len
+        pt.max_width['value'] = val_len
         pt.align = 'l'
         pt.padding_width = 0
         pt.header = False
         pt.add_row(['DHCP OPT ID:'.ljust(key_len), str(dopt.id).ljust(val_len)])
         region = ""
         if dopt.region:
-            region = "{0}{1}, {2}{3}".format(markup('NAME:', [TextStyle.BOLD,
-                                                              ForegroundColor.BLUE]),
-                                             dopt.region.name,
-                                             markup('ENDPOINT:', [TextStyle.BOLD,
-                                                                  ForegroundColor.BLUE]),
+            region = "{0}{1}\n".format(markup('NAME:', [TextStyle.BOLD,
+                                                      ForegroundColor.BLUE]),
+                                             dopt.region.name)
+            region += "{0}{1}".format(markup('ENDPOINT:', [TextStyle.BOLD,
+                                                           ForegroundColor.BLUE]),
                                              dopt.region.endpoint)
-        pt.add_row(["REGION:", region.ljust(val_len)])
+        pt.add_row(["REGION:", region])
         # Add option entries in sub-table...
         opt_pt = ""
         if dopt.options:
             opt_key_len = 30
             opt_value_len = val_len - opt_key_len - 2
-            opt_key_hdr = markup('OPTION', [TextStyle.BOLD, ForegroundColor.BLUE])
-            opt_value_hdr = markup('OPTION VALUE', [TextStyle.BOLD, ForegroundColor.BLUE])
+            opt_key_hdr = markup('DHCP OPTIONS', [TextStyle.BOLD, ForegroundColor.BLUE])
+            opt_value_hdr = markup('DHCP OPTION VALUE', [TextStyle.BOLD, ForegroundColor.BLUE])
             opt_pt = PrettyTable([opt_key_hdr, opt_value_hdr])
             opt_pt.align = 'l'
             opt_pt.max_width[opt_key_hdr] = opt_key_len
@@ -1133,6 +1448,7 @@ disable_root: false"""
             opt_pt.padding_width = 0
             opt_pt.vrules = 1
             opt_pt.hrules = 1
+            opt_pt.border = False
             for key, value in dopt.options.iteritems():
                 opt_pt.add_row([str(key).ljust(opt_key_len), str(value).ljust(opt_value_len)])
         opt_pt = "\n".join(str(x).strip('|')
@@ -1181,7 +1497,88 @@ disable_root: false"""
         else:
             return ret_buf
 
-    def get_all_subnets(self, subnet_ids=None, zone=None, filters=None, dry_run=False,
+
+
+    def get_routes_from_route_table(self, route_table, destination_cidr_block=None,
+                                    gateway_id=None, interface_id=None, instance_id=None,
+                                    natgateway_id=None, vpc_peering_connection_id=None,
+                                    state=None):
+        # update the table first...
+        if isinstance(route_table, basestring):
+            rt_id = route_table
+        else:
+            rt_id = route_table.id
+        route_table = self.connection.get_all_route_tables(route_table_ids=[route_table])
+        if not route_table:
+            raise ValueError('Route Table not found for:{0}'.format(rt_id))
+        route_table = route_table[0]
+        routes = []
+        for route in route_table.routes:
+            assert  isinstance(route, EucaRoute)
+            if destination_cidr_block and route.destination_cidr_block != destination_cidr_block:
+                continue
+            if gateway_id and route.gateway_id != gateway_id:
+                continue
+            if interface_id and route.interface_id != interface_id:
+                continue
+            if instance_id and route.instance_id != instance_id:
+                continue
+            if natgateway_id and route.natgateway_id != natgateway_id:
+                continue
+            if vpc_peering_connection_id and \
+                            route.vpc_peering_connection_id != vpc_peering_connection_id:
+                continue
+            if state and route.state != state:
+                continue
+            routes.append(route)
+        return routes
+
+    def create_route(self, route_table_id, destination_cidr_block, gateway_id=None,
+                     instance_id=None, interface_id=None, vpc_peering_connection_id=None,
+                     natgateway_id=None, dry_run=False):
+        params = {
+            'RouteTableId': route_table_id,
+            'DestinationCidrBlock': destination_cidr_block
+        }
+
+        if gateway_id is not None:
+            params['GatewayId'] = gateway_id
+        if instance_id is not None:
+            params['InstanceId'] = instance_id
+        if interface_id is not None:
+            params['NetworkInterfaceId'] = interface_id
+        if natgateway_id is not None:
+            params['NatGatewayId'] = natgateway_id
+        if vpc_peering_connection_id is not None:
+            params['VpcPeeringConnectionId'] = vpc_peering_connection_id
+        if dry_run:
+            params['DryRun'] = 'true'
+
+        status = self.connection.get_status('CreateRoute', params)
+
+        routes = self.get_routes_from_route_table(
+            route_table=route_table_id, destination_cidr_block=destination_cidr_block,
+            gateway_id=gateway_id, interface_id=interface_id, instance_id=instance_id,
+            natgateway_id=None, vpc_peering_connection_id=None, state=None)
+        if not routes:
+            raise ValueError('Newly added route for cidr:{0} not found in route table:{1} '
+                             'response. Resp Status:{2}'
+                             .format(destination_cidr_block, route_table_id, status))
+        if len(routes) != 1:
+            self.show_route_table(route_table_id)
+            raise ValueError('Multiple:{0} routes found for same destination cidr:{1} in route'
+                             'table:{2} response'.format(len(routes),
+                                                         destination_cidr_block, route_table_id))
+        route = routes[0]
+        if route.origin != "CreateRoute":
+            self.show_route_table(route_table_id)
+            raise ValueError('User created route does not have "CreateRoute" as origin, '
+                             'found route:{0}, origin:{1}'.format(route.destination_cidr_block,
+                                                                  route.origin))
+        return route
+
+
+    def get_all_subnets(self, subnet_ids=None, zone=None, vpc=None, filters=None, dry_run=False,
                         verbose=None):
         ret_list = []
         filters = filters or {}
@@ -1189,6 +1586,10 @@ disable_root: false"""
             if not isinstance(zone, Zone):
                 zone = zone.name
             filters['availabilityZone'] = zone
+        if vpc:
+            if not isinstance(vpc, basestring):
+                vpc = vpc.id
+            filters['vpc-id'] = vpc
         if verbose is None:
             verbose = self._use_verbose_requests
         if verbose:
@@ -1222,11 +1623,16 @@ disable_root: false"""
                 return subnet
         return None
 
-    def get_default_subnets(self, zone=None):
+    def get_default_subnets(self, zone=None, vpc=None):
         ret_list = []
-        filters = None
+        filters = {}
         if zone:
-            filters = {'availabilityZone':zone}
+            filters['availabilityZone'] = zone
+        if vpc:
+            if not isinstance(vpc, basestring):
+                vpc = vpc.id
+            filters['vpc-id'] = vpc
+        filters = filters or None
         subnets = self.get_all_subnets(filters = filters, verbose=False)
         for subnet in subnets:
             if subnet.defaultForAz:
@@ -3554,7 +3960,7 @@ disable_root: false"""
                   image=None,
                   keypair=None,
                   group="default",
-                  type=None,
+                  vmtype=None,
                   zone=None,
                   min=1,
                   max=1,
@@ -3570,6 +3976,7 @@ disable_root: false"""
                   return_reservation=False,
                   auto_create_eni=True,
                   network_interfaces=None,
+                  check_enis=True,
                   timeout=480,
                   systemconnection=None,
                   boto_debug_level=2,
@@ -3579,7 +3986,7 @@ disable_root: false"""
         :param image: image object or string image_id to create instances with
         :param keypair: keypair to create instances with
         :param group: security group (or list of groups) to run instances in
-        :param type: vmtype to run instances as
+        :param vmtype: vmtype to run instances as
         :param zone: availability zone (aka cluster, aka parition) to run instances in
         :param min: minimum amount of instances to try to run
         :param max: max amount of instances to try to run
@@ -3655,7 +4062,7 @@ disable_root: false"""
                         else:
                             raise ValueError('Unknown arg passed for group to RunImage,'
                                              ' group: "{0}", (type:{1})'
-                                             .format(group, type(group)))
+                                             .format(group, vmtype(group)))
                         secgroups.append(group)
 
 
@@ -3734,18 +4141,18 @@ disable_root: false"""
             try:
                 self.connection.debuglevel = boto_debug_level
                 reservation = self.connection.run_instances(image_id = image.id,
-                                                     key_name=keypair,
-                                                     security_group_ids=secgroups,
-                                                     instance_type=type,
-                                                     placement=zone,
-                                                     min_count=min,
-                                                     max_count=max,
-                                                     user_data=user_data,
-                                                     addressing_type=addressing_type,
-                                                     block_device_map=block_device_map,
-                                                     subnet_id=subnet_id,
-                                                     network_interfaces=network_interfaces,
-                                                     **boto_run_args)
+                                                            key_name=keypair,
+                                                            security_group_ids=secgroups,
+                                                            instance_type=vmtype,
+                                                            placement=zone,
+                                                            min_count=min,
+                                                            max_count=max,
+                                                            user_data=user_data,
+                                                            addressing_type=addressing_type,
+                                                            block_device_map=block_device_map,
+                                                            subnet_id=subnet_id,
+                                                            network_interfaces=network_interfaces,
+                                                            **boto_run_args)
             except:
                 self.connection.debuglevel = orig_boto_debug_level
                 raise
@@ -3799,18 +4206,241 @@ disable_root: false"""
                                     ", err:\n" + str(e))
             if monitor_to_running:
                 instances = self.monitor_euinstances_to_running(instances, timeout=timeout)
+            if check_enis:
+                for instance in instances:
+                    instance.check_eni_attachments()
+                    if network_interfaces:
+                        expected_eni = len(network_interfaces)
+                    else:
+                        expected_eni = 1
+                    if expected_eni != len(instance.interfaces):
+                        raise ValueError('Network interfaces:{0} in request, expected {1} '
+                                         'interfaces on resulting VM. Got:{2}'
+                                         .format(len(network_interfaces),
+                                                 expected_eni,
+                                                 len(instance.interfaces)))
             if return_reservation:
                 reservation.instances = instances
                 return reservation
             return instances
         except Exception as E:
             trace = get_traceback()
-            self.log.error('{0}\n!!! Run_instance failed, terminating reservation. Error: {1}'
-                           .format(trace, E))
+            self.log.error('{0}\n!!! Run_instance failed, terminating reservation:{1}. Error: {2}'
+                           .format(trace, clean_on_fail, E))
             if reservation and clean_on_fail:
                 self.terminate_instances(reservation=reservation)
             raise E
-    
+
+    def create_network_interface(self, subnet_id, private_ip_address=None, description=None,
+                                 groups=None, show_eni=True):
+        """
+        Wrapper around boto's create_network_interface.
+        Creates a network interface in the specified subnet and performs basic validation
+        checks on the return eni attributes.
+
+
+        :type subnet_id: str
+        :param subnet_id: The ID of the subnet to associate with the
+            network interface.
+
+        :type private_ip_address: str
+        :param private_ip_address: The private IP address of the
+            network interface.  If not supplied, one will be chosen
+            for you.
+
+        :type description: str
+        :param description: The description of the network interface.
+
+        :type groups: list
+        :param groups: Lists the groups for use by the network interface.
+            This can be either a list of group ID's or a list of
+            :class:`boto.ec2.securitygroup.SecurityGroup` objects.
+
+        :type dry_run: bool
+        :param dry_run: Set to True if the operation should not actually run.
+
+        :rtype: :class:`boto.ec2.networkinterface.NetworkInterface`
+        :return: The newly created network interface.
+
+        """
+        group_ids = None
+        if groups:
+            group_ids = []
+            if not isinstance(groups, list):
+                groups = [groups]
+            for group in groups:
+                if isinstance(group, basestring):
+                    group_ids.append(group)
+                else:
+                    group_ids.append(group.id)
+        try:
+            subnet = self.get_subnet(subnet_id=subnet_id)
+        except Exception as E:
+            subnet = None
+            self.log.error('Could not fetch subnet:{0} in create eni request. Err:{1}'
+                           .format(subnet_id, E))
+        eni = self.connection.create_network_interface(subnet_id=subnet_id,
+                                                       private_ip_address=private_ip_address,
+                                                       description=description,
+                                                       groups=group_ids)
+        if show_eni:
+            self.show_network_interfaces(eni)
+        if private_ip_address and eni.private_ip_address != private_ip_address:
+            raise ValueError("Created ENI:{0} private ip:{1} does not match the requested "
+                             "private ip:{2}".format(eni.id, eni.private_ip_address,
+                                                     private_ip_address))
+        if description is not None:
+            if str(description).strip() != str(eni.description).strip():
+                raise ValueError('Created ENI:{0} description does not match requested description. '
+                                 'ENI:"{1}" vs Requested:"{2}"'
+                                 .format(eni.id, str(eni.description).strip(),
+                                         str(description).strip()))
+
+        if subnet:
+            # create a sorted list of security group ids from the request
+            group_ids = group_ids or []
+            default_group = self.get_security_group('default', vpc_id=subnet.vpc_id)
+            if default_group.id in group_ids:
+                group_ids.remove(default_group.id)
+            group_ids.sort()
+            # create a sorted list of security group ids from the response
+            new_group_ids = []
+            for group in eni.groups:
+                if group.id != default_group.id:
+                    new_group_ids.append(group.id)
+                else:
+                    self.log.debug('Excluding default security group:{0} from eni groups check.'
+                                   .format(default_group.id))
+            new_group_ids.sort()
+            if group_ids != new_group_ids:
+                raise ValueError('Created ENI:{0} groups do not match groups in the request.'
+                                 'ENI response groups:"{2}", vs Requested Groups:{3} ')
+
+
+            if not is_address_in_network(eni.private_ip_address, subnet.cidr_block):
+                raise ValueError('Newly created ENI:{0}, private ip:{1} not within '
+                                 'subnet:{2} cidr:{3}'.format(eni.id, eni.private_ip_address,
+                                                              subnet.id, subnet.cidr_block))
+
+        return eni
+
+    create_network_interface.__doc__ += \
+        "{0}".format(VPCConnection.create_network_interface.__doc__)
+
+    def modify_network_interface_attributes(self, eni, description=None, group_set=None,
+                                            source_dest_check=None, delete_on_terminate=None,
+                                            other_dict=None):
+        """
+        Changes an attribute of a network interface, then verifies the attribute on the
+        network interface.
+        * description - Textual description of interface
+        * groupSet - List of security group ids or group objects
+        * sourceDestCheck - Boolean
+        * deleteOnTermination - Boolean. Must also specify attachment_id
+        Args:
+            eni: eni id or eni obj
+            description: string
+            group_set: list of security group ids or objs
+            source_dest_check: boolean
+            delete_on_terminate: boolean
+            other_dict: catch all dict to allow passing any string attribute and value.
+
+        Returns: updated eni obj
+        """
+
+        if isinstance(eni, basestring):
+            enis = self.connection.get_all_network_interfaces([eni])
+            if not enis:
+                raise ValueError('Could not fetch eni:{0}'.format(eni))
+            else:
+                eni = enis[0]
+        if description is not None:
+            ret = self.connection.modify_network_interface_attribute(
+                interface_id=eni.id, attr='description', value=description)
+            if not ret:
+                raise RuntimeError('Error setting description for {0}. Value:"{1}"'
+                                   .format(eni, description))
+            eni.update()
+            if eni.description != description:
+                raise ValueError('ENI description: "{0}" != requested:"{1}"'
+                                 .format(eni.description, description))
+        if group_set is not None:
+            if not isinstance(group_set, list):
+                group_set = [group_set]
+            ret = self.connection.modify_network_interface_attribute(
+                interface_id=eni.id, attr='groupSet', value=group_set)
+            if not ret:
+                raise RuntimeError('Error setting groupSet for {0}. Value:"{1}"'
+                                   .format(eni, group_set))
+            eni.update()
+            if not isinstance(group_set, list):
+                group_set = []
+            request_groups = []
+            for group in group_set:
+                if isinstance(group, basestring):
+                    request_groups.append(group)
+                else:
+                    request_groups.append(group.id)
+            request_groups.sort()
+
+            # The default sec group will be added if a group was not provided in the request
+            if not group_set:
+                group_set = []
+                for sg in eni.groups:
+                    if sg.name == 'default':
+                        if sg.id not in group_set:
+                            group_set.append(sg.id)
+            eni_groups = [str(x.id) for x in eni.groups]
+            eni_groups.sort()
+            if eni_groups != request_groups:
+                raise ValueError('ENI groups:"{0}" do not match requested group_set:{1}'
+                                 .format(", ".join(eni_groups), ", ".join(group_set)))
+        if source_dest_check is not None:
+            ret = self.connection.modify_network_interface_attribute(
+                interface_id=eni.id, attr='sourceDestCheck', value=source_dest_check)
+            if not ret:
+                raise RuntimeError('Error setting sourceDestCheck for {0}. Value:"{1}"'
+                                   .format(eni, source_dest_check))
+            eni.update()
+            if str(eni.source_dest_check).upper() != str(eni.source_dest_check).upper():
+                raise ValueError('ENI sourceDestCheck:"{0}" != requsted:"{1}"'
+                                 .format(str(eni.source_dest_check).upper(),
+                                         str(source_dest_check).upper()))
+        if delete_on_terminate is not None:
+            eni.update()
+            if not eni.attachment:
+                raise ValueError('Can not set delete on terminate flag if not attached:{0}, '
+                                 'status:{1}'.format(eni.id, eni.status))
+            ret = self.connection.modify_network_interface_attribute(
+                interface_id=eni.id, attr='deleteOnTermination',
+                value=delete_on_terminate, attachment_id=eni.attachment.id)
+            if not ret:
+                raise RuntimeError('Error setting deleteOnTermination for {0}. Value:"{1}"'
+                                   .format(eni, delete_on_terminate))
+            eni.update()
+            if not eni.attachment:
+                raise ValueError('ENI {0} still present after DOT flag set but attachment is no'
+                                 'longer present?'.format(eni.id))
+            eni_val = str(eni.attachment.delete_on_termination).upper()
+            req_val = str(delete_on_terminate).upper()
+            if eni_val != req_val:
+                raise ValueError('ENI:{0} attachment:{1} delete on terminate flag:"{0}" != '
+                                 'requested value:"{1}"'.format(eni.id, eni.attachment.id,
+                                                                eni_val, req_val))
+        if other_dict is not None:
+            if not isinstance(other_dict, dict):
+                raise ValueError('"other_dict" must be of type dictionary. ie '
+                                 '{"attribute_name": "value"}, got:"{0}/{1}"'
+                                 .format(other_dict, type(other_dict)))
+            for key, value in other_dict.iteritems():
+                ret = self.connection.modify_network_interface_attribute(
+                    interface_id=eni.id, attr=key,
+                    value=value)
+                if not ret:
+                    raise RuntimeError('Error setting {0} for {1}. Value:"{2}"'
+                                       .format(eni, key, value))
+            eni.update()
+        return eni
 
     def create_network_interface_collection(self,
                                             eni=None,
@@ -3828,6 +4458,7 @@ disable_root: false"""
         """
         Helper method for create network interfaces.
         :param eni: Existing Net Interface obj or id. If provided a new ENI will not be created.
+                    And the ENIs attributes will not be modified.
         :param subnet_id: subnet or subnet.id, if not provided the method will attempt to look
                           for the default subnet in the zone provided.
         :param zone: zone, used to look up the subnet to be used.
@@ -3848,6 +4479,8 @@ disable_root: false"""
         :return: boto NetworkInterfaceSpecification() obj
         """
         # If the subnet was not provided attempt to find the default subnet.
+        network_interface_collection = network_interface_collection or \
+                                       NephoriaNetworkInterfaceCollection()
         if device_index is None:
             if network_interface_collection:
                 device_index = len(network_interface_collection)
@@ -3858,7 +4491,18 @@ disable_root: false"""
             if not eni:
                 raise ValueError('Could not retrieve existing eni:"{0}" from system'.format(eni))
             eni = eni[0]
+        groups = groups or []
+        if not isinstance(groups, list):
+            groups = [groups]
+        security_group_ids = []
+        # sanitize the groups param
+        for group in groups:
+            if isinstance(group, basestring):
+                security_group_ids.append(group)
+            else:
+                security_group_ids.append(group.id)
         if not eni:
+
             subnet = None
             if subnet_id:
                 if isinstance(subnet, Subnet):
@@ -3882,17 +4526,10 @@ disable_root: false"""
                 raise ValueError('Subnet not found (Either not provided, '
                                  'and/or default not found. Zone filter:"{0}")'.format(zone))
             subnet_id = subnet.id
-            groups = groups or []
-            security_group_ids = []
-            # sanitize the groups param
-            for group in groups:
-                if isinstance(group, basestring):
-                    security_group_ids.append(group)
-                else:
-                    security_group_ids.append(group.id)
             eni = self.connection.create_network_interface(subnet_id=subnet_id,
                                                            groups=security_group_ids,
                                                            description=description)
+
         # If an EIP was provided or requested associate it with the ENI now...
         if eip or auto_eip:
             if not eip:
@@ -3907,7 +4544,7 @@ disable_root: false"""
                                                   delete_on_termination=delete_on_termination,
                                                   associate_public_ip_address=associate_public_ip_address,
                                                   description=description)
-        network_interface_collection = network_interface_collection or NetworkInterfaceCollection()
+
         network_interface_collection.append(interface)
         return network_interface_collection
 
@@ -3940,6 +4577,8 @@ disable_root: false"""
                 eni_list += self.connection.get_all_network_interfaces(
                     network_interface_ids=fetch_list)
             enis = eni_list
+        else:
+            enis = [enis]
         pt = PrettyTable([id_h, public_h, vpc_h, subnet_h, groups_h, priv_h,
                           aid_h, inst_h, index_h, status_h, dot_h])
         pt.hrules = 1
@@ -4102,7 +4741,6 @@ disable_root: false"""
                                  str(self.does_instance_sec_group_allow(instance,
                                                                         protocol='icmp',
                                                                         port=0)))
-                            ping(instance.ip_address, 2)
                             #  now try to connect ssh or winrm
                             allow = "None"
                             try:
@@ -4117,6 +4755,7 @@ disable_root: false"""
                             self.log.debug("Connected to instance:"+str(instance.id))
                             good.append(instance)
                     except :
+                        #ping(instance.ip_address, 2)
                         elapsed = int(time.time()-start)
                         err = ("instance {0} auto-connect. Time remaining before timeout:'{1}'. "
                                "ERROR:\n{2}".format(instance.id, (int(timeout)-int(elapsed)),
@@ -4206,7 +4845,7 @@ disable_root: false"""
             if s:
                 s.close()
 
-    def get_security_group(self, name=None, id=None, vpc_id=None, verbose=None):
+    def get_security_group(self, name=None, id=None, vpc_id=None, verbose=None, debug=True):
         """
          Adding this as both a convienence to the user to separate euare groups
          from security groups
@@ -4236,10 +4875,14 @@ disable_root: false"""
             elif isinstance(group, basestring):
                 group_name = group
             else:
-                raise ValueError('Could not find or format group arg for revoke. group:"{0}:{1}"'
+                raise ValueError('Could not find or format parameter for group:"{0}:{1}"'
                                  .format(group, type(group)))
             if group_id:
                 break
+        if self.vpc_supported and not group_id and not (vpc_id and group_name):
+            raise ValueError('VPC mode requires either "group id" or "name + vpc id" to look up '
+                             'security groups, got: name:{0}, id:{1}, vpc_id:{2}'
+                             .format(name, id, vpc_id))
 
         if group_id:
             ids = [group_id]
@@ -4247,16 +4890,19 @@ disable_root: false"""
             names.append(group_name)
         filters = {}
         if vpc_id:
-            filters={'VpcId':vpc_id}
+            filters={'vpc-id': vpc_id}
         groups = self.connection.get_all_security_groups(groupnames=names, group_ids=ids,
                                                          filters=filters)
         for group in groups:
             if not group_id or (group_id and group.id == group_id):
                 if not group_name or (group_name and group.name == group_name):
-                    self.log.debug('Found matching security group for name:' + str(name) +
-                                   ' and id:' + str(id))
+                    if debug:
+                        self.log.debug('Found matching security group for name:{0} and id:{1}'
+                                       .format(name, id))
                     return group
-        self.log.debug('No matching security group found for name:'+str(name)+' and id:'+str(id))
+        if debug:
+            self.log.debug('No matching security group found for name:{0} and id:{1}'
+                           .format(name, id))
         return None
         
     @printinfo                    
@@ -4278,7 +4924,7 @@ disable_root: false"""
         self.log.debug('Security group:' + str(group.name) + ", src ip:" +
                    str(src_addr) + ", src_group:" + str(src_group) +
                    ", proto:" + str(protocol) + ", port:" + str(port))
-        group = self.get_security_group(id=group.id, name=group.name)
+        group = self.get_security_group(id=group.id, name=group.name, debug=False)
         for rule in group.rules:
             g_buf =""
             if str(rule.ip_protocol).strip().lower() == protocol:
@@ -4330,7 +4976,7 @@ disable_root: false"""
                    .format(group.name, src_addr, src_group, protocol, port))
         return False
                     
-    def get_instance_security_groups(self,instance):
+    def get_instance_security_groups(self, instance):
         """
         Definition: Look up and return all security groups this instance is referencing.
 
@@ -4338,10 +4984,6 @@ disable_root: false"""
         :return:
         """
         secgroups = []
-        groups = []
-        if hasattr(instance, 'security_groups') and instance.security_groups:
-            return instance.security_groups
-
         if hasattr(instance, 'groups') and instance.groups:
             groups = instance.groups
         else:
@@ -4349,10 +4991,11 @@ disable_root: false"""
                 res = instance.reservation
             else:
                 res = self.get_reservation_for_instance(instance)
-            groups = res.groups
+            groups = res.groups or []
         for group in groups:
-            secgroups.extend(self.connection.get_all_security_groups(
-                groupnames=[str(group.name)]))
+            fetched = self.connection.get_all_security_groups(group_ids=[str(group.id)]) or []
+            if fetched:
+                secgroups += fetched
         return secgroups
     
     def get_reservation_for_instance(self, instance):
@@ -4640,12 +5283,15 @@ disable_root: false"""
                                        systemconnection=None,
                                        timeout=120):
         if isinstance(instance, basestring):
-            ins = self.get_instances(idstring=instance)
+            ins = self.get_instances(idstring=instance.strip())
             if ins:
                 instance = ins[0]
             else:
                 self.log.error('Could not find instance by id: ' + str(instance))
                 return None
+        if not isinstance(instance, Instance):
+            raise ValueError('Expected type Instance or str(id) for instance, got: {0}/{1}'
+                             .format(instance, type(instance)))
         if instance.platform == 'windows':
             username = username or 'Administrator'
             instance = WinInstance.make_euinstance_from_instance(
@@ -5795,43 +6441,135 @@ disable_root: false"""
             policy = base64.b64encode(policy)
         return policy
 
-
-
     def sign_policy(self, policy):
         my_hmac = hmac.new(self.connection.aws_secret_access_key, policy, digestmod=hashlib.sha1)
         return base64.b64encode(my_hmac.digest())
 
-    def get_euzones(self, zones=None):
-        ret_list = []
-        get_zones = []
-        if zones is not None:
-            if not isinstance(zones, types.ListType):
-                zones = [zones]
-            for zone in zones:
-                if zone:
-                    if isinstance(zone, Zone):
-                        zone = zone.name
-                    get_zones.append(zone)
-            myzones = self.connection.get_all_zones(zones=get_zones)
+    ###############################################################################################
+    #                           Modify Instance Type Attributes
+    ###############################################################################################
+
+    def modify_instance_type(self, instance_type, cpu=None, disk=None, memory=None,
+                             network_interfaces=None):
+        """
+        Modify instance type attributes such as cpu, disk, memory, and network interface
+        counts.
+
+        :param instance_type: string name of instance type. (ie. 'm1.small')
+        :param cpu: int number of CPUs
+        :param disk: int number of disks
+        :param memory: int Gigs of memory
+        :param network_interfaces: int number of network interfaces (ENIs)
+        """
+        ret_prop = None
+        params = {'Name': instance_type}
+        action = 'ModifyInstanceTypeAttribute'
+
+        if cpu is not None:
+            params['Cpu'] = int(cpu)
+        if disk is not None:
+            params['Disk'] = int(disk)
+        if memory is not None:
+            params['Memory'] = int(memory)
+        if network_interfaces is not None:
+            params['NetworkInterfaces'] = int(network_interfaces)
+
+        self.log.debug("Modify Instance Type Params: " + str(params))
+        modified = self.connection.get_object(action, params, cls=EucaVmType)
+        try:
+            self.show_vm_types(vmtypes=modified)
+        except Exception as E:
+            self.log.warning('Failed to print vmtype info:"{0}"'.format(E))
+        return modified
+
+
+    def get_instance_types(self):
+        return self.get_vm_types()
+
+    def get_vm_types(self):
+        params = {}
+        usercontext = getattr(self, '_user_context', None)
+        if usercontext:
+            if usercontext.account_name == 'eucalyptus' and usercontext.user_name == 'admin':
+                params['Availability'] = 'true'
+        vmtypes = self.connection.get_list(action='DescribeInstanceTypes',
+                                           params=params,
+                                           markers=[('item', EucaVmType)])
+        bases = {}
+        count = 0
+        # populate the base types...
+        for vmtype in vmtypes:
+            setattr(vmtype, 'index', count)
+            count += 1
+            if vmtype.name in bases:
+                base = bases[vmtype.name]
+                if vmtype.index < base.index:
+                    base.index = vmtype.index
+                base.cpu = vmtype.cpu or base.cpu
+                base.disk = vmtype.disk or base.disk
+                base.memory = vmtype.memory or base.memory
+                base.region = vmtype.region or base.region
+                base.networkinterfaces = vmtype.networkinterfaces or base.networkinterfaces
+                if vmtype.availability:
+                    base.availability[vmtype.availability.zonename] = vmtype.availability
+            else:
+                if vmtype.availability:
+                    vmtype.availability = {vmtype.availability.zonename: vmtype.availability}
+                else:
+                    vmtype.availability = {}
+                bases[vmtype.name] = vmtype
+
+        retlist = bases.values()
+        retlist.sort(key=lambda x: x.index)
+        return retlist
+
+    def get_vm_type_info(self, vmtype):
+        for  vtype in self.get_vm_types():
+            if vtype.name == vmtype:
+                return vtype
+
+    def get_instance_type_info(self, instance_type):
+        return self.get_vm_type_info(vmtype=instance_type)
+
+    def show_vm_types(self, vmtypes=None, zone=None, debugmethod=None, printme=True):
+        debugmethod = debugmethod or self.log.info
+        header = markup('VMTYPE INFO', [1, 4, 31])
+        vmtypes = vmtypes or self.get_vm_types()
+        if not isinstance(vmtypes, list):
+            vmtypes = [vmtypes]
+
+        pt = PrettyTable([markup('NAME', [1, 4]).ljust(20), markup('CPU', [1, 4]).ljust(7),
+                          markup('DISK', [1, 4]).ljust(10), markup('RAM', [1, 4]).ljust(10),
+                          markup('ENI', [1, 4]).ljust(4),
+                          markup('ZONE (AVAILABILE/MAX)', [1, 4]).ljust(45)])
+        pt.align = 'l'
+        pt.hrules = 1
+        pt.padding_width = 0
+        pt.junction_char = "-"
+        pt.vertical_char = " "
+        pt.horizontal_char = "-"
+        for vm in vmtypes:
+            if not vm.availability:
+                availability = "???"
+            else:
+                apt = PrettyTable(['zone', 'available'])
+                apt.header = False
+                apt.border = False
+                apt.align = 'l'
+                for zonename, info in vm.availability.iteritems():
+                    apt.add_row(["zone: {0}"
+                                .format(markup(info.zonename, [TextStyle.BOLD,
+                                                               ForegroundColor.YELLOW,
+                                                               BackGroundColor.BG_BLACK])),
+                                 "({0}/{1})".format(info.available, info.max)])
+                availability = apt.get_string()
+
+            pt.add_row([markup(vm.name), vm.cpu, vm.disk, vm.memory, vm.networkinterfaces,
+                        availability])
+        if printme:
+            debugmethod("\n{0}\n".format(pt))
         else:
-            myzones = self.connection.get_all_zones()
-        for zone in myzones:
-            ret_list.append(EuZone.make_euzone_from_zone(zone, self))
-        return ret_list
-
-
-    def get_vm_type_list_from_zone(self, zone):
-        euzone = self.get_euzones(zone)[0]
-        return euzone.vm_types
-
-    def get_vm_type_from_zone(self,zone, vmtype_name):
-        vm_type = None
-        type_list = self.get_vm_type_list_from_zone(zone)
-        for type in type_list:
-            if type.name == vmtype_name:
-                vm_type = type
-                break
-        return vm_type
+            return pt
 
     def print_block_device_map(self,block_device_map, printmethod=None ):
         printmethod = printmethod or self.log.debug
@@ -5878,20 +6616,7 @@ disable_root: false"""
         buf += line
         printmethod(buf)
 
-    def print_all_vm_types(self,zone=None, debugmethod=None):
-        debugmethod = debugmethod or self.log.debug
-        buf = "\n"
-        if zone:
-            zones = [zone]
-        else:
-            zones = self.connection.get_all_zones()
-        for zone in zones:
-            buf += "------------------------( " + str(zone) + " )--------------------------------------------\n"
-            for vm in self.get_vm_type_list_from_zone(zone):
-                vminfo = self.get_all_attributes(vm, debug=False)
-                buf +=  "---------------------------------"
-                buf += self.get_all_attributes(vm, debug=False)
-        debugmethod(buf)
+
 
     def monitor_instances(self, instance_ids):
         self.log.debug('Enabling monitoring for instance(s) ' + str(instance_ids))
@@ -6318,35 +7043,6 @@ disable_root: false"""
         else:
             return main_pt
 
-    def show_vm_types(self, zone=None, debugmethod=None, printme=True):
-        debugmethod = debugmethod or self.log.info
-        mainpt=PrettyTable([markup('VM TYPES PER ZONE:', [1, 4, 94])])
-
-        mainpt.align = 'l'
-        mainpt.padding_width = 0
-
-
-        if zone:
-            zones = [zone]
-        else:
-            zones = self.get_all_zones()
-        for zone in zones:
-            buf = "{0}: {1}\n".format(markup('ZONE', [1, 4, 94]), markup(zone))
-
-            pt = PrettyTable([markup('NAME', [1, 4]).ljust(20), markup('CPU', [1, 4]).ljust(7),
-                              markup('DISK', [1, 4]).ljust(10), markup('RAM', [1, 4]).ljust(10),
-                              markup('FREE', [1, 4]).ljust(10)])
-            pt.align = 'l'
-            # pt.hrules = 1
-            for vm in self.get_vm_type_list_from_zone(zone):
-                pt.add_row([markup(vm.name), vm.cpu, vm.disk, vm.ram,
-                            "{0}/{1}".format(vm.free, vm.max)])
-            buf += str(pt)
-            mainpt.add_row([buf])
-        if printme:
-            debugmethod("\n{0}\n".format(mainpt))
-        else:
-            return mainpt
 
     def show_security_groups(self, groups=None, printme=True):
         ret_buf = ""
@@ -6365,30 +7061,59 @@ disable_root: false"""
         except ImportError as IE:
             self.log.debug('No pretty table import failed:' + str(IE))
             return
+        if isinstance(group, SecurityGroup) or isinstance(group, BotoGroup):
+            # re-fetch to update,  since group obj does not have update() yet...
+            group = self.get_security_group(id=group.id)
+        elif isinstance(group, basestring):
+            group = self.get_security_group(name=group)
+        else:
+            raise ValueError('Unknown type passed for group: {0}/{1}'.format(group, type(group)))
         group = self.get_security_group(id=group.id)
         if not group:
             raise ValueError('Show sec group failed. Could not fetch group:'
                              + str(group))
         title = markup("Security Group: {0}/{1}, VPC: {2}"
-                            .format(group.name, group.id, group.vpc_id))
+                            .format(group.name, group.id, group.vpc_id),
+                       [BackGroundColor.BG_BLUE, ForegroundColor.WHITE, TextStyle.BOLD,
+                        TextStyle.UNDERLINE])
         maintable = PrettyTable([title])
         maintable.border = False
         maintable.align = "l"
-        table = PrettyTable(["CIDR_IP", "SRC_GRP_NAME",
-                             "SRC_GRP_ID", "OWNER_ID", "PORT",
-                             "END_PORT", "PROTO"])
         maintable.align["title"] = 'l'
-        #table.padding_width = 1
-        for rule in group.rules:
-            port = rule.from_port
-            end_port = rule.to_port
-            proto = rule.ip_protocol
-            for grant in rule.grants:
-                table.add_row([grant.cidr_ip, grant.name,
-                               grant.group_id, grant.owner_id, port,
-                               end_port, proto])
-        table.hrules = ALL
-        maintable.add_row([str(table)])
+        def get_rules_table(rules):
+            buf = ""
+            table = PrettyTable(["CIDR_IP", "SRC_GRP_NAME",
+                                 "SRC_GRP_ID", "OWNER_ID", "PORT",
+                                 "END_PORT", "PROTO"])
+
+            table.hrules = 0
+            table.vrules = 1
+            table.align = 'l'
+            table.vertical_char = " "
+            #table.padding_width = 1
+            for rule in rules:
+                port = getattr(rule, 'from_port', None)
+                end_port = getattr(rule, 'to_port', None)
+                proto = getattr(rule, 'ip_protocol', None)
+                for grant in rule.grants:
+                    table.add_row([str(grant.cidr_ip).ljust(19),
+                                   str(grant.name).ljust(24),
+                                   str(grant.group_id).ljust(11),
+                                   str(grant.owner_id).ljust(12),
+                                   str(port).ljust(5),
+                                   str(end_port).ljust(5),
+                                   str(proto).ljust(5)])
+            for line in table.get_string().splitlines():
+                buf += "    {0}\n".format(line)
+            return buf
+            #return str(table)
+
+        maintable.add_row(["INGRESS RULES:"])
+        maintable.add_row([get_rules_table(group.rules)])
+        egress_rules = getattr(group, 'rules_egress', None)
+        if egress_rules:
+            maintable.add_row(["EGRESS RULES:"])
+            maintable.add_row([get_rules_table(egress_rules)])
         if printme:
             self.log.info("\n{0}".format(str(maintable)))
         else:
