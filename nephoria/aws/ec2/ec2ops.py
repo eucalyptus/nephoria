@@ -841,12 +841,12 @@ disable_root: false"""
 
     def show_vpc(self, vpc, brief=False, printmethod=None, printme=True):
         table_width = 110
-        if isinstance(vpc, str):
+        if isinstance(vpc, basestring):
             vpcs = self.get_all_vpcs(vpc)
             if vpcs:
                 vpc = vpcs[0]
         if not isinstance(vpc, VPC):
-             raise ValueError('show_vpc passed on non VPC type: "{0}:{1}"'.format(vpc, type(vpc)))
+             raise ValueError('show_vpc was passed a non-VPC type: "{0}:{1}"'.format(vpc, type(vpc)))
         title = markup('  VPC SUMMARY: "{0}"'.format(vpc.id), markups=[1, 94]).ljust(table_width)
         main_pt = PrettyTable([title])
         main_pt.align[title] = 'l'
@@ -4332,8 +4332,8 @@ disable_root: false"""
             other_dict: catch all dict to allow passing any string attribute and value.
 
         Returns: updated eni obj
-
         """
+
         if isinstance(eni, basestring):
             enis = self.connection.get_all_network_interfaces([eni])
             if not enis:
@@ -4351,6 +4351,8 @@ disable_root: false"""
                 raise ValueError('ENI description: "{0}" != requested:"{1}"'
                                  .format(eni.description, description))
         if group_set is not None:
+            if not isinstance(group_set, list):
+                group_set = [group_set]
             ret = self.connection.modify_network_interface_attribute(
                 interface_id=eni.id, attr='groupSet', value=group_set)
             if not ret:

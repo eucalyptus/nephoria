@@ -49,6 +49,8 @@ import types
 import traceback
 import random
 import string
+import yaml
+import json
 from collections import OrderedDict
 from prettytable import PrettyTable
 from cloud_utils.log_utils.eulogger import Eulogger
@@ -115,6 +117,7 @@ class TestUnit(object):
         self.result = TestResult.not_run
         self.time_to_run = 0
         self._html_link = None
+        self._info = None
         self.anchor_id = None
         self.error_anchor_id = None
         #  if self.kwargs.get('html_anchors', False):
@@ -153,8 +156,50 @@ class TestUnit(object):
         testunit.eof = eof
         return testunit
 
+    @property
+    def info(self):
+        if self._info is None:
+            info = {'name': self.name, 'args': list(self.args), 'kwargs': self.kwargs, 'tags': []}
+            info['file'] = ""
+            try:
+                info['file'] = self.method.im_func.func_code.co_filename
+            except Exception as E:
+                sys.stderr.write('{0}\nFailed to get name for method:{1}, err:{2}'
+                                 .format(get_traceback(), self.name, E))
+            try:
+                dirmatch = re.search('testcases/(.*)/.*py', info['file]'])
+                if dirmatch:
+                    testdir = dirmatch.group(1)
+                    for tag in testdir.split('/'):
+                        info['tags'].append(tag)
+            except Exception as E:
+                sys.stderr.write('{0}\nFailed to get testdir for method:{1}, err:{2}'
+                                 .format(get_traceback(), self.name, E))
+            info.update(self._parse_docstring_for_yaml())
+            info['results'] = self.get_results()
+            self._info = info
+        return self._info
+
+    def get_results(self):
+        results = {'status': self.result, 'elapsed': self.time_to_run, 'date': time.asctime()}
+        return results
+
     def set_kwarg(self, kwarg, val):
         self.kwargs[kwarg] = val
+
+    def _parse_docstring_for_yaml(self):
+        ydoc = {}
+        try:
+            doc = str(self.method.__doc__ or "")
+            yaml_match = re.search("\{yaml\}((.|\n)*)\{yaml\}", doc)
+            if yaml_match and len(yaml_match.groups()):
+                ystr = yaml_match.group(1)
+                ydoc = yaml.load(ystr) or {}
+        except Exception as E:
+            sys.stderr.write('{0}\nError parsing yaml from docstring, testmethod:"{1}",'
+                             ' error:"{2}"\n'.format(get_traceback(), self.name, E))
+            sys.stderr.flush()
+        return ydoc
 
     def get_test_method_description(self, header=True):
         '''
@@ -169,26 +214,34 @@ class TestUnit(object):
             desc = "\nMETHOD:" + str(self.name) + ", TEST DESCRIPTION:\n"
         else:
             desc = ""
-        ret = []
-        try:
-            doc = str(self.method.__doc__)
-            if not doc:
-                try:
-                    desc = desc + "\n".join(self.method.im_func.func_doc.title().splitlines())
-                except:
-                    pass
-                return desc
+        # Attempt to get the description from the yaml first
+        info_desc = self.info.get('description', None)
+        if info_desc:
+            return "{0}{1}".format(desc, info_desc)
+        else:
+            ret = []
+            try:
+                doc = str(self.method.__doc__)
+                if not doc:
+                    try:
+                        desc = desc + "\n".join(self.method.im_func.func_doc.title().splitlines())
+                    except:
+                        pass
+                    return desc
 
-            for line in doc.splitlines():
-                line = line.lstrip().rstrip()
-                if re.search('^\s+:', line):
-                    break
-                ret.append(line)
-        except Exception, e:
-            print('get_test_method_description: error' + str(e))
-        if ret:
-            desc = desc + "\n".join(ret)
-        return desc
+                for line in doc.splitlines():
+                    line = line.lstrip().rstrip()
+                    if re.search('^\s+:', line):
+                        break
+                    ret.append(line)
+            except Exception, e:
+                print('get_test_method_description: error' + str(e))
+            if ret:
+                info_desc = "\n".join(ret)
+                self.info['description'] = info_desc
+                desc = desc + info_desc
+            return desc
+
 
     def run(self, eof=None):
         '''
@@ -227,6 +280,7 @@ class TestUnit(object):
                 pass
         finally:
             self.time_to_run = int(time.time() - start)
+            self.info['results'] = self.get_results()
 
 ##################################################################################################
 #  Cli Test Runner/Wrapper Class
@@ -601,11 +655,28 @@ class CliTestRunner(object):
                     # Append cmdargs list to testunits kwargs
                     testunit.set_kwarg(methvar, apply_val[1])
 
+    def dump_test_info_yaml(self):
+        dumplist = []
+        testlist = self.run(printresults=False, dry_run=True)
+        for test in testlist:
+            dumplist.append(test.info)
+        output = yaml.dump(dumplist, default_flow_style=False, explicit_start=True)
+        print output
+
+    def dump_test_info_json(self):
+        dumplist = []
+        testlist = self.run(printresults=False, dry_run=True)
+        for test in testlist:
+            dumplist.append(test.info)
+        output = json.dumps(dumplist, indent=4)
+        print output
+
+
     ##############################################################################################
     # "Run" test methods
     ##############################################################################################
     def run(self, testlist=None, eof=False, clean_on_exit=None, test_regex=None,
-            printresults=True):
+            printresults=True, dry_run=None):
         '''
         Desscription: wrapper to execute a list of ebsTestCase objects
 
@@ -635,7 +706,8 @@ class CliTestRunner(object):
         :returns: integer exit code to represent pass/fail of the list executed.
         '''
         regex = test_regex or self.args.test_regex
-
+        if dry_run is None:
+            dry_run = self.get_arg('dry_run')
         def apply_regex(testnames):
             if not regex:
                 return testnames
@@ -684,12 +756,14 @@ class CliTestRunner(object):
         tests_ran = 0
         test_count = len(self._testlist)
         orig_log_id = self.log.identifier
-        if self.get_arg('dry_run'):
-            msgout ="TEST LIST: NOT RUNNING DUE TO DRYRUN\n{0}\n"\
-                .format(self.print_test_list_results(testlist=self._testlist, descriptions=True,
-                                                     printout=False))
-            self.status(msgout)
-            return 0
+        if dry_run:
+            if printresults:
+                msgout ="TEST LIST: NOT RUNNING DUE TO DRYRUN\n{0}\n"\
+                    .format(self.print_test_list_results(testlist=self._testlist,
+                                                         descriptions=True,
+                                                         printout=False))
+                self.status(msgout)
+            return self._testlist
         try:
             for test in self._testlist:
                 tests_ran += 1

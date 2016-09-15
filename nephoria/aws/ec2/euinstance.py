@@ -889,7 +889,7 @@ class EuInstance(Instance, TaggedResource, Machine):
 
     def cmd(self, cmd, verbose=None, enable_debug=False,
             try_non_root_exec=None, timeout=120, listformat=False,
-            cb=None, cbargs=[], get_pty=True):
+            cb=None, cbargs=[], get_pty=True, net_namespace=None):
         """
         Runs a command 'cmd' within an ssh connection.
         Upon success returns dict representing outcome of the command.
@@ -925,6 +925,8 @@ class EuInstance(Instance, TaggedResource, Machine):
                          passed to cb
 
         """
+        if net_namespace is not None:
+            cmd = 'ip netns exec {0} {1}'.format(net_namespace, cmd)
         if (self.ssh is None):
             raise Exception("{0}: Euinstance ssh connection is None".format(self.id))
         if try_non_root_exec is None:
@@ -2934,65 +2936,66 @@ class EuInstance(Instance, TaggedResource, Machine):
         errors = ""
         if exclude_indexes is None:
             exclude_indexes = [0]
-        if exclude_indexes and not isinstance(exclude_indexes, list):
+        elif exclude_indexes and not isinstance(exclude_indexes, list):
             exclude_indexes = [exclude_indexes]
         self.update()
         for eni in self.interfaces:
-            if exclude_indexes and eni.attachment.device_index in exclude_indexes:
+            if int(eni.attachment.device_index) in exclude_indexes:
                 self.log.debug('Skipping IP config for ENI:{0} at device_index:{1}'
                                .format(eni.id, eni.attachment.device_index))
                 continue
-            try:
-                for attempt in xrange(0, 3):
-                    dev_info = self.get_network_local_device_for_eni(eni)
-                    if not dev_info:
-                        time.sleep(2)
-                    else:
-                        break
-                if not dev_info:
-                    raise RuntimeError('Local dev not found for eni:{0}'.format(eni.id))
-                dev_name = dev_info.get('dev_name')
-                subnet = self.ec2ops.get_subnet(eni.subnet_id)
-                cidr_mask = subnet.cidr_block.split('/')[1]
-                ip_cidr = "{0}/{1}".format(eni.private_ip_address, cidr_mask)
-                self.sys('ifconfig {0} up'.format(dev_name), code=0)
-                self.sys('ifconfig {0} {1}'.format(dev_name, ip_cidr), code=0)
-            except Exception as E:
-                self.show_network_device_info()
-                error = 'Error syncing IP info for ENI:{0}, ' \
-                        'ERROR:"{1}"\n'.format(eni.id, E)
-                self.log.error(red("{0}\n{1}".format(get_traceback(), error)))
-                raise E
-            # Now wait for device IP info to appear...
-            error = None
-            start = time.time()
-            elapsed = 0
-            attempts = 0
-            while elapsed < timeout:
-                attempts += 1
-                elapsed = int(time.time() - start)
-                error = None
+            else:
                 try:
-                    new_ip_info = self.get_network_ipv4_info(cache_interval=0)
-                    if not dev_name in new_ip_info:
-                        raise ValueError('IP info not found for dev:{0} on VM:{1}'.format(dev_name,
-                                                                                          self.id))
-                    guest_ip = new_ip_info[dev_name].get('ipcidr')
-                    if guest_ip != ip_cidr:
-                        raise ValueError('Guest IP:"{0}" != ENIs IP Private IP:{2} '
-                                         'applying changes on guest. Attempts:{3}, Elapsed:{4}'
-                                         .format(guest_ip, eni.id, ip_cidr, attempts, elapsed))
-                    break
+                    for attempt in xrange(0, 3):
+                        dev_info = self.get_network_local_device_for_eni(eni)
+                        if not dev_info:
+                            time.sleep(2)
+                        else:
+                            break
+                    if not dev_info:
+                        raise RuntimeError('Local dev not found for eni:{0}'.format(eni.id))
+                    dev_name = dev_info.get('dev_name')
+                    subnet = self.ec2ops.get_subnet(eni.subnet_id)
+                    cidr_mask = subnet.cidr_block.split('/')[1]
+                    ip_cidr = "{0}/{1}".format(eni.private_ip_address, cidr_mask)
+                    self.sys('ifconfig {0} up'.format(dev_name), code=0)
+                    self.sys('ifconfig {0} {1}'.format(dev_name, ip_cidr), code=0)
                 except Exception as E:
                     self.show_network_device_info()
-                    error = 'Attempt:{0}, Elapsed:{1}/{2}, Error waiting for IP info to ' \
-                            'sync for ENI:{3}, ERROR:"{4}"\n'.format(attempts, elapsed, timeout,
-                                                                     eni.id, E)
-                    self.log.warning("{0}\n{1}".format(get_traceback(), error))
-                    time.sleep(5)
-            if error:
-                self.log.warning(red(error))
-                errors += error
+                    error = 'Error syncing IP info for ENI:{0}, ' \
+                            'ERROR:"{1}"\n'.format(eni.id, E)
+                    self.log.error(red("{0}\n{1}".format(get_traceback(), error)))
+                    raise E
+                # Now wait for device IP info to appear...
+                error = None
+                start = time.time()
+                elapsed = 0
+                attempts = 0
+                while elapsed < timeout:
+                    attempts += 1
+                    elapsed = int(time.time() - start)
+                    error = None
+                    try:
+                        new_ip_info = self.get_network_ipv4_info(cache_interval=0)
+                        if not dev_name in new_ip_info:
+                            raise ValueError('IP info not found for dev:{0} on VM:{1}'
+                                             .format(dev_name, self.id))
+                        guest_ip = new_ip_info[dev_name].get('ipcidr')
+                        if guest_ip != ip_cidr:
+                            raise ValueError('Guest IP:"{0}" != ENIs IP Private IP:{2} '
+                                             'applying changes on guest. Attempts:{3}, Elapsed:{4}'
+                                             .format(guest_ip, eni.id, ip_cidr, attempts, elapsed))
+                        break
+                    except Exception as E:
+                        self.show_network_device_info()
+                        error = 'Attempt:{0}, Elapsed:{1}/{2}, Error waiting for IP info to ' \
+                                'sync for ENI:{3}, ERROR:"{4}"\n'.format(attempts, elapsed,
+                                                                         timeout, eni.id, E)
+                        self.log.warning("{0}\n{1}".format(get_traceback(), error))
+                        time.sleep(5)
+                if error:
+                    self.log.warning(red(error))
+                    errors += error
         if errors:
             raise RuntimeError('Errors detected while attempting to configure guest net devices'
                                'with cloud ENI info. Errors:{0}'.format(errors))
