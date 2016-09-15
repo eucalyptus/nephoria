@@ -168,7 +168,7 @@ class TestUnit(object):
                 sys.stderr.write('{0}\nFailed to get name for method:{1}, err:{2}'
                                  .format(get_traceback(), self.name, E))
             try:
-                dirmatch = re.search('testcases/(.*)/.*py', info['file]'])
+                dirmatch = re.search('testcases/(.*)/.*py', info['file'])
                 if dirmatch:
                     testdir = dirmatch.group(1)
                     for tag in testdir.split('/'):
