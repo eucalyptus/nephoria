@@ -4206,7 +4206,7 @@ disable_root: false"""
                                     ", err:\n" + str(e))
             if monitor_to_running:
                 instances = self.monitor_euinstances_to_running(instances, timeout=timeout)
-            if check_enis:
+            if check_enis and self.vpc_supported:
                 for instance in instances:
                     instance.check_eni_attachments()
                     if network_interfaces:
