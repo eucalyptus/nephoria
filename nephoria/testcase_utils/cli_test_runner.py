@@ -690,7 +690,9 @@ class CliTestRunner(object):
         output = yaml.dump(dumplist, default_flow_style=False, explicit_start=True)
         if printresults:
             self._dump_output(output, filepath)
-        return output
+            return (0)
+        else:
+            return output
 
     def dump_test_info_json(self, testlist, filepath=None, printresults=True):
         if not testlist:
@@ -702,7 +704,9 @@ class CliTestRunner(object):
         output = json.dumps(dumplist, indent=4)
         if printresults:
             self._dump_output(output, filepath)
-        return output
+            return (0)
+        else:
+            return output
 
     def dump_test_info_nephoria(self, testlist, filepath=None, printresults=True):
         if not testlist:
@@ -713,7 +717,9 @@ class CliTestRunner(object):
                                                  printout=False))
         if printresults:
             self._dump_output(output, filepath)
-        return output
+            return (0)
+        else:
+            return output
 
     def handle_dry_run(self, testlist, printresults):
         dry_run_arg = getattr(self.args, 'dry_run', False)
