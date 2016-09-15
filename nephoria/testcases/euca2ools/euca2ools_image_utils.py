@@ -922,8 +922,8 @@ class Euca2oolsImageUtils(object):
         mlist = str(manifest.replace('.manifest.xml', '')).split('/')
         basename = mlist[len(mlist)-1].replace('_', '').replace('.', '')
         if self.user_context:
-            basename = "{0}{1}".format((self.user_context.account_name or
-                                        self.user_context.account_id), basename)
+            basename = "{0}-{1}".format((self.user_context.account_name or
+                                         self.user_context.account_id), basename)
         if unique:
             return self._get_unique_bucket_name(basename)
         return basename
