@@ -39,6 +39,7 @@ See README.md for more info
 
 """
 
+import errno
 import inspect
 import time
 import argparse
@@ -356,9 +357,14 @@ class CliTestRunner(object):
                                            "e.g Environment file that was used by Calyptos.",
                                    "default": None}},
         'dry_run': {'args': ['--dry-run'],
-                     'kwargs': {'help': 'Flag, if provided will print the test list to be run with'
-                                        'out running the tests',
-                                'action': 'store_true',
+                     'kwargs': {'help': 'Prints test runlist info and exit. '
+                                        'Default is json to stdout, see below for formats and '
+                                        'location options. A higher log level can also be provided '
+                                        'to quiet down any other output'
+                                        'Argument format:'
+                                        '          json/yaml/nephoria:filepath'
+                                        'Example#: json:/tmp/testinfo.json ' ,
+                                'nargs': "?",
                                 'default': False}},
         'no_clean': {'args': ['--no-clean'],
                      'kwargs': {'help': 'Flag, if provided will not run the clean method on exit',
@@ -655,28 +661,89 @@ class CliTestRunner(object):
                     # Append cmdargs list to testunits kwargs
                     testunit.set_kwarg(methvar, apply_val[1])
 
-    def dump_test_info_yaml(self):
+    ##############################################################################################
+    # Methods to format and write information on the test runlist
+    ##############################################################################################
+
+    def _dump_output(self, output, filepath):
+        if not filepath:
+            print output
+        else:
+            filepath = os.path.abspath(filepath)
+            self.log.debug('Attempting to write test runlist info to:"{0}"'.format(filepath))
+            if not os.path.exists(os.path.dirname(filepath)):
+                try:
+                    os.makedirs(os.path.dirname(filepath))
+                except OSError as exc:
+                    if exc.errno != errno.EEXIST:
+                        raise
+            with open(filepath, "w") as dumpfile:
+                dumpfile.write(output)
+
+    def dump_test_info_yaml(self, testlist, filepath=None, printresults=True):
+        if not testlist:
+            self.log.warning('Test runlist is empty')
+            return
         dumplist = []
-        testlist = self.run(printresults=False, dry_run=True)
         for test in testlist:
             dumplist.append(test.info)
         output = yaml.dump(dumplist, default_flow_style=False, explicit_start=True)
-        print output
+        if printresults:
+            self._dump_output(output, filepath)
+        return output
 
-    def dump_test_info_json(self):
+    def dump_test_info_json(self, testlist, filepath=None, printresults=True):
+        if not testlist:
+            self.log.warning('Test runlist is empty')
+            return
         dumplist = []
-        testlist = self.run(printresults=False, dry_run=True)
         for test in testlist:
             dumplist.append(test.info)
         output = json.dumps(dumplist, indent=4)
-        print output
+        if printresults:
+            self._dump_output(output, filepath)
+        return output
+
+    def dump_test_info_nephoria(self, testlist, filepath=None, printresults=True):
+        if not testlist:
+            self.log.warning('Test runlist is empty')
+        output = "TEST LIST: NOT RUNNING DUE TO DRYRUN\n{0}\n" \
+            .format(self.print_test_list_results(testlist=testlist,
+                                                 descriptions=True,
+                                                 printout=False))
+        if printresults:
+            self._dump_output(output, filepath)
+        return output
+
+    def handle_dry_run(self, testlist, printresults):
+        dry_run_arg = getattr(self.args, 'dry_run', False)
+        if dry_run_arg is not False:
+            filepath = None
+            handler = self.dump_test_info_json
+            if isinstance(dry_run_arg, basestring):
+                args = str(dry_run_arg).split(':')
+                try:
+                    fmt = str(args[0]).strip()
+                    if fmt == 'yaml':
+                        handler = self.dump_test_info_yaml
+                    elif fmt == 'nephoria':
+                        handler = self.dump_test_info_nephoria
+                    elif fmt == 'json':
+                        handler = self.dump_test_info_json
+                    else:
+                        raise ValueError('Unknown format for dry_run:"{0}". Supported Values:'
+                                         '"json, yaml, nephoria"'.format(args[0]))
+                    filepath = str(args[1]).strip()
+                except IndexError:
+                    pass
+            return handler(testlist=testlist, filepath=filepath, printresults=printresults)
 
 
     ##############################################################################################
     # "Run" test methods
     ##############################################################################################
     def run(self, testlist=None, eof=False, clean_on_exit=None, test_regex=None,
-            printresults=True, dry_run=None):
+            printresults=True, force_dry_run=False):
         '''
         Desscription: wrapper to execute a list of ebsTestCase objects
 
@@ -706,7 +773,9 @@ class CliTestRunner(object):
         :returns: integer exit code to represent pass/fail of the list executed.
         '''
         regex = test_regex or self.args.test_regex
-        if dry_run is None:
+        if force_dry_run is True:
+            dry_run = True
+        else:
             dry_run = self.get_arg('dry_run')
         def apply_regex(testnames):
             if not regex:
@@ -756,14 +825,8 @@ class CliTestRunner(object):
         tests_ran = 0
         test_count = len(self._testlist)
         orig_log_id = self.log.identifier
-        if dry_run:
-            if printresults:
-                msgout ="TEST LIST: NOT RUNNING DUE TO DRYRUN\n{0}\n"\
-                    .format(self.print_test_list_results(testlist=self._testlist,
-                                                         descriptions=True,
-                                                         printout=False))
-                self.status(msgout)
-            return self._testlist
+        if dry_run is not False:
+            return self.handle_dry_run(self._testlist, printresults=printresults)
         try:
             for test in self._testlist:
                 tests_ran += 1
