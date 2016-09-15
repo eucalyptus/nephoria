@@ -315,7 +315,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                                                 username=username,
                                                 password=self.args.instance_password,
                                                 user_data=None,
-                                                type=vmtype,
+                                                vmtype=vmtype,
                                                 zone=zone,
                                                 min=count,
                                                 max=count)

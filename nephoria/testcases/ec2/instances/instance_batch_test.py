@@ -139,7 +139,7 @@ class InstanceBatchTest():
                 start_time = time.time()
                 ins = self.tc.user.ec2.run_image(image=self.emi, keypair=self.key,
                                                  min=self.args.vm_count, max=self.args.vm_count,
-                                                 zone=self.args.zone, type=self.vmtype,
+                                                 zone=self.args.zone, vmtype=self.vmtype,
                                                  group=self.group,
                                                  timeout=self.args.instance_timeout,
                                                  )

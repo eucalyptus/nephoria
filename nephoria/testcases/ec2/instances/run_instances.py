@@ -145,11 +145,11 @@ class RunInstances(CliTestRunner):
         Attempts to run the number of instances provided by the vm_count param
         """
         ins = self.user.ec2.run_image(image=self.emi, keypair=self.keypair,
-                                         min=self.args.vm_count, max=self.args.vm_count,
-                                         zone=self.args.zone, type=self.args.vmtype,
-                                         group=self.group,
-                                         timeout=self.args.instance_timeout,
-                                         )
+                                      min=self.args.vm_count, max=self.args.vm_count,
+                                      zone=self.args.zone, vmtype=self.args.vmtype,
+                                      group=self.group,
+                                      timeout=self.args.instance_timeout,
+                                      )
         setattr(self, 'instances', ins)
 
     def test2_ssh_to_instances(self):

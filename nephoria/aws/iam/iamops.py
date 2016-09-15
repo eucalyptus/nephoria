@@ -212,7 +212,7 @@ class IAMops(BotoBaseOps):
         :param search: use regex search (any occurrence) rather than match (exact same strings must occur)
         :return:
         """
-        self.log.debug('Attempting to fetch all access matching- user_id:' +
+        self.log.debug('Attempting to fetch all users matching- user_id:' +
                           str(user_id) + ' user_name:' + str(user_name) + " acct_name:" +
                           str(delegate_account))
         retlist = []

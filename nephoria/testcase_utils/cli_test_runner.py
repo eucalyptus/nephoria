@@ -49,6 +49,8 @@ import types
 import traceback
 import random
 import string
+import yaml
+import json
 from collections import OrderedDict
 from prettytable import PrettyTable
 from cloud_utils.log_utils.eulogger import Eulogger
@@ -88,7 +90,7 @@ class TestResult():
 ##################################################################################################
 
 
-class TestUnit():
+class TestUnit(object):
     '''
     Description: Convenience class to run wrap individual methods, and run and store and access
     results.
@@ -115,6 +117,7 @@ class TestUnit():
         self.result = TestResult.not_run
         self.time_to_run = 0
         self._html_link = None
+        self._info = None
         self.anchor_id = None
         self.error_anchor_id = None
         #  if self.kwargs.get('html_anchors', False):
@@ -153,10 +156,52 @@ class TestUnit():
         testunit.eof = eof
         return testunit
 
+    @property
+    def info(self):
+        if self._info is None:
+            info = {'name': self.name, 'args': list(self.args), 'kwargs': self.kwargs, 'tags': []}
+            info['file'] = ""
+            try:
+                info['file'] = self.method.im_func.func_code.co_filename
+            except Exception as E:
+                sys.stderr.write('{0}\nFailed to get name for method:{1}, err:{2}'
+                                 .format(get_traceback(), self.name, E))
+            try:
+                dirmatch = re.search('testcases/(.*)/.*py', info['file]'])
+                if dirmatch:
+                    testdir = dirmatch.group(1)
+                    for tag in testdir.split('/'):
+                        info['tags'].append(tag)
+            except Exception as E:
+                sys.stderr.write('{0}\nFailed to get testdir for method:{1}, err:{2}'
+                                 .format(get_traceback(), self.name, E))
+            info.update(self._parse_docstring_for_yaml())
+            info['results'] = self.get_results()
+            self._info = info
+        return self._info
+
+    def get_results(self):
+        results = {'status': self.result, 'elapsed': self.time_to_run, 'date': time.asctime()}
+        return results
+
     def set_kwarg(self, kwarg, val):
         self.kwargs[kwarg] = val
 
-    def get_test_method_description(self):
+    def _parse_docstring_for_yaml(self):
+        ydoc = {}
+        try:
+            doc = str(self.method.__doc__ or "")
+            yaml_match = re.search("\{yaml\}((.|\n)*)\{yaml\}", doc)
+            if yaml_match and len(yaml_match.groups()):
+                ystr = yaml_match.group(1)
+                ydoc = yaml.load(ystr) or {}
+        except Exception as E:
+            sys.stderr.write('{0}\nError parsing yaml from docstring, testmethod:"{1}",'
+                             ' error:"{2}"\n'.format(get_traceback(), self.name, E))
+            sys.stderr.flush()
+        return ydoc
+
+    def get_test_method_description(self, header=True):
         '''
         Description:
         Attempts to derive test unit description for the registered test method.
@@ -165,27 +210,38 @@ class TestUnit():
         providing info to the user as to the method being run as a testunit's
         intention/description.
         '''
-        desc = "\nMETHOD:" + str(self.name) + ", TEST DESCRIPTION:\n"
-        ret = []
-        try:
-            doc = str(self.method.__doc__)
-            if not doc:
-                try:
-                    desc = desc + "\n".join(self.method.im_func.func_doc.title().splitlines())
-                except:
-                    pass
-                return desc
+        if header:
+            desc = "\nMETHOD:" + str(self.name) + ", TEST DESCRIPTION:\n"
+        else:
+            desc = ""
+        # Attempt to get the description from the yaml first
+        info_desc = self.info.get('description', None)
+        if info_desc:
+            return "{0}{1}".format(desc, info_desc)
+        else:
+            ret = []
+            try:
+                doc = str(self.method.__doc__)
+                if not doc:
+                    try:
+                        desc = desc + "\n".join(self.method.im_func.func_doc.title().splitlines())
+                    except:
+                        pass
+                    return desc
 
-            for line in doc.splitlines():
-                line = line.lstrip().rstrip()
-                if re.search('^\s+:', line):
-                    break
-                ret.append(line)
-        except Exception, e:
-            print('get_test_method_description: error' + str(e))
-        if ret:
-            desc = desc + "\n".join(ret)
-        return desc
+                for line in doc.splitlines():
+                    line = line.lstrip().rstrip()
+                    if re.search('^\s+:', line):
+                        break
+                    ret.append(line)
+            except Exception, e:
+                print('get_test_method_description: error' + str(e))
+            if ret:
+                info_desc = "\n".join(ret)
+                self.info['description'] = info_desc
+                desc = desc + info_desc
+            return desc
+
 
     def run(self, eof=None):
         '''
@@ -216,7 +272,7 @@ class TestUnit():
                 buf += ' </font>'
                 print '<a name="' + str(self.error_anchor_id) + '"></a>'
             print red("{0}\n".format(get_traceback()))
-            self.error = str(e)
+            self.error = '{0}("{1}")'.format(e.__class__.__name__, e)
             self.result = TestResult.failed
             if eof:
                 raise e
@@ -224,6 +280,7 @@ class TestUnit():
                 pass
         finally:
             self.time_to_run = int(time.time() - start)
+            self.info['results'] = self.get_results()
 
 ##################################################################################################
 #  Cli Test Runner/Wrapper Class
@@ -289,10 +346,20 @@ class CliTestRunner(object):
         'test_list': {'args': ['--test-list'],
                       'kwargs': {"help": "comma or space delimited list of test names to run",
                                  "default": None}},
+        'test_regex': {'args': ['--test-regex'],
+                      'kwargs': {'help': 'regex to use when creating the list of local test '
+                                         'methods to run.'
+                                         'Will use this regex in a search of the method name',
+                                 'default': None}},
         'environment_file': {'args': ['--environment-file'],
                         'kwargs': {"help": "Environment file that describes Eucalyptus topology,"
                                            "e.g Environment file that was used by Calyptos.",
                                    "default": None}},
+        'dry_run': {'args': ['--dry-run'],
+                     'kwargs': {'help': 'Flag, if provided will print the test list to be run with'
+                                        'out running the tests',
+                                'action': 'store_true',
+                                'default': False}},
         'no_clean': {'args': ['--no-clean'],
                      'kwargs': {'help': 'Flag, if provided will not run the clean method on exit',
                                 'action': 'store_true',
@@ -513,6 +580,26 @@ class CliTestRunner(object):
         return testunit
 
     ##############################################################################################
+    # Convenience methods to fetch current testunit by its name
+    ##############################################################################################
+
+    def get_testunit_by_name(self, name):
+        for testunit in self._testlist:
+            if testunit.name == name:
+                return testunit
+        return None
+
+    ##############################################################################################
+    # Convenience methods to fetch current testunit by its method
+    ##############################################################################################
+
+    def get_testunit_by_method(self, method):
+        for testunit in self._testlist:
+            if testunit.method == method:
+                return testunit
+        return None
+
+    ##############################################################################################
     # Convenience methods to help inspect, convert, and run provided test functions/methods
     ##############################################################################################
 
@@ -568,10 +655,28 @@ class CliTestRunner(object):
                     # Append cmdargs list to testunits kwargs
                     testunit.set_kwarg(methvar, apply_val[1])
 
+    def dump_test_info_yaml(self):
+        dumplist = []
+        testlist = self.run(printresults=False, dry_run=True)
+        for test in testlist:
+            dumplist.append(test.info)
+        output = yaml.dump(dumplist, default_flow_style=False, explicit_start=True)
+        print output
+
+    def dump_test_info_json(self):
+        dumplist = []
+        testlist = self.run(printresults=False, dry_run=True)
+        for test in testlist:
+            dumplist.append(test.info)
+        output = json.dumps(dumplist, indent=4)
+        print output
+
+
     ##############################################################################################
     # "Run" test methods
     ##############################################################################################
-    def run(self, testlist=None, eof=False, clean_on_exit=None, printresults=True):
+    def run(self, testlist=None, eof=False, clean_on_exit=None, test_regex=None,
+            printresults=True, dry_run=None):
         '''
         Desscription: wrapper to execute a list of ebsTestCase objects
 
@@ -587,6 +692,12 @@ class CliTestRunner(object):
         :param clean_on_exit: Flag to indicate if clean_on_exit should be ran at end of test
                               list execution.
 
+        : type test_regex: string
+        :param test_regex: string representing regex to be used against test methods found in this
+                           class (ie methods prefixed with the word 'test'), or provided in
+                           the test_list cli arg. Matching methods will be sorted alphabetically
+                           and added to the run list.
+
         :type printresults: boolean
         :param printresults: Flag to indicate whether or not to print a summary of results upon
                              run_test_case_list completion.
@@ -594,6 +705,19 @@ class CliTestRunner(object):
         :rtype: integer
         :returns: integer exit code to represent pass/fail of the list executed.
         '''
+        regex = test_regex or self.args.test_regex
+        if dry_run is None:
+            dry_run = self.get_arg('dry_run')
+        def apply_regex(testnames):
+            if not regex:
+                return testnames
+            else:
+                new_list = []
+                for testname in testnames:
+                    if re.search(regex, testname):
+                        new_list.append(testname)
+                return new_list
+
         if clean_on_exit is None:
             clean_on_exit = not(getattr(self.args, 'no_clean', False))
 
@@ -602,6 +726,7 @@ class CliTestRunner(object):
             # and run them
             if getattr(self.args, 'test_list', None):
                 test_names = str(self.args.test_list).replace(',', " ").split()
+                test_names = apply_regex(test_names)
                 testlist = []
                 for test_name in test_names:
                     test_name = test_name.strip(',')
@@ -616,11 +741,13 @@ class CliTestRunner(object):
                 for name in dir(self):
                     if name.startswith('test'):
                         attr_names.append(name)
+                attr_names = apply_regex(attr_names)
                 for name in sorted(attr_names, key=key):
                     attr = getattr(self, name, None)
                     if hasattr(attr, '__call__'):
                         testlist.append(self.create_testunit_from_method(method=attr,
                                                                          test_unit_name=name))
+
         self._testlist = testlist
         if not self._testlist:
             self.log.warning('No tests were provided or found to run?')
@@ -629,6 +756,14 @@ class CliTestRunner(object):
         tests_ran = 0
         test_count = len(self._testlist)
         orig_log_id = self.log.identifier
+        if dry_run:
+            if printresults:
+                msgout ="TEST LIST: NOT RUNNING DUE TO DRYRUN\n{0}\n"\
+                    .format(self.print_test_list_results(testlist=self._testlist,
+                                                         descriptions=True,
+                                                         printout=False))
+                self.status(msgout)
+            return self._testlist
         try:
             for test in self._testlist:
                 tests_ran += 1
@@ -1190,7 +1325,8 @@ class CliTestRunner(object):
             startbuf += '\n </div>'
         self.status(startbuf)
 
-    def print_test_list_results(self, testlist=None, printout=True, printmethod=None):
+    def print_test_list_results(self, testlist=None, descriptions=False,
+                                printout=True, printmethod=None):
         '''
         Description: Prints a formated list of results for a list of EutesterTestUnits
 
@@ -1201,6 +1337,8 @@ class CliTestRunner(object):
         :param printout: boolean to flag whether to print using printmethod or self.debug,
                          or to return a string buffer representing the results outputq
 
+        :type descriptions: boolean
+        "param description: boolean flag, if true will include test descriptions in the output
         :type printmethod: method
         :param printmethod: method to use for printing test result output. Default is self.debug
         '''
@@ -1228,7 +1366,7 @@ class CliTestRunner(object):
             term_height, term_width = get_terminal_size()
             if term_width > self._term_width:
                 term_width = self._term_width
-            key_width = 10
+            key_width = 12
             val_width = term_width - key_width - 6
             headers = ['KEY'.ljust(key_width, "-"), 'VALUE'.ljust(val_width, "-")]
             pt = PrettyTable(headers)
@@ -1252,6 +1390,8 @@ class CliTestRunner(object):
             pt.add_row(['TEST NAME', testunit.name])
             pt.add_row(['TIME:', testunit.time_to_run])
             pt.add_row(['TEST ARGS:', test_arg_string])
+            if descriptions:
+                pt.add_row(['DESCRIPTION:', testunit.get_test_method_description(header=False)])
             pt.add_row(['OUTPUT:', error_summary])
             main_pt.add_row([markup(pt, markups=markups)])
 

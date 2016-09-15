@@ -53,7 +53,6 @@ class ASops(BotoBaseOps):
         #Source ip on local test machine used to reach instances
         self.as_source_ip = None
 
-
     def setup_resource_trackers(self):
         self.log.warning('No resource trackers have been implemented for: {0}'
                          .format(self.__class__.__name__))
