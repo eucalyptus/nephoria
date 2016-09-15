@@ -169,4 +169,4 @@ python load_hvm_image.py --clc 192.168.0.199 --image-url http://images.qa1/disk.
    -----------------------------------------------
 
    ```
->>>>>>> upstream/master
+
