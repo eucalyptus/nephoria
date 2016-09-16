@@ -160,8 +160,8 @@ class TestUnit(object):
     @property
     def info(self):
         if self._info is None:
-            info = {'name': self.name, 'args': list(self.args), 'kwargs': self.kwargs, 'tags': []}
-            info['file'] = ""
+            info = {'name': self.name, 'args': list(self.args), 'kwargs': self.kwargs, 'tags': [],
+                    'description': None, 'file': "", 'results': {}}
             try:
                 info['file'] = self.method.im_func.func_code.co_filename
             except Exception as E:
