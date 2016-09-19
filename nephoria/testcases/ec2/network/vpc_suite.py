@@ -2251,7 +2251,7 @@ class VpcSuite(CliTestRunner):
                                      subnet_id=subnet.id, user=user, count=1)[0]
         self.status('Attempting to ping the VM from the UFS using the default IGW route...')
         ufs = self.tc.sysadmin.get_hosts_for_ufs()[0]
-        ufs.sys('ping -c1 -t5 ' + vm.ip_address, code=0)
+        ufs.sys('ping -c1 -W5 ' + vm.ip_address, code=0)
         self.status('Removing the route and attempting to ping again...')
 
         user.ec2.connection.delete_route(
@@ -2264,7 +2264,7 @@ class VpcSuite(CliTestRunner):
         good = False
         while not good and (elapsed < timeout):
             try:
-                ufs.sys('ping -c1 -t5 ' + vm.ip_address, code=0)
+                ufs.sys('ping -c1 -W5 ' + vm.ip_address, code=0)
             except CommandExitCodeException:
                 self.status('Success. Failed to reach VM without route, passing this test')
                 good = True
@@ -2469,7 +2469,7 @@ class VpcSuite(CliTestRunner):
 
             test_ip = "{0}.{1}.{2}".format(test_net, net, ip)
             try:
-                vm_tx.sys('ping -c1 -t3 {0}'.format(test_ip), code=0)
+                vm_tx.sys('ping -c1 -W3 {0}'.format(test_ip), code=0)
             except CommandExitCodeException as CE:
                 self.log.debug('Assuming ip:{0} is available ping test returned:{0}'.format(CE))
                 keep_pinging = False
@@ -2563,7 +2563,7 @@ class VpcSuite(CliTestRunner):
                         raise CommandExitCodeException(msg)
                     self.status('Attempting to ping test ip after new route has been ADDED. '
                                 'Attempt: {0}, Elapsed:{1}/{2}'.format(attempt, elapsed, timeout))
-                    vm_tx.sys('ping -c2 -t5 {0}'.format(test_ip), code=0)
+                    vm_tx.sys('ping -c2 -W5 {0}'.format(test_ip), code=0)
                     success = True
                     break
                 except CommandExitCodeException as CE:
@@ -2595,7 +2595,7 @@ class VpcSuite(CliTestRunner):
                 try:
                     self.status('Attempting to ping test ip after new route has been DELETED. '
                                 'Attempt: {0}, Elapsed:{1}/{2}'.format(attempt, elapsed, timeout))
-                    vm_tx.sys('ping -c2 -t5 {0}'.format(test_ip), code=0)
+                    vm_tx.sys('ping -c2 -W5 {0}'.format(test_ip), code=0)
                 except CommandExitCodeException as CE:
                     msg = 'SUCCESS, Ping vm:{0} to vm:{1} test_ip:{2} failed on attempt:{3} ' \
                           'elapsed::{4}/{5}. Err:{6}'.format(vm_tx.id, vm_rx.id, test_ip, attempt,
@@ -2798,7 +2798,7 @@ class VpcSuite(CliTestRunner):
 
             test_ip = "{0}.{1}.{2}".format(test_net, net, ip)
             try:
-                vm_tx.sys('ping -c1 -t3 {0}'.format(test_ip), code=0)
+                vm_tx.sys('ping -c1 -W3 {0}'.format(test_ip), code=0)
             except CommandExitCodeException as CE:
                 self.log.debug('Assuming ip:{0} is available ping test returned:{0}'.format(CE))
                 keep_pinging = False
@@ -2887,7 +2887,7 @@ class VpcSuite(CliTestRunner):
                         raise CommandExitCodeException(msg)
                     self.status('Attempting to ping test ip after new route has been ADDED. '
                                 'Attempt: {0}, Elapsed:{1}/{2}'.format(attempt, elapsed, timeout))
-                    vm_tx.sys('ping -c2  -t5 {0}'.format(test_ip), code=0)
+                    vm_tx.sys('ping -c2  -W5 {0}'.format(test_ip), code=0)
                     success = True
                     break
                 except CommandExitCodeException as CE:
@@ -2919,7 +2919,7 @@ class VpcSuite(CliTestRunner):
                 try:
                     self.status('Attempting to ping test ip after new route has been DELETED. '
                                 'Attempt: {0}, Elapsed:{1}/{2}'.format(attempt, elapsed, timeout))
-                    vm_tx.sys('ping -c2  -t5 {0}'.format(test_ip), code=0)
+                    vm_tx.sys('ping -c2  -W5 {0}'.format(test_ip), code=0)
                 except CommandExitCodeException as CE:
                     msg = 'SUCCESS, Ping vm:{0} to vm:{1} test_ip:{2} failed on attempt:{3} ' \
                           'elapsed::{4}/{5}. Err:{6}'.format(vm_tx.id, vm_rx.id, test_ip, attempt,
@@ -4222,8 +4222,8 @@ class VpcSuite(CliTestRunner):
                 vm2.sync_enis_static_ip_config(exclude_indexes=[0])
                 self.status('Checking the secondary ENI by pinging each other VM to VM as well '
                             'as from the CLCs VPC network namespace...')
-                vm1.sys('ping -c1 -t5 {0}'.format(eni2.private_ip_address))
-                vm2.sys('ping -c1 -t5 {0}'.format(eni1.private_ip_address))
+                vm1.sys('ping -c1 -W5 {0}'.format(eni2.private_ip_address))
+                vm2.sys('ping -c1 -W5 {0}'.format(eni1.private_ip_address))
                 self.status('Starting migration for VM:{0} ...'.format(vm1.id))
                 nodes = self.tc.sysadmin.get_hosts_for_node_controllers(instanceid=vm1.id)
                 if not nodes:
@@ -4244,8 +4244,8 @@ class VpcSuite(CliTestRunner):
                                                                                   end_node))
                 vm1.refresh_ssh()
                 vm1.check_eni_attachments()
-                vm1.sys('ping -c1 -t5 {0}'.format(eni2.private_ip_address))
-                vm2.sys('ping -c1 -t5 {0}'.format(eni1.private_ip_address))
+                vm1.sys('ping -c1 -W5 {0}'.format(eni2.private_ip_address))
+                vm2.sys('ping -c1 -W5 {0}'.format(eni1.private_ip_address))
                 self.status('Migration ENI tests complete for zone:{0}'.format(zone))
         except Exception as E:
             self.log.error(red('{0}\nError during ENI migration tests:{1}'
@@ -4619,7 +4619,7 @@ class VpcSuite(CliTestRunner):
             while not good and elapsed < timeout:
                 elapsed = int(time.time() - start)
                 try:
-                    vm_tx.sys('ping -c1 -t2 {0}'.format(ip), code=0)
+                    vm_tx.sys('ping -c1 -W2 {0}'.format(ip), code=0)
                     self.log.debug('ping_for_status succeeded after elapsed: {0}/{1}'.
                                    format(elapsed, timeout))
                     good = True
@@ -4796,7 +4796,7 @@ class VpcSuite(CliTestRunner):
                 while not good and elapsed < timeout:
                     elapsed = int(time.time() - start)
                     try:
-                        vm_tx.sys('ping -c1 -t5 {0}'.format(vm_rx.ip_address), code=0)
+                        vm_tx.sys('ping -c1 -W5 {0}'.format(vm_rx.ip_address), code=0)
                         self.log.debug('Was able to ping VM after revoking rules after elapsed: '
                                        '{0}/{1}'.format(elapsed, timeout))
                         time.sleep(5)
@@ -5019,7 +5019,7 @@ class VpcSuite(CliTestRunner):
                     if ping:
                         status('Pinging eni:{0} private_ip:{1} on {2} from {3}'
                                .format(eni.id, eni.private_ip_address, vm1.id, vm2.id))
-                        vm2.sys('ping -c2 -t5 {0}'.format(eni.private_ip_address))
+                        vm2.sys('ping -c2 -W5 {0}'.format(eni.private_ip_address))
                     status('Detaching ENI:{0} from {1}'.format(eni.id, vm1.id))
                     vm1.detach_eni(eni=eni)
         except Exception as SE:
