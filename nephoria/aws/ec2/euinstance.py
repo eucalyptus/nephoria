@@ -2649,7 +2649,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 break
             except ValueError as VE:
                 last_error = str(VE)
-                self.log.debug('{0}\nDETACH ERROR:"{1}", attempts:{2}, elapsed:{3}/{4}'
+                self.log.debug('{0}\nDETACH WARNING:"{1}", attempts:{2}, elapsed:{3}/{4}'
                                .format(get_traceback(), VE, attempts, elapsed, api_timeout))
                 time.sleep(3)
                 enis = self.connection.get_all_network_interfaces([eni.id])

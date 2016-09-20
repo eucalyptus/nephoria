@@ -6557,11 +6557,14 @@ disable_root: false"""
                 apt.border = False
                 apt.align = 'l'
                 for zonename, info in vm.availability.iteritems():
-                    apt.add_row(["zone: {0}"
-                                .format(markup(info.zonename, [TextStyle.BOLD,
-                                                               ForegroundColor.YELLOW,
-                                                               BackGroundColor.BG_BLACK])),
-                                 "({0}/{1})".format(info.available, info.max)])
+                    if zone and zonename != zone:
+                        continue
+                    else:
+                        apt.add_row(["zone: {0}"
+                                    .format(markup(info.zonename, [TextStyle.BOLD,
+                                                                   ForegroundColor.YELLOW,
+                                                                   BackGroundColor.BG_BLACK])),
+                                     "({0}/{1})".format(info.available, info.max)])
                 availability = apt.get_string()
 
             pt.add_row([markup(vm.name), vm.cpu, vm.disk, vm.memory, vm.networkinterfaces,
