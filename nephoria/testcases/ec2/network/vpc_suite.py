@@ -1316,12 +1316,16 @@ class VpcSuite(CliTestRunner):
                 results = packet_test(sender_ssh=ins1.ssh, receiver_ssh=ins2.ssh, dest_ip=dest_ip,
                                       protocol=protocol, port=port, bind=bind, count=count,
                                       verbose=verbose)
-                results['header'] = header_pt.get_string()
+
+                self.log.debug(markup('Got results:{0}'.format(results),
+                                      [BackGroundColor.BG_BLACK, ForegroundColor.WHITE]))
+
+
                 if results['count'] != expected_packets and not results['error']:
                     raise RuntimeError('Packet count does not equal expected count provided. '
                                        'No error in output found')
-                self.log.debug(markup('Got results:{0}'.format(results),
-                                      [BackGroundColor.BG_BLACK,ForegroundColor.WHITE]))
+                results['header'] = header_pt.get_string()
+                self.log.debug("\n{0}".format(results.get('header')))
             except Exception as E:
                 self.log.warning(markup('{0}\nError in packet test on attempt: {1}/{2}, err:{3}'
                                  .format(get_traceback(), retry, retries, E),
@@ -4201,6 +4205,8 @@ class VpcSuite(CliTestRunner):
         try:
             self.modify_vm_type_store_orig('m1.small', network_interfaces=3)
             for zone in self.zones:
+                self.status('Beginning Migration test setup for zone:"{0}"'.format(zone))
+                self.tc.admin.ec2.show_vm_types(zone=zone)
                 subnet1, subnet2 = self.get_non_default_test_subnets_for_vpc(vpc=vpc, user=user,
                                                                              zone=zone, count=2)
                 subnets += [subnet1, subnet2]
@@ -4222,8 +4228,10 @@ class VpcSuite(CliTestRunner):
                 vm2.sync_enis_static_ip_config(exclude_indexes=[0])
                 self.status('Checking the secondary ENI by pinging each other VM to VM as well '
                             'as from the CLCs VPC network namespace...')
-                vm1.sys('ping -c1 -W5 {0}'.format(eni2.private_ip_address))
-                vm2.sys('ping -c1 -W5 {0}'.format(eni1.private_ip_address))
+                vm1.sys('ping -c1 -W5 {0}'.format(eni2.private_ip_address), code=0)
+                vm2.sys('ping -c1 -W5 {0}'.format(eni1.private_ip_address), code=0)
+                self.status('Ping test passed. Nodes before migration request...')
+                self.tc.sysadmin.show_nodes()
                 self.status('Starting migration for VM:{0} ...'.format(vm1.id))
                 nodes = self.tc.sysadmin.get_hosts_for_node_controllers(instanceid=vm1.id)
                 if not nodes:
@@ -4244,8 +4252,11 @@ class VpcSuite(CliTestRunner):
                                                                                   end_node))
                 vm1.refresh_ssh()
                 vm1.check_eni_attachments()
-                vm1.sys('ping -c1 -W5 {0}'.format(eni2.private_ip_address))
-                vm2.sys('ping -c1 -W5 {0}'.format(eni1.private_ip_address))
+                vm1.sys('ping -c1 -W5 {0}'.format(eni2.private_ip_address), code=0)
+                vm2.sys('ping -c1 -W5 {0}'.format(eni1.private_ip_address), code=0)
+                self.status('Ping check post migration complete.')
+                self.status('Nodes after migration completed...')
+                self.tc.sysadmin.show_nodes()
                 self.status('Migration ENI tests complete for zone:{0}'.format(zone))
         except Exception as E:
             self.log.error(red('{0}\nError during ENI migration tests:{1}'
