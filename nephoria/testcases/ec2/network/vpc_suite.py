@@ -4101,6 +4101,8 @@ class VpcSuite(CliTestRunner):
         Attempts to migrate an instance in each zone with a secondary ENI attached and
         verify the VMs and their ENIs migrate correctly.
         """
+        if len(self.tc.sysadmin.get_all_node_controller_services()) <= 1:
+            raise SkipTestException('This test requires 2 or more Node Controllers')
 
         def migrate_and_monitor_state(vm, start_node=None, timeout=360):
             if isinstance(vm, basestring):
