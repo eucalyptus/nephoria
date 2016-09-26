@@ -4979,9 +4979,13 @@ class VpcSuite(CliTestRunner):
         {yaml}
         tags:
           - 'ec2'
-          - 's3'
-          - 'ebs'
-          - 'migration'
+          - 'eni'
+          - 'security group'
+          - 'sctp'
+          - 'udp'
+          - 'tcp'
+          - 'icmp'
+          - 'subnet'
         {yaml}
         """
 
