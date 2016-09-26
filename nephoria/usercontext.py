@@ -220,7 +220,15 @@ class UserContext(AutoCreds):
         ops_class = B3_EC2ops
         name = self.CLASS_MAP[ops_class.__name__]
         if not self._connections.get(name, None):
-            self._connections[name] = ops_class(**self._connection_kwargs)
+            try:
+                self._connections[name] = ops_class(**self._connection_kwargs)
+            except Exception as CE:
+                self.log.error(red('{0}\nFailed to created "{1}" interface.\n'
+                                   'Connection kwargs:\n{2}\nError:{3}'
+                                   .format(get_traceback(),
+                                           ops_class.__name__,
+                                           self._connection_kwargs,
+                                           CE)))
         return self._connections.get(name, None)
 
     @property

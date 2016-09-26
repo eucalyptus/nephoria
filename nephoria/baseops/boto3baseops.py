@@ -24,7 +24,7 @@ class Boto3BaseOps(BaseOps):
         verify = kwargs.get('validate_certs', True)
         api_version = kwargs.get('api_version', "")
         use_ssl = kwargs.get('is_secure', False)
-        region = region
+        region = region or self.service_region or self.service_host
 
         self._connection_kwargs = {'service_name': self.SERVICE_PREFIX,
                                    'aws_access_key_id': self.eucarc.aws_access_key,
