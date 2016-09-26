@@ -121,6 +121,7 @@ class TestUnit(object):
         self._info = None
         self.anchor_id = None
         self.error_anchor_id = None
+        self.error = ""
         #  if self.kwargs.get('html_anchors', False):
         if html_anchors:
             self.anchor_id = str(str(time.ctime()) + self.name + "_" +
@@ -132,7 +133,7 @@ class TestUnit(object):
         if self.description is None:
             self.description = self.get_test_method_description()
         self.eof = False
-        self.error = ""
+
         if test_logger:
             debug_buf = 'Creating TestUnit: "{0}" with args:'.format(self.name)
             for count, thing in enumerate(args):
@@ -182,7 +183,8 @@ class TestUnit(object):
         return self._info
 
     def get_results(self):
-        results = {'status': self.result, 'elapsed': self.time_to_run, 'date': time.asctime()}
+        results = {'status': self.result, 'elapsed': self.time_to_run, 'date': time.asctime(),
+                   'error': self.error}
         return results
 
     def set_kwarg(self, kwarg, val):
@@ -680,7 +682,8 @@ class CliTestRunner(object):
             with open(filepath, "w") as dumpfile:
                 dumpfile.write(output)
 
-    def dump_test_info_yaml(self, testlist, filepath=None, printresults=True):
+    def dump_test_info_yaml(self, testlist=None, filepath=None, printresults=True):
+        testlist = testlist or self._testlist
         if not testlist:
             self.log.warning('Test runlist is empty')
             return
@@ -694,7 +697,8 @@ class CliTestRunner(object):
         else:
             return output
 
-    def dump_test_info_json(self, testlist, filepath=None, printresults=True):
+    def dump_test_info_json(self, testlist=None, filepath=None, printresults=True):
+        testlist = testlist or self._testlist
         if not testlist:
             self.log.warning('Test runlist is empty')
             return
@@ -708,7 +712,8 @@ class CliTestRunner(object):
         else:
             return output
 
-    def dump_test_info_nephoria(self, testlist, filepath=None, printresults=True):
+    def dump_test_info_nephoria(self, testlist=None, filepath=None, printresults=True):
+        testlist = testlist or self._testlist
         if not testlist:
             self.log.warning('Test runlist is empty')
         output = "TEST LIST: NOT RUNNING DUE TO DRYRUN\n{0}\n" \
