@@ -59,14 +59,14 @@ class UserContext(AutoCreds):
                  SQSops.__name__: 'sqs',
                  CWops.__name__: 'cloudwatch',
                  CFNops.__name__: 'cloudformation',
-                 ASops.__name__: 'autoscaling',
-                 B3_EC2ops.__name__: 'b3_ec2ops'}
+                 ASops.__name__: 'autoscaling'}
 
     def __init__(self,  aws_access_key=None, aws_secret_key=None, aws_account_name=None,
                  aws_user_name=None, port=8773, credpath=None, string=None, region=None,
+                 region_domain=None, validate_certs=False,
                  machine=None, keysdir=None, logger=None, service_connection=None,
-                 eucarc=None, existing_certs=False, boto_debug=0, https=True, api_version=None,
-                 log_level=None):
+                 eucarc=None, existing_certs=False, boto_debug=0, https=True,
+                 boto2_api_version=None, log_level=None):
         if log_level is None:
             if service_connection:
                 log_level = service_connection.log.stdout_level
@@ -76,7 +76,7 @@ class UserContext(AutoCreds):
                                           aws_secret_key=aws_secret_key,
                                           aws_account_name=aws_account_name,
                                           aws_user_name=aws_user_name,
-                                          service_port=port, region_domain=region,
+                                          service_port=port, region_domain=region_domain,
                                           credpath=credpath, string=string,
                                           machine=machine, keysdir=keysdir,
                                           logger=logger, log_level=log_level,
@@ -87,7 +87,7 @@ class UserContext(AutoCreds):
         self._session = None
         self._connections = {}
         self.region = region
-        self.api_version = api_version or __DEFAULT_API_VERSION__
+        self.boto2_api_version = boto2_api_version or __DEFAULT_API_VERSION__
 
         # Logging setup
         if not logger:
@@ -110,9 +110,10 @@ class UserContext(AutoCreds):
         self._test_resources = {}
         self._connection_kwargs = {'eucarc': self, 
                                    'connection_debug': boto_debug,
+                                   'validate_certs': validate_certs,
                                    'user_context': self,
                                    'region': region,
-                                   'api_version': self.api_version,
+                                   'boto2_api_version': self.boto2_api_version,
                                    'log_level': log_level}
         self.log.identifier = str(self)
         self.log.debug('Successfully created User Context')
@@ -214,22 +215,6 @@ class UserContext(AutoCreds):
     ##########################################################################################
     #   CLOUD SERVICE CONNECTIONS
     ##########################################################################################
-
-    @property
-    def b3_ec2(self):
-        ops_class = B3_EC2ops
-        name = self.CLASS_MAP[ops_class.__name__]
-        if not self._connections.get(name, None):
-            try:
-                self._connections[name] = ops_class(**self._connection_kwargs)
-            except Exception as CE:
-                self.log.error(red('{0}\nFailed to created "{1}" interface.\n'
-                                   'Connection kwargs:\n{2}\nError:{3}'
-                                   .format(get_traceback(),
-                                           ops_class.__name__,
-                                           self._connection_kwargs,
-                                           CE)))
-        return self._connections.get(name, None)
 
     @property
     def iam(self):

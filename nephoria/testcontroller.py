@@ -18,14 +18,15 @@ class SystemConnectionFailure(Exception):
 class TestController(object):
     def __init__(self,
                  hostname=None, username='root', password=None, keypath=None, region=None,
+                 region_domain=None,
                  proxy_hostname=None, proxy_password=None,
                  clouduser_account='nephotest', clouduser_name='sys_admin', clouduser_credpath=None,
                  clouduser_accesskey=None, clouduser_secretkey=None,
                  cloudadmin_credpath=None, cloudadmin_accesskey=None, cloudadmin_secretkey=None,
                  timeout=10, log_level='DEBUG', log_file=None, log_file_level='DEBUG',
-                 environment_file=None, https=True,
+                 environment_file=None, https=True, validate_certs=False,
                  cred_depot_hostname=None, cred_depot_username='root', cred_depot_password=None,
-                 api_version=None):
+                 boto2_api_version=None):
 
         """
 
@@ -64,10 +65,12 @@ class TestController(object):
         self._test_user = None
         self._cred_depot = None
         self._default_timeout = timeout
+        self._region_domain = region_domain
         self._https = https
+        self._validate_certs = validate_certs
         self._cloud_admin_connection_info = {}
         self._test_user_connection_info = {}
-        api_version = api_version or __DEFAULT_API_VERSION__
+        boto2_api_version = boto2_api_version or __DEFAULT_API_VERSION__
         self._system_connection_info = {'hostname': hostname,
                                         'username': username,
                                         'password': password,
@@ -84,17 +87,19 @@ class TestController(object):
                                         'euca_user': 'admin',
                                         'euca_account': 'eucalyptus',
                                         'https': https,
-                                        'region_domain': region}
+                                        'region_domain': region_domain}
 
         self._cloud_admin_connection_info = {'aws_account_name': 'eucalyptus',
                                              'aws_user_name': 'admin',
                                              'credpath': cloudadmin_credpath,
                                              'region': self.region,
+                                             'region_domain': self.region_domain,
                                              'aws_access_key': cloudadmin_accesskey,
                                              'aws_secret_key': cloudadmin_secretkey,
                                              'service_connection': self,
                                              'log_level': log_level,
-                                             'api_version': api_version,
+                                             'validate_certs': validate_certs,
+                                             'boto2_api_version': boto2_api_version,
                                              'https': https}
 
         self._test_user_connection_info = {'aws_account_name': clouduser_account,
@@ -103,8 +108,10 @@ class TestController(object):
                                            'aws_access_key': clouduser_accesskey,
                                            'aws_secret_key': clouduser_secretkey,
                                            'region': self.region,
+                                           'region_domain': self.region_domain,
                                            'log_level': log_level,
-                                           'api_version': api_version,
+                                           'validate_certs': validate_certs,
+                                           'boto2_api_version': boto2_api_version,
                                            'https': https}
 
         self._cred_depot_connection_info = {'hostname': cred_depot_hostname,
@@ -130,18 +137,37 @@ class TestController(object):
             return str(self.__class__.__name__)
 
     @property
+    def region_domain(self):
+        if self._region_domain is None:
+            # First try from the cloud property...
+            region_prop = self.sysadmin.get_property('system.dns.dnsdomain')
+            if region_prop.value:
+                self._region_domain = region_prop.value
+        return self._region_domain or self.region
+
+    @property
     def region(self):
         if self._region is None and self.sysadmin is not None:
             try:
-                regions = self.sysadmin.ec2_connection.get_all_regions()
-                if not regions:
-                    self.log.warning('No Regions found?')
+                name = None
+                # First try from the cloud property...
+                region_prop = self.sysadmin.get_property('region.region_name')
+                if region_prop.value:
+                    name = region_prop.value
                 else:
-                    region = regions[0]
-                    name = region.name
-                    if name:
-                        name = str(name)
-                    self.region = name
+                    # The cloud property was not set, try from the request...
+                    regions = self.sysadmin.ec2_connection.get_all_regions()
+                    if not regions:
+                        self.log.warning('No Regions found?')
+                    else:
+                        region = regions[0]
+                        name = region.name
+                        if name:
+                            name = str(name)
+                self._region = name
+                self._system_connection_info['region'] = name
+                self._cloud_admin_connection_info['region'] = name
+                self._test_user_connection_info['region'] = name
             except Exception as RE:
                 self.log.error('{0}.\nError while fetching region info:{1}'.format(get_traceback(),
                                                                                    RE))
@@ -208,13 +234,14 @@ class TestController(object):
         self._test_user = None
 
     def get_user_by_name(self, aws_account_name, aws_user_name,
-                         machine=None, service_connection=None, path='/',
-                         https=None, log_level=None, api_version=None):
+                         machine=None, service_connection=None, region=None, path='/',
+                         https=None, log_level=None, boto2_api_version=None):
         """
         Fetch an existing cloud user and convert into a usercontext object.
         For checking basic existence of a cloud user, use the iam interface instead.
         """
-        api_version = api_version or self._test_user_connection_info.get('api_version', None)
+        boto2_api_version = boto2_api_version or \
+                            self._test_user_connection_info.get('api_version', None)
         try:
             user = self.admin.iam.get_user_info(user_name=aws_user_name,
                                                 delegate_account=aws_account_name)
@@ -225,10 +252,11 @@ class TestController(object):
         if user:
             return self.create_user_using_cloudadmin(aws_account_name=aws_account_name,
                                                      aws_user_name=aws_user_name,
+                                                     region=region,
                                                      machine=machine,
                                                      service_connection=service_connection,
                                                      path=path, https=https, log_level=log_level,
-                                                     api_version=api_version)
+                                                     boto2_api_version=boto2_api_version)
         else:
             raise ValueError('User info not returned for "account:{0}, user:{1}"'
                              .format(aws_account_name, aws_user_name))
@@ -238,15 +266,17 @@ class TestController(object):
                                      aws_access_key=None, aws_secret_key=None,
                                      credpath=None, eucarc=None,
                                      machine=None, service_connection=None, path='/',
-                                     region=None, https=None, api_version=None,
-                                     log_level=None):
+                                     region=None, region_domain = None, https=None,
+                                     boto2_api_version=None, log_level=None):
         if log_level is None:
             log_level = self.log.stdout_level or 'DEBUG'
         if region is None:
             region = self.region
+        if region_domain is None:
+            region_domain = self.region_domain
         if https is None:
             https = self._https
-        api_version = api_version or self._test_user_connection_info.get('api_version', None)
+        boto2_api_version = boto2_api_version or self._test_user_connection_info.get('api_version', None)
         self.log.debug('Attempting to create user with params: account:{0}, name:{1}'
                           'access_key:{2}, secret_key:{3}, credpath:{4}, eucarc:{5}'
                           ', machine:{6}, service_connection:{7}, path:{8}, region:{9},'
@@ -264,25 +294,32 @@ class TestController(object):
                 eucarc.user_name = aws_user_name
             if aws_account_name:
                 eucarc.account_name = aws_account_name
+
             return UserContext(eucarc=eucarc,
+                               region=region,
+                               region_domain=region_domain,
                                service_connection=service_connection,
                                log_level=log_level,
                                https=https,
-                               api_version=api_version)
+                               boto2_api_version=boto2_api_version)
         if aws_access_key and aws_secret_key:
             return UserContext(aws_access_key=aws_access_key,
                                aws_secret_key=aws_secret_key,
                                aws_account_name=aws_account_name,
                                aws_user_name=aws_user_name,
+                               region=region,
+                               region_domain=region_domain,
                                service_connection=service_connection,
                                log_level=log_level,
-                               api_version=api_version,
+                               boto2_api_version=boto2_api_version,
                                https=https)
         if credpath:
             return UserContext(credpath=credpath,
+                               region=region,
+                               region_domain=region_domain,
                                machine=machine,
                                log_level=log_level,
-                               api_version=api_version)
+                               boto2_api_version=boto2_api_version)
 
         info = self.admin.iam.create_account(account_name=aws_account_name,
                                                   ignore_existing=True)
@@ -315,11 +352,13 @@ class TestController(object):
                             aws_secret_key=info.get('secret_access_key'),
                             aws_account_name=info.get('account_name'),
                             aws_user_name=info.get('user_name'),
+                            region=region,
+                            region_domain=region_domain,
                             existing_certs=certs,
                             machine=self.sysadmin.clc_machine,
                             service_connection=self.sysadmin,
                             log_level=log_level,
-                            api_version=api_version,
+                            boto2_api_version=boto2_api_version,
                             https=https)
         user._user_info = self.admin.iam.get_user_info(user_name=user.user_name,
                                                        delegate_account=user.account_id)
