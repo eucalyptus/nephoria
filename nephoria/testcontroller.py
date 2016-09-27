@@ -234,7 +234,8 @@ class TestController(object):
         self._test_user = None
 
     def get_user_by_name(self, aws_account_name, aws_user_name,
-                         machine=None, service_connection=None, region=None, path='/',
+                         machine=None, service_connection=None, region=None, region_domain=None,
+                         validate_certs=False, path='/',
                          https=None, log_level=None, boto2_api_version=None):
         """
         Fetch an existing cloud user and convert into a usercontext object.
@@ -252,7 +253,8 @@ class TestController(object):
         if user:
             return self.create_user_using_cloudadmin(aws_account_name=aws_account_name,
                                                      aws_user_name=aws_user_name,
-                                                     region=region,
+                                                     region=region, region_domain=region_domain,
+                                                     validate_certs=validate_certs,
                                                      machine=machine,
                                                      service_connection=service_connection,
                                                      path=path, https=https, log_level=log_level,
@@ -266,7 +268,8 @@ class TestController(object):
                                      aws_access_key=None, aws_secret_key=None,
                                      credpath=None, eucarc=None,
                                      machine=None, service_connection=None, path='/',
-                                     region=None, region_domain = None, https=None,
+                                     region=None, region_domain=None, https=None,
+                                     validate_certs=False,
                                      boto2_api_version=None, log_level=None):
         if log_level is None:
             log_level = self.log.stdout_level or 'DEBUG'
