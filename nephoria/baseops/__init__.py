@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+import copy
 from logging import DEBUG, NOTSET
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import markup, get_traceback
@@ -16,6 +17,7 @@ AWSRegionData = {
     'ap-northeast-1': 'ap-northeast-1.amazonaws.com',
     'ap-southeast-1': 'ap-southeast-1.amazonaws.com'}
 
+
 class BaseOps(object):
     # The key name this ops class uses to look up it's service url value (ie EC2_URL, S3_URL, etc)
     EUCARC_URL_NAME = None
@@ -28,7 +30,7 @@ class BaseOps(object):
                  aws_secret_access_key=None, is_secure=False, port=None, host=None,
                  region=None, connection_debug=0, path=None, validate_certs=True,
                  test_resources=None, logger=None, log_level=None, user_context=None,
-                 session=None, api_version=None, verbose_requests=None):
+                 session=None, boto2_api_version=None, verbose_requests=None):
         if self.EUCARC_URL_NAME is None:
             raise NotImplementedError('EUCARC_URL_NAME not set for this class:"{0}"'
                                       .format(self.__class__.__name__))
@@ -38,7 +40,6 @@ class BaseOps(object):
         init_kwargs = locals()
         init_kwargs.__delitem__('self')
         self._session = session
-        self.connection = None
         self.service_host = None
         self.service_port = None
         self.service_path = None
@@ -107,53 +108,15 @@ class BaseOps(object):
         # Pass all the args/kwargs provided at init to the create_connection_kwargs method for the
         # ops class to use to build it's kwargs as needed.
         self._connection_kwargs = self.create_connection_kwargs(**init_kwargs)
-        self.connect(verbose=connection_debug)
         # Remaining setup...
+        self._b2_connection = None
+        self._b3_connection = None
         self.setup()
 
     def __repr__(self):
         return "{0}:{1}:{2}".format(self.__class__.__name__, self.service_region,
                                     self.SERVICE_PREFIX)
 
-    def connect(self, verbose=False,  connection_kwargs=None):
-        """
-        Verify the required params have been set, and connect the underlying connection class.
-
-        :param verbose: Dump debug output about the connection
-        :param connection_kwargs: options dict containing kwargs used when creating the
-                                  underlying connection
-        """
-        if self.CONNECTION_CLASS is None:
-            raise NotImplementedError('Connection Class has not been defined for this class:"{0}"'
-                                      .format(self.__class__.__name__))
-        if connection_kwargs:
-            self._connection_kwargs = connection_kwargs
-        # Remove and kwargs which are not part of the service connection class creation method
-        self._clean_connection_kwargs()
-        required = []
-        for key, value in self._connection_kwargs.iteritems():
-            if value is None:
-                required.append(key)
-        if required:
-            self.show_connection_kwargs(connection_kwargs=connection_kwargs)
-            raise ValueError('{0}: Required Connection parameters were None: "{1}"'
-                             .format(self.__class__.__name__, ", ".join(required)))
-        #### Init connection...
-        if verbose:
-            self.show_connection_kwargs()
-        try:
-            # Remove any kwargs that are not applicable to this connection class
-            # For example 'region' may not be applicable to services such as 'IAM'
-            connection_keys = self._connection_kwargs.keys()
-            for ckey in connection_keys:
-                if ckey not in self.CONNECTION_CLASS.__init__.__func__.__code__.co_varnames:
-                    self.log.debug('Arg "0" not found in "{1}.init()", removing kwarg '
-                                   'connection args.'.format(ckey, self.CONNECTION_CLASS.__name__))
-                    self._connection_kwargs.__delitem__(ckey)
-            self.connection = self.CONNECTION_CLASS(**self._connection_kwargs)
-        except:
-            self.show_connection_kwargs()
-            raise
 
     def create_connection_kwargs(self, **kwargs):
         self._connection_kwargs = kwargs
@@ -217,20 +180,16 @@ class BaseOps(object):
         raise ValueError('Only bool or None type supported for "_use_verbose_requests". '
                          'Got: "{0}/{1}"'.format(value, type(value)))
 
-    def _clean_connection_kwargs(self, connection_kwargs=None, connection_method=None):
+    def get_applicable_kwargs(self, connection_kwargs, connection_method):
         # Remove any kwargs from self_connection_kwargs that are not applicable
         # to self.CONNECTION_CLASS
-        if connection_kwargs is None:
-            connection_kwargs = self._connection_kwargs or {}
-        if connection_method is None:
-            connection_method = self.CONNECTION_CLASS.__init__
+        connection_kwargs = copy.copy(connection_kwargs)
         varnames = connection_method.__func__.func_code.co_varnames
         keys = connection_kwargs.keys()
         for key in keys:
             if key not in varnames:
                 del connection_kwargs[key]
         return connection_kwargs
-
 
     def show_connection_kwargs(self, connection_kwargs=None):
         if connection_kwargs is None:

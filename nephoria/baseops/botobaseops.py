@@ -4,9 +4,151 @@ from logging import DEBUG, NOTSET
 from boto.regioninfo import RegionInfo
 from boto import set_stream_logger
 from boto import __version__ as boto_version
+from boto3 import set_stream_logger as b3_set_stream_logger
+from boto3.session import Session
+from botocore.client import BaseClient
+from boto3.resources.base import ServiceResource
 from nephoria.baseops import BaseOps, AWSRegionData
 from cloud_utils.log_utils.eulogger import Eulogger
+from cloud_utils.log_utils import get_traceback, red
 import re
+
+class B3Session(object):
+    def __init__(self, ops, connection_kwargs=None, access_key=None, secret_key=None, region=None,
+                 session=None, client=None, resource=None, verbose=False, auto_connect=True):
+        if not isinstance(ops, BaseOps):
+            raise ValueError('Unknown type for ops. Expected type:"{0}", got:"{1}/{2}"'
+                             .format(BaseOps.__class__.__name__, ops, type(ops)))
+        self._active_session = session
+        self._client = client
+        self._resource = resource
+        self._ops = ops
+        self._log = self._ops.log
+        self._verbose = verbose
+        self._access_key = connection_kwargs.get('aws_access_key_id', None) or \
+                           self._ops.eucarc.aws_access_key
+        self._secret_key = connection_kwargs.get('aws_secret_access_key', None) or \
+                           self._ops.eucarc.aws_secret_key
+        self._region = connection_kwargs.get('region_name', None) or self._ops.service_region
+
+    @property
+    def connection_info(self):
+        return self._ops._connection_kwargs
+
+    @property
+    def _session(self):
+        if not self._active_session:
+            self._start_session()
+        return self._active_session
+
+    @_session.setter
+    def _session(self, new_session):
+        if not isinstance(new_session, Session) and new_session is not None:
+            raise ValueError('Unknown type for session, got: "{0}/{1}"'.format(new_session,
+                                                                               type(new_session)))
+        self._active_session = new_session
+
+    @property
+    def client(self):
+        if not self._client:
+            self._connect(resource=False, client=True)
+        return self._client
+
+    @client.setter
+    def client(self, new_client):
+        if not isinstance(new_client, BaseClient) and new_client is not None:
+            raise ValueError('Unknown type for client, got: "{0}/{1}"'.format(new_client,
+                                                                               type(new_client)))
+        self._client = new_client
+
+    @property
+    def resource(self):
+        if not self._resource:
+            self._connect(client=False, resource=True)
+        return self._resource
+
+    @resource.setter
+    def resource(self, new_resource):
+        if not isinstance(new_resource, ServiceResource) and new_resource is not None:
+            raise ValueError('Unknown type for resource, got: "{0}/{1}"'.format(new_resource,
+                                                                              type(new_resource)))
+        self._resource = new_resource
+
+    def _start_session(self, connection_kwargs=None):
+        if self._ops._user_context:
+            self._session = self._ops._user_context.session
+        else:
+            try:
+                self._session = Session(aws_access_key_id=self._access_key,
+                                        aws_secret_access_key=self._secret_key,
+                                        region_name=self._region)
+            except Exception as SE:
+                self._log.error(red('{0}\nError creating boto3 {1} session. Error:{2}'
+                                    .format(get_traceback(), self.__class__.__name__, SE)))
+                raise
+        return self._session
+
+    def _connect(self, connection_kwargs=None, client=True, resource=True, verbose=None):
+
+        """
+        Verify the required params have been set, and connect the underlying connection class.
+
+        :param verbose: Dump debug output about the connection
+        :param connection_kwargs: options dict containing kwargs used when creating the
+                                  underlying connection
+        """
+        if verbose is None:
+            verbose = self._verbose
+        connection_kwargs = connection_kwargs or self.connection_info
+        service_name = connection_kwargs.get('service_name', None) or self._ops.service_name
+        session = self._session
+        if not session:
+            raise RuntimeError('"{0}". Session was not found/created during boto3 connect()'
+                               .format(self))
+        client_connection_method = None
+        if client:
+            client_connection_method = session.client
+
+        resource_connection_method = None
+        if resource:
+            if service_name in session.get_available_resources():
+                resource_connection_method = session.resource
+            else:
+                self._ops.log.debug('No session resource interface available for: "{0}"'
+                                    .format(service_name))
+        if not resource_connection_method and not client_connection_method:
+            self._log.debug('No client or resource interface to create')
+            return
+        api_version = connection_kwargs.get('boto3_api_version', None)
+        if api_version:
+            connection_kwargs['api_version'] = api_version
+        # Clean up kwargs and create the resource and or client interfaces
+        def create_interface(connect_kwargs, connection_method):
+            # Remove kwargs which are not part of the service connection class creation method
+            check_kwargs = self._ops.get_applicable_kwargs(connection_kwargs=connect_kwargs,
+                                                           connection_method=connection_method)
+            try:
+                # Remove any kwargs that are not applicable to this connection class
+                # For example 'region' may not be applicable to services such as 'IAM'
+                connection_keys = check_kwargs.keys()
+                for ckey in connection_keys:
+                    if ckey not in connection_method.__func__.__code__.co_varnames:
+                        self._ops.log.debug('Arg "0" not found in method:"{1}()", removing kwarg '
+                                           'connection args.'.format(
+                            ckey, connection_method.__func__.__name__))
+                        check_kwargs.__delitem__(ckey)
+                #### Init connection...
+                if verbose:
+                    self._ops.show_connection_kwargs()
+                return connection_method(**check_kwargs)
+            except:
+                self._ops.show_connection_kwargs()
+                raise
+        if client_connection_method:
+            self.client = create_interface(connection_kwargs, client_connection_method)
+        if resource_connection_method:
+            self.resource = create_interface(connection_kwargs, resource_connection_method)
+
 
 class BotoBaseOps(BaseOps):
     EUCARC_URL_NAME = None
@@ -18,23 +160,24 @@ class BotoBaseOps(BaseOps):
         Create connection kwargs for Boto type connections. See Baseops.__init__(**kwargs)
         for kwargs available
         """
+        verbose = kwargs.get('verbose', False)
         region = kwargs.get('region')
         service_url = kwargs.get('service_url')
-        validate_certs = kwargs.get('validate_certs', None)
-        api_version = kwargs.get('api_version', None)
+        boto2_api_version = kwargs.get('boto2_api_version', None)
+        boto3_api_version = kwargs.get('boto3_api_version', None)
         is_secure = kwargs.get('is_secure', True)
         connection_debug = kwargs.get('connection_debug')
+        region_name = region or self.service_host or self.service_region
         region = self._get_region_info(host=self.service_host,
                                        endpoint=self.service_host,
                                        region_name=region)
+        validate_certs = kwargs.get('validate_certs', False)
+
 
         # This needs to be re-visited due to changes in Eucalyptus and Boto regarding certs...
-        if validate_certs is None:
-            validate_certs = True
-            if re.search('2.6', boto_version):
-                validate_certs = False
 
-        self._connection_kwargs = {'service_name': self.SERVICE_PREFIX,
+
+        connection_kwargs = {'service_name': self.SERVICE_PREFIX,
                                    'aws_access_key_id': self.eucarc.aws_access_key,
                                    'aws_secret_access_key': self.eucarc.aws_secret_key,
                                    'is_secure': is_secure,
@@ -47,11 +190,44 @@ class BotoBaseOps(BaseOps):
                                    'verify': validate_certs,
                                    'validate_certs': validate_certs,
                                    'endpoint_url': self.service_url,
-                                   'api_version': api_version,
+                                   'verbose': verbose,
+                                   'boto2_api_version': boto2_api_version,
+                                   'boto3_api_version': boto3_api_version,
                                    'path': self.service_path}
-        return self._connection_kwargs
+        return connection_kwargs
 
-    def enable_connection_debug(self, level=DEBUG, format_string=None):
+    @property
+    def connection(self):
+        return self.boto2
+
+    @property
+    def boto2(self):
+        if not self._b2_connection:
+            try:
+                self._b2_connection = self.boto2_connect(
+                    verbose=self._connection_kwargs.get('verbose'),
+                    connection_kwargs=self._connection_kwargs)
+            except Exception as CE:
+                self.log.error(red('{0}\nFailed to create boto2 "{1}" connection. Err:"{2}"'
+                                   .format(get_traceback(), self.__class__.__name__, CE)))
+                raise
+        return self._b2_connection
+
+    @property
+    def boto3(self):
+        if not self._b3_connection:
+            try:
+                self._b3_connection = B3Session(ops=self,
+                                                connection_kwargs=self._connection_kwargs,
+                                                verbose=self._connection_kwargs.get('verbose'))
+            except Exception as CE:
+                self.log.error(red('{0}\nFailed to create boto3 "{1}" session. Err:"{2}"'
+                                   .format(get_traceback(), self.__class__.__name__, CE)))
+                raise
+        return self._b3_connection
+
+
+    def enable_boto2_connection_debug(self, level=DEBUG, format_string=None):
         try:
             self.connection.debug = 2
             level = Eulogger.format_log_level(level, 'DEBUG')
@@ -60,11 +236,28 @@ class BotoBaseOps(BaseOps):
             self.log.error('Could not enable debug for: "{0}"'.format(self))
             raise
 
-    def disable_connection_debug(self, level=NOTSET):
+    def enable_boto3_connection_debug(self, level=DEBUG, format_string=None):
+        try:
+            level = Eulogger.format_log_level(level, 'DEBUG')
+            b3_set_stream_logger('botocore', level=level, format_string=format_string)
+        except:
+            self.log.error('Could not enable debug for: "{0}"'.format(self))
+            raise
+
+    def disable_boto2_connection_debug(self, level=NOTSET):
         try:
             self.connection.debug = 0
             level = Eulogger.format_log_level(level, 'NOTSET')
             set_stream_logger('boto', level=level, format_string=None)
+        except:
+            self.log.error('Could not disable debug for: "{0}"'.format(self))
+            raise
+
+    def disable_boto3_connection_debug(self, level=NOTSET):
+        try:
+            self.connection.debug = 0
+            level = Eulogger.format_log_level(level, 'NOTSET')
+            b3_set_stream_logger('botocore', level=level, format_string=None)
         except:
             self.log.error('Could not disable debug for: "{0}"'.format(self))
             raise
@@ -97,3 +290,50 @@ class BotoBaseOps(BaseOps):
                     region.endpoint = host
             return region
         return None
+
+    def boto2_connect(self, verbose=False, connection_kwargs=None):
+        """
+        Verify the required params have been set, and connect the underlying connection class.
+
+        :param verbose: Dump debug output about the connection
+        :param connection_kwargs: options dict containing kwargs used when creating the
+                                  underlying connection
+        """
+        if self.CONNECTION_CLASS is None:
+            raise NotImplementedError('Connection Class has not been defined for this class:"{0}"'
+                                      .format(self.__class__.__name__))
+
+        api_version = connection_kwargs.get('boto2_api_version', None)
+        if api_version:
+            connection_kwargs['api_version'] = api_version
+        # Remove and kwargs which are not part of the service connection class creation method
+        connection_kwargs = self.get_applicable_kwargs(
+            connection_kwargs=self._connection_kwargs,
+            connection_method=self.CONNECTION_CLASS.__init__)
+
+        required = []
+        for key, value in connection_kwargs.iteritems():
+            if value is None:
+                required.append(key)
+        if required:
+            self.show_connection_kwargs(connection_kwargs=connection_kwargs)
+            raise ValueError('{0}: Required Connection parameters were None: "{1}"'
+                             .format(self.__class__.__name__, ", ".join(required)))
+        #### Init connection...
+        if verbose:
+            self.show_connection_kwargs()
+        try:
+            # Remove any kwargs that are not applicable to this connection class
+            # For example 'region' may not be applicable to services such as 'IAM'
+            connection_keys = connection_kwargs.keys()
+            for ckey in connection_keys:
+                if ckey not in self.CONNECTION_CLASS.__init__.__func__.__code__.co_varnames:
+                    self.log.debug('Arg "0" not found in "{1}.init()", removing kwarg '
+                                   'connection args.'.format(ckey, self.CONNECTION_CLASS.__name__))
+                    connection_kwargs.__delitem__(ckey)
+            return self.CONNECTION_CLASS(**connection_kwargs)
+        except:
+            self.show_connection_kwargs(connection_kwargs)
+            raise
+
+

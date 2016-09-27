@@ -66,6 +66,8 @@ import boto.vpc.routetable as routetable
 from boto.ec2.networkinterface import NetworkInterfaceSpecification, NetworkInterfaceCollection
 from boto.ec2.networkinterface import NetworkInterface
 
+from botocore.exceptions import ClientError
+
 from nephoria import CleanTestResourcesException
 from nephoria.baseops.botobaseops import BotoBaseOps
 from nephoria.testcase_utils import wait_for_result
@@ -340,6 +342,68 @@ disable_root: false"""
         self.log.debug("Deleting the following tags:" + str(tags))
         self.log.debug("From Resources: " + str(resource_ids))
         self.connection.delete_tags(resource_ids=resource_ids, tags=tags)
+
+    def b3_create_keypair(self, key_name, key_dir=None, save_to_local=True):
+        """
+        Creates a key pair and saves the key pair into a local directory.
+
+        Args:
+            key_name: name of the key pair
+            key_dir: where the key is saved during the test
+            save_to_local: if set to True, this method writes the key pair to a file in key_dir
+
+        Returns:
+            returns key pair if successfully created
+        """
+        if not key_dir:
+            key_dir = os.getcwd()
+        self.log.debug('Creating key {0}'.format(key_name))
+        try:
+            k = self.boto3.resource.create_key_pair(KeyName=key_name)
+        except ClientError, e:
+            raise Exception(e.message)
+        key_file = '{0}/{1}.pem'.format(key_dir, k.key_name)
+
+        if save_to_local:
+            with open(key_file, 'w') as key_material:
+                key_material.write(k.key_material)
+            self.log.debug("Saved key pair at '{0}'".format(key_file))
+        try:
+            ret_key = self.boto3.resource.KeyPair(key_name)
+            ret_key.load()
+            self.log.debug("Successfully created keypair '{0}'".format(k.key_name, key_file))
+            return ret_key
+        except ClientError, e:
+            raise Exception(e.message)
+
+    def b3_delete_keypair(self, key_name, delete_local=False, key_dir=None):
+        """
+        Deletes key pair and tests if the key pair's removed.
+
+        Args:
+            key_name: name of the key pair to delete
+            delete_local: if set to True, if deletes the local file from key_dir
+            key_dir: deletes the key pair from key_dir, if delete_local is set to True
+
+        Returns:
+            Returns True on success.
+        """
+        if not key_dir:
+            key_dir = os.getcwd()
+        k = self.boto3.resource.KeyPair(key_name)
+        self.log.debug("Deleting key '{0}'".format(key_name))
+        try:
+            k.load()
+            k.delete()
+        except ClientError, e:
+            raise Exception(e.message)
+        try:
+            k.reload()
+        except:
+            return True
+
+
+
 
     def create_keypair_and_localcert(self, key_name=None, key_dir=None, extension='.pem'):
         """
