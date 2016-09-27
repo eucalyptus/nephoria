@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+import copy
 from logging import DEBUG, NOTSET
 from boto.regioninfo import RegionInfo
 from boto import set_stream_logger
@@ -299,6 +300,7 @@ class BotoBaseOps(BaseOps):
         :param connection_kwargs: options dict containing kwargs used when creating the
                                   underlying connection
         """
+        connection_kwargs = copy.copy(connection_kwargs)
         if self.CONNECTION_CLASS is None:
             raise NotImplementedError('Connection Class has not been defined for this class:"{0}"'
                                       .format(self.__class__.__name__))

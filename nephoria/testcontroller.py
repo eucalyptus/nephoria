@@ -26,7 +26,7 @@ class TestController(object):
                  timeout=10, log_level='DEBUG', log_file=None, log_file_level='DEBUG',
                  environment_file=None, https=True, validate_certs=False,
                  cred_depot_hostname=None, cred_depot_username='root', cred_depot_password=None,
-                 boto2_api_version=None):
+                     boto2_api_version=None):
 
         """
 
@@ -242,7 +242,7 @@ class TestController(object):
         For checking basic existence of a cloud user, use the iam interface instead.
         """
         boto2_api_version = boto2_api_version or \
-                            self._test_user_connection_info.get('api_version', None)
+                            self._test_user_connection_info.get('boto2_api_version', None)
         try:
             user = self.admin.iam.get_user_info(user_name=aws_user_name,
                                                 delegate_account=aws_account_name)
@@ -279,7 +279,8 @@ class TestController(object):
             region_domain = self.region_domain
         if https is None:
             https = self._https
-        boto2_api_version = boto2_api_version or self._test_user_connection_info.get('api_version', None)
+        boto2_api_version = boto2_api_version or \
+                            self._test_user_connection_info.get('boto2_api_version', None)
         self.log.debug('Attempting to create user with params: account:{0}, name:{1}'
                           'access_key:{2}, secret_key:{3}, credpath:{4}, eucarc:{5}'
                           ', machine:{6}, service_connection:{7}, path:{8}, region:{9},'
