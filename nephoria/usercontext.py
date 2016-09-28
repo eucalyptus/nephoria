@@ -39,7 +39,6 @@ from cloud_admin.access.autocreds import AutoCreds
 from nephoria.aws.iam.iamops import IAMops
 from nephoria.aws.s3.s3ops import S3ops
 from nephoria.aws.ec2.ec2ops import EC2ops
-from nephoria.aws.ec2.b3_ec2ops import B3_EC2ops
 from nephoria.aws.elb.elbops import ELBops
 from nephoria.aws.sts.stsops import STSops
 from nephoria.aws.sqs.sqsops import SQSops
