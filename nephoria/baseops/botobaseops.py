@@ -1,15 +1,15 @@
 #!/usr/bin/python
 
 import copy
+from inspect import isclass
 from logging import DEBUG, NOTSET
 from boto.regioninfo import RegionInfo
 from boto import set_stream_logger
-from boto import __version__ as boto_version
 from boto3 import set_stream_logger as b3_set_stream_logger
 from boto3.session import Session
 from botocore.client import BaseClient
 from boto3.resources.base import ServiceResource
-from nephoria.baseops import BaseOps, AWSRegionData
+from nephoria.baseops import BaseOps, AWSRegionData, NephoriaObject
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import get_traceback, red
 import re
@@ -337,5 +337,48 @@ class BotoBaseOps(BaseOps):
         except:
             self.show_connection_kwargs(connection_kwargs)
             raise
+
+    def map_to_object(self, obj_dict, to_class=None):
+        """
+        Attempts to convert a dictionary into an object of the provided 'to_class' type
+        or Nephoria Object type.
+
+        Args:
+            obj_dict: dictionary of values to assign to new object
+            to_class: A class to create the new object from.
+
+        Returns:
+            instance/object created from 'to_class'
+
+        """
+        if obj_dict is None:
+            return None
+        to_class = to_class or NephoriaObject
+        if not isclass(to_class):
+            raise ValueError('Expected a class, but got: "{0}/{1}"'.format(to_class,
+                                                                           type(to_class)))
+
+        # Convert camelcase to lower case underscore...
+        def convert(name):
+            s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+            return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+        # Dict will now have any previous camel case as well as underscore notation.
+        keys = obj_dict.keys()
+        for key in keys:
+            value = obj_dict[key]
+            b2name = convert(name=key)
+            obj_dict[b2name] = value
+
+        init_kwargs = self.get_applicable_kwargs(obj_dict, to_class.__init__) or {}
+        new_obj = to_class(**init_kwargs)
+        for key, value in obj_dict.iteritems():
+            if key not in init_kwargs:
+                if hasattr(new_obj, key):
+                    setattr(new_obj, key, value)
+        return new_obj
+
+
+
 
 
