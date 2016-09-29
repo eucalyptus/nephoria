@@ -338,7 +338,7 @@ class BotoBaseOps(BaseOps):
             self.show_connection_kwargs(connection_kwargs)
             raise
 
-    def map_to_object(self, obj_dict, to_class=None):
+    def map_to_object(self, obj_dict, to_class=None, add_all=True):
         """
         Attempts to convert a dictionary into an object of the provided 'to_class' type
         or Nephoria Object type.
@@ -346,6 +346,8 @@ class BotoBaseOps(BaseOps):
         Args:
             obj_dict: dictionary of values to assign to new object
             to_class: A class to create the new object from.
+            add_all: boolean, if True all attributes will be added to the new object, if false
+                     only the attributes already present in the class/new object will be used.
 
         Returns:
             instance/object created from 'to_class'
@@ -374,11 +376,9 @@ class BotoBaseOps(BaseOps):
         new_obj = to_class(**init_kwargs)
         for key, value in obj_dict.iteritems():
             if key not in init_kwargs:
-                if hasattr(new_obj, key):
+                if not add_all:
+                    if hasattr(new_obj, key):
+                        setattr(new_obj, key, value)
+                else:
                     setattr(new_obj, key, value)
         return new_obj
-
-
-
-
-
