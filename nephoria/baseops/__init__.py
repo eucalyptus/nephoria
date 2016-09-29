@@ -17,6 +17,10 @@ AWSRegionData = {
     'ap-northeast-1': 'ap-northeast-1.amazonaws.com',
     'ap-southeast-1': 'ap-southeast-1.amazonaws.com'}
 
+class NephoriaObject(object):
+    def __init__(self, **kwargs):
+        for key, value in kwargs.iteritems():
+            setattr(self, key, value)
 
 class BaseOps(object):
     # The key name this ops class uses to look up it's service url value (ie EC2_URL, S3_URL, etc)
