@@ -9,25 +9,27 @@
 
 #Author: Lincoln Thomas <lincoln.thomas@hpe.com>
 
-import re
+#import re
 import copy
 import time
 
-from nephoria.testcase_utils.cli_test_runner import CliTestRunner, SkipTestException
+from nephoria.testcase_utils.cli_test_runner import CliTestRunner
+#                                                 , SkipTestException
 from nephoria.testcontroller import TestController
 
-import boto
+#import boto
 from boto.exception import S3ResponseError
-from boto.exception import BotoServerError
+#from boto.exception import BotoServerError
 from boto.exception import S3CreateError
 
-import boto.s3
-from boto.s3.bucket import Bucket
-from boto.s3.cors import CORSConfiguration, CORSRule
+#import boto.s3
+#from boto.s3.bucket import Bucket
+from boto.s3.cors import CORSConfiguration
+#                      , CORSRule
 
-import requests
-from requests.models import Response
-import httplib2
+#import requests
+#from requests.models import Response
+#import httplib2
 
 class CorsTestSuite(CliTestRunner):
     
@@ -73,29 +75,42 @@ class CorsTestSuite(CliTestRunner):
         '''
         Set up a CORS config on the given bucket.
         '''
-        self.log.debug("Setting a CORS config")
         bucket_cors_set = CORSConfiguration()
 
-        bucket_allowed_methods = ['GET']
-        bucket_allowed_origins = ['*']
+        bucket_rule_id = "Rule 1: Origin example1 can write, with all headers allowed"
+        bucket_allowed_origins = ('http://www.example1.com')
+        bucket_allowed_methods = ('PUT', 'POST', 'DELETE')
+        bucket_allowed_headers = ('*')
         bucket_cors_set.add_rule(bucket_allowed_methods, 
-                                 bucket_allowed_origins)
+                                 bucket_allowed_origins,
+                                 bucket_rule_id,
+                                 bucket_allowed_headers)
 
-        bucket_allowed_methods = ['PUT', 'POST', 'DELETE']
-        bucket_allowed_origins = ['https', 'http://*.example1.com', 'http://www.example2.com']
-        bucket_allowed_headers = ['*']
+        bucket_rule_id = "Rule 2: Origin example2 can GET only"
+        bucket_allowed_origins = ('http://www.example2.com')
+        bucket_allowed_methods = ('GET')
         bucket_cors_set.add_rule(bucket_allowed_methods, 
-                                 bucket_allowed_origins, 
-                                 allowed_header=bucket_allowed_headers)
+                                 bucket_allowed_origins,
+                                 bucket_rule_id)
 
-        bucket_rule_id = "Nephoria Rule ID"
-        bucket_allowed_methods = ['GET']
-        bucket_allowed_origins = ['*']
-        bucket_allowed_headers = ['*']
+        bucket_rule_id = "Rule 3: Any origin can HEAD"
+        bucket_allowed_origins = ('*')
+        bucket_allowed_methods = ('HEAD')
+        bucket_cors_set.add_rule(bucket_allowed_methods, 
+                                 bucket_allowed_origins,
+                                 bucket_rule_id)
+
+        bucket_rule_id = "Rule 4: Either of these wildcarded origins can do any method, "
+        "can cache the response for 50 minutes, "
+        "can only send request headers that begin x-amz- or Content-, "
+        "and can expose the listed ExposeHeaders to clients."
+        bucket_allowed_origins = ('http://www.corstest*.com', 'http://*.sample.com')
+        bucket_allowed_methods = ('GET', 'HEAD', 'PUT', 'POST', 'DELETE')
+        bucket_allowed_headers = ('x-amz-*', 'Content-*')
         bucket_max_age_seconds = 3000
-        bucket_expose_headers = ["x-amz-server-side-encryption", 
+        bucket_expose_headers = ("x-amz-server-side-encryption", 
                                  "x-amz-request-id", 
-                                 "x-amz-id-2"]
+                                 "x-amz-id-2")
         bucket_cors_set.add_rule(bucket_allowed_methods, 
                                  bucket_allowed_origins, 
                                  bucket_rule_id,
@@ -104,7 +119,17 @@ class CorsTestSuite(CliTestRunner):
                                  bucket_expose_headers)
 
         bucket.set_cors(bucket_cors_set)
+
+        # Uncomment the below to make set-vs-retrieved configs different,
+        # to test the comparison test code.
+#         bucket_cors_set.add_rule(bucket_allowed_methods, 
+#                                  bucket_allowed_origins, 
+#                                  bucket_rule_id,
+#                                  bucket_allowed_headers, 
+#                                  bucket_max_age_seconds,
+#                                  bucket_expose_headers)
         return bucket_cors_set
+
 
     def test_cors_config_mgmt(self):
         '''
@@ -115,73 +140,65 @@ class CorsTestSuite(CliTestRunner):
         self.buckets_used = set()
         test_bucket=self.bucket_prefix + bucket_name
         self.buckets_used.add(test_bucket)
+
         self.log.info("Starting CORS config management tests")
-        try :
-            self.log.debug("Creating bucket " + test_bucket)
-            bucket = self.tc.user.s3.create_bucket(test_bucket)                
-            if bucket == None:
-                self.tc.user.s3.delete_bucket(test_bucket)
-                raise AssertionError(test_bucket + "No bucket object returned by create_bucket")
+
+        self.log.debug("Creating bucket " + test_bucket)
+        try:
+            bucket = self.tc.user.s3.create_bucket(test_bucket)
         except (S3ResponseError, S3CreateError) as e:
             raise AssertionError(test_bucket + " create caused exception: " + str(e))
-        
-        # Get the CORS config (none yet). 
-        # Should get 404 Not Found, with "NoSuchCORSConfiguration" in the body.
-        try :    
-            self.log.debug("Getting (empty) CORS config")
+        else:
+            if bucket == None:
+                raise AssertionError(test_bucket + "No bucket object returned by create_bucket")
+
+        self.log.debug("Getting (empty) CORS config")
+        try:    
             bucket.get_cors()
-            self.tc.user.s3.delete_bucket(test_bucket)
-            raise AssertionError("Did not get the expected S3ResponseError getting CORS config where none exists.")
         except S3ResponseError as e:
             if (e.status == 404 and e.reason == "Not Found" and e.code == "NoSuchCORSConfiguration"):
-                self.log.debug("Caught expected S3ResponseError with expected contents, " + 
-                               "getting CORS config when none exists yet.")
+                self.log.debug("Caught expected S3ResponseError with expected contents.")
             else:
-                self.tc.user.s3.delete_bucket(test_bucket)
-                self.fail("Caught S3ResponseError getting CORS config when none exists yet," +
-                          "but exception contents were unexpected: " + str(e))
+                raise AssertionError("Caught S3ResponseError but exception contents were unexpected: " + str(e))
+        else:
+            raise AssertionError("Did not get the expected S3ResponseError getting CORS config where none exists.")
 
-        try :
+        self.log.debug("Setting CORS config on " + test_bucket)
+        try:
             bucket_cors_set = self.set_cors_config(bucket)
         except S3ResponseError as e:
-            self.tc.user.s3.delete_bucket(test_bucket)
             raise AssertionError("Caught S3ResponseError setting CORS config: " + str(e))
                     
-        # Get the CORS config. Should get the config we just set.
-        try :    
-            self.log.debug("Getting the CORS config we just set")
+        self.log.debug("Getting the CORS config we just set")
+        try:    
             bucket_cors_retrieved = bucket.get_cors()
-            #LPT always true??
-            assert (bucket_cors_retrieved.to_xml() == bucket_cors_set.to_xml(), 
-                'Bucket CORS config: Expected ' + bucket_cors_set.to_xml() + 
-                ', Retrieved ' + bucket_cors_retrieved.to_xml())
         except S3ResponseError as e:
-            self.tc.user.s3.delete_bucket(test_bucket)
             raise AssertionError("Caught S3ResponseError getting CORS config, after setting it successfully: " + str(e))
 
-        # Delete the CORS config and bucket, unless the caller says not to.
-        try :    
-            self.log.debug("Deleting the CORS config")
+        assert bucket_cors_retrieved.to_xml() == bucket_cors_set.to_xml(), (
+            'Bucket CORS config retrieved is not the same as what we set.' +
+            '\n---------- Expected:\n' + 
+            bucket_cors_set.to_xml() +
+            '\n---------- Retrieved:\n' + 
+            bucket_cors_retrieved.to_xml())
+
+        self.log.debug("Deleting the CORS config")
+        try:    
             bucket.delete_cors()
         except S3ResponseError as e:
-            self.tc.user.s3.delete_bucket(test_bucket)
             raise AssertionError("Caught S3ResponseError deleting CORS config, after setting and validating it successfully: " + str(e))
 
-        # Get the CORS config (none anymore). 
-        # Should get 404 Not Found, with "NoSuchCORSConfiguration" in the body.
-        try :    
-            self.log.debug("Getting (empty again) CORS config")
+        self.log.debug("Getting (empty again) CORS config")
+        try:    
             bucket.get_cors()
-            self.tc.user.s3.delete_bucket(test_bucket)
-            raise AssertionError("Did not get the expected S3ResponseError getting CORS config after being deleted.")
         except S3ResponseError as e:
-            self.tc.user.s3.delete_bucket(test_bucket)
             if (e.status == 404 and e.reason == "Not Found" and e.code == "NoSuchCORSConfiguration"):
-                self.log.debug("Caught expected S3ResponseError with expected contents, " + 
-                               "getting CORS config after being deleted.")
+                self.log.debug("Caught expected S3ResponseError with expected contents.")
             else:
-                raise AssertionError("Caught S3ResponseError getting CORS config after being deleted," +
-                                     "but exception contents were unexpected: " + str(e))
+                raise AssertionError("Caught S3ResponseError but exception contents were unexpected: " + str(e))
+        else:
+            raise AssertionError("Did not get the expected S3ResponseError getting CORS config after being deleted.")
+
 
     def test_cors_preflight_requests(self):
         '''
@@ -189,15 +206,15 @@ class CorsTestSuite(CliTestRunner):
         and validating the preflight responses against the CORS config.
         '''
 
-        def send_preflight(bucket, headers=None):
+        def send_preflight(bucket, key_name='', headers=None):
             """
             Sends a CORS preflight request with the CORS request headers,
             and returns the response with any CORS response headers.
             """
-            response = bucket.connection.make_request('OPTIONS', bucket.name,
+            response = bucket.connection.make_request('OPTIONS', bucket.name, key_name,
                                                     headers=headers)
             if response.status == 200:
-                return True
+                return response
             else:
                 # There's nothing in the body on a successful CORS response,
                 # so we only need it to report errors.
@@ -205,86 +222,338 @@ class CorsTestSuite(CliTestRunner):
                 raise bucket.connection.provider.storage_response_error(
                     response.status, response.reason, body)
 
+        def preflight_invalid(preflight_response):
+            return ("Preflight response invalid: Status is %d, Reason is '%s', "
+                    "Message is:\n%s\nBody is:\n%s" % 
+                    (preflight_response.status, preflight_response.reason, 
+                    preflight_response.msg, preflight_response.read()))
+                  
+        def preflight_non_exception(preflight_response):
+            return ("Did not get the expected exception. " +
+                    preflight_invalid(preflight_response))
+            
         # Test code starts here
         bucket_name="-cors-preflight-test-bucket"
         self.buckets_used = set()
         test_bucket=self.bucket_prefix + bucket_name
         self.buckets_used.add(test_bucket)
         self.log.info("Starting CORS preflight OPTIONS request tests")
-        try :
-            self.log.debug("Creating bucket " + test_bucket)
+
+        self.log.debug("Creating bucket " + test_bucket)
+        try:
             bucket = self.tc.user.s3.create_bucket(test_bucket)
-            if bucket == None:
-                self.tc.user.s3.delete_bucket(test_bucket)
-                raise AssertionError(test_bucket + "No bucket object returned by create_bucket")
         except (S3ResponseError, S3CreateError) as e:
             raise AssertionError(test_bucket + " create caused exception: " + str(e))
+        else:
+            if bucket == None:
+                raise AssertionError(test_bucket + "No bucket object returned by create_bucket")
 
-        try :
-            self.set_cors_config(bucket)
-        except S3ResponseError as e:
-            self.tc.user.s3.delete_bucket(test_bucket)
-            raise AssertionError("Caught S3ResponseError setting CORS config: " + str(e))
-                    
+        # Create a key name but don't actually create an object.
+        # The key will be ignored by the server for an preflight OPTIONS request.
+        dummy_key_name = "no_such_object"
+        
+        self.log.debug("Testing preflights with no CORS config")
+        
         self.log.debug("Sending a preflight without any extra headers")
         try:
+            # Target for all tests below is the object, not the bucket, unless specified.
+            # Target for this test is the bucket, not the object.
             preflight_response = send_preflight(bucket)
-#LPT verify this after similar test below
-            raise AssertionError("Did not get the expected exception! Status is %d, Reason is '%s', Code is '%s', Message is '%s'", 
-                                 preflight_response.stssssatus, preflight_response.reason, preflight_response.code, preflight_response.body)
         except S3ResponseError as e:
-            #self.log.debug("Status is %d, Reason is '%s', Code is '%s', Message is '%s'", e.status, e.reason, e.code, e.message)
             if (e.status == 400 and 
                 e.reason == 'Bad Request' and
                 e.code == 'BadRequest' and 
                 e.message == 'Insufficient information. Origin request header needed.'):
-                self.log.debug("Caught expected S3ResponseError: " + str(e))
+                self.log.debug("Caught expected S3ResponseError with expected contents.")
+            else:
+                raise AssertionError("Caught S3ResponseError but exception contents were unexpected: " + str(e))
+        else:
+            raise AssertionError(preflight_non_exception(preflight_response))
+
+        self.log.debug("Sending a preflight with Origin but bad Method")
+        try:
+            preflight_response = send_preflight(bucket, dummy_key_name, 
+                                                headers={'Origin': 'http://www.example1.com',
+                                                         'Access-Control-Request-Method': 'BLAH'})
+        except S3ResponseError as e:
+            if (e.status == 400 and 
+                e.reason == 'Bad Request' and
+                e.code == 'BadRequest' and 
+                e.message == 'Invalid Access-Control-Request-Method: BLAH'):
+                self.log.debug("Caught expected S3ResponseError with expected contents.")
+            else:
+                raise AssertionError("Caught S3ResponseError but exception contents were unexpected: " + str(e))
+        else:
+            raise AssertionError(preflight_non_exception(preflight_response))
+
+        self.log.debug("Sending a preflight with Origin and valid Method")
+        try:
+            preflight_response = send_preflight(bucket, dummy_key_name,
+                                                headers={'Origin': 'http://www.example1.com',
+                                                         'Access-Control-Request-Method': 'POST'})
+        except S3ResponseError as e:
+            if (e.status == 403 and 
+                e.reason == 'Forbidden' and
+                e.code == 'AccessForbidden' and 
+                e.message == 'CORSResponse: CORS is not enabled for this bucket.'):
+                self.log.debug("Caught expected S3ResponseError with expected contents.")
+            else:
+                raise AssertionError("Caught S3ResponseError but exception contents were unexpected: " + str(e))
+        else:
+            raise AssertionError(preflight_non_exception(preflight_response))
+
+        self.log.debug("Setting CORS config on " + test_bucket)
+        try:
+            self.set_cors_config(bucket)
+        except S3ResponseError as e:
+            raise AssertionError("Caught S3ResponseError setting CORS config: " + str(e))
+                    
+        self.log.debug("Testing preflights with CORS config in place")
+        
+        self.log.debug("Sending a preflight without any extra headers")
+        try:
+            preflight_response = send_preflight(bucket, dummy_key_name)
+        except S3ResponseError as e:
+            if (e.status == 400 and 
+                e.reason == 'Bad Request' and
+                e.code == 'BadRequest' and 
+                e.message == 'Insufficient information. Origin request header needed.'):
+                self.log.debug("Caught expected S3ResponseError with expected contents.")
+            else:
+                raise AssertionError("Caught S3ResponseError but exception contents were unexpected: " + str(e))
+        else:
+            raise AssertionError(preflight_non_exception(preflight_response))
 
         self.log.debug("Sending a preflight with Method but no Origin")
         try:
-            preflight_response = send_preflight(bucket, headers={'Access-Control-Request-Method': 'GET'})
-#LPT verify this after similar test below
-            raise AssertionError("Did not get the expected exception! Status is %d, Reason is '%s', Code is '%s', Message is '%s'", 
-                                 preflight_response.stssssatus, preflight_response.reason, preflight_response.code, preflight_response.body)
+            preflight_response = send_preflight(bucket, dummy_key_name,
+                                                headers={'Access-Control-Request-Method': 'GET'})
         except S3ResponseError as e:
-            #self.log.debug("Status is %d, Reason is '%s', Code is '%s', Message is '%s'", e.status, e.reason, e.code, e.message)
             if (e.status == 400 and 
                 e.reason == 'Bad Request' and
                 e.code == 'BadRequest' and 
                 e.message == 'Insufficient information. Origin request header needed.'):
-                self.log.debug("Caught expected S3ResponseError: " + str(e))
-       
+                self.log.debug("Caught expected S3ResponseError with expected contents.")
+            else:
+                raise AssertionError("Caught S3ResponseError but exception contents were unexpected: " + str(e))
+        else:
+            raise AssertionError(preflight_non_exception(preflight_response))
+
         self.log.debug("Sending a preflight with Origin but no Method")
         try:
-            preflight_response = send_preflight(bucket, headers={'Origin': 'http://www.example1.com'})
-#LPT verify this after similar test below
-            raise AssertionError("Did not get the expected exception! Status is %d, Reason is '%s', Code is '%s', Message is '%s'", 
-                                 preflight_response.stssssatus, preflight_response.reason, preflight_response.code, preflight_response.body)
+            preflight_response = send_preflight(bucket, dummy_key_name,
+                                                headers={'Origin': 'http://www.example1.com'})
         except S3ResponseError as e:
-            #self.log.debug("Status is %d, Reason is '%s', Code is '%s', Message is '%s'", e.status, e.reason, e.code, e.message)
             if (e.status == 400 and 
                 e.reason == 'Bad Request' and
                 e.code == 'BadRequest' and 
                 e.message == 'Invalid Access-Control-Request-Method: null'):
-                self.log.debug("Caught expected S3ResponseError: " + str(e))
+                self.log.debug("Caught expected S3ResponseError with expected contents.")
+            else:
+                raise AssertionError("Caught S3ResponseError but exception contents were unexpected: " + str(e))
+        else:
+            raise AssertionError(preflight_non_exception(preflight_response))
 
-        self.log.debug("Sending a preflight with Origin but bad Method")
+        self.log.debug("Sending a preflight with Origin but unsupported Method (OPTIONS)")
         try:
-            preflight_response = send_preflight(bucket, headers={'Origin': 'http://www.example1.com',
-                                                                 'Access-Control-Request-Method': 'OPTIONS'})
-#LPT verify this after similar test below
-            raise AssertionError("Did not get the expected exception! Status is %d, Reason is '%s', Code is '%s', Message is '%s'", 
-                                 preflight_response.stssssatus, preflight_response.reason, preflight_response.code, preflight_response.body)
+            preflight_response = send_preflight(bucket, dummy_key_name, 
+                                                headers={'Origin': 'http://www.example1.com',
+                                                         'Access-Control-Request-Method': 'OPTIONS'})
         except S3ResponseError as e:
-            #self.log.debug("Status is %d, Reason is '%s', Code is '%s', Message is '%s'", e.status, e.reason, e.code, e.message)
             if (e.status == 400 and 
                 e.reason == 'Bad Request' and
                 e.code == 'BadRequest' and 
                 e.message == 'Invalid Access-Control-Request-Method: OPTIONS'):
-                self.log.debug("Caught expected S3ResponseError: " + str(e))
-       
+                self.log.debug("Caught expected S3ResponseError with expected contents.")
+            else:
+                raise AssertionError("Caught S3ResponseError but exception contents were unexpected: " + str(e))
+        else:
+            raise AssertionError(preflight_non_exception(preflight_response))
 
-        
+        self.log.debug("Sending a preflight with matching Origin example1 and Method")
+        try:
+            # Target for this test is the bucket, not the object.
+            preflight_response = send_preflight(bucket, 
+                                                headers={'Origin': 'http://www.example1.com',
+                                                         'Access-Control-Request-Method': 'POST'})
+        except S3ResponseError as e:
+            raise AssertionError("Caught S3ResponseError: " + str(e))
+        else:
+            if (preflight_response.status == 200 and
+                preflight_response.reason == 'OK' and
+                preflight_response.getheader('Access-Control-Allow-Origin') == 'http://www.example1.com' and
+                preflight_response.getheader('Access-Control-Allow-Methods') == 'PUT, POST, DELETE' and
+                preflight_response.getheader('Access-Control-Allow-Credentials') == 'true' and
+                preflight_response.getheader('Vary') == 'Origin, Access-Control-Request-Headers, Access-Control-Request-Method' and
+                preflight_response.getheader('Content-Length') == '0'):
+                self.log.debug("Extra CORS headers valid")
+            else:
+                raise AssertionError(preflight_invalid(preflight_response))
+
+        self.log.debug("Sending a preflight with matching Origin example2 and Method")
+        try:
+            preflight_response = send_preflight(bucket, dummy_key_name, 
+                                                headers={'Origin': 'http://www.example2.com',
+                                                         'Access-Control-Request-Method': 'GET'})
+        except S3ResponseError as e:
+            raise AssertionError("Caught S3ResponseError: " + str(e))
+        else:
+            if (preflight_response.status == 200 and
+                preflight_response.reason == 'OK' and
+                preflight_response.getheader('Access-Control-Allow-Origin') == 'http://www.example2.com' and
+                preflight_response.getheader('Access-Control-Allow-Methods') == 'GET' and
+                preflight_response.getheader('Access-Control-Allow-Credentials') == 'true' and
+                preflight_response.getheader('Vary') == 'Origin, Access-Control-Request-Headers, Access-Control-Request-Method' and
+                preflight_response.getheader('Content-Length') == '0'):
+                self.log.debug("Extra CORS headers valid")
+            else:
+                raise AssertionError(preflight_invalid(preflight_response))
+
+        self.log.debug("Sending a preflight with matching Origin (any origin) and Method HEAD")
+        try:
+            preflight_response = send_preflight(bucket, dummy_key_name, 
+                                                headers={'Origin': 'http://www.mycorssite1.com',
+                                                         'Access-Control-Request-Method': 'HEAD'})
+        except S3ResponseError as e:
+            raise AssertionError("Caught S3ResponseError: " + str(e))
+        else:
+            if (preflight_response.status == 200 and
+                preflight_response.reason == 'OK' and
+                preflight_response.getheader('Access-Control-Allow-Origin') == '*' and
+                preflight_response.getheader('Access-Control-Allow-Methods') == 'HEAD' and
+                preflight_response.getheader('Access-Control-Allow-Credentials') == None and
+                preflight_response.getheader('Vary') == 'Origin, Access-Control-Request-Headers, Access-Control-Request-Method' and
+                preflight_response.getheader('Content-Length') == '0'):
+                self.log.debug("Extra CORS headers valid")
+            else:
+                raise AssertionError(preflight_invalid(preflight_response))
+
+        self.log.debug("Sending a preflight with matching Origin (sample.com with no port defined)")
+        try:
+            preflight_response = send_preflight(bucket, dummy_key_name, 
+                                                headers={'Origin': 'http://this.sample.com',
+                                                         'Access-Control-Request-Method': 'DELETE'})
+        except S3ResponseError as e:
+            raise AssertionError("Caught S3ResponseError: " + str(e))
+        else:
+            if (preflight_response.status == 200 and
+                preflight_response.reason == 'OK' and
+                preflight_response.getheader('Access-Control-Allow-Origin') == 'http://this.sample.com' and
+                preflight_response.getheader('Access-Control-Allow-Methods') == 'GET, HEAD, PUT, POST, DELETE' and
+                preflight_response.getheader('Access-Control-Expose-Headers') == 'x-amz-server-side-encryption, x-amz-request-id, x-amz-id-2' and
+                preflight_response.getheader('Access-Control-Max-Age') == '3000' and
+                preflight_response.getheader('Access-Control-Allow-Credentials') == 'true' and
+                preflight_response.getheader('Vary') == 'Origin, Access-Control-Request-Headers, Access-Control-Request-Method' and
+                preflight_response.getheader('Content-Length') == '0'):
+                self.log.debug("Extra CORS headers valid")
+            else:
+                raise AssertionError(preflight_invalid(preflight_response))
+
+        self.log.debug("Sending a preflight with non-matching Origin (sample.com with port 80)")
+        try:
+            preflight_response = send_preflight(bucket, dummy_key_name, 
+                                                headers={'Origin': 'http://this.sample.com:80',
+                                                         'Access-Control-Request-Method': 'DELETE'})
+        except S3ResponseError as e:
+            if (e.status == 403 and 
+                e.reason == 'Forbidden' and
+                e.code == 'AccessForbidden' and 
+                e.message == 'CORSResponse: This CORS request is not allowed. '
+                'This is usually because the evaluation of Origin, request method / '
+                'Access-Control-Request-Method or Access-Control-Request-Headers are '
+                "not whitelisted by the resource's CORS spec."):
+                self.log.debug("Caught expected S3ResponseError with expected contents.")
+            else:
+                raise AssertionError("Caught S3ResponseError but exception contents were unexpected: " + str(e))
+        else:
+            raise AssertionError(preflight_non_exception(preflight_response))
+
+        self.log.debug("Sending a preflight with matching Origin corstest and 2 good Request Headers")
+        try:
+            preflight_response = send_preflight(bucket, dummy_key_name, 
+                                                headers={'Origin': 'http://www.corstest.com',
+                                                         'Access-Control-Request-Method': 'DELETE',
+                                                         'Access-Control-Request-Headers': 'x-amz-date,Content-Length'})
+        except S3ResponseError as e:
+            raise AssertionError("Caught S3ResponseError: " + str(e))
+        else:
+            if (preflight_response.status == 200 and
+                preflight_response.reason == 'OK' and
+                preflight_response.getheader('Access-Control-Allow-Origin') == 'http://www.corstest.com' and
+                preflight_response.getheader('Access-Control-Allow-Methods') == 'GET, HEAD, PUT, POST, DELETE' and
+                preflight_response.getheader('Access-Control-Allow-Headers') == 'x-amz-date, Content-Length' and
+                preflight_response.getheader('Access-Control-Expose-Headers') == 'x-amz-server-side-encryption, x-amz-request-id, x-amz-id-2' and
+                preflight_response.getheader('Access-Control-Max-Age') == '3000' and
+                preflight_response.getheader('Access-Control-Allow-Credentials') == 'true' and
+                preflight_response.getheader('Vary') == 'Origin, Access-Control-Request-Headers, Access-Control-Request-Method' and
+                preflight_response.getheader('Content-Length') == '0'):
+                self.log.debug("Extra CORS headers valid")
+            else:
+                raise AssertionError(preflight_invalid(preflight_response))
+
+        self.log.debug("Sending a preflight with matching Origin corstest1.company.com and 2 good Request Headers")
+        try:
+            preflight_response = send_preflight(bucket, dummy_key_name, 
+                                                headers={'Origin': 'http://www.corstest1.company.com',
+                                                         'Access-Control-Request-Method': 'DELETE',
+                                                         'Access-Control-Request-Headers': 'x-amz-date,Content-Length'})
+        except S3ResponseError as e:
+            raise AssertionError("Caught S3ResponseError: " + str(e))
+        else:
+            if (preflight_response.status == 200 and
+                preflight_response.reason == 'OK' and
+                preflight_response.getheader('Access-Control-Allow-Origin') == 'http://www.corstest1.company.com' and
+                preflight_response.getheader('Access-Control-Allow-Methods') == 'GET, HEAD, PUT, POST, DELETE' and
+                preflight_response.getheader('Access-Control-Allow-Headers') == 'x-amz-date, Content-Length' and
+                preflight_response.getheader('Access-Control-Expose-Headers') == 'x-amz-server-side-encryption, x-amz-request-id, x-amz-id-2' and
+                preflight_response.getheader('Access-Control-Max-Age') == '3000' and
+                preflight_response.getheader('Access-Control-Allow-Credentials') == 'true' and
+                preflight_response.getheader('Vary') == 'Origin, Access-Control-Request-Headers, Access-Control-Request-Method' and
+                preflight_response.getheader('Content-Length') == '0'):
+                self.log.debug("Extra CORS headers valid")
+            else:
+                raise AssertionError(preflight_invalid(preflight_response))
+
+        self.log.debug("Sending a preflight with matching Origin corstest1.company.com with 1 good and 1 bad Request Header")
+        try:
+            preflight_response = send_preflight(bucket, dummy_key_name, 
+                                                headers={'Origin': 'http://www.corstest1.company.com',
+                                                         'Access-Control-Request-Method': 'DELETE',
+                                                         'Access-Control-Request-Headers': 'x-amz-date,Date'})
+        except S3ResponseError as e:
+            if (e.status == 403 and 
+                e.reason == 'Forbidden' and
+                e.code == 'AccessForbidden' and 
+                e.message == 'CORSResponse: This CORS request is not allowed. '
+                'This is usually because the evaluation of Origin, request method / '
+                'Access-Control-Request-Method or Access-Control-Request-Headers are '
+                "not whitelisted by the resource's CORS spec."):
+                self.log.debug("Caught expected S3ResponseError with expected contents.")
+            else:
+                raise AssertionError("Caught S3ResponseError but exception contents were unexpected: " + str(e))
+        else:
+            raise AssertionError(preflight_non_exception(preflight_response))
+
+        self.log.debug("Sending a preflight with no matching Origin/Method combination")
+        try:
+            preflight_response = send_preflight(bucket, dummy_key_name, 
+                                                headers={'Origin': 'http://www.mycorssite1.com',
+                                                         'Access-Control-Request-Method': 'GET'})
+        except S3ResponseError as e:
+            if (e.status == 403 and 
+                e.reason == 'Forbidden' and
+                e.code == 'AccessForbidden' and 
+                e.message == 'CORSResponse: This CORS request is not allowed. '
+                'This is usually because the evaluation of Origin, request method / '
+                'Access-Control-Request-Method or Access-Control-Request-Headers are '
+                "not whitelisted by the resource's CORS spec."):
+                self.log.debug("Caught expected S3ResponseError with expected contents.")
+            else:
+                raise AssertionError("Caught S3ResponseError but exception contents were unexpected: " + str(e))
+        else:
+            raise AssertionError(preflight_non_exception(preflight_response))
+
+
     def clean_method(self):
         '''This is the teardown method'''
         #Delete the testing bucket if it is left-over
