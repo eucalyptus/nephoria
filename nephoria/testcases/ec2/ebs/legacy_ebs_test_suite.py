@@ -234,10 +234,10 @@ class LegacyEbsTestSuite(CliTestRunner):
                 return True
             if self.args.zone:
                 if len(self.zonelist) > 1:
-                    self._multicluster = True
+                    self._is_multicluster = True
                 else:
-                    self._multicluster = False
-        return self._multicluster
+                    self._is_multicluster = False
+        return self._is_multicluster
 
     def volumes_list_check(self, volumes):
         # helper method to validate volumes for use as a list
