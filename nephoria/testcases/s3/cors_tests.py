@@ -9,27 +9,16 @@
 
 #Author: Lincoln Thomas <lincoln.thomas@hpe.com>
 
-#import re
 import copy
 import time
 
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner
-#                                                 , SkipTestException
 from nephoria.testcontroller import TestController
 
-#import boto
 from boto.exception import S3ResponseError
-#from boto.exception import BotoServerError
 from boto.exception import S3CreateError
 
-#import boto.s3
-#from boto.s3.bucket import Bucket
 from boto.s3.cors import CORSConfiguration
-#                      , CORSRule
-
-#import requests
-#from requests.models import Response
-#import httplib2
 
 class CorsTestSuite(CliTestRunner):
     
