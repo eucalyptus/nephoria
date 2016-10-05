@@ -102,10 +102,10 @@ class BaseOps(object):
             if self.service_url:
                 urlp = urlparse(self.service_url)
                 host = host or urlp.hostname
-                port = port or urlp.port or 8773
+                port = port or urlp.port
                 path = path or urlp.path
         self.service_host = host
-        self.service_port = port
+        self.service_port = port or getattr(self.eucarc, 'service_port', None) or 8773
         self.service_path = path
         self.service_region = region
         # Build out kwargs used to create service connection/client
