@@ -71,6 +71,8 @@ class UserContext(AutoCreds):
                 log_level = service_connection.log.stdout_level
             else:
                 log_level = DEBUG
+        if region_domain is None:
+            region_domain = region
         super(UserContext, self).__init__(aws_access_key=aws_access_key,
                                           aws_secret_key=aws_secret_key,
                                           aws_account_name=aws_account_name,

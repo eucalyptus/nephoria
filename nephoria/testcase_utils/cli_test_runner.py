@@ -805,6 +805,7 @@ class CliTestRunner(object):
             # See if test names were provided via the command line. Match those to local methods
             # and run them
             if getattr(self.args, 'test_list', None):
+                self.args.test_list = re.sub("[\"']", "", str(self.args.test_list))
                 test_names = str(self.args.test_list).replace(',', " ").split()
                 test_names = apply_regex(test_names)
                 testlist = []
