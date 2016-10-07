@@ -48,6 +48,19 @@ class IAMops(BotoBaseOps):
     SERVICE_PREFIX = 'iam'
     CONNECTION_CLASS = IAMConnection
 
+    def create_connection_kwargs2(self, **kwargs):
+        #IAM must use ssl...
+        self.log.info('Creating connection kwargs for {0}'.format(self.__class__.__name__))
+        kwargs['is_secure'] = True
+        kwargs['use_ssl'] = True
+        for value in [kwargs.get('region'), self.service_host, self.service_url]:
+            if re.search('awsamazon.com', str(value)):
+                self.log.info('Setting service port to 443')
+                self.service_port = 443
+                kwargs['port'] = 443
+                break
+        return super(IAMops, self).create_connection_kwargs(**kwargs)
+
     def setup_resource_trackers(self):
         ## add test resource trackers and cleanup methods...
         self.test_resources["iam_accounts"] = self.test_resources.get('iam_accounts', [])

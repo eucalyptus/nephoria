@@ -29,6 +29,8 @@ class BaseOps(object):
     SERVICE_PREFIX = None
     # The underlying class used to connect to the cloud (ie boto.VPCConnection)
     CONNECTION_CLASS = None
+    # Default port to use to connect to Eucalyptus services
+    DEFAULT_EUCA_SERVICE_PORT = 8773
 
     def __init__(self, eucarc=None, credpath=None, service_url=None, aws_access_key_id=None,
                  aws_secret_access_key=None, is_secure=False, port=None, host=None,
@@ -105,7 +107,7 @@ class BaseOps(object):
                 port = port or urlp.port
                 path = path or urlp.path
         self.service_host = host
-        self.service_port = port or getattr(self.eucarc, 'service_port', None) or 8773
+        self.service_port = port or getattr(self.eucarc, 'service_port', None)
         self.service_path = path
         self.service_region = region
         # Build out kwargs used to create service connection/client

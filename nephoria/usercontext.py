@@ -33,6 +33,7 @@
 
 from logging import INFO, DEBUG
 from boto3.session import Session
+from boto.exception import BotoServerError
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import get_traceback, red
 from cloud_admin.access.autocreds import AutoCreds
@@ -61,7 +62,7 @@ class UserContext(AutoCreds):
                  ASops.__name__: 'autoscaling'}
 
     def __init__(self,  aws_access_key=None, aws_secret_key=None, aws_account_name=None,
-                 aws_user_name=None, port=8773, credpath=None, string=None, region=None,
+                 aws_user_name=None, port=None, credpath=None, string=None, region=None,
                  region_domain=None, validate_certs=False,
                  machine=None, keysdir=None, logger=None, service_connection=None,
                  eucarc=None, existing_certs=False, boto_debug=0, https=True,
@@ -152,19 +153,28 @@ class UserContext(AutoCreds):
 
     @property
     def user_info(self):
-        if not self._user_info:
+        if self._user_info is None:
             if self.iam:
                 if self.account_name == 'eucalyptus' and self.user_name == 'admin':
                     delegate_account = self.account_id
                 else:
                     delegate_account = None
-                self._user_info = self.iam.get_user_info(delegate_account=delegate_account)
+                try:
+                    self._user_info = self.iam.get_user_info(delegate_account=delegate_account)
+                except BotoServerError as BE:
+                    self.log.debug('Can not fetch user info due to: {0}'
+                                       .format(BE.message))
+                    if BE.status == 403:
+                        self._user_info = {}
         return self._user_info
 
     @property
     def user_name(self):
-        if not self._user_name:
-            self._user_name = self.user_info.get('user_name', None)
+        if self._user_name is None:
+            if self.user_info:
+                self._user_name = self.user_info.get('user_name', None)
+            elif self.user_info is not None:
+                self._user_name = ""
         return self._user_name
 
     @property
@@ -173,18 +183,35 @@ class UserContext(AutoCreds):
 
     @property
     def account_name(self):
-        if not self._account_name:
+        if self._account_name is None:
             if self.iam:
-                account = self.iam.get_account(account_name=self._account_name)
-                self._account_name = account.get('account_name', None)
+                try:
+                    account = self.iam.get_account(account_name=self._account_name)
+                except BotoServerError as BE:
+                    if BE.status == 403:
+                        self.log.debug('Can not fetch user iam account due to: {0}'
+                                       .format(BE.message))
+                        self._account_name = ""
+                else:
+                    self._account_name = account.get('account_name', None)
         return self._account_name
 
     @property
     def account_id(self):
-        if not self._account_id:
-            if self.iam:
-                account = self.iam.get_account(account_name=self._account_name)
-                self._account_id = account.get('account_id', None)
+        if self._account_id is None:
+            try:
+                if self.iam and self._account_name:
+                    try:
+                        account = self.iam.get_account(account_name=self._account_name)
+                    except BotoServerError as BE:
+                        if BE.status == 403:
+                            self.log.debug('Can not fetch user iam account due to: {0}'
+                                           .format(BE.message))
+                            self._account_id = ""
+                    else:
+                       self._account_id = account.get('account_id', None)
+            except Exception as E:
+                self.log.warning('{0}\nError fetching account: {1}'.format(get_traceback(), E))
         return self._account_id
 
     ##########################################################################################

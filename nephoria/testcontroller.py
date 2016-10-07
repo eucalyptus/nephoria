@@ -11,9 +11,22 @@ from nephoria.usercontext import UserContext
 from nephoria import __DEFAULT_API_VERSION__
 from boto3 import set_stream_logger
 
+
+def set_boto_logger_level(level='NOTSET', format_string=None):
+    """
+    Set the global boto loggers levels to 'level'. ie "DEBUG", "INFO", "CRITICAL"
+    default is "NOTSET"
+    :param level: string matching logging class levels, or integer representing the equiv value
+    :param format_string: logging class formatter string
+    """
+    level = Eulogger.format_log_level(level, 'NOTSET')
+    set_stream_logger('boto', level=level, format_string=None)
+    set_stream_logger('boto3', level=level, format_string=None)
+    set_stream_logger('botocore', level=level, format_string=None)
+
+
 class SystemConnectionFailure(Exception):
     pass
-
 
 class TestController(object):
     def __init__(self,
@@ -382,6 +395,7 @@ class TestController(object):
             self.log.error('{0}\nError attempting to dump connection info:{1}'
                            .format(get_traceback(), doh))
 
+
     def set_boto_logger_level(self, level='NOTSET', format_string=None):
         """
         Set the global boto loggers levels to 'level'. ie "DEBUG", "INFO", "CRITICAL"
@@ -389,10 +403,7 @@ class TestController(object):
         :param level: string matching logging class levels, or integer representing the equiv value
         :param format_string: logging class formatter string
         """
-        level = Eulogger.format_log_level(level, 'NOTSET')
-        set_stream_logger('boto', level=level, format_string=None)
-        set_stream_logger('boto3', level=level, format_string=None)
-        set_stream_logger('botocore', level=level, format_string=None)
+        return set_boto_logger_level(level=level, format_string=format_string)
 
     def get_component_from_topology(self, environment_file, component_type=None):
         """
