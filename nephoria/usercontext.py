@@ -61,24 +61,24 @@ class UserContext(AutoCreds):
                  CFNops.__name__: 'cloudformation',
                  ASops.__name__: 'autoscaling'}
 
-    def __init__(self,  aws_access_key=None, aws_secret_key=None, aws_account_name=None,
+    def __init__(self, aws_access_key=None, aws_secret_key=None, aws_account_name=None,
                  aws_user_name=None, port=None, credpath=None, string=None, region=None,
-                 region_domain=None, validate_certs=False,
+                 domain=None, validate_certs=False,
                  machine=None, keysdir=None, logger=None, service_connection=None,
                  eucarc=None, existing_certs=False, boto_debug=0, https=True,
                  boto2_api_version=None, log_level=None):
+
         if log_level is None:
             if service_connection:
                 log_level = service_connection.log.stdout_level
             else:
                 log_level = DEBUG
-        if region_domain is None:
-            region_domain = region
         super(UserContext, self).__init__(aws_access_key=aws_access_key,
                                           aws_secret_key=aws_secret_key,
                                           aws_account_name=aws_account_name,
                                           aws_user_name=aws_user_name,
-                                          service_port=port, region_domain=region_domain,
+                                          service_port=port,
+                                          region=region, domain=domain,
                                           credpath=credpath, string=string,
                                           machine=machine, keysdir=keysdir,
                                           logger=logger, log_level=log_level,
@@ -88,7 +88,6 @@ class UserContext(AutoCreds):
         self._user_info = {}
         self._session = None
         self._connections = {}
-        self.region = region
         self.boto2_api_version = boto2_api_version or __DEFAULT_API_VERSION__
 
         # Logging setup
@@ -118,7 +117,8 @@ class UserContext(AutoCreds):
                                    'boto2_api_version': self.boto2_api_version,
                                    'log_level': log_level}
         self.log.identifier = str(self)
-        self.log.debug('Successfully created User Context')
+        self.log.debug('Successfully created User Context in Region:{0}, Domain:{1}'
+                       .format(self.region, self.domain))
 
     ##########################################################################################
     #   User/Account Properties, Attributes, Methods, etc..
@@ -129,9 +129,9 @@ class UserContext(AutoCreds):
         user_name = ""
         account_id = ""
         try:
-            account_name = self.account_name or ""
-            user_name = self.user_name or ""
-            account_id = self.account_id or ""
+            account_name = "" #self.account_name or ""
+            user_name = "" #self.user_name or ""
+            account_id = "" #self.account_id or ""
             if not (account_name or user_name or account_id) and self.access_key:
                 account_id = "KEYID:{0}".format(self.access_key)
             if account_name:

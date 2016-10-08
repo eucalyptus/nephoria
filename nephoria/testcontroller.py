@@ -31,15 +31,15 @@ class SystemConnectionFailure(Exception):
 class TestController(object):
     def __init__(self,
                  hostname=None, username='root', password=None, keypath=None, region=None,
-                 region_domain=None,
+                 domain=None,
                  proxy_hostname=None, proxy_password=None,
                  clouduser_account='nephotest', clouduser_name='sys_admin', clouduser_credpath=None,
                  clouduser_accesskey=None, clouduser_secretkey=None,
                  cloudadmin_credpath=None, cloudadmin_accesskey=None, cloudadmin_secretkey=None,
                  timeout=10, log_level='DEBUG', log_file=None, log_file_level='DEBUG',
-                 environment_file=None, https=True, validate_certs=False,
+                 environment_file=None, https=False, validate_certs=False,
                  cred_depot_hostname=None, cred_depot_username='root', cred_depot_password=None,
-                     boto2_api_version=None):
+                 boto2_api_version=None):
 
         """
 
@@ -78,7 +78,7 @@ class TestController(object):
         self._test_user = None
         self._cred_depot = None
         self._default_timeout = timeout
-        self._region_domain = region_domain
+        self._domain = domain
         self._https = https
         self._validate_certs = validate_certs
         self._cloud_admin_connection_info = {}
@@ -100,16 +100,16 @@ class TestController(object):
                                         'euca_user': 'admin',
                                         'euca_account': 'eucalyptus',
                                         'https': https,
-                                        'region_domain': region_domain}
+                                        'domain': domain}
 
         self._cloud_admin_connection_info = {'aws_account_name': 'eucalyptus',
                                              'aws_user_name': 'admin',
                                              'credpath': cloudadmin_credpath,
                                              'region': self.region,
-                                             'region_domain': self.region_domain,
+                                             'domain': self.domain,
                                              'aws_access_key': cloudadmin_accesskey,
                                              'aws_secret_key': cloudadmin_secretkey,
-                                             'service_connection': self,
+                                             'service_connection': self.sysadmin,
                                              'log_level': log_level,
                                              'validate_certs': validate_certs,
                                              'boto2_api_version': boto2_api_version,
@@ -121,7 +121,7 @@ class TestController(object):
                                            'aws_access_key': clouduser_accesskey,
                                            'aws_secret_key': clouduser_secretkey,
                                            'region': self.region,
-                                           'region_domain': self.region_domain,
+                                           'domain': self.domain,
                                            'log_level': log_level,
                                            'validate_certs': validate_certs,
                                            'boto2_api_version': boto2_api_version,
@@ -150,16 +150,17 @@ class TestController(object):
             return str(self.__class__.__name__)
 
     @property
-    def region_domain(self):
-        if self._region_domain is None:
+    def domain(self):
+        if self._domain is None:
             # First try from the cloud property...
             region_prop = self.sysadmin.get_property('system.dns.dnsdomain')
             if region_prop.value:
-                self._region_domain = region_prop.value
-        return self._region_domain or self.region
+                self._domain = region_prop.value
+        return self._domain or self.region
 
     @property
     def region(self):
+        """
         if self._region is None and self.sysadmin is not None:
             try:
                 name = None
@@ -184,6 +185,7 @@ class TestController(object):
             except Exception as RE:
                 self.log.error('{0}.\nError while fetching region info:{1}'.format(get_traceback(),
                                                                                    RE))
+        """
         return self._region
 
     @region.setter
@@ -222,7 +224,10 @@ class TestController(object):
                 if conn_info.get('credpath'):
                     conn_info['machine'] = self.cred_depot
             else:
-                conn_info['eucarc'] = self.sysadmin.creds
+                rc_config = self.sysadmin.creds or {}
+                rc_config.domain = self.domain
+                rc_config.region = self.region
+                conn_info['eucarc'] =rc_config
             self._cloudadmin = UserContext(**conn_info)
         return self._cloudadmin
 
@@ -247,7 +252,7 @@ class TestController(object):
         self._test_user = None
 
     def get_user_by_name(self, aws_account_name, aws_user_name,
-                         machine=None, service_connection=None, region=None, region_domain=None,
+                         machine=None, service_connection=None, region=None, domain=None,
                          validate_certs=False, path='/',
                          https=None, log_level=None, boto2_api_version=None):
         """
@@ -266,7 +271,7 @@ class TestController(object):
         if user:
             return self.create_user_using_cloudadmin(aws_account_name=aws_account_name,
                                                      aws_user_name=aws_user_name,
-                                                     region=region, region_domain=region_domain,
+                                                     region=region, domain=domain,
                                                      validate_certs=validate_certs,
                                                      machine=machine,
                                                      service_connection=service_connection,
@@ -281,15 +286,15 @@ class TestController(object):
                                      aws_access_key=None, aws_secret_key=None,
                                      credpath=None, eucarc=None,
                                      machine=None, service_connection=None, path='/',
-                                     region=None, region_domain=None, https=None,
+                                     region=None, domain=None, https=None,
                                      validate_certs=False,
                                      boto2_api_version=None, log_level=None):
         if log_level is None:
             log_level = self.log.stdout_level or 'DEBUG'
         if region is None:
             region = self.region
-        if region_domain is None:
-            region_domain = self.region_domain
+        if domain is None:
+            domain = self.domain
         if https is None:
             https = self._https
         boto2_api_version = boto2_api_version or \
@@ -314,7 +319,7 @@ class TestController(object):
 
             return UserContext(eucarc=eucarc,
                                region=region,
-                               region_domain=region_domain,
+                               domain=domain,
                                service_connection=service_connection,
                                log_level=log_level,
                                https=https,
@@ -325,7 +330,7 @@ class TestController(object):
                                aws_account_name=aws_account_name,
                                aws_user_name=aws_user_name,
                                region=region,
-                               region_domain=region_domain,
+                               domain=domain,
                                service_connection=service_connection,
                                log_level=log_level,
                                boto2_api_version=boto2_api_version,
@@ -333,7 +338,7 @@ class TestController(object):
         if credpath:
             return UserContext(credpath=credpath,
                                region=region,
-                               region_domain=region_domain,
+                               domain=domain,
                                machine=machine,
                                log_level=log_level,
                                boto2_api_version=boto2_api_version)
@@ -370,7 +375,7 @@ class TestController(object):
                             aws_account_name=info.get('account_name'),
                             aws_user_name=info.get('user_name'),
                             region=region,
-                            region_domain=region_domain,
+                            domain=domain,
                             existing_certs=certs,
                             machine=self.sysadmin.clc_machine,
                             service_connection=self.sysadmin,
