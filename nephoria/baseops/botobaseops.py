@@ -163,13 +163,11 @@ class BotoBaseOps(BaseOps):
         """
         verbose = kwargs.get('verbose', False)
         region = kwargs.get('region')
-        service_url = kwargs.get('service_url')
         boto2_api_version = kwargs.get('boto2_api_version', None)
         boto3_api_version = kwargs.get('boto3_api_version', None)
         is_secure = kwargs.get('is_secure', True)
 
         connection_debug = kwargs.get('connection_debug')
-        region_name = region or self.service_host or self.service_region
         region = self._get_region_info(host=self.service_host,
                                        endpoint=self.service_host,
                                        region_name=region)
@@ -186,7 +184,7 @@ class BotoBaseOps(BaseOps):
                         self.service_region = None
                         region = None
 
-                    self.log.info('Setting service port to 443')
+                    self.log.debug('Setting service port to 443')
                     if is_secure:
                         service_port = 443
                     else:

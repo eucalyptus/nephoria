@@ -152,45 +152,25 @@ class TestController(object):
     @property
     def domain(self):
         if self._domain is None:
-            # First try from the cloud property...
-            region_prop = self.sysadmin.get_property('system.dns.dnsdomain')
-            if region_prop.value:
-                self._domain = region_prop.value
+            prop_name = 'system.dns.dnsdomain'
+            try:
+                # First try from the cloud property...
+                region_prop = self.sysadmin.get_property(prop_name)
+                if region_prop.value:
+                    self._domain = region_prop.value
+            except Exception as E:
+                self.log.error('{0}\nError fetching cloud property:"{1}". Error:"{2}"'
+                               .format(get_traceback(), prop_name, E))
         return self._domain or self.region
 
     @property
     def region(self):
-        """
-        if self._region is None and self.sysadmin is not None:
-            try:
-                name = None
-                # First try from the cloud property...
-                region_prop = self.sysadmin.get_property('region.region_name')
-                if region_prop.value:
-                    name = region_prop.value
-                else:
-                    # The cloud property was not set, try from the request...
-                    regions = self.sysadmin.ec2_connection.get_all_regions()
-                    if not regions:
-                        self.log.warning('No Regions found?')
-                    else:
-                        region = regions[0]
-                        name = region.name
-                        if name:
-                            name = str(name)
-                self._region = name
-                self._system_connection_info['region'] = name
-                self._cloud_admin_connection_info['region'] = name
-                self._test_user_connection_info['region'] = name
-            except Exception as RE:
-                self.log.error('{0}.\nError while fetching region info:{1}'.format(get_traceback(),
-                                                                                   RE))
-        """
         return self._region
 
     @region.setter
     def region(self, value):
         if self._region is not None and self._region != value:
+            self.log.error('Can not change region once it has been set')
             raise ValueError('Can not change region once it has been set')
         self._cloud_admin_connection_info['region'] = value
         self._test_user_connection_info['region'] = value
@@ -199,7 +179,12 @@ class TestController(object):
     @property
     def cred_depot(self):
         if not self._cred_depot and self._cred_depot_connection_info.get('hostname'):
-            self._cred_depot = Machine(**self._cred_depot_connection_info)
+            try:
+                self._cred_depot = Machine(**self._cred_depot_connection_info)
+            except Exception as E:
+                self.log.error('{0}\nError connecting to cred depot machine:"{1}"'
+                               .format(get_traceback(), E))
+                raise E
         return self._cred_depot
 
     @property
@@ -218,23 +203,34 @@ class TestController(object):
     @property
     def admin(self):
         if not self._cloudadmin:
-            conn_info = self._cloud_admin_connection_info
-            if (conn_info.get('credpath') or
-                (conn_info.get('aws_access_key') and conn_info.get('aws_secret_key'))):
-                if conn_info.get('credpath'):
-                    conn_info['machine'] = self.cred_depot
-            else:
-                rc_config = self.sysadmin.creds or {}
-                rc_config.domain = self.domain
-                rc_config.region = self.region
-                conn_info['eucarc'] =rc_config
-            self._cloudadmin = UserContext(**conn_info)
+            try:
+                conn_info = self._cloud_admin_connection_info
+                if (conn_info.get('credpath') or
+                    (conn_info.get('aws_access_key') and conn_info.get('aws_secret_key'))):
+                    if conn_info.get('credpath'):
+                        conn_info['machine'] = self.cred_depot
+                else:
+                    rc_config = self.sysadmin.creds or {}
+                    rc_config.domain = self.domain
+                    rc_config.region = self.region
+                    conn_info['eucarc'] = rc_config
+                self._cloudadmin = UserContext(**conn_info)
+            except Exception as E:
+                self.log.error('{0}\nError creating admin user, err:"{1}"'
+                               .format(get_traceback(), E))
+                raise E
         return self._cloudadmin
 
     @property
     def user(self):
         if not self._test_user:
-            self._test_user = self.create_user_using_cloudadmin(**self._test_user_connection_info)
+            try:
+                self._test_user = self.create_user_using_cloudadmin(
+                    **self._test_user_connection_info)
+            except Exception as E:
+                self.log.error('{0}\nError Creating test user, error:"{1}"'
+                               .format(get_traceback(), E))
+                raise E
         return self._test_user
 
     @user.setter
