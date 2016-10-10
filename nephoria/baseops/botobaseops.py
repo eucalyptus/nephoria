@@ -163,27 +163,42 @@ class BotoBaseOps(BaseOps):
         """
         verbose = kwargs.get('verbose', False)
         region = kwargs.get('region')
-        service_url = kwargs.get('service_url')
         boto2_api_version = kwargs.get('boto2_api_version', None)
         boto3_api_version = kwargs.get('boto3_api_version', None)
         is_secure = kwargs.get('is_secure', True)
+
         connection_debug = kwargs.get('connection_debug')
-        region_name = region or self.service_host or self.service_region
         region = self._get_region_info(host=self.service_host,
                                        endpoint=self.service_host,
                                        region_name=region)
         validate_certs = kwargs.get('validate_certs', False)
+        # Set port for service...
+        service_port = kwargs.get('port', None) or self.service_port
+        if not service_port:
+            service_port = self.DEFAULT_EUCA_SERVICE_PORT
+            for value in [kwargs.get('region'), self.service_host, self.service_url]:
+                if re.search('amazonaws.com', str(value)):
+                    # Handle AWS case...
+                    if re.search('iam|sts', self.service_url):
+                        is_secure = True
+                        self.service_region = None
+                        region = None
 
+                    self.log.debug('Setting service port to 443')
+                    if is_secure:
+                        service_port = 443
+                    else:
+                        service_port = 80
+                    self.service_port =  service_port
+                    break
 
         # This needs to be re-visited due to changes in Eucalyptus and Boto regarding certs...
-
-
         connection_kwargs = {'service_name': self.SERVICE_PREFIX,
                                    'aws_access_key_id': self.eucarc.aws_access_key,
                                    'aws_secret_access_key': self.eucarc.aws_secret_key,
                                    'is_secure': is_secure,
                                    'use_ssl': is_secure,
-                                   'port': self.service_port,
+                                   'port': service_port,
                                    'host': self.service_host,
                                    'debug': connection_debug,
                                    'region': region,

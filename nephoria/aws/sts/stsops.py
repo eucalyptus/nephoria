@@ -24,6 +24,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from nephoria.baseops.botobaseops import BotoBaseOps
+import re
 import boto
 from boto.ec2.regioninfo import RegionInfo
 from boto.sts import STSConnection
