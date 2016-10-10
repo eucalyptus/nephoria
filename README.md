@@ -96,6 +96,56 @@ user = tc.get_user_by_name('testrunner', 'admin')
 user.ec2.show_images()
 ```
 =======
+# Basic User interface to connect to EUCA or AWS clouds...
+```
+# Create a UserContext with existing; Access Key, Secret Key and the region information...
+#Connect to an AWS cloud and region...
+user_aws = UserContext(aws_access_key='****myaccesskey****', aws_secret_key='************mysecretkey*********',  region='us-west-1', domain='amazonaws.com')
+#Connect to a Eucalyptus Cloud...
+user_euca = UserContext(aws_access_key='****myaccesskey****', aws_secret_key='************mysecretkey*********',  region='', domain='myeucacloud.com')
+
+# User has 3 interfaces to the cloud;  1)ops, 2)boto2, 3)boto3. 
+# The 'ops' interfaces are intended to provide test or convienence wrappers over an underlying boto interfaces. 
+# This is intended to allow specific tests or checks to be shared and repeated easilly throughout the library. 
+
+user.ec2.*
+user.ec2.boto2.*
+user.ec2.boto3.*
+
+user.iam.*
+user.iam.boto2.*
+user.iam.boto3.*
+
+user.s3.*
+user.s3.boto2.*
+user.s3.boto3.*
+
+...and so on...
+
+
+#Examples:
+Ops:
+In : user_aws.ec2.get_instances()
+Out: 
+[Instance:i-2bf2xxxx,
+ Instance:i-bbe3xxxx,
+ Instance:i-0cb9xxxx]
+Boto2:
+In : user.ec2.boto2.get_all_instances()
+Out: 
+[Reservation:r-4fbfxxxx,
+ Reservation:r-2fcaxxxx,
+ Reservation:r-43b3xxxx,
+
+Boto3:
+In : tc.admin.ec2.boto3.client.describe_instances()
+Out: 
+{u'Reservations': []}
+)
+```
+
+
+=======
 
 # ...or easilly create a new account and/or user on the cloud...
 user = tc.create_user_using_cloudadmin('newaccount', 'admin')
