@@ -6,7 +6,7 @@ import re
 import random
 import string
 
-__version__ = '1.4.3.0.1.1'
+__version__ = '1.4.3.0.1.2'
 __DEFAULT_API_VERSION__ = '2015-10-01'
 
 
