@@ -80,9 +80,10 @@ class B3Session(object):
             self._session = self._ops._user_context.session
         else:
             try:
+                region = self._region
                 self._session = Session(aws_access_key_id=self._access_key,
                                         aws_secret_access_key=self._secret_key,
-                                        region_name=self._region)
+                                        region_name=region)
             except Exception as SE:
                 self._log.error(red('{0}\nError creating boto3 {1} session. Error:{2}'
                                     .format(get_traceback(), self.__class__.__name__, SE)))
@@ -128,6 +129,7 @@ class B3Session(object):
             # Remove kwargs which are not part of the service connection class creation method
             check_kwargs = self._ops.get_applicable_kwargs(connection_kwargs=connect_kwargs,
                                                            connection_method=connection_method)
+
             try:
                 # Remove any kwargs that are not applicable to this connection class
                 # For example 'region' may not be applicable to services such as 'IAM'
@@ -140,7 +142,9 @@ class B3Session(object):
                         check_kwargs.__delitem__(ckey)
                 #### Init connection...
                 if verbose:
-                    self._ops.show_connection_kwargs()
+                    self._log.debug('Attempting to create: "{0}" with the following kwargs...'
+                                   .format(connection_method))
+                    self._ops.show_connection_kwargs(connection_kwargs=check_kwargs)
                 return connection_method(**check_kwargs)
             except:
                 self._ops.show_connection_kwargs()
@@ -166,7 +170,9 @@ class BotoBaseOps(BaseOps):
         boto2_api_version = kwargs.get('boto2_api_version', None)
         boto3_api_version = kwargs.get('boto3_api_version', None)
         is_secure = kwargs.get('is_secure', True)
-
+        if not is_secure and re.search('https', (self.service_url or "")):
+            # Use the more secure option between the url and is_secure flag if they differ..
+            is_secure = True
         connection_debug = kwargs.get('connection_debug')
         region = self._get_region_info(host=self.service_host,
                                        endpoint=self.service_host,
@@ -183,13 +189,16 @@ class BotoBaseOps(BaseOps):
                         is_secure = True
                         self.service_region = None
                         region = None
-
-                    self.log.debug('Setting service port to 443')
                     if is_secure:
+                        self.log.debug('Setting service port to 443')
                         service_port = 443
                     else:
                         service_port = 80
                     self.service_port =  service_port
+                    if kwargs.get('region', None):
+                        kwargs['region'] = kwargs['region'].strip('.amazonaws.com')
+                    if self.service_region:
+                        self.service_region = self.service_region.strip('amazonaws.com')
                     break
 
         # This needs to be re-visited due to changes in Eucalyptus and Boto regarding certs...
