@@ -170,9 +170,6 @@ class BotoBaseOps(BaseOps):
         boto2_api_version = kwargs.get('boto2_api_version', None)
         boto3_api_version = kwargs.get('boto3_api_version', None)
         is_secure = kwargs.get('is_secure', True)
-        if not is_secure and re.search('https', (self.service_url or "")):
-            # Use the more secure option between the url and is_secure flag if they differ..
-            is_secure = True
         connection_debug = kwargs.get('connection_debug')
         region = self._get_region_info(host=self.service_host,
                                        endpoint=self.service_host,
@@ -184,6 +181,10 @@ class BotoBaseOps(BaseOps):
             service_port = self.DEFAULT_EUCA_SERVICE_PORT
             for value in [kwargs.get('region'), self.service_host, self.service_url]:
                 if re.search('amazonaws.com', str(value)):
+                    if not is_secure and re.search('https', (self.service_url or "")):
+                        # Use the more secure option between the url and is_secure flag if they
+                        # differ..
+                        is_secure = True
                     # Handle AWS case...
                     if re.search('iam|sts', self.service_url):
                         is_secure = True
