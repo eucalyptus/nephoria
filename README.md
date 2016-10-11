@@ -16,24 +16,25 @@ Nephoria attempts to provide the following utlities through a set of simple inte
 
 Installation
 ------
-If easy_install is not available in your environment use your package manager to install python-setuptools
+Use your package manager to install package dependencies first...
     
     yum install python-setuptools gcc python-devel git libffi-devel openssl-devel readline-devel patch
     apt-get install python-setuptools gcc python-dev git libffi-devel openssl-devel readline-devel patch
 
-Installing nephoria and its dependencies is as easy as:
 
-    easy_install nephoria
+Installing nephoria using pip: 
 
-For development purposes you can then clone the code from github and then reinstall with your changes
+    yum install python-pip
+    pip install nephoria
+
+
+
+Installing or developing from source. Clone the code from github, make changes,  and then install or re-install  with your changes:
 
     git clone https://github.com/eucalyptus/nephoria.git
     cd nephoria
     [CHANGE CODE]
     python setup.py install
-
-
-### Branches
 
 
 Main Classes
