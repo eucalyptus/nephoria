@@ -21,9 +21,12 @@ Use your package manager to install package dependencies first...
     yum install python-setuptools gcc python-devel git libffi-devel openssl-devel readline-devel patch
     apt-get install python-setuptools gcc python-dev git libffi-devel openssl-devel readline-devel patch
 
+
 Installing nephoria using pip: 
+
     yum install python-pip
     pip install nephoria
+
 
 
 Installing or developing from source. Clone the code from github, make changes,  and then install or re-install  with your changes:
