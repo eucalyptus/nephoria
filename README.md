@@ -148,6 +148,8 @@ Out:
 =======
 
 # ...or easilly create a new account and/or user on the cloud...
+------
+```
 user = tc.create_user_using_cloudadmin('newaccount', 'admin')
 user.iam.show_user_summary()
 instance = user.ec2.run_image()
@@ -156,6 +158,7 @@ instance = user.ec2.run_image()
 
 Creating and Running TestCases
 ------
+```
 The primary test case class is CliTestRunner(). This class intends to provide consistent cli
 driven testcases, testcase arguements, and results.
 The tests typically require 1 or more of the following:
@@ -168,7 +171,7 @@ The tests typically require 1 or more of the following:
 
 See the README under the testcase_utils as well
 as the existing testcases in the testcases\ directory for more info.
-
+```
 Example TestCase run:
 ```
 python load_hvm_image.py --clc 192.168.0.199 --image-url http://images.qa1/disk.img --test-list test1_check_args
