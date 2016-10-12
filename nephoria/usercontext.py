@@ -168,6 +168,15 @@ class UserContext(AutoCreds):
                         self._user_info = {}
         return self._user_info
 
+    @user_info.setter
+    def user_info(self, value):
+        if value is not None or not isinstance(value, dict):
+            msg = "user_info must be of type None or dict"
+            self.log.error('{0}\n{1}'.format(get_traceback(), msg))
+            raise ValueError(msg)
+        else:
+            self._user_info = value
+
     @property
     def user_name(self):
         if self._user_name is None:
@@ -177,9 +186,20 @@ class UserContext(AutoCreds):
                 self._user_name = ""
         return self._user_name
 
+    @user_name.setter
+    def user_name(self, value):
+        self._user_name = value
+
     @property
     def user_id(self):
-        return self.user_info.get('user_id', None)
+        if not self._user_id:
+            self._user_id = self.user_info.get('user_id', None)
+        return self._user_id
+
+    @user_id.setter
+    def user_id(self, value):
+        self._user_id = value
+
 
     @property
     def account_name(self):
@@ -195,6 +215,10 @@ class UserContext(AutoCreds):
                 else:
                     self._account_name = account.get('account_name', None)
         return self._account_name
+
+    @account_name.setter
+    def account_name(self, value):
+        self._account_name = value
 
     @property
     def account_id(self):
@@ -213,6 +237,10 @@ class UserContext(AutoCreds):
             except Exception as E:
                 self.log.warning('{0}\nError fetching account: {1}'.format(get_traceback(), E))
         return self._account_id
+
+    @account_id.setter
+    def account_id(self, value):
+        self._account_id = value
 
     ##########################################################################################
     #   BASE CONNECTION INFO
