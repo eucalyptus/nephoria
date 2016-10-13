@@ -37,7 +37,7 @@ esac
 shift # past argument or value
 done
 
-yum install -y $gpg python-devel gcc git python-setuptools python-virtualenv libffi-devel openssl-devel
+yum install -y $gpg python-devel gcc git python-setuptools python-virtualenv libffi-devel openssl-devel readline-devel patch
 rpm -qa | grep virtualenv # verify it was installed successfully above
 yum repolist # check repos
 if [ ! -d adminapi ]; then
