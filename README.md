@@ -36,6 +36,8 @@ Installing or developing from source. Clone the code from github, make changes, 
     [CHANGE CODE]
     python setup.py install
 
+**See nephoria/toolkit helper scripts for more install options
+
 
 Main Classes
 ------
