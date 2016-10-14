@@ -2640,7 +2640,19 @@ class EuInstance(Instance, TaggedResource, Machine):
             elapsed = int(time.time() - start)
             attempts += 1
             try:
-                if eni.attachment and eni.attachment.instance_id == self.id:
+                dot = None
+                try:
+                    if eni.attachment:
+                        dot = eni.attachment.delete_on_termination
+                    eni.update(validate=True)
+                except EC2ResponseError as EE:
+                    if EE.status == 400 and EE.reason == 'InvalidNetworkInterfaceID.NotFound':
+                        if dot or dot is None:
+                            api_is_good = True
+                        else:
+                            raise RuntimeError('ENI:{0} not found after detach, and '
+                                               'delete on terminate == {1}'.format(eni.id, dot))
+                if not api_is_good and eni.attachment and eni.attachment.instance_id == self.id:
                     raise ValueError('ENI:{0} attachment data still shows it is attached to this '
                                      'instance:{1}'.format(eni.id, eni.attachment.instance_id))
                 if eni.id in [str(x.id) for x in self.interfaces]:
@@ -2652,6 +2664,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                 self.log.debug('{0}\nDETACH WARNING:"{1}", attempts:{2}, elapsed:{3}/{4}'
                                .format(get_traceback(), VE, attempts, elapsed, api_timeout))
                 time.sleep(3)
+                # Fetch the eni obj in case the update() method is not reliable
                 enis = self.connection.get_all_network_interfaces([eni.id])
                 if not enis:
                     raise ValueError('Could not fetch updated ENI:{0}'.format(eni.id))
