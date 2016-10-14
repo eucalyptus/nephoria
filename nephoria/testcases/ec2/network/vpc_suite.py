@@ -4965,7 +4965,7 @@ class VpcSuite(CliTestRunner):
                 self.status('PACKET TEST PASSED')
         return tables
 
-    def test6q0_eni_attach_detach_ping_multiple_enis_subnets_groups(self, ping=False, clean=True):
+    def test6q0_eni_attach_detach_ping_multiple_enis_subnets_groups(self, ping=False, clean=None):
         """
         Attempts to attach and quickly detach several ENIs to a single VM in each zone verifying
         the private IP of each ENI with PING from a 2nd VM with ENIs in each subnet of the VM
@@ -4989,6 +4989,8 @@ class VpcSuite(CliTestRunner):
         {yaml}
         """
 
+        if clean is None:
+            clean = not self.args.no_clean
         user = self.user
         vpc = self.test6b0_get_vpc_for_eni_tests()
         instances = []
@@ -5150,12 +5152,13 @@ class VpcSuite(CliTestRunner):
     ###############################################################################################
 
     def clean_method(self):
-        self.user.ec2.clean_all_test_resources()
-        if self.new_ephemeral_user and self.new_ephemeral_user != self.user:
-            self.log.debug('deleting new user account:"{0}"'
-                       .format(self.new_ephemeral_user.account_name))
-            self.tc.admin.iam.delete_account(account_name=self.new_ephemeral_user.account_name,
-                                             recursive=True)
+        if not self.args.no_clean:
+            self.user.ec2.clean_all_test_resources()
+            if self.new_ephemeral_user and self.new_ephemeral_user != self.user:
+                self.log.debug('deleting new user account:"{0}"'
+                           .format(self.new_ephemeral_user.account_name))
+                self.tc.admin.iam.delete_account(account_name=self.new_ephemeral_user.account_name,
+                                                 recursive=True)
 
 
     ###############################################################################################

@@ -129,9 +129,9 @@ class UserContext(AutoCreds):
         user_name = ""
         account_id = ""
         try:
-            account_name = "" #self.account_name or ""
-            user_name = "" #self.user_name or ""
-            account_id = "" #self.account_id or ""
+            account_name = self.account_name or ""
+            user_name = self.user_name or ""
+            account_id = self.account_id or ""
             if not (account_name or user_name or account_id) and self.access_key:
                 account_id = "KEYID:{0}".format(self.access_key)
             if account_name:
