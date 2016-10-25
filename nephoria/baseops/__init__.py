@@ -193,18 +193,19 @@ class BaseOps(object):
         varnames = connection_method.__func__.func_code.co_varnames
         keys = connection_kwargs.keys()
         for key in keys:
+            key = str(key)  .strip()
             if key not in varnames:
                 del connection_kwargs[key]
         return connection_kwargs
 
-    def show_connection_kwargs(self, connection_kwargs=None):
+    def show_connection_kwargs(self, connection_kwargs=None, level='debug'):
         if connection_kwargs is None:
             connection_kwargs = self._connection_kwargs
-        print connection_kwargs
         debug_buf = 'Current "{0}" connection kwargs for\n'.format(self.__class__.__name__)
         for key, value in connection_kwargs.iteritems():
             debug_buf += "{0}{1}{2}\n".format(str(key).ljust(30), " -> ", value)
-        self.log.debug(debug_buf)
+        log_meth = getattr(self.log, level, None) or self.log.debug
+        log_meth(debug_buf)
 
 
     def setup_resource_trackers(self):

@@ -232,7 +232,7 @@ class BotoBaseOps(BaseOps):
             try:
                 self._b2_connection = self.boto2_connect(
                     verbose=self._connection_kwargs.get('verbose'),
-                    connection_kwargs=self._connection_kwargs)
+                    conn_kwargs=self._connection_kwargs)
             except Exception as CE:
                 self.log.error(red('{0}\nFailed to create boto2 "{1}" connection. Err:"{2}"'
                                    .format(get_traceback(), self.__class__.__name__, CE)))
@@ -317,50 +317,60 @@ class BotoBaseOps(BaseOps):
             return region
         return None
 
-    def boto2_connect(self, verbose=False, connection_kwargs=None):
+    def boto2_connect(self, verbose=False, conn_kwargs=None):
         """
         Verify the required params have been set, and connect the underlying connection class.
 
         :param verbose: Dump debug output about the connection
-        :param connection_kwargs: options dict containing kwargs used when creating the
+        :param conn_kwargs: options dict containing kwargs used when creating the
                                   underlying connection
         """
-        connection_kwargs = copy.copy(connection_kwargs)
+        conn_kwargs = copy.copy(conn_kwargs)
         if self.CONNECTION_CLASS is None:
             raise NotImplementedError('Connection Class has not been defined for this class:"{0}"'
                                       .format(self.__class__.__name__))
 
-        api_version = connection_kwargs.get('boto2_api_version', None)
+        api_version = conn_kwargs.get('boto2_api_version', None)
+        if verbose:
+            self.log.debug('Applying api version:"{0}" to the connection kwargs'
+                           .format(api_version))
         if api_version:
-            connection_kwargs['api_version'] = api_version
+            conn_kwargs['api_version'] = api_version
+        if verbose:
+            self.log.debug('Original Connection kwargs...')
+            self.show_connection_kwargs(connection_kwargs=conn_kwargs)
         # Remove and kwargs which are not part of the service connection class creation method
-        connection_kwargs = self.get_applicable_kwargs(
-            connection_kwargs=self._connection_kwargs,
+        conn_kwargs = self.get_applicable_kwargs(
+            connection_kwargs=conn_kwargs,
             connection_method=self.CONNECTION_CLASS.__init__)
 
         required = []
-        for key, value in connection_kwargs.iteritems():
+        for key, value in conn_kwargs.iteritems():
             if value is None:
                 required.append(key)
         if required:
-            self.show_connection_kwargs(connection_kwargs=connection_kwargs)
+            self.show_connection_kwargs(connection_kwargs=conn_kwargs)
             raise ValueError('{0}: Required Connection parameters were None: "{1}"'
                              .format(self.__class__.__name__, ", ".join(required)))
         #### Init connection...
         if verbose:
-            self.show_connection_kwargs()
+            self.log.debug('Applicable Connection kwargs...')
+            self.show_connection_kwargs(connection_kwargs=conn_kwargs)
         try:
             # Remove any kwargs that are not applicable to this connection class
             # For example 'region' may not be applicable to services such as 'IAM'
-            connection_keys = connection_kwargs.keys()
+            connection_keys = conn_kwargs.keys()
             for ckey in connection_keys:
                 if ckey not in self.CONNECTION_CLASS.__init__.__func__.__code__.co_varnames:
                     self.log.debug('Arg "0" not found in "{1}.init()", removing kwarg '
                                    'connection args.'.format(ckey, self.CONNECTION_CLASS.__name__))
-                    connection_kwargs.__delitem__(ckey)
-            return self.CONNECTION_CLASS(**connection_kwargs)
+                    conn_kwargs.__delitem__(ckey)
+            if verbose:
+                self.log.debug('Final Connection kwargs...')
+                self.show_connection_kwargs(connection_kwargs=conn_kwargs)
+            return self.CONNECTION_CLASS(**conn_kwargs)
         except:
-            self.show_connection_kwargs(connection_kwargs)
+            self.show_connection_kwargs(conn_kwargs)
             raise
 
     def map_to_object(self, obj_dict, to_class=None, add_all=True):

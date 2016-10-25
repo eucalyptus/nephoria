@@ -867,7 +867,7 @@ class CliTestRunner(object):
                 self.log.identifier = orig_log_id
                 self.log.debug(self.print_test_list_short_stats(self._testlist))
         except:
-            self.log.warning('Error in test runner...')
+            self.log.warning(red('Error in test runner...\n{0}'.format(get_traceback())))
             raise
         finally:
             self.log.identifier = orig_log_id
@@ -1305,7 +1305,7 @@ class CliTestRunner(object):
     # Convenience methods for formatting test output
     ##############################################################################################
 
-    def status(self, msg, markups=[32]):
+    def status(self, msg, markups=None):
         '''
         Description: Convenience method to format debug output
 
@@ -1314,6 +1314,8 @@ class CliTestRunner(object):
 
         :param color: asci markup color to use, or None
         '''
+        if markups is None:
+            markups = [32]
         if markups:
             msg = markup(msg, markups=markups)
         pt = PrettyTable(['status'])
