@@ -2465,7 +2465,8 @@ class EuInstance(Instance, TaggedResource, Machine):
         return self.check_eni_attachment(eni, index=indx, local_dev_timeout=local_dev_timeout)
 
 
-    def check_eni_attachment(self, eni, index=None, api_timeout=60, local_dev_timeout=60):
+    def check_eni_attachment(self, eni, index=None, api_timeout=60, eni_status='in-use',
+                             attachment_status='attached', local_dev_timeout=60):
         """
         Checks a give ENI for the proper attribute status.
         If local_dev_timeout is not None then the local guest is polled for a device with
@@ -2512,8 +2513,10 @@ class EuInstance(Instance, TaggedResource, Machine):
                 if int(i.attachment.device_index) != indx:
                     raise ValueError('Device index:"{0}" of eni in local instances does not match '
                                      'requested:"{1}" value.'.format(i.id. indx))
+                if eni.status != eni_status:
+                    raise ValueError('ENI status "{0}" != "{1}"'.format(eni.status, eni_status))
                 if eni.attachment.id != i.attachment.id:
-                    raise ValueError('ENI attachment id:{0} != self.interfaces.attachment.id:{1}'
+                    raise ValueError('ENI attachment id: {0} != self.interfaces.attachment.id:{1}'
                                      .format(eni.attachment.id, i.attachment.id))
                 if not eni.attachment:
                     raise ValueError('ENI attachment info is empty after updating ENI info post '
@@ -2522,8 +2525,11 @@ class EuInstance(Instance, TaggedResource, Machine):
                     raise ValueError('ENI attachment data instance_id:"{0}" does not show proper '
                                      'instance id:{1}'.format(eni.attachment.instance_id, self.id))
                 if int(eni.attachment.device_index) != indx:
-                        raise ValueError('ENI attachment device index:"{0}" does match requested '
-                                         'index:"{1}"'.format(eni.attachment.device_index, indx))
+                    raise ValueError('ENI attachment device index:"{0}" does match requested '
+                                    'index:"{1}"'.format(eni.attachment.device_index, indx))
+                if eni.attachment.status != attachment_status:
+                    raise ValueError('ENI attachment.status: "{0}" != "{1}"'
+                                     .format(eni.attachment.status, attachment_status))
                 api_is_good = True
                 break
             except ValueError as VE:
@@ -2655,6 +2661,9 @@ class EuInstance(Instance, TaggedResource, Machine):
                 if not api_is_good and eni.attachment and eni.attachment.instance_id == self.id:
                     raise ValueError('ENI:{0} attachment data still shows it is attached to this '
                                      'instance:{1}'.format(eni.id, eni.attachment.instance_id))
+                if not api_is_good and eni.status != 'available' and not eni.attachment:
+                    raise ValueError('ENI:{0} is no longer attached and eni.status:"{1}" != '
+                                     '"available"'.format(eni.id, eni.status))
                 if eni.id in [str(x.id) for x in self.interfaces]:
                     raise ValueError('ENI:{0} still present in self.interfaces'.format(eni.id))
                 api_is_good = True

@@ -403,6 +403,9 @@ disable_root: false"""
             return True
 
 
+    def b3_instances(self):
+        return self.boto3.resource.instances.all()
+
 
 
     def create_keypair_and_localcert(self, key_name=None, key_dir=None, extension='.pem'):
@@ -1085,6 +1088,8 @@ disable_root: false"""
         ret_dict = {}
         if not isinstance(subnet, basestring):
             subnet = subnet.id
+        gws = self.get_nat_gateways(subnet=subnet) or []
+        ret_dict['nat_gateways'] = [x.get('NatGatewayId') for x in gws]
         ret_dict['route_tables'] = self.connection.get_all_route_tables(
             filters={'association.subnet-id': subnet})
         ret_dict['enis'] = self.connection.get_all_network_interfaces(
@@ -1114,6 +1119,8 @@ disable_root: false"""
         if verbose:
             pt = self.show_subnet_dependency_artifacts(subnet, printme=False)
             self.log.info('Attempting to delete SUBNET artifacts...\n{0}\n'.format(pt))
+        if deps['nat_gateways']:
+            self.delete_nat_gateways(gateways=deps['nat_gateways'])
         if deps['instances']:
             self.log.debug('Attempting to delete vpc instances')
             self.terminate_instances(deps['instances'])
@@ -1149,6 +1156,9 @@ disable_root: false"""
         ret_dict = {}
         if not isinstance(vpc, basestring):
             vpc = vpc.id
+        self.log.debug('Attempting to gather: nat gateways')
+        ret_dict['nat_gateways'] = [x.get('NatGatewayId') for x in
+                                    self.boto3.client.describe_nat_gateways().get('NatGateways')]
         self.log.debug('Attempting to gather: instances ')
         ret_dict['instances'] = self.get_instances(filters={'vpc_id': vpc})
         self.log.debug('Attempting to gather: subnets')
@@ -1197,6 +1207,9 @@ disable_root: false"""
         if verbose:
             pt = self.show_vpc_dependency_artifacts(vpc, printme=False)
             self.log.info('Attempting to delete VPC artifacts...\n{0}\n'.format(pt))
+        if deps['nat_gateways']:
+            self.log.debug('Attempting to delete nat_gateways')
+            self.delete_nat_gateways(deps['nat_gateways'])
         if deps['instances']:
             self.log.debug('Attempting to delete vpc instances')
             self.terminate_instances(deps['instances'])
@@ -1618,7 +1631,7 @@ disable_root: false"""
         if dry_run:
             params['DryRun'] = 'true'
 
-        status = self.connection.get_status('CreateRoute', params)
+        resp = self.boto3.client.create_route(**params)
 
         routes = self.get_routes_from_route_table(
             route_table=route_table_id, destination_cidr_block=destination_cidr_block,
@@ -1627,7 +1640,8 @@ disable_root: false"""
         if not routes:
             raise ValueError('Newly added route for cidr:{0} not found in route table:{1} '
                              'response. Resp Status:{2}'
-                             .format(destination_cidr_block, route_table_id, status))
+                             .format(destination_cidr_block, route_table_id,
+                                     getattr(resp, 'status', '??')))
         if len(routes) != 1:
             self.show_route_table(route_table_id)
             raise ValueError('Multiple:{0} routes found for same destination cidr:{1} in route'
@@ -4682,6 +4696,330 @@ disable_root: false"""
             printmethod("\n{0}\n".format(pt))
         else:
             return pt
+
+    def create_nat_gateway(self, subnet, eip_allocation=None, desired_state='available',
+                           failed_states=None, timeout=180):
+
+        """
+        Attempts to create a NAT Gateway and monitor it to the desired_state.
+        Possible states:  pending | failed | available | deleting | deleted
+        Args:
+            subnet: subnet id or subnet obj
+            eip_allocation: EIP allocation id or EIP obj
+            desired_state: string representing the desired state to monitor the NAT GW for. If
+                           None is provided, the NAT GW will be returned without monitoring
+            failed_states: list of strings representing NAT GW states to error out on.
+                           If None, the default value is used: ['failed']
+            timeout: integer, maximum time to wait for the GW to enter the 'desired_state' before
+                     raising an error.
+        Returns: Nat GW Dict
+
+        """
+        if not isinstance(subnet, basestring):
+            subnet = subnet.id
+        eip_allocation = eip_allocation or self.allocate_address()
+        if not isinstance(eip_allocation, basestring):
+            allocation_id = eip_allocation.allocation_id
+        else:
+            allocation_id = eip_allocation
+        if failed_states is None:
+            failed_states = ['failed']
+        if not isinstance(failed_states, list):
+            failed_states = [failed_states]
+        response = self.boto3.client.create_nat_gateway(SubnetId=subnet, AllocationId=allocation_id)
+        gw =  response.get('NatGateway')
+        id = gw.get('NatGatewayId')
+        if not id:
+            raise RuntimeError('Error. CreateNatGateway response did not contain a "NatGateWay or '
+                               'ID". Response:{0}'.format(gw))
+        def check_failed_state():
+            failmsg = gw.get('FailureMessage', None)
+            if failed_states and gw.get('State') in failed_states:
+                raise ValueError('Nat GW:{0} is a failed state:{1}. Message:{2}'
+                                 .format(id, gw.get('State'), failmsg))
+        check_failed_state()
+        if desired_state:
+            start = time.time()
+            elapsed = 0
+            attempts = 0
+            state = gw.get('State')
+
+            while elapsed < timeout and state != desired_state:
+                attempts += 1
+                self.log.debug('Waiting for NatGW:{0} state:"{1}". Current State:"{2}". '
+                               'Elapsed: {3}/{4}'.format(id, desired_state, state,
+                                                         elapsed, timeout))
+                time.sleep(attempts)
+                elapsed = int(time.time() - start)
+                gw = self.get_nat_gateway(id)
+                state = gw.get('State')
+                check_failed_state()
+            if state != desired_state:
+                raise RuntimeError('NatGW:{0} state:"{1}" != desired state:"{2}" after: {3}/{4} '
+                                   'seconds'.format(id, state, desired_state, elapsed, timeout))
+        return gw
+
+    def get_nat_gateways(self, id_list=None, state=None, subnet=None, vpc=None, zone=None,
+                         max_results=1000):
+        """
+        Fetch Nat Gateways with the provided filters.
+        Args:
+            ids: The IDs of the NAT gateways.
+            state: The state of the NAT gateway; pending, failed, available, deleting, deleted
+            subnet: The ID of the subnet in which the NAT gateway resides.
+            vpc: he ID of the VPC in which the NAT gateway resides.
+
+        response = client.describe_nat_gateways(
+            NatGatewayIds=[
+              'string',
+            ],
+            Filters=[
+              {
+                  'Name': 'string',
+                  'Values': [
+                      'string',
+                  ]
+              },
+            ],
+            MaxResults=123,
+            NextToken='string'
+            )
+        Returns: List of Nat Gateways
+        """
+        if zone and state != 'available':
+            raise ValueError('Can only sort NAT GWs by Zone if state is "available", '
+                             'got state:{0}'.format(state))
+        kwargs = {'MaxResults': max_results}
+        filters = []
+        natgw_ids = []
+        if id_list:
+            if not isinstance(id_list, list):
+                id_list = [id_list]
+            for id in id_list:
+                if isinstance(id, basestring):
+                    id = id
+                elif isinstance(id, dict):
+                    id = id.get('NatGatewayId')
+                else:
+                    id = id.id
+                natgw_ids.append(id)
+            if natgw_ids:
+                kwargs['NatGatewayIds'] = natgw_ids
+        if state:
+            filters.append({'Name': 'state', 'Values': [state]})
+        if subnet:
+            if not isinstance(subnet, basestring):
+                subnet = subnet.id
+            filters.append({'Name': 'subnet-id', 'Values': [subnet]})
+        if vpc:
+            if not isinstance(vpc, basestring):
+                vpc = vpc.id
+            filters.append({'Name': 'vpc-id', 'Values': [vpc]})
+        if filters:
+            kwargs['Filter'] = filters
+        self.log.debug('describe_nat_gateways({0})'.format(kwargs))
+        response = self.boto3.client.describe_nat_gateways(**kwargs)
+        gws = response.get('NatGateways', [])
+        if not zone:
+            return gws
+        else:
+            ret = []
+            for gw in gws:
+                try:
+                    gw_sub = self.get_subnet(gw.get('SubnetId'))
+                    if gw_sub.availability_zone == zone:
+                        ret.append(gw)
+                except Exception as SE:
+                    self.log.error('{0}\nError fetching zone from NAT GWs subnet for:{1}'
+                                   .format(get_traceback(), gw.get('NatGatewayId')))
+                    self.show_nat_gateways(gw)
+                    raise SE
+            return ret
+
+
+    def get_nat_gateway(self, natgw):
+        if natgw:
+            if not isinstance(natgw, basestring):
+                if isinstance(natgw, dict):
+                    natgw = natgw.get('NatGatewayId')
+                else:
+                    natgw = natgw.id
+            gws = self.get_nat_gateways(id_list=natgw)
+            if gws:
+                if len(gws) != 1:
+                    raise ValueError('Returned more than 1 gw for NatGW:{0}. Got:{1}'
+                                     .format(natgw, gws))
+                return gws[0]
+        return None
+
+
+    def show_nat_gateways(self, gws=None, printmethod=None, table_len=100, printme=True):
+        gws = gws or self.get_nat_gateways()
+        if not isinstance(gws, list):
+            gws = [gws]
+        n_hdr = 'NATGW'.ljust(table_len)
+        buf = ""
+        for gw in gws:
+            gw = copy.copy(gw)
+            if not isinstance(gw, dict):
+                gw = self.get_nat_gateway(gw)
+            if not gw:
+                self.log.warning('Nat Gateway no found for:"{0}"'.format(gw))
+                continue
+            id = gw.pop('NatGatewayId')
+            header_pt = PrettyTable(["{0}".format(markup("NatGateWayID: {0}".format(id),
+                                                         markups=[TextStyle.BOLD,
+                                                                  BackGroundColor.BG_WHITE,
+                                                                  ForegroundColor.BLUE]))])
+            header_pt.align = 'l'
+            main_pt = PrettyTable([n_hdr])
+            main_pt.align = 'l'
+            main_pt.border = False
+            main_pt.max_width[n_hdr] = table_len - 3
+            main_pt.padding_width = 1
+            main_pt.header = False
+            nat_pt = PrettyTable(['key', 'value'])
+            nat_pt.align = 'l'
+            nat_pt.header = False
+            nat_pt.border = False
+            nat_pt.padding_width = 0
+            addrs = gw.pop('NatGatewayAddresses')
+
+            if addrs:
+                headers = [markup(x, TextStyle.UNDERLINE) for x in addrs[0].keys()]
+                ip_pt = PrettyTable(headers)
+                for h in headers:
+                    ip_pt.max_width[h] = table_len / 4
+                ip_pt.padding_width = 1
+                ip_pt.align = 'l'
+                ip_pt.border = False
+                ip_pt.vrules = 2
+                ip_pt.hrules = 0
+                for addr in addrs:
+                    ip_pt.add_row(addr.values())
+            else:
+                ip_pt = addrs
+            ip_pt = "{0}\n".format(ip_pt)
+            nat_pt.add_row(["{0}: ".format(markup('NatGatewayAddresses',
+                                                  markups=[TextStyle.BOLD,
+                                                           TextStyle.UNDERLINE])), ip_pt])
+            for key, value in gw.iteritems():
+                nat_pt.add_row(["{0}: ".format(markup(key, markups=[TextStyle.BOLD,
+                                                                    TextStyle.UNDERLINE])), value])
+            main_pt.add_row([nat_pt])
+            header_pt.add_row([main_pt])
+            buf += "\n{0}\n\n".format(header_pt)
+        if not printme:
+            return buf
+        printmethod = printmethod or self.log.info
+        printmethod(buf)
+
+    def delete_nat_gateways(self, gateways=None, timeout=180, desired_state='deleted',
+                            failed_states=None):
+        """
+        Deletes a single or list of NAT Gateways. If a no gateways are provided it will attempt to
+        delete all the gateways visible to the user making the request. If timeout is not None,
+        the gateways will be monitored until they enter the 'deleted' state or are no longer
+        present in the describe requests.
+        Possible states:  pending | failed | available | deleting | deleted
+        Args:
+            gateways: A gateway or list of gateways to be deleted. These can be gateway ids,
+            boto3 gateway dicts, or an obj containing the id ie obj.id.
+            timeout: Int timeout in seconds to wait for the gateways to enter the desired state.
+            desired_state: string representing the desired state of the GWs. Default is 'deleted'.
+            failed_states: list of strings representing the states to error upon.
+                           If 'None', the default used is: ['pending', 'failed', 'available']
+        Raises: Runtime Error for failed gws.
+
+        """
+        if failed_states is None:
+            failed_states = ['pending', 'failed', 'available']
+        gws_ids = []
+        if not gateways:
+            self.log.warning('No gateways provided to delete')
+            return
+        if not isinstance(gateways, list):
+            gateways = [gateways]
+        for gw in gateways:
+            if isinstance(gw, basestring):
+                gws_ids.append(gw)
+            elif isinstance(gw, dict):
+                gws_ids.append(gw.get('NatGatewayId'))
+            else:
+                gws_ids.append(gw.id)
+        def in_desired_state(gw):
+            if desired_state:
+                if not gw.get('State') == desired_state:
+                    return False
+            return True
+
+        def in_failed_state(gw):
+            if failed_states:
+                if gw.get('State') in failed_states:
+                   return True
+            return False
+        failed = {}
+        good = []
+        remove = []
+        if timeout:
+            for gw in gws_ids:
+                try:
+                    self.boto3.client.delete_nat_gateway(NatGatewayId=gw)
+                except ClientError as E:
+                    remove.append(gw)
+                    status = E.response.get('ResponseMetadata', {}).get('HTTPStatusCode')
+                    if re.search('NatGatewayNotFound', E.message) and status == 400:
+                        self.log.debug('NAT GW:{0} not found during delete, assuming its already '
+                                       'deleted'.format(gw))
+                    else:
+                        failed[gw] = str(E)
+        for gw in remove:
+            gws_ids.remove(gw)
+        if timeout:
+            start = time.time()
+            elapsed = 0
+            checklist = copy.copy(gws_ids)
+            while elapsed < timeout and checklist:
+                elapsed = int(time.time() - start)
+                waiting = []
+                for gw_id in gws_ids:
+                    if gw_id in checklist:
+                        try:
+                            gw = self.get_nat_gateway(gw)
+                        except ClientError as E:
+                            checklist.remove(gw_id)
+                            status = E.response.get('ResponseMetadata', {}).get('HTTPStatusCode')
+                            if re.search('NatGatewayNotFound', E.message) and status == 400:
+                                self.log.debug(
+                                    'NAT GW:{0} not found during delete, assuming its already '
+                                    'deleted'.format(gw_id))
+                            else:
+                                failed[gw_id] = str(E)
+                        else:
+                            if in_desired_state(gw):
+                                checklist.remove(gw_id)
+                            elif in_failed_state(gw):
+                                checklist.remove(gw_id)
+                                failed[gw] = "Gateway:{0} in defined failed state:{1}"\
+                                    .format(gw_id, gw.get('State'))
+                            else:
+                                waiting.append("{0}:{1}".format(gw_id, gw.get('State')))
+                self.log.debug('Waiting on {0} NATGWs to enter desired state:{1} after '
+                               'elapsed:{2}/{3}'.format(len(checklist), desired_state,
+                                                        elapsed, timeout))
+                if waiting:
+                    self.log.debug('Waiting on GWS: "{0}"'.format(", ".join(waiting)))
+                if checklist:
+                    time.sleep(5)
+            for gw in checklist:
+                failed[gw] = "GW:{0} did not enter desired state:{1} after elapsed:{2}/{3}"\
+                    .format(gw, desired_state, elapsed, timeout)
+        if failed:
+            failmsg = "ERRORS detected with the following NAT GWs during delete:\n"
+            for gwid, msg in failed.iteritems():
+                failmsg += "NAT GW:{0}, ERROR:{1}\n".format(gwid, msg)
+            self.log.error(failmsg)
+            raise RuntimeError(failmsg)
 
 
     def wait_for_instances_block_dev_mapping(self,

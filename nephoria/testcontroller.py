@@ -298,10 +298,10 @@ class TestController(object):
         self.log.debug('Attempting to create user with params: account:{0}, name:{1}'
                           'access_key:{2}, secret_key:{3}, credpath:{4}, eucarc:{5}'
                           ', machine:{6}, service_connection:{7}, path:{8}, region:{9},'
-                          'loglevel:{10}, https:{11}'
+                          'loglevel:{10}, https:{11}, boto2_api_version:{12}'
                        .format(aws_account_name, aws_user_name, aws_access_key, aws_secret_key,
                                credpath, eucarc, machine, service_connection, path, region,
-                               log_level, https))
+                               log_level, https, boto2_api_version))
         service_connection = service_connection or self.sysadmin
         if eucarc:
             if aws_access_key:
