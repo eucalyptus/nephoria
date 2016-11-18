@@ -2287,7 +2287,8 @@ class EuInstance(Instance, TaggedResource, Machine):
     def get_network_device_info(self, name=None, prefix='/sys/class/net/'):
         ret = {}
         ipv4_info = self.get_network_ipv4_info()
-        dev_names = self.sys('ls -1 {0}'.format(prefix), code=0)
+        # Pipe to grep here just to disable auto color ascii markups in the output...
+        dev_names = self.sys('ls -1 {0} | grep .'.format(prefix), code=0)
         for dev_name in dev_names:
             attempt = 0
             good = False
