@@ -208,16 +208,20 @@ class XMLTimerVPC(CliTestRunner):
         Attempts to run the number of instances provided by the vm_count param
         """
         ins = []
+        if self.args.zone:
+            zones = [self.args.zone]
+        else:
+            zones = self.user.ec2.get_zone_names()
         for x in xrange(0, self.args.vm_count):
-            i = self.user.ec2.run_image(image=self.emi, keypair=self.keypair,
-                                          min=1, max=1,
-                                          zone=self.args.zone, vmtype=self.args.vmtype,
-                                          group=self.group,
-                                          timeout=self.args.instance_timeout,
-                                          monitor_to_running=False,
-                                          )[0]
-            ins.append(i)
-
+            for zone in zones:
+                i = self.user.ec2.run_image(image=self.emi, keypair=self.keypair,
+                                              min=1, max=1,
+                                              zone=zone, vmtype=self.args.vmtype,
+                                              group=self.group,
+                                              timeout=self.args.instance_timeout,
+                                              monitor_to_running=False,
+                                              )[0]
+                ins.append(i)
         setattr(self, 'instances', ins)
         res_dict = {}
         for i in ins:
@@ -235,7 +239,6 @@ class XMLTimerVPC(CliTestRunner):
 
 
     def test2_monitor_instances_to_running_and_connect(self, instances=None, timeout=300):
-        return True
         ins = instances or getattr(self, 'instances', None)
         if ins is None:
             raise ValueError('Instances were not found to monitor or connect. '
