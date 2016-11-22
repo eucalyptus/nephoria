@@ -254,13 +254,34 @@ class XMLTimerVPC(CliTestRunner):
         timeout = 300
         instances = getattr(self, 'instances', [])
         keypair = getattr(self, '__keypair', None)
-        self.user.ec2.terminate_instances(instances)
-        if keypair:
-            self.user.ec2.delete_keypair(self.keypair)
-        res_dict = self.global_xml_check(instances, timeout=timeout, present=False)
-        if 'FAILED' in res_dict.values():
-            raise RuntimeError('Test Failed. XML was still found for terminated instances using'
-                               'Timeout:{0}. See table in test output'.format(timeout))
+        errors =[]
+        try:
+            if instances:
+                self.user.ec2.connection.terminate_instances(instances)
+            self.user.ec2.terminate_instances(instances)
+        except Exception as E:
+            errors.append(E)
+            self.log.error('{0}\n{1}'.format(get_traceback(), E))
+        try:
+            if keypair:
+                self.user.ec2.delete_keypair(self.keypair)
+        except Exception as E:
+            errors.append(E)
+            self.log.error('{0}\n{1}'.format(get_traceback(), E))
+        try:
+            res_dict = self.global_xml_check(instances, timeout=timeout, present=False)
+            if 'FAILED' in res_dict.values():
+                raise RuntimeError('Test Failed. XML was still found for terminated instances using'
+                                   'Timeout:{0}. See table in test output'.format(timeout))
+        except Exception as E:
+            errors.append(E)
+            self.log.error('{0}\n{1}'.format(get_traceback(), E))
+        if errors:
+            ebuf = 'Errors during cleanup...\n'
+            for E in errors:
+                ebuf += "{0}\n".format(E)
+            raise RuntimeError(ebuf)
+
 
 
 
