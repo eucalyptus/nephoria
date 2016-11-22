@@ -221,6 +221,7 @@ class XMLTimerVPC(CliTestRunner):
                                               timeout=self.args.instance_timeout,
                                               monitor_to_running=False,
                                               )[0]
+
                 ins.append(i)
         setattr(self, 'instances', ins)
         res_dict = {}
@@ -257,7 +258,8 @@ class XMLTimerVPC(CliTestRunner):
         errors =[]
         try:
             if instances:
-                self.user.ec2.connection.terminate_instances(instances)
+                ins_ids = [str(x.id) for x in instances]
+                self.user.ec2.connection.terminate_instances(ins_ids)
             self.user.ec2.terminate_instances(instances)
         except Exception as E:
             errors.append(E)
