@@ -38,6 +38,7 @@ ingress/egress options for protocols = ['allow_per_protocol', 'allow_per_group',
 
 from nephoria.testcontroller import TestController
 from nephoria.usercontext import UserContext
+from nephoria import CleanTestResourcesException
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, TestResult, SkipTestException
 from nephoria.aws.ec2.euinstance import EuInstance
 from cloud_utils.net_utils import packet_test, is_address_in_network, test_port_status, \
@@ -449,6 +450,17 @@ class VpcSuite(CliTestRunner):
             user.ec2.show_vpc(new_vpc)
         return test_vpcs
 
+    def create_subnet_and_tag(self, vpc_id, cidr_block, availability_zone=None, dry_run=False,
+                              user=None, tag=None, tag_value=None):
+        user = user or self.user
+        tag = tag or self.my_tag_name
+        subnet = user.ec2.connection.create_subnet(vpc_id=vpc_id, cidr_block=cidr_block,
+                                                   availability_zone=availability_zone,
+                                                   dry_run=dry_run)
+
+        user.ec2.create_tags(subnet.id, {tag: tag_value})
+        return subnet
+
     def create_test_subnets(self, vpc, zones=None, count_per_zone=1, user=None, verbose=False):
         """
         This method is intended to provided the convenience of returning a number of subnets per
@@ -495,9 +507,8 @@ class VpcSuite(CliTestRunner):
                             subnet_cidr = None
                             break
                 try:
-                    subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id,
-                                                               cidr_block=subnet_cidr,
-                                                               availability_zone=zone)
+                    subnet = self.create_subnet_and_tag(vpc_id=vpc.id, cidr_block=subnet_cidr,
+                                                        availability_zone=zone, user=user)
                 except:
                     try:
                         self.log.error('Existing subnets during failed create request:')
@@ -1814,6 +1825,7 @@ class VpcSuite(CliTestRunner):
         try:
             try:
                 vpc = user.ec2.connection.create_vpc(cidr_block='192.0.0.0/8')
+                user.ec2.create_tags(vpc.id, {self.my_tag_name: 'test_vpc'})
             except Exception as E:
                 if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                     E.reason == 'InvalidVpc.Range'):
@@ -1848,6 +1860,7 @@ class VpcSuite(CliTestRunner):
         try:
             try:
                 vpc = user.ec2.connection.create_vpc(cidr_block='192.0.0.0/29')
+                user.ec2.create_tags(vpc.id, {self.my_tag_name: 'test_vpc'})
             except Exception as E:
                 if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                             E.reason == 'InvalidVpc.Range'):
@@ -1888,6 +1901,7 @@ class VpcSuite(CliTestRunner):
                 try:
                     self.status('Attempting to create a VPC with invalid CIDR:"{0}"'.format(cidr))
                     vpc = user.ec2.connection.create_vpc(cidr_block=cidr)
+                    user.ec2.create_tags(vpc.id, {self.my_tag_name: 'test_vpc'})
                 except Exception as E:
                     if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                                 E.reason == 'InvalidVpc.Range'):
@@ -3106,7 +3120,8 @@ class VpcSuite(CliTestRunner):
         try:
             self.status('Attempting to create subnet with VALID cidr equal to vpc cidr:{0}'
                         .format(test_cidr))
-            subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id, cidr_block=test_cidr)
+            subnet = self.create_subnet_and_tag(vpc_id=vpc.id, cidr_block=test_cidr,user=user)
+
         finally:
             if subnet:
                 self.status('attempting to delete SUBNET after this test...')
@@ -3138,8 +3153,9 @@ class VpcSuite(CliTestRunner):
                 subnets.append(subnet1)
                 self.status('Attempting to create a subnet with duplicate cidr block. This '
                             'should not be allowed')
-                subnet2 = user.ec2.connection.create_subnet(vpc_id=vpc.id,
-                                                            cidr_block=subnet1.cidr_block)
+
+                subnet2 = self.create_subnet_and_tag(vpc_id=vpc.id, cidr_block=subnet1.cidr_block,
+                                                     user=user)
                 subnets.append(subnet2)
             except Exception as E:
                 if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
@@ -3198,14 +3214,14 @@ class VpcSuite(CliTestRunner):
             try:
                 self.status('Attempting to create the intial subnet  equal to the entire'
                             'vpc cidr block:{0}...'.format(vpc.cidr_block))
-                subnet1 = user.ec2.connection.create_subnet(vpc_id=vpc.id,
-                                                            cidr_block=vpc.cidr_block)
+                subnet1 = self.create_subnet_and_tag(vpc_id=vpc.id, cidr_block=vpc.cidr_block,
+                                                     user=user)
                 subnets.append(subnet1)
                 self.status('Attempting to create a subnet with cidr block:{0} which overlaps'
                             'the inital subnet cidr_block:{0}'.format(test_cidr,
                                                                       subnet1.cidr_block))
-                subnet2 = user.ec2.connection.create_subnet(vpc_id=vpc.id,
-                                                            cidr_block=test_cidr)
+                subnet2 = self.create_subnet_and_tag(vpc_id=vpc.id, cidr_block=test_cidr,
+                                                     user=user)
                 subnets.append(subnet2)
             except Exception as E:
                 if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
@@ -3254,7 +3270,8 @@ class VpcSuite(CliTestRunner):
             try:
                 self.status('Attempting to create subnet with invalid cidr:{0}'
                             .format(test_cidr))
-                subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id, cidr_block= test_cidr)
+                subnet = self.create_subnet_and_tag(vpc_id=vpc.id, cidr_block=test_cidr,
+                                                    user=user)
             except Exception as E:
                 if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                             E.reason == 'InvalidSubnet.Range'):
@@ -3301,7 +3318,8 @@ class VpcSuite(CliTestRunner):
             try:
                 self.status('Attempting to create subnet with invalid cidr:{0}'
                             .format(test_cidr))
-                subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id, cidr_block= test_cidr)
+                subnet = self.create_subnet_and_tag(vpc_id=vpc.id, cidr_block=test_cidr,
+                                                    user=user)
             except Exception as E:
                 if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                             E.reason == 'InvalidSubnet.Range'):
@@ -3641,8 +3659,9 @@ class VpcSuite(CliTestRunner):
         user = self.user
         self.log.debug('creating test vpc...')
         vpc = user.ec2.connection.create_vpc('10.0.0.0/24')
+        user.ec2.create_tags(vpc.id, {self.my_tag_name: 'test_vpc'})
         self.log.debug('creating test subnet....')
-        subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id, cidr_block=vpc.cidr_block)
+        subnet = self.create_subnet_and_tag(vpc_id=vpc.id, cidr_block=vpc.cidr_block, user=user)
         net_info = get_network_info_for_cidr(vpc.cidr_block)
         net_addr = net_info.get('network')
         bcast_addr = net_info.get('broadcast')
@@ -5711,13 +5730,90 @@ class VpcSuite(CliTestRunner):
     ###############################################################################################
 
     def clean_method(self):
+        errors = []
+        subnets = []
+        vpcs =[]
         if not self.args.no_clean:
-            self.user.ec2.clean_all_test_resources()
+            try:
+                keys = getattr(self, '_keypair', {})
+                key = keys.get(self.user)
+                if key:
+                    key.delete()
+            except Exception as E:
+                self.log.error("{0}\nError#{1} deleting test keypairs:{2}"
+                               .format(get_traceback(), len(errors), E))
+                errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+            try:
+                subnets = self.user.ec2.get_all_subnets(filters={'tag-key': self.my_tag_name}) or []
+                vpcs = self.user.ec2.get_all_vpcs(filters={'tag-key': self.my_tag_name}) or []
+            except Exception as E:
+                self.log.error("{0}\nError#{1} fetching subnets and vpcs during clean up:{2}"
+                               .format(get_traceback(), len(errors), E))
+                errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+            for subnet in subnets:
+                try:
+                    self.user.ec2.delete_subnet_and_dependency_artifacts(subnet)
+                except Exception as E:
+                    self.log.error("{0}\nError#{1} during vpc clean up:{2}"
+                                   .format(get_traceback(), len(errors), E))
+                    errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+            for vpc in vpcs:
+                try:
+                    self.user.ec2.delete_vpc_and_dependency_artifacts(vpc)
+                except Exception as E:
+                    self.log.error("{0}\nError#{1} during vpc clean up:{2}"
+                                   .format(get_traceback(), len(errors), E))
+                    errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+
             if self.new_ephemeral_user and self.new_ephemeral_user != self.user:
-                self.log.debug('deleting new user account:"{0}"'
-                           .format(self.new_ephemeral_user.account_name))
-                self.tc.admin.iam.delete_account(account_name=self.new_ephemeral_user.account_name,
-                                                 recursive=True)
+                subnets = []
+                vpcs = []
+                try:
+                    keys = getattr(self, '_keypair', {})
+                    key = keys.get(self.new_ephemeral_user)
+                    if key:
+                        key.delete()
+                except Exception as E:
+                    self.log.error("{0}\nError#{1} deleting test keypairs:{2}"
+                                   .format(get_traceback(), len(errors), E))
+                    errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+                try:
+                    subnets = self.new_ephemeral_user.ec2.get_all_subnets(
+                        filters={'tag-key': self.my_tag_name}) or []
+                    vpcs = self.new_ephemeral_user.ec2.get_all_vpcs(filters={'tag-key':
+                                                                                 self.my_tag_name})
+                except Exception as E:
+                    self.log.error("{0}\nError#{1} fetching subnets and vpcs during clean up:{2}"
+                                   .format(get_traceback(), len(errors), E))
+                    errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+                for subnet in subnets:
+                    try:
+                        self.new_ephemeral_user.ec2.delete_subnet_and_dependency_artifacts(subnet)
+                    except Exception as E:
+                        self.log.error("{0}\nError#{1} during vpc clean up:{2}"
+                                       .format(get_traceback(), len(errors), E))
+                        errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+                for vpc in vpcs:
+                    try:
+                        self.new_ephemeral_user.ec2.delete_vpc_and_dependency_artifacts(vpc)
+                    except Exception as E:
+                        self.log.error("{0}\nError#{1} during vpc clean up:{2}"
+                                       .format(get_traceback(), len(errors), E))
+                        errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+                try:
+                    self.log.debug('deleting new user account:"{0}"'
+                               .format(self.new_ephemeral_user.account_name))
+                    self.tc.admin.iam.delete_account(account_name=self.new_ephemeral_user.account_name,
+                                                     recursive=True)
+                except Exception as E:
+                    self.log.error("{0}\nError#{1} during ephemeral user clean up:{2}"
+                                   .format(get_traceback(), len(errors), E))
+                    errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+            if errors:
+                self.log.error(red("{0} Number of Errors During Cleanup:\n{1}"
+                               .format(len(errors), "\n".join(str(x) for x in errors))))
+                raise CleanTestResourcesException("{0} Number of Errors During Cleanup"
+                                                  .format(len(errors)))
 
 
     ###############################################################################################

@@ -1,7 +1,7 @@
 
 #!/usr/bin/env python
 from cloud_utils.log_utils import get_traceback
-from cloud_admin.backends.network.eucanetd_get import EucanetdGet
+from cloud_admin.backends.network.eucanetxml import EucaNetXml
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, SkipTestException
 from nephoria.testcontroller import TestController
 from boto.ec2.group import Group
@@ -79,7 +79,7 @@ class XMLTimerVPC(CliTestRunner):
     def eucnetd(self):
         ed = getattr(self, '__ed', None)
         if not ed:
-            ed = EucanetdGet(machine=self.tc.sysadmin.clc_machine)
+            ed = EucaNetXml(machine=self.tc.sysadmin.clc_machine)
             setattr(self, '__ed', ed)
         return ed
 
