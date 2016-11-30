@@ -2569,9 +2569,9 @@ class VpcSuite(CliTestRunner):
                                              destination_cidr_block=test_route,
                                              interface_id=eni.id)
 
-            self.log.debug('Rebooting the vm_tx instance to make sure it has the latest route info'
-                           'provided via DHCP...')
-            vm_tx.reboot_instance_and_verify()
+            #  self.log.debug('Rebooting the vm_tx instance to make sure it has the latest route info'
+            #                'provided via DHCP...')
+            #  vm_tx.reboot_instance_and_verify()
             self.log.info("\n".join(vm_tx.sys('route') or []))
             timeout = 60
             start = time.time()
@@ -2901,9 +2901,9 @@ class VpcSuite(CliTestRunner):
                                              destination_cidr_block=test_route,
                                              interface_id=eni.id)
 
-            self.log.debug('Rebooting the vm_tx instance to make sure it has the latest route info'
-                           'provided via DHCP...')
-            vm_tx.reboot_instance_and_verify()
+            #  self.log.debug('Rebooting the vm_tx instance to make sure it has the latest route info'
+            #                 'provided via DHCP...')
+            #  vm_tx.reboot_instance_and_verify()
             self.log.info("\n".join(vm_tx.sys('route') or []))
             timeout = 60
             start = time.time()
