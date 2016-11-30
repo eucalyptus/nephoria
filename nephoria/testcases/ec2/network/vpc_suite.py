@@ -40,6 +40,7 @@ from nephoria.testcontroller import TestController
 from nephoria.usercontext import UserContext
 from nephoria import CleanTestResourcesException
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, TestResult, SkipTestException
+from nephoria.aws.ec2.ec2ops import EC2ResourceNotFoundException
 from nephoria.aws.ec2.euinstance import EuInstance
 from cloud_utils.net_utils import packet_test, is_address_in_network, test_port_status, \
     get_network_info_for_cidr
@@ -3893,7 +3894,11 @@ class VpcSuite(CliTestRunner):
             subnet of the primary ENI to the instance under test.
             """
         user = self.user
-        emi = user.ec2.get_emi(root_device_type='ebs', not_platform='windows')
+        try:
+            emi = user.ec2.get_emi(root_device_type='ebs', not_platform='windows')
+        except EC2ResourceNotFoundException as E:
+            E.value = "Unable to find an EBS backed EMI. Error:{0}".format(E.value)
+            raise E
         if not emi:
             raise SkipTestException('Could not find an EBS backed image for this test?')
         vpc = self.test6b0_get_vpc_for_eni_tests()
@@ -4294,8 +4299,50 @@ class VpcSuite(CliTestRunner):
                                                                                   end_node))
                 vm1.refresh_ssh()
                 vm1.check_eni_attachments()
-                vm1.sys('ping -c1 -W5 {0}'.format(eni2.private_ip_address), code=0)
-                vm2.sys('ping -c1 -W5 {0}'.format(eni1.private_ip_address), code=0)
+                elapsed = 0
+                start = time.time()
+                good = False
+                self.log.debug('Attempting ENI ping checks post migration...')
+                for x in xrange(0, 6):
+                    try:
+                        elapsed = int(time.time() - start)
+                        self.log.debug('Attempting to ping eni2:{0} from vm1:{1}'
+                                       .format(eni2.private_ip_address, vm1.id))
+                        vm1.sys('ping -c1 -W5 {0}'.format(eni2.private_ip_address), code=0)
+                        good = True
+                        break
+                    except CommandExitCodeException as CE:
+                        self.log.warning('Ping attempt to eni2:{0} from vm1:{1} failed on'
+                                         ' attempt:{2}, elapsed:{3}'
+                                         .format(eni2.private_ip_address, vm1.id, x, elapsed))
+                        time.sleep(5)
+                if not good:
+                    raise RuntimeError('Ping attempt to eni2:{0} from vm1:{1} failed on'
+                                         ' attempt:{2}, elapsed:{3}'
+                                         .format(eni2.private_ip_address, vm1.id, x, elapsed))
+
+                elapsed = 0
+                start = time.time()
+                good = False
+                for x in xrange(0, 6):
+                    try:
+                        elapsed = int(time.time() - start)
+                        self.log.debug('Attempting to ping eni1:{0} from vm2:{1}'
+                                       .format(eni2.private_ip_address, vm1.id))
+                        vm2.sys('ping -c1 -W5 {0}'.format(eni1.private_ip_address), code=0)
+                        good = True
+                        break
+                    except CommandExitCodeException as CE:
+                        self.log.warning('Ping attempt to eni1:{0} from vm2:{1} failed on'
+                                         ' attempt:{2}, elapsed:{3}'
+                                         .format(eni1.private_ip_address, vm2.id, x, elapsed))
+                        time.sleep(5)
+                if not good:
+                    raise RuntimeError('Ping attempt to eni1:{0} from vm2:{1} failed on'
+                                       ' attempt:{2}, elapsed:{3}'
+                                       .format(eni1.private_ip_address, vm2.id, x, elapsed))
+
+
                 self.status('Ping check post migration complete.')
                 self.status('Nodes after migration completed...')
                 self.tc.sysadmin.show_nodes()
