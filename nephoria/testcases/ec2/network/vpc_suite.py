@@ -2694,20 +2694,29 @@ class VpcSuite(CliTestRunner):
                                                          destination_cidr_block=test_route,
                                                          instance_id=vm_rx.id)
             except Exception as E:
-                if isinstance(E, EC2ResponseError) and int(E.status) == 400 and \
-                    E.reason == 'InvalidInstanceID':
-                    self.status('Passed. Attempt to create a route referencing an instance with'
+                rmd = E.response.get('ResponseMetadata', None)
+                if rmd:
+                    status = rmd.get('HTTPStatusCode', None) or rmd.get('HTTPtatusCode', None)
+                else:
+                    status = 'unknown'
+                error = E.response.get('Error', {})
+                code = error.get('Code', '')
+                msg = error.get('Message', '')
+
+
+                if isinstance(E, ClientError) and status == 400 and \
+                    code == 'InvalidInstanceID':
+                    self.status('Passed. Attempt to create a route referencing an instance with '
                                 'multiple ENI was rejected with the proper errror:{0}'.format(E))
                 else:
-                    raise ValueError('Attempt to create a route referencing an instance with'
+                    raise ValueError('Attempt to create a route referencing an instance with '
                                      'multiple ENI returned an error but no the one this test '
-                                     'expected. Error:{0}'.format(E))
+                                     'expected. Etype: {0}, Error dict:{1}'.format(type(E),
+                                                                                   E.__dict__))
             else:
-                raise RuntimeError('System either created a route or did not respond with an error'
-                                   'when attempting to create a route referencing an instance with'
-                                   'multiple ENIs. Route:{0}'.format(route))
-
-
+                raise RuntimeError('System either created a route or did not respond with an '
+                                   'error when attempting to create a route referencing an '
+                                   'instance with multiple ENIs. Route:{0}'.format(route))
             try:
                 self.status('Detaching any additional network interfaces other than device index 0'
                             'on the rx vm...')
@@ -2760,9 +2769,9 @@ class VpcSuite(CliTestRunner):
                                        'table:{2}.'.format(test_route, vm_rx.id, new_rt.id))
             except Exception as E:
                 vm_rx.show_enis()
-                self.log.error(red('{0}\nError while attempting to create a route to an instance which'
-                               'previously had multiple ENIs but now does not. Error:{1}'
-                               .format(get_traceback(), E)))
+                self.log.error(red('{0}\nError while attempting to create a route to an '
+                                   'instance which previously had multiple ENIs but now does not. '
+                                   'Error:{1}'.format(get_traceback(), E)))
                 raise E
             self.status('Test Completed Successfully ')
         finally:
@@ -5735,7 +5744,7 @@ class VpcSuite(CliTestRunner):
         vpcs =[]
         if not self.args.no_clean:
             try:
-                keys = getattr(self, '_keypair', {})
+                keys = getattr(self, '_keypair', {}) or {}
                 key = keys.get(self.user)
                 if key:
                     key.delete()
@@ -5769,7 +5778,7 @@ class VpcSuite(CliTestRunner):
                 subnets = []
                 vpcs = []
                 try:
-                    keys = getattr(self, '_keypair', {})
+                    keys = getattr(self, '_keypair', {}) or {}
                     key = keys.get(self.new_ephemeral_user)
                     if key:
                         key.delete()
