@@ -5796,29 +5796,29 @@ class VpcSuite(CliTestRunner):
                 if key:
                     key.delete()
             except Exception as E:
-                self.log.error("{0}\nError#{1} deleting test keypairs:{2}"
-                               .format(get_traceback(), len(errors), E))
+                self.log.error(red("{0}\nError#{1} deleting test keypairs:{2}"
+                               .format(get_traceback(), len(errors), E)))
                 errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
             try:
                 subnets = self.user.ec2.get_all_subnets(filters={'tag-key': self.my_tag_name}) or []
                 vpcs = self.user.ec2.get_all_vpcs(filters={'tag-key': self.my_tag_name}) or []
             except Exception as E:
-                self.log.error("{0}\nError#{1} fetching subnets and vpcs during clean up:{2}"
-                               .format(get_traceback(), len(errors), E))
+                self.log.error(red("{0}\nError#{1} fetching subnets and vpcs during clean up:{2}"
+                               .format(get_traceback(), len(errors), E)))
                 errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
             for subnet in subnets:
                 try:
                     self.user.ec2.delete_subnet_and_dependency_artifacts(subnet)
                 except Exception as E:
-                    self.log.error("{0}\nError#{1} during vpc clean up:{2}"
-                                   .format(get_traceback(), len(errors), E))
+                    self.log.error(red("{0}\nError#{1} during vpc clean up:{2}"
+                                   .format(get_traceback(), len(errors), E)))
                     errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
             for vpc in vpcs:
                 try:
                     self.user.ec2.delete_vpc_and_dependency_artifacts(vpc)
                 except Exception as E:
-                    self.log.error("{0}\nError#{1} during vpc clean up:{2}"
-                                   .format(get_traceback(), len(errors), E))
+                    self.log.error(red("{0}\nError#{1} during vpc clean up:{2}"
+                                   .format(get_traceback(), len(errors), E)))
                     errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
 
             if self.new_ephemeral_user and self.new_ephemeral_user != self.user:
@@ -5830,8 +5830,8 @@ class VpcSuite(CliTestRunner):
                     if key:
                         key.delete()
                 except Exception as E:
-                    self.log.error("{0}\nError#{1} deleting test keypairs:{2}"
-                                   .format(get_traceback(), len(errors), E))
+                    self.log.error(red("{0}\nError#{1} deleting test keypairs:{2}"
+                                   .format(get_traceback(), len(errors), E)))
                     errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
                 try:
                     subnets = self.new_ephemeral_user.ec2.get_all_subnets(
@@ -5839,31 +5839,31 @@ class VpcSuite(CliTestRunner):
                     vpcs = self.new_ephemeral_user.ec2.get_all_vpcs(filters={'tag-key':
                                                                                  self.my_tag_name})
                 except Exception as E:
-                    self.log.error("{0}\nError#{1} fetching subnets and vpcs during clean up:{2}"
-                                   .format(get_traceback(), len(errors), E))
+                    self.log.error(red("{0}\nError#{1} fetching subnets and vpcs during clean "
+                                       "up:{2}".format(get_traceback(), len(errors), E)))
                     errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
                 for subnet in subnets:
                     try:
                         self.new_ephemeral_user.ec2.delete_subnet_and_dependency_artifacts(subnet)
                     except Exception as E:
-                        self.log.error("{0}\nError#{1} during vpc clean up:{2}"
-                                       .format(get_traceback(), len(errors), E))
+                        self.log.error(red("{0}\nError#{1} during vpc clean up:{2}"
+                                       .format(get_traceback(), len(errors), E)))
                         errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
                 for vpc in vpcs:
                     try:
                         self.new_ephemeral_user.ec2.delete_vpc_and_dependency_artifacts(vpc)
                     except Exception as E:
-                        self.log.error("{0}\nError#{1} during vpc clean up:{2}"
-                                       .format(get_traceback(), len(errors), E))
+                        self.log.error(red("{0}\nError#{1} during vpc clean up:{2}"
+                                       .format(get_traceback(), len(errors), E)))
                         errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
                 try:
                     self.log.debug('deleting new user account:"{0}"'
                                .format(self.new_ephemeral_user.account_name))
-                    self.tc.admin.iam.delete_account(account_name=self.new_ephemeral_user.account_name,
-                                                     recursive=True)
+                    self.tc.admin.iam.delete_account(
+                        account_name=self.new_ephemeral_user.account_name, recursive=True)
                 except Exception as E:
-                    self.log.error("{0}\nError#{1} during ephemeral user clean up:{2}"
-                                   .format(get_traceback(), len(errors), E))
+                    self.log.error(red("{0}\nError#{1} during ephemeral user clean up:{2}"
+                                   .format(get_traceback(), len(errors), E)))
                     errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
             if errors:
                 self.log.error(red("{0} Number of Errors During Cleanup:\n{1}"
