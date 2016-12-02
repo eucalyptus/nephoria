@@ -38,7 +38,9 @@ ingress/egress options for protocols = ['allow_per_protocol', 'allow_per_group',
 
 from nephoria.testcontroller import TestController
 from nephoria.usercontext import UserContext
+from nephoria import CleanTestResourcesException
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, TestResult, SkipTestException
+from nephoria.aws.ec2.ec2ops import EC2ResourceNotFoundException
 from nephoria.aws.ec2.euinstance import EuInstance
 from cloud_utils.net_utils import packet_test, is_address_in_network, test_port_status, \
     get_network_info_for_cidr
@@ -449,6 +451,17 @@ class VpcSuite(CliTestRunner):
             user.ec2.show_vpc(new_vpc)
         return test_vpcs
 
+    def create_subnet_and_tag(self, vpc_id, cidr_block, availability_zone=None, dry_run=False,
+                              user=None, tag=None, tag_value=None):
+        user = user or self.user
+        tag = tag or self.my_tag_name
+        subnet = user.ec2.connection.create_subnet(vpc_id=vpc_id, cidr_block=cidr_block,
+                                                   availability_zone=availability_zone,
+                                                   dry_run=dry_run)
+
+        user.ec2.create_tags(subnet.id, {tag: tag_value})
+        return subnet
+
     def create_test_subnets(self, vpc, zones=None, count_per_zone=1, user=None, verbose=False):
         """
         This method is intended to provided the convenience of returning a number of subnets per
@@ -495,9 +508,8 @@ class VpcSuite(CliTestRunner):
                             subnet_cidr = None
                             break
                 try:
-                    subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id,
-                                                               cidr_block=subnet_cidr,
-                                                               availability_zone=zone)
+                    subnet = self.create_subnet_and_tag(vpc_id=vpc.id, cidr_block=subnet_cidr,
+                                                        availability_zone=zone, user=user)
                 except:
                     try:
                         self.log.error('Existing subnets during failed create request:')
@@ -1814,6 +1826,7 @@ class VpcSuite(CliTestRunner):
         try:
             try:
                 vpc = user.ec2.connection.create_vpc(cidr_block='192.0.0.0/8')
+                user.ec2.create_tags(vpc.id, {self.my_tag_name: 'test_vpc'})
             except Exception as E:
                 if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                     E.reason == 'InvalidVpc.Range'):
@@ -1848,6 +1861,7 @@ class VpcSuite(CliTestRunner):
         try:
             try:
                 vpc = user.ec2.connection.create_vpc(cidr_block='192.0.0.0/29')
+                user.ec2.create_tags(vpc.id, {self.my_tag_name: 'test_vpc'})
             except Exception as E:
                 if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                             E.reason == 'InvalidVpc.Range'):
@@ -1888,6 +1902,7 @@ class VpcSuite(CliTestRunner):
                 try:
                     self.status('Attempting to create a VPC with invalid CIDR:"{0}"'.format(cidr))
                     vpc = user.ec2.connection.create_vpc(cidr_block=cidr)
+                    user.ec2.create_tags(vpc.id, {self.my_tag_name: 'test_vpc'})
                 except Exception as E:
                     if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                                 E.reason == 'InvalidVpc.Range'):
@@ -2554,9 +2569,9 @@ class VpcSuite(CliTestRunner):
                                              destination_cidr_block=test_route,
                                              interface_id=eni.id)
 
-            self.log.debug('Rebooting the vm_tx instance to make sure it has the latest route info'
-                           'provided via DHCP...')
-            vm_tx.reboot_instance_and_verify()
+            #  self.log.debug('Rebooting the vm_tx instance to make sure it has the latest route info'
+            #                'provided via DHCP...')
+            #  vm_tx.reboot_instance_and_verify()
             self.log.info("\n".join(vm_tx.sys('route') or []))
             timeout = 60
             start = time.time()
@@ -2680,20 +2695,29 @@ class VpcSuite(CliTestRunner):
                                                          destination_cidr_block=test_route,
                                                          instance_id=vm_rx.id)
             except Exception as E:
-                if isinstance(E, EC2ResponseError) and int(E.status) == 400 and \
-                    E.reason == 'InvalidInstanceID':
-                    self.status('Passed. Attempt to create a route referencing an instance with'
+                rmd = E.response.get('ResponseMetadata', None)
+                if rmd:
+                    status = rmd.get('HTTPStatusCode', None) or rmd.get('HTTPtatusCode', None)
+                else:
+                    status = 'unknown'
+                error = E.response.get('Error', {})
+                code = error.get('Code', '')
+                msg = error.get('Message', '')
+
+
+                if isinstance(E, ClientError) and status == 400 and \
+                    code == 'InvalidInstanceID':
+                    self.status('Passed. Attempt to create a route referencing an instance with '
                                 'multiple ENI was rejected with the proper errror:{0}'.format(E))
                 else:
-                    raise ValueError('Attempt to create a route referencing an instance with'
+                    raise ValueError('Attempt to create a route referencing an instance with '
                                      'multiple ENI returned an error but no the one this test '
-                                     'expected. Error:{0}'.format(E))
+                                     'expected. Etype: {0}, Error dict:{1}'.format(type(E),
+                                                                                   E.__dict__))
             else:
-                raise RuntimeError('System either created a route or did not respond with an error'
-                                   'when attempting to create a route referencing an instance with'
-                                   'multiple ENIs. Route:{0}'.format(route))
-
-
+                raise RuntimeError('System either created a route or did not respond with an '
+                                   'error when attempting to create a route referencing an '
+                                   'instance with multiple ENIs. Route:{0}'.format(route))
             try:
                 self.status('Detaching any additional network interfaces other than device index 0'
                             'on the rx vm...')
@@ -2746,9 +2770,9 @@ class VpcSuite(CliTestRunner):
                                        'table:{2}.'.format(test_route, vm_rx.id, new_rt.id))
             except Exception as E:
                 vm_rx.show_enis()
-                self.log.error(red('{0}\nError while attempting to create a route to an instance which'
-                               'previously had multiple ENIs but now does not. Error:{1}'
-                               .format(get_traceback(), E)))
+                self.log.error(red('{0}\nError while attempting to create a route to an '
+                                   'instance which previously had multiple ENIs but now does not. '
+                                   'Error:{1}'.format(get_traceback(), E)))
                 raise E
             self.status('Test Completed Successfully ')
         finally:
@@ -2877,9 +2901,9 @@ class VpcSuite(CliTestRunner):
                                              destination_cidr_block=test_route,
                                              interface_id=eni.id)
 
-            self.log.debug('Rebooting the vm_tx instance to make sure it has the latest route info'
-                           'provided via DHCP...')
-            vm_tx.reboot_instance_and_verify()
+            #  self.log.debug('Rebooting the vm_tx instance to make sure it has the latest route info'
+            #                 'provided via DHCP...')
+            #  vm_tx.reboot_instance_and_verify()
             self.log.info("\n".join(vm_tx.sys('route') or []))
             timeout = 60
             start = time.time()
@@ -3106,7 +3130,8 @@ class VpcSuite(CliTestRunner):
         try:
             self.status('Attempting to create subnet with VALID cidr equal to vpc cidr:{0}'
                         .format(test_cidr))
-            subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id, cidr_block=test_cidr)
+            subnet = self.create_subnet_and_tag(vpc_id=vpc.id, cidr_block=test_cidr,user=user)
+
         finally:
             if subnet:
                 self.status('attempting to delete SUBNET after this test...')
@@ -3138,8 +3163,9 @@ class VpcSuite(CliTestRunner):
                 subnets.append(subnet1)
                 self.status('Attempting to create a subnet with duplicate cidr block. This '
                             'should not be allowed')
-                subnet2 = user.ec2.connection.create_subnet(vpc_id=vpc.id,
-                                                            cidr_block=subnet1.cidr_block)
+
+                subnet2 = self.create_subnet_and_tag(vpc_id=vpc.id, cidr_block=subnet1.cidr_block,
+                                                     user=user)
                 subnets.append(subnet2)
             except Exception as E:
                 if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
@@ -3198,14 +3224,14 @@ class VpcSuite(CliTestRunner):
             try:
                 self.status('Attempting to create the intial subnet  equal to the entire'
                             'vpc cidr block:{0}...'.format(vpc.cidr_block))
-                subnet1 = user.ec2.connection.create_subnet(vpc_id=vpc.id,
-                                                            cidr_block=vpc.cidr_block)
+                subnet1 = self.create_subnet_and_tag(vpc_id=vpc.id, cidr_block=vpc.cidr_block,
+                                                     user=user)
                 subnets.append(subnet1)
                 self.status('Attempting to create a subnet with cidr block:{0} which overlaps'
                             'the inital subnet cidr_block:{0}'.format(test_cidr,
                                                                       subnet1.cidr_block))
-                subnet2 = user.ec2.connection.create_subnet(vpc_id=vpc.id,
-                                                            cidr_block=test_cidr)
+                subnet2 = self.create_subnet_and_tag(vpc_id=vpc.id, cidr_block=test_cidr,
+                                                     user=user)
                 subnets.append(subnet2)
             except Exception as E:
                 if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
@@ -3254,7 +3280,8 @@ class VpcSuite(CliTestRunner):
             try:
                 self.status('Attempting to create subnet with invalid cidr:{0}'
                             .format(test_cidr))
-                subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id, cidr_block= test_cidr)
+                subnet = self.create_subnet_and_tag(vpc_id=vpc.id, cidr_block=test_cidr,
+                                                    user=user)
             except Exception as E:
                 if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                             E.reason == 'InvalidSubnet.Range'):
@@ -3301,7 +3328,8 @@ class VpcSuite(CliTestRunner):
             try:
                 self.status('Attempting to create subnet with invalid cidr:{0}'
                             .format(test_cidr))
-                subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id, cidr_block= test_cidr)
+                subnet = self.create_subnet_and_tag(vpc_id=vpc.id, cidr_block=test_cidr,
+                                                    user=user)
             except Exception as E:
                 if (isinstance(E, EC2ResponseError) and int(E.status) == 400 and
                             E.reason == 'InvalidSubnet.Range'):
@@ -3641,8 +3669,9 @@ class VpcSuite(CliTestRunner):
         user = self.user
         self.log.debug('creating test vpc...')
         vpc = user.ec2.connection.create_vpc('10.0.0.0/24')
+        user.ec2.create_tags(vpc.id, {self.my_tag_name: 'test_vpc'})
         self.log.debug('creating test subnet....')
-        subnet = user.ec2.connection.create_subnet(vpc_id=vpc.id, cidr_block=vpc.cidr_block)
+        subnet = self.create_subnet_and_tag(vpc_id=vpc.id, cidr_block=vpc.cidr_block, user=user)
         net_info = get_network_info_for_cidr(vpc.cidr_block)
         net_addr = net_info.get('network')
         bcast_addr = net_info.get('broadcast')
@@ -3865,7 +3894,11 @@ class VpcSuite(CliTestRunner):
             subnet of the primary ENI to the instance under test.
             """
         user = self.user
-        emi = user.ec2.get_emi(root_device_type='ebs', not_platform='windows')
+        try:
+            emi = user.ec2.get_emi(root_device_type='ebs', not_platform='windows')
+        except EC2ResourceNotFoundException as E:
+            E.value = "Unable to find an EBS backed EMI. Error:{0}".format(E.value)
+            raise E
         if not emi:
             raise SkipTestException('Could not find an EBS backed image for this test?')
         vpc = self.test6b0_get_vpc_for_eni_tests()
@@ -4266,8 +4299,50 @@ class VpcSuite(CliTestRunner):
                                                                                   end_node))
                 vm1.refresh_ssh()
                 vm1.check_eni_attachments()
-                vm1.sys('ping -c1 -W5 {0}'.format(eni2.private_ip_address), code=0)
-                vm2.sys('ping -c1 -W5 {0}'.format(eni1.private_ip_address), code=0)
+                elapsed = 0
+                start = time.time()
+                good = False
+                self.log.debug('Attempting ENI ping checks post migration...')
+                for x in xrange(0, 6):
+                    try:
+                        elapsed = int(time.time() - start)
+                        self.log.debug('Attempting to ping eni2:{0} from vm1:{1}'
+                                       .format(eni2.private_ip_address, vm1.id))
+                        vm1.sys('ping -c1 -W5 {0}'.format(eni2.private_ip_address), code=0)
+                        good = True
+                        break
+                    except CommandExitCodeException as CE:
+                        self.log.warning('Ping attempt to eni2:{0} from vm1:{1} failed on'
+                                         ' attempt:{2}, elapsed:{3}'
+                                         .format(eni2.private_ip_address, vm1.id, x, elapsed))
+                        time.sleep(5)
+                if not good:
+                    raise RuntimeError('Ping attempt to eni2:{0} from vm1:{1} failed on'
+                                         ' attempt:{2}, elapsed:{3}'
+                                         .format(eni2.private_ip_address, vm1.id, x, elapsed))
+
+                elapsed = 0
+                start = time.time()
+                good = False
+                for x in xrange(0, 6):
+                    try:
+                        elapsed = int(time.time() - start)
+                        self.log.debug('Attempting to ping eni1:{0} from vm2:{1}'
+                                       .format(eni2.private_ip_address, vm1.id))
+                        vm2.sys('ping -c1 -W5 {0}'.format(eni1.private_ip_address), code=0)
+                        good = True
+                        break
+                    except CommandExitCodeException as CE:
+                        self.log.warning('Ping attempt to eni1:{0} from vm2:{1} failed on'
+                                         ' attempt:{2}, elapsed:{3}'
+                                         .format(eni1.private_ip_address, vm2.id, x, elapsed))
+                        time.sleep(5)
+                if not good:
+                    raise RuntimeError('Ping attempt to eni1:{0} from vm2:{1} failed on'
+                                       ' attempt:{2}, elapsed:{3}'
+                                       .format(eni1.private_ip_address, vm2.id, x, elapsed))
+
+
                 self.status('Ping check post migration complete.')
                 self.status('Nodes after migration completed...')
                 self.tc.sysadmin.show_nodes()
@@ -5711,13 +5786,90 @@ class VpcSuite(CliTestRunner):
     ###############################################################################################
 
     def clean_method(self):
+        errors = []
+        subnets = []
+        vpcs =[]
         if not self.args.no_clean:
-            self.user.ec2.clean_all_test_resources()
+            try:
+                keys = getattr(self, '_keypair', {}) or {}
+                key = keys.get(self.user)
+                if key:
+                    key.delete()
+            except Exception as E:
+                self.log.error(red("{0}\nError#{1} deleting test keypairs:{2}"
+                               .format(get_traceback(), len(errors), E)))
+                errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+            try:
+                subnets = self.user.ec2.get_all_subnets(filters={'tag-key': self.my_tag_name}) or []
+                vpcs = self.user.ec2.get_all_vpcs(filters={'tag-key': self.my_tag_name}) or []
+            except Exception as E:
+                self.log.error(red("{0}\nError#{1} fetching subnets and vpcs during clean up:{2}"
+                               .format(get_traceback(), len(errors), E)))
+                errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+            for subnet in subnets:
+                try:
+                    self.user.ec2.delete_subnet_and_dependency_artifacts(subnet)
+                except Exception as E:
+                    self.log.error(red("{0}\nError#{1} during vpc clean up:{2}"
+                                   .format(get_traceback(), len(errors), E)))
+                    errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+            for vpc in vpcs:
+                try:
+                    self.user.ec2.delete_vpc_and_dependency_artifacts(vpc)
+                except Exception as E:
+                    self.log.error(red("{0}\nError#{1} during vpc clean up:{2}"
+                                   .format(get_traceback(), len(errors), E)))
+                    errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+
             if self.new_ephemeral_user and self.new_ephemeral_user != self.user:
-                self.log.debug('deleting new user account:"{0}"'
-                           .format(self.new_ephemeral_user.account_name))
-                self.tc.admin.iam.delete_account(account_name=self.new_ephemeral_user.account_name,
-                                                 recursive=True)
+                subnets = []
+                vpcs = []
+                try:
+                    keys = getattr(self, '_keypair', {}) or {}
+                    key = keys.get(self.new_ephemeral_user)
+                    if key:
+                        key.delete()
+                except Exception as E:
+                    self.log.error(red("{0}\nError#{1} deleting test keypairs:{2}"
+                                   .format(get_traceback(), len(errors), E)))
+                    errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+                try:
+                    subnets = self.new_ephemeral_user.ec2.get_all_subnets(
+                        filters={'tag-key': self.my_tag_name}) or []
+                    vpcs = self.new_ephemeral_user.ec2.get_all_vpcs(filters={'tag-key':
+                                                                                 self.my_tag_name})
+                except Exception as E:
+                    self.log.error(red("{0}\nError#{1} fetching subnets and vpcs during clean "
+                                       "up:{2}".format(get_traceback(), len(errors), E)))
+                    errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+                for subnet in subnets:
+                    try:
+                        self.new_ephemeral_user.ec2.delete_subnet_and_dependency_artifacts(subnet)
+                    except Exception as E:
+                        self.log.error(red("{0}\nError#{1} during vpc clean up:{2}"
+                                       .format(get_traceback(), len(errors), E)))
+                        errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+                for vpc in vpcs:
+                    try:
+                        self.new_ephemeral_user.ec2.delete_vpc_and_dependency_artifacts(vpc)
+                    except Exception as E:
+                        self.log.error(red("{0}\nError#{1} during vpc clean up:{2}"
+                                       .format(get_traceback(), len(errors), E)))
+                        errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+                try:
+                    self.log.debug('deleting new user account:"{0}"'
+                               .format(self.new_ephemeral_user.account_name))
+                    self.tc.admin.iam.delete_account(
+                        account_name=self.new_ephemeral_user.account_name, recursive=True)
+                except Exception as E:
+                    self.log.error(red("{0}\nError#{1} during ephemeral user clean up:{2}"
+                                   .format(get_traceback(), len(errors), E)))
+                    errors.append('clean_method error#{0}, ERR:"{1}"'.format(len(errors), E))
+            if errors:
+                self.log.error(red("{0} Number of Errors During Cleanup:\n{1}"
+                               .format(len(errors), "\n".join(str(x) for x in errors))))
+                raise CleanTestResourcesException("{0} Number of Errors During Cleanup"
+                                                  .format(len(errors)))
 
 
     ###############################################################################################
