@@ -1,6 +1,6 @@
 {
     "AWSTemplateFormatVersion" : "2010-09-09",
-    "Description" : "Subnet Test - VPC - Multiple Subnet setup in one VPC (requires multi-cluster cloud) ",
+    "Description" : "Subnet Test - VPC - Multiple Subnet setup in VPC on multiple availability zone (cluster) setup",
     "Resources" : {
         "Subnet" : {
            "Type" : "AWS::EC2::Subnet",

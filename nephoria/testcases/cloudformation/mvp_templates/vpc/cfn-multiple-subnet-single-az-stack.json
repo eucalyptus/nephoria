@@ -1,0 +1,72 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "Subnet Test - VPC - Multiple Subnets in VPC on single cluster setup",
+    "Resources" : {
+        "Subnet1" : {
+           "Type" : "AWS::EC2::Subnet",
+           "Properties" : {
+               "AvailabilityZone" : { "Fn::Select" : [ "0", { "Fn::GetAZs" : { "Ref" : "AWS::Region" } } ] },
+               "CidrBlock" : "10.0.0.0/24",
+               "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
+               "VpcId" : { "Ref" : "VPC1" }
+           }
+        },
+        "Subnet2" : {
+           "Type" : "AWS::EC2::Subnet",
+           "Properties" : {
+               "AvailabilityZone" : { "Fn::Select" : [ "0", { "Fn::GetAZs" : { "Ref" : "AWS::Region" } } ] },
+               "CidrBlock" : "10.0.1.0/24",
+               "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ],
+               "VpcId" : { "Ref" : "VPC1" }
+           }
+        },
+        "VPC1" : {
+           "Type" : "AWS::EC2::VPC",
+           "Properties" : {
+               "CidrBlock" : "10.0.0.0/16"
+           }
+        }
+    },
+
+    "Outputs" : {
+        "VPC1Id" : {
+            "Description" : "Resource ID of VPC1",
+            "Value" : { "Ref" : "VPC1" }
+        },
+
+        "VPC1CidrBlock" : {
+            "Description" : "CIDR Block of VPC1",
+            "Value" : { "Fn::GetAtt" : [ "VPC1", "CidrBlock" ] }
+        },
+
+        "VPC1DefaultNetworkAcl" : {
+            "Description" : "Default Network Acl of VPC1",
+            "Value" : { "Fn::GetAtt" : [ "VPC1", "DefaultNetworkAcl" ] }
+        },
+
+        "VPC1DefaultSecurityGroup" : {
+            "Description" : "Default Security Group of VPC1",
+            "Value" : { "Fn::GetAtt" : [ "VPC1", "DefaultSecurityGroup" ] }
+        },
+
+        "Subnet1Id" : {
+            "Description" : "Resource ID of Subnet1",
+            "Value" : { "Ref" : "Subnet1" }
+        },
+
+        "Subnet1AvailabilityZone" : {
+            "Description" : "Availability Zone of Subnet1",
+            "Value" : { "Fn::GetAtt" : [ "Subnet1", "AvailabilityZone" ] }
+        },
+
+        "Subnet2Id" : {
+            "Description" : "Resource ID of Subnet2",
+            "Value" : { "Ref" : "Subnet2" }
+        },
+
+        "Subnet2AvailabilityZone" : {
+            "Description" : "Availability Zone of Subnet2",
+            "Value" : { "Fn::GetAtt" : [ "Subnet2", "AvailabilityZone" ] }
+        }
+    }
+}
