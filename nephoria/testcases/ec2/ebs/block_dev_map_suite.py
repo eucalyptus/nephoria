@@ -10,13 +10,10 @@ of the vm/guest.
 
 '''
 from cloud_utils.log_utils import get_traceback, red
-from cloud_admin.backends.network.eucanetxml import EucaNetXml
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, SkipTestException
 from nephoria.testcontroller import TestController
 from boto.ec2.group import Group
 
-
-from argparse import ArgumentError
 from boto.ec2.blockdevicemapping import BlockDeviceMapping, BlockDeviceType
 import time
 import types
@@ -256,13 +253,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             error_count += 1
             self.log.error("{0}\n{1}".format(get_traceback(), E))
             errors += "{0}\n".format(E)
-        try:
-            if self.keypair:
-                self.user.ec2.delete_keypair(self.keypair)
-        except Exception as E:
-            error_count += 1
-            self.log.error("{0}\n{1}".format(get_traceback(), E))
-            errors += "{0}\n".format(E)
+
         try:
             instances = self.user.ec2.get_instances(filters={'tag-key': self.my_test_id})
             if instances:
@@ -275,6 +266,13 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             volumes = self.user.ec2.get_volumes(filters={'tag-key': self.my_test_id})
             if volumes:
                 self.user.ec2.delete_volumes(volumes)
+        except Exception as E:
+            error_count += 1
+            self.log.error("{0}\n{1}".format(get_traceback(), E))
+            errors += "{0}\n".format(E)
+        try:
+            if self.keypair:
+                self.user.ec2.delete_keypair(self.keypair)
         except Exception as E:
             error_count += 1
             self.log.error("{0}\n{1}".format(get_traceback(), E))
@@ -367,7 +365,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         instance.md5_attached_euvolume(self.build_image_volume)
         self.build_image_snapshot = self.user.ec2.create_snapshots(
             volume=self.build_image_volume)[0]
-        self.user.ec2.create_tags(self.build_image_snapshot.id, {self.my_tag_id: ''})
+        self.user.ec2.create_tags(self.build_image_snapshot.id, {self.my_test_id: ''})
         #update test resources with tags...
         self.build_image_snapshot.add_tag(self.build_image_snapshot_tag_name)
         self.build_image_snapshot.add_tag('md5',self.build_image_volume.md5)
@@ -384,7 +382,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             instance.vol_write_random_data_get_md5(self.base_test_volume, overwrite=True)
             self.base_test_snapshot = self.user.ec2.create_snapshots(
                 volume=self.base_test_volume)[0]
-            self.user.ec2.create_tags(self.base_test_snapshot.id, {self.my_tag_id: ''})
+            self.user.ec2.create_tags(self.base_test_snapshot.id, {self.my_test_id: ''})
             self.base_test_snapshot.add_tag(self.base_test_snapshot_tag_name)
             self.base_test_volume.add_tag('md5', self.base_test_volume.md5)
             self.base_test_volume.add_tag('md5len', self.base_test_volume.md5len)
@@ -437,6 +435,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
                                                         name=name,
                                                         block_device_map=block_device_map
                                                         )
+        self.user.ec2.create_tags(image_id, {self.my_test_id: ''})
         new_image = self.user.ec2.get_emi(emi=image_id)
         self.images.append(new_image)
         return new_image
@@ -562,7 +561,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
         except Exception, e:
-            tb = self.user.ec2.get_traceback()
+            tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
@@ -581,7 +580,8 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         '''
         errmsg = ""
         image_name = self.test_image2_tag_name + "_" + str(self.build_image_snapshot.id)
-        image = self.create_bfebs_image(snapshot=self.build_image_snapshot, name=image_name, delete_on_terminate=False)
+        image = self.create_bfebs_image(snapshot=self.build_image_snapshot, name=image_name,
+                                        delete_on_terminate=False)
         if image.block_device_mapping.get(image.root_device_name).delete_on_termination:
             raise Exception('Expected DOT is False, instead image delete on termination set to:' +
                             str(image.block_device_mapping.get(image.root_device_name.delete_on_termination)))
@@ -615,7 +615,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
         except Exception, e:
-            tb = self.user.ec2.get_traceback()
+            tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
@@ -720,7 +720,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
         except Exception, e:
-            tb = self.user.ec2.get_traceback()
+            tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
@@ -823,7 +823,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
         except Exception, e:
-            tb = self.user.ec2.get_traceback()
+            tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
@@ -901,7 +901,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
         except Exception, e:
-            tb = self.user.ec2.get_traceback()
+            tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
@@ -1022,7 +1022,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
         except Exception, e:
-            tb = self.user.ec2.get_traceback()
+            tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
@@ -1078,7 +1078,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
         except Exception, e:
-            tb = self.user.ec2.get_traceback()
+            tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
@@ -1173,7 +1173,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
 
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
         except Exception, e:
-            tb = self.user.ec2.get_traceback()
+            tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
@@ -1292,12 +1292,13 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
         except Exception, e:
-            tb = self.user.ec2.get_traceback()
+            tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
         finally:
-            instance.terminate_and_verify()
+            if instance:
+                instance.terminate_and_verify()
             if errmsg:
                 raise Exception(errmsg)
 
@@ -1311,10 +1312,11 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         errmsg = ""
         bdm_snapshot_dev = '/dev/vdc'
         bdm_snap_size = 6
-        maxprop = self.user.ec2.property_manager.get_euproperty_by_name('maxvolumesizeingb')
+        prop_name = "{0}.storage.maxvolumesizeingb".format(self.zone)
+        maxprop = self.tc.sysadmin.get_property(prop_name)
         orig_maxsize = maxprop.value
         try:
-            maxprop.set(1)
+            maxprop.modify_value(1)
             image = self.test_image1
             self.status('Using image:' +str(self.test_image1.id)+ ", ephemeral, and snapshot ebs devices added at run time..")
             self.status('Original Image block device map:')
@@ -1338,12 +1340,12 @@ class Block_Device_Mapping_Tests(CliTestRunner):
                 except:pass
                 raise Exception('Instance did not fail, storage property "maxvolumesizeingb" may have been exceeded')
         except Exception, e:
-            tb = self.user.ec2.get_traceback()
+            tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
         finally:
-            maxprop.set(orig_maxsize)
+            maxprop.modify_value(orig_maxsize)
             if errmsg:
                 raise Exception(errmsg)
 
@@ -1356,10 +1358,11 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         errmsg = ""
         bdm_snapshot_dev = '/dev/vdc'
         bdm_snap_size = 6
-        maxtotal_prop = self.user.ec2.property_manager.get_euproperty_by_name('maxtotalvolumesizeingb')
+        prop_name = "{0}.storage.maxtotalvolumesizeingb".format(self.zone)
+        maxtotal_prop = self.tc.sysadmin.get_property(prop_name)
         orig_maxtotal = maxtotal_prop.value
         try:
-            maxtotal_prop.set(5)
+            maxtotal_prop.modify_value(5)
             image = self.test_image1
             self.status('Using image:' +str(self.test_image1.id)+ ", ephemeral, and snapshot ebs devices added at run time..")
             self.status('Original Image block device map:')
@@ -1383,12 +1386,12 @@ class Block_Device_Mapping_Tests(CliTestRunner):
                 except:pass
                 raise Exception('Instance did not fail, storage property "maxtotalvolumesizeingb" may have been exceeded')
         except Exception, e:
-            tb = self.user.ec2.get_traceback()
+            tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
         finally:
-            maxtotal_prop.set(orig_maxtotal)
+            maxtotal_prop.modify_value(orig_maxtotal)
             if errmsg:
                 raise Exception(errmsg)
 
@@ -1413,6 +1416,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         '''
         errmsg = ""
         image = self.test_image1
+        instance = None
         bdm_snapshot_dev = '/dev/vdc'
         bdm_snap_size = self.base_test_snapshot.volume_size
         bdm_root_size = image.block_device_mapping.get(image.root_device_name).size
@@ -1505,12 +1509,13 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
         except Exception, e:
-            tb = self.user.ec2.get_traceback()
+            tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
         finally:
-            instance.terminate_and_verify()
+            if instance:
+                instance.terminate_and_verify()
             if errmsg:
                 raise Exception(errmsg)
 
@@ -1565,6 +1570,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
 
         '''
         errmsg = ""
+        instance = None
         image = self.test_image1
         bdm_snapshot_dev = '/dev/vdc'
         bdm_snap_size = self.base_test_snapshot.volume_size
@@ -1625,16 +1631,17 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             elapsed = 0
             errmsg = ''
         except Exception, e:
-            tb = self.user.ec2.get_traceback()
+            tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' + str(e)
             self.endfailure(errmsg)
 
         finally:
             try:
-                self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
-                instance.terminate_and_verify()
+                if instance:
+                    self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
+                    instance.terminate_and_verify()
             except Exception, tv:
-                tb = self.user.ec2.get_traceback()
+                tb = get_traceback()
                 errmsg = errmsg + "\n" + str(tb) + "\nError during terminate and verify:" + str(tv)
             if errmsg:
                 raise Exception(errmsg)
