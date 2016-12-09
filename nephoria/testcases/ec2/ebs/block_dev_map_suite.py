@@ -13,6 +13,9 @@ from cloud_utils.log_utils import get_traceback, red
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner, SkipTestException
 from nephoria.testcontroller import TestController
 from boto.ec2.group import Group
+from boto.ec2.instance import Instance
+from boto.ec2.volume import Volume
+from boto.ec2.snapshot import Snapshot
 
 from boto.ec2.blockdevicemapping import BlockDeviceMapping, BlockDeviceType
 import time
@@ -100,7 +103,14 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         self._group = None
         self._test_id = None
         self._keypairname = None
-        self._keypair= None
+        self._keypair = None
+
+        self._base_test_snapshot = None
+        self._base_test_volume = None
+        self._current_test_instance = None
+        self._build_image_volume = None
+        self._build_image_snapshot = None
+
         self.test_resources = {}
         self.reservation = None
         self.instance = None
@@ -205,10 +215,17 @@ class Block_Device_Mapping_Tests(CliTestRunner):
                 if self.args.emi:
                     emi = self.user.ec2.get_emi(emi=self.args.emi)
                 else:
-                    emi = self.user.ec2.get_emi()
+                    try:
+                        emi = self.user.ec2.get_emi(basic_image=True,
+                                                    root_device_type='instance-store')
+                    except Exception as E:
+                        self.log.warn(red('Error fetching a basic test image, will try any image next. '
+                                      'Error:{0}'.format(E)))
+                    #emi = self.user.ec2.get_emi()
                 setattr(self, '_emi', emi)
             except Exception as E:
                 self.log.error("{0}\nFailed to fetch EMI:{1}".format(get_traceback(), E))
+                raise E
         return emi
 
     @emi.setter
@@ -227,6 +244,103 @@ class Block_Device_Mapping_Tests(CliTestRunner):
                                                             aws_user_name=self.args.test_user)
             setattr(self, '_user', user)
         return user
+
+    @property
+    def base_test_snapshot(self):
+        if not self._base_test_snapshot:
+            self.test0_setup_bfebs_instance_volume_and_snapshots_from_url()
+        return self._base_test_snapshot
+
+    @base_test_snapshot.setter
+    def base_test_snapshot(self, snapshot):
+        if snapshot is None or isinstance(snapshot, Snapshot):
+            self._build_image_snapshot = snapshot
+        else:
+            msg = "{0}Unsupported type for base_image_snapshot. Must be of type None or " \
+                  "boto.Volume. Got: {1}/{2}".format(get_traceback(), snapshot, type(snapshot))
+            self.log.error(msg)
+            raise ValueError(msg)
+
+    @property
+    def base_test_volume(self):
+        if not self._base_test_volume:
+            self._base_test_volume = self.user.ec2.create_volumes(self.zone, size=1,
+                                                                  monitor_to_state=None)[0]
+            self.user.ec2.create_tags(self.base_test_volume.id, {self.my_test_id: ''})
+            self._base_test_volume.add_tag(self.base_test_volume_tag_name)
+            self.user.ec2.monitor_created_euvolumes_to_state(volumes=[self._base_test_volume])
+        return self._base_test_volume
+
+    @base_test_volume.setter
+    def base_test_volume(self, volume):
+        if volume is None or isinstance(volume, Volume):
+            self._build_image_volume = volume
+        else:
+            msg = "{0}Unsupported type for base_test_volume. Must be of type None or " \
+                  "boto.Volume. Got: {1}/{2}".format(get_traceback(), volume, type(volume))
+            self.log.error(msg)
+            raise ValueError(msg)
+
+    @property
+    def current_test_instance(self):
+        if not self._current_test_instance:
+            self.status('Attempting to launch helper instance...')
+            self._current_test_instance = self.user.ec2.run_image(self.emi,
+                                                                  keypair=self.keypair.name,
+                                                                  vmtype=self.args.vmtype,
+                                                                  group=self.group.id,
+                                                                  zone=self.zone)[0]
+            self.user.ec2.create_tags(self._current_test_instance.id, {self.my_test_id: ''})
+        return self._current_test_instance
+
+    @current_test_instance.setter
+    def current_test_instance(self, instance):
+        if instance is None or isinstance(instance, Instance):
+            self._current_test_instance = instance
+        else:
+            msg = "{0}Unsupported type for test_instance. Must be of type None or " \
+                  "boto.Instance. Got: {1}/{2}".format(get_traceback(), instance, type(instance))
+            self.log.error(msg)
+            raise ValueError(msg)
+
+    @property
+    def build_image_volume(self):
+        if not self._build_image_volume:
+            self.status('create test volume(s)...')
+            self._build_image_volume = self.user.ec2.create_volumes(self.zone,
+                                                                    size=self.image_gigs,
+                                                                    monitor_to_state=None)[0]
+            self.user.ec2.create_tags(self.build_image_volume.id, {self.my_test_id: ''})
+            self.build_image_volume.add_tag(self.build_image_volume_tag_name)
+            self.user.ec2.monitor_created_euvolumes_to_state(volumes=[self._build_image_volume])
+        return self._build_image_volume
+
+    @build_image_volume.setter
+    def build_image_volume(self, volume):
+        if volume is None or isinstance(volume, Volume):
+            self._build_image_volume = volume
+        else:
+            msg = "{0}Unsupported type for build_image_volume. Must be of type None or " \
+                  "boto.Volume. Got: {1}/{2}".format(get_traceback(), volume, type(volume))
+            self.log.error(msg)
+            raise ValueError(msg)
+
+    @property
+    def build_image_snapshot(self):
+        if not self._build_image_snapshot:
+            self.test0_setup_bfebs_instance_volume_and_snapshots_from_url()
+        return self._build_image_snapshot
+
+    @build_image_snapshot.setter
+    def build_image_snapshot(self, snapshot):
+        if snapshot is None or isinstance(snapshot, Snapshot):
+            self._build_image_snapshot = snapshot
+        else:
+            msg = "{0}Unsupported type for build_image_snapshot. Must be of type None or " \
+                  "boto.Volume. Got: {1}/{2}".format(get_traceback(), snapshot, type(snapshot))
+            self.log.error(msg)
+            raise ValueError(msg)
+
 
     def clean_method(self):
         '''
@@ -326,7 +440,10 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         except:
             return None
 
-    def test0_setup_bfebs_instance_volume_and_snapshots_from_url(self, url=None, create_test_vol=True,
+
+
+    def test0_setup_bfebs_instance_volume_and_snapshots_from_url(self, url=None,
+                                                                 create_test_vol=True,
                                                                  time_per_gig=100):
         if self.args.use_previous:
             self.try_existing_resources_else_create_them()
@@ -336,34 +453,37 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         self.image_bytes = self.get_remote_file_size_via_http(url=url)
         self.image_gigs = int(math.ceil(float(self.image_bytes)/self.gig) or 1)
         curl_timeout= self.image_gigs * time_per_gig
-        self.status('Attempting to launch helper instance...')
-        instance = self.user.ec2.run_image(self.emi,
-                                              keypair=self.keypair.name,
-                                              vmtype=self.args.vmtype,
-                                              group=self.group.id,
-                                              zone=self.zone)[0]
-        self.user.ec2.create_tags(instance.id, {self.my_test_id: ''})
-        self.current_test_instance = instance
-        self.status('create test volume(s)...')
-        self.build_image_volume = self.user.ec2.create_volumes(self.zone, size = self.image_gigs,
-                                                               monitor_to_state=None)[0]
-        self.user.ec2.create_tags(self.build_image_volume.id, {self.my_test_id: ''})
-        volumes.append(self.build_image_volume)
-        self.build_image_volume.add_tag(self.build_image_volume_tag_name)
 
-        if create_test_vol:
-            self.base_test_volume = self.user.ec2.create_volumes(self.zone, size = 1,
-                                                                 monitor_to_state=None )[0]
-            self.user.ec2.create_tags(self.base_test_volume.id, {self.my_test_id: ''})
-            volumes.append(self.base_test_volume)
-            self.base_test_volume.add_tag(self.base_test_volume_tag_name)
-        self.user.ec2.monitor_created_euvolumes_to_state(volumes=volumes)
+        instance = self.current_test_instance
+        #self.status('Attempting to launch helper instance...')
+        #instance = self.user.ec2.run_image(self.emi,
+        #                                      keypair=self.keypair.name,
+        #                                      vmtype=self.args.vmtype,
+        #                                      group=self.group.id,
+        #                                      zone=self.zone)[0]
+        #self.user.ec2.create_tags(instance.id, {self.my_test_id: ''})
+        #self.current_test_instance = instance
+
+        #self.status('create test volume(s)...')
+        #self.build_image_volume = self.user.ec2.create_volumes(self.zone, size = self.image_gigs,
+        #                                                       monitor_to_state=None)[0]
+        #self.user.ec2.create_tags(self.build_image_volume.id, {self.my_test_id: ''})
+        #volumes.append(self.build_image_volume)
+        #self.build_image_volume.add_tag(self.build_image_volume_tag_name)
+
+        #if create_test_vol:
+        #    self.base_test_volume = self.user.ec2.create_volumes(self.zone, size = 1,
+        #                                                         monitor_to_state=None )[0]
+        #    self.user.ec2.create_tags(self.base_test_volume.id, {self.my_test_id: ''})
+        #    volumes.append(self.base_test_volume)
+        #    self.base_test_volume.add_tag(self.base_test_volume_tag_name)
+        #self.user.ec2.monitor_created_euvolumes_to_state(volumes=volumes)
         self.status("Copy the remote bfebs image into a volume and create snapshot from it...")
         instance.attach_volume(self.build_image_volume)
         instance.sys("curl "+url+" > "+ self.build_image_volume.guestdev+" && sync",
                      timeout=curl_timeout)
         instance.md5_attached_euvolume(self.build_image_volume)
-        self.build_image_snapshot = self.user.ec2.create_snapshots(
+        self._build_image_snapshot = self.user.ec2.create_snapshots(
             volume=self.build_image_volume)[0]
         self.user.ec2.create_tags(self.build_image_snapshot.id, {self.my_test_id: ''})
         #update test resources with tags...
@@ -380,7 +500,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             self.status('Attaching test volume, writing random data into it and gathering md5...')
             instance.attach_volume(self.base_test_volume)
             instance.vol_write_random_data_get_md5(self.base_test_volume, overwrite=True)
-            self.base_test_snapshot = self.user.ec2.create_snapshots(
+            self._base_test_snapshot = self.user.ec2.create_snapshots(
                 volume=self.base_test_volume)[0]
             self.user.ec2.create_tags(self.base_test_snapshot.id, {self.my_test_id: ''})
             self.base_test_snapshot.add_tag(self.base_test_snapshot_tag_name)
@@ -526,6 +646,8 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         -will look for 'no' ephemeral
         '''
         errmsg = ""
+        if not self.build_image_snapshot:
+            raise SkipTestException('Build Image Snapshot is None, check logs for related failures')
         image_name = self.test_image1_tag_name + "_" + str(self.build_image_snapshot.id)
         image = self.create_bfebs_image(snapshot=self.build_image_snapshot, name=image_name, delete_on_terminate=True)
         if not image.block_device_mapping.get(image.root_device_name).delete_on_termination:
@@ -579,6 +701,8 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         -will look for 'no' ephemeral
         '''
         errmsg = ""
+        if not self.build_image_snapshot:
+            raise SkipTestException('Build Image Snapshot is None, check logs for related failures')
         image_name = self.test_image2_tag_name + "_" + str(self.build_image_snapshot.id)
         image = self.create_bfebs_image(snapshot=self.build_image_snapshot, name=image_name,
                                         delete_on_terminate=False)
@@ -649,6 +773,11 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         bdm_ephemeral_dev = '/dev/vdb'
         bdm_ephemeral_name = 'ephemeral0'
         bdm_emptyvol_size = 2
+
+        if not self.build_image_snapshot:
+            raise SkipTestException('Build Image Snapshot is None, check logs for related failures')
+        if not self.base_test_snapshot:
+            raise SkipTestException('Base Test Snapshot is None, check logs for related failures')
 
         self.status('Creating image with block device mapping...')
         bdm = self.add_block_device_types_to_mapping(snapshot_id=self.base_test_snapshot.id,
