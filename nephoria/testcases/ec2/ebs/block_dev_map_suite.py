@@ -402,20 +402,31 @@ class Block_Device_Mapping_Tests(CliTestRunner):
     def get_remote_file_size_via_http(self, url=None):
         url = url or self.url
         #Get the remote file size from the http header of the url given
-        try:
-            url = url.replace('http://','')
-            host = url.split('/')[0]
-            path = url.replace(host,'')
-            self.log.debug("get_remote_file, host("+host+") path("+path+")")
-            conn=httplib.HTTPConnection(host)
-            conn.request("HEAD", path)
-            res=conn.getresponse()
-            image_bytes = int(res.getheader('content-length'))
-            self.log.debug("content-length:"+str(self.image_bytes))
-            conn.close()
-        except Exception, e:
-            self.log.debug("Failed to get remote file size...")
-            raise e
+        good = False
+        error = "???"
+        retry = 0
+        while not good and retry <= 3:
+            retry += 1
+            try:
+                url = url.replace('http://','')
+                host = url.split('/')[0]
+                path = url.replace(host,'')
+                self.log.debug("get_remote_file, host("+host+") path("+path+")")
+                conn=httplib.HTTPConnection(host)
+                conn.request("HEAD", path)
+                res=conn.getresponse()
+                image_bytes = int(res.getheader('content-length'))
+                self.log.debug("content-length:"+str(self.image_bytes))
+                conn.close()
+                good = True
+                break
+            except Exception, e:
+                error = str(e)
+                self.log.debug("Failed to get remote file size for: {0}".format(url))
+                time.sleep(3)
+        if not good:
+            raise RuntimeError('Failed to get remote filesize for url:{0}, error:{1}'
+                               .format(url, error))
         self.status('URL:' + str(url) + "\ncontent-length:" + str(image_bytes))
         return image_bytes
 
