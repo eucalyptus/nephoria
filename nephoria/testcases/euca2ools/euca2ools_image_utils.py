@@ -259,6 +259,7 @@ class Euca2oolsImageUtils(object):
                    machine=None,
                    user=None,
                    password=None,
+                   create_path=True,
                    retryconn=True,
                    time_per_gig=300):
         '''
@@ -276,6 +277,15 @@ class Euca2oolsImageUtils(object):
         machine = machine or self.worker_machine
         if destpath is None and self.destpath is not None:
             destpath = self.destpath
+        if not (machine.is_dir(destpath) or machine.is_file(destpath)):
+            if create_path:
+                self.log.debug('Destpath:"{0}" not found, attempting to create it now...'
+                               .format(destpath))
+                machine.sys('mkdir -p {0}'.format(destpath))
+            else:
+                raise ValueError('Provided destination path:"{0}" not found and create_path '
+                                 'is:{1}'.format(destpath, create_path))
+
         size = self.getHttpRemoteImageSize(image_url)
         if (size <  machine.get_available(destpath, unit=self.__class__.gig)):
             raise Exception("Not enough available space at: " +
