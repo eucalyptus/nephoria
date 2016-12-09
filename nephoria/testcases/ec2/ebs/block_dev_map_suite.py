@@ -455,29 +455,6 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         curl_timeout= self.image_gigs * time_per_gig
 
         instance = self.current_test_instance
-        #self.status('Attempting to launch helper instance...')
-        #instance = self.user.ec2.run_image(self.emi,
-        #                                      keypair=self.keypair.name,
-        #                                      vmtype=self.args.vmtype,
-        #                                      group=self.group.id,
-        #                                      zone=self.zone)[0]
-        #self.user.ec2.create_tags(instance.id, {self.my_test_id: ''})
-        #self.current_test_instance = instance
-
-        #self.status('create test volume(s)...')
-        #self.build_image_volume = self.user.ec2.create_volumes(self.zone, size = self.image_gigs,
-        #                                                       monitor_to_state=None)[0]
-        #self.user.ec2.create_tags(self.build_image_volume.id, {self.my_test_id: ''})
-        #volumes.append(self.build_image_volume)
-        #self.build_image_volume.add_tag(self.build_image_volume_tag_name)
-
-        #if create_test_vol:
-        #    self.base_test_volume = self.user.ec2.create_volumes(self.zone, size = 1,
-        #                                                         monitor_to_state=None )[0]
-        #    self.user.ec2.create_tags(self.base_test_volume.id, {self.my_test_id: ''})
-        #    volumes.append(self.base_test_volume)
-        #    self.base_test_volume.add_tag(self.base_test_volume_tag_name)
-        #self.user.ec2.monitor_created_euvolumes_to_state(volumes=volumes)
         self.status("Copy the remote bfebs image into a volume and create snapshot from it...")
         instance.attach_volume(self.build_image_volume)
         instance.sys("curl "+url+" > "+ self.build_image_volume.guestdev+" && sync",
