@@ -3334,24 +3334,28 @@ disable_root: false"""
         :param image: boto image object to deregister
         """
         gotimage = image
-        self.log.debug("Deregistering image: " + str(image))
+        if isinstance(image, basestring):
+            image_id = image
+        else:
+            image_id = image.id
+        self.log.debug("Deregistering image: " + str(image_id))
         try:
-            gotimage = self.connection.get_all_images(image_ids=[image.id])[0]
+            gotimage = self.connection.get_all_images(image_ids=[image_id])[0]
         except IndexError, ie:
-            raise Exception("deregister_image:" + str(image.id) + ", No image found in get_all_images.Error: ")
+            raise Exception("deregister_image:" + str(image_id) + ", No image found in get_all_images.Error: ")
         except Exception, e:
             #should return [] if not found, exception indicates an error with the command maybe?
             tb = get_traceback()
             raise Exception(
-                'deregister_image: Error attempting to get image:' + str(image.id) + ", err:" + str(tb) + '\n' + str(e))
-        self.deregister_image(image.id)
+                'deregister_image: Error attempting to get image:' + str(image_id) + ", err:" + str(tb) + '\n' + str(e))
+        self.deregister_image(gotimage.id)
         try:
             # make sure the image was removed (should throw an exception),if not make sure it is in the deregistered state
             # if it is still associated with a running instance'
-            gotimage = self.connection.get_all_images(image_ids=[image.id])[0]
+            gotimage = self.connection.get_all_images(image_ids=[gotimage.id])[0]
             # this will not be executed if image was removed
             if( gotimage.state != 'deregistered') :
-                raise Exception('deregister_image: Error attempting to deregister image:' + str(image.id)  + '\n')
+                raise Exception('deregister_image: Error attempting to deregister image:' + str(image_id)  + '\n')
         except IndexError, ie:
             pass
 
