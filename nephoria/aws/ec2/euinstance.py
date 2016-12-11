@@ -2145,13 +2145,14 @@ class EuInstance(Instance, TaggedResource, Machine):
 
     def check_ephemeral_against_vmtype(self):
         gb = 1073741824
+
         size = self.vmtype_info.disk
         ephemeral_dev = self.get_ephemeral_dev()
         block_size = self.get_blockdev_size_in_bytes(ephemeral_dev)
         gbs = block_size / gb
         self.log.debug("Ephemeral check: ephem_dev:{0}, bytes: {1}, gbs:{2}, vmtype size:{3}"
                    .format(ephemeral_dev, block_size, gbs, size))
-        if gbs != size:
+        if int(gbs) != int(size):
             raise Exception("Ephemeral check failed. {0} Blocksize:{1} gb ({2} bytes) != vmtype "
                             "size:{3} gb".format(ephemeral_dev, gbs, block_size, size))
         else:
