@@ -466,37 +466,45 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         curl_timeout= self.image_gigs * time_per_gig
 
         instance = self.current_test_instance
+        base_test_snapshot = None
+        build_image_volume = self.build_image_volume
+        base_test_volume = self.base_test_volume
         self.status("Copy the remote bfebs image into a volume and create snapshot from it...")
-        instance.attach_volume(self.build_image_volume)
-        instance.sys("curl "+url+" > "+ self.build_image_volume.guestdev+" && sync",
+        instance.attach_volume(build_image_volume)
+        instance.sys("curl " + url + " > " + build_image_volume.guestdev + " && sync",
                      timeout=curl_timeout)
-        instance.md5_attached_euvolume(self.build_image_volume)
-        self._build_image_snapshot = self.user.ec2.create_snapshots(
-            volume=self.build_image_volume)[0]
-        self.user.ec2.create_tags(self.build_image_snapshot.id, {self.my_test_id: ''})
+        instance.md5_attached_euvolume(build_image_volume)
+        build_image_snapshot = self.user.ec2.create_snapshots(
+            volume=build_image_volume)[0]
+        self.user.ec2.create_tags(build_image_snapshot.id, {self.my_test_id: ''})
         #update test resources with tags...
-        self.build_image_snapshot.add_tag(self.build_image_snapshot_tag_name)
-        self.build_image_snapshot.add_tag('md5',self.build_image_volume.md5)
-        self.build_image_snapshot.add_tag('md5len',self.build_image_volume.md5len)
-        self.build_image_snapshot.add_tag('src_url', str(url))
-        self.build_image_volume.add_tag('src_url', str(url))
-        self.build_image_volume.add_tag('md5', self.build_image_volume.md5)
-        self.build_image_volume.add_tag('md5len', self.build_image_volume.md5len)
+        build_image_snapshot.add_tag(self.build_image_snapshot_tag_name)
+        build_image_snapshot.add_tag('md5', build_image_volume.md5)
+        build_image_snapshot.add_tag('md5len', build_image_volume.md5len)
+        build_image_snapshot.add_tag('src_url', str(url))
+        build_image_volume.add_tag('src_url', str(url))
+        build_image_volume.add_tag('md5', build_image_volume.md5)
+        build_image_volume.add_tag('md5len', build_image_volume.md5len)
 
         self.status('Done creating BFEBS build_image_snapshot and volume and md5ing volume')
         if create_test_vol:
             self.status('Attaching test volume, writing random data into it and gathering md5...')
-            instance.attach_volume(self.base_test_volume)
-            instance.vol_write_random_data_get_md5(self.base_test_volume, overwrite=True)
-            self._base_test_snapshot = self.user.ec2.create_snapshots(
-                volume=self.base_test_volume)[0]
-            self.user.ec2.create_tags(self.base_test_snapshot.id, {self.my_test_id: ''})
-            self.base_test_snapshot.add_tag(self.base_test_snapshot_tag_name)
-            self.base_test_volume.add_tag('md5', self.base_test_volume.md5)
-            self.base_test_volume.add_tag('md5len', self.base_test_volume.md5len)
-            self.base_test_snapshot.add_tag('md5', self.base_test_volume.md5)
-            self.base_test_snapshot.add_tag('md5len', self.base_test_volume.md5len)
+            instance.attach_volume(base_test_volume)
+            instance.vol_write_random_data_get_md5(base_test_volume, overwrite=True)
+            base_test_snapshot = self.user.ec2.create_snapshots(volume=base_test_volume)[0]
+            self.user.ec2.create_tags(base_test_snapshot.id, {self.my_test_id: ''})
+            base_test_snapshot.add_tag(self.base_test_snapshot_tag_name)
+            base_test_volume.add_tag('md5', base_test_volume.md5)
+            base_test_volume.add_tag('md5len', base_test_volume.md5len)
+            base_test_snapshot.add_tag('md5', base_test_volume.md5)
+            base_test_snapshot.add_tag('md5len', base_test_volume.md5len)
         instance.terminate_and_verify()
+        self._build_image_volume = build_image_volume
+        self._build_image_snapshot = build_image_snapshot
+        self._base_test_volume = base_test_volume
+        if base_test_snapshot:
+            self._base_test_snapshot = base_test_snapshot
+
         return self.build_image_snapshot
 
     def add_block_device_types_to_mapping(self,
@@ -634,6 +642,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         -will look for 'no' ephemeral
         '''
         errmsg = ""
+        e = None
         if not self.build_image_snapshot:
             raise SkipTestException('Build Image Snapshot is None, check logs for related failures')
         image_name = self.test_image1_tag_name + "_" + str(self.build_image_snapshot.id)
@@ -670,13 +679,16 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             self.status('Restarting instance:' + str(instance.id))
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
-        except Exception, e:
+        except Exception as e:
             tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
         finally:
-            instance.terminate_and_verify()
+            if self.args.no_clean and e:
+                self.log.info('Not cleaning due to no_clean flag and test error:{0}'.format(e))
+            elif instance:
+                instance.terminate_and_verify()
             if errmsg:
                 raise Exception(errmsg)
 
@@ -689,6 +701,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         -will look for 'no' ephemeral
         '''
         errmsg = ""
+        e = None
         if not self.build_image_snapshot:
             raise SkipTestException('Build Image Snapshot is None, check logs for related failures')
         image_name = self.test_image2_tag_name + "_" + str(self.build_image_snapshot.id)
@@ -726,13 +739,16 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             self.status('Restarting instance:' + str(instance.id))
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
-        except Exception, e:
+        except Exception as e:
             tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
         finally:
-            instance.terminate_and_verify()
+            if self.args.no_clean and e:
+                self.log.info('Not cleaning due to no_clean flag and test error:{0}'.format(e))
+            elif instance:
+                instance.terminate_and_verify()
             if errmsg:
                 raise Exception(errmsg)
 
@@ -755,6 +771,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         -will verify delete on terminate set to True, and all volumes are deleted post instance termination
         '''
         errmsg = ""
+        e = None
         image_name = self.test_image3_tag_name + "_" + str(self.build_image_snapshot.id)
         bdm_emptyvol_dev = '/dev/vdd'
         bdm_snapshot_dev = '/dev/vdc'
@@ -836,13 +853,16 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             self.status('Restarting instance:' + str(instance.id))
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
-        except Exception, e:
+        except Exception as e:
             tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
         finally:
-            instance.terminate_and_verify()
+            if self.args.no_clean and e:
+                self.log.info('Not cleaning due to no_clean flag and test error:{0}'.format(e))
+            elif instance:
+                instance.terminate_and_verify()
             if errmsg:
                 raise Exception(errmsg)
 
@@ -864,6 +884,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         -will verify delete on terminate set to False, and all volumes are not deleted post instance termination
         '''
         errmsg = ""
+        e = None
         image_name = self.test_image4_tag_name + "_" + str(self.build_image_snapshot.id)
         bdm_emptyvol_dev = '/dev/vdd'
         bdm_snapshot_dev = '/dev/vdc'
@@ -939,13 +960,16 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             self.status('Restarting instance:' + str(instance.id))
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
-        except Exception, e:
+        except Exception as e:
             tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
         finally:
-            instance.terminate_and_verify()
+            if self.args.no_clean and e:
+                self.log.info('Not cleaning due to no_clean flag and test error:{0}'.format(e))
+            elif instance:
+                instance.terminate_and_verify()
             if errmsg:
                 raise Exception(errmsg)
 
@@ -969,6 +993,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         -will verify delete on terminate set to False, and all volumes are not deleted post instance termination
         '''
         errmsg = ""
+        e = None
         image = self.test_image1
         #Add 1 to current root device size...
         bdm_rootsnap_size = image.block_device_mapping.get(image.root_device_name).size + 1
@@ -1017,13 +1042,16 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             self.status('Restarting instance:' + str(instance.id))
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
-        except Exception, e:
+        except Exception as e:
             tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
         finally:
-            instance.terminate_and_verify()
+            if self.args.no_clean and e:
+                self.log.info('Not cleaning due to no_clean flag and test error:{0}'.format(e))
+            elif instance:
+                instance.terminate_and_verify()
             if errmsg:
                 raise Exception(errmsg)
 
@@ -1050,6 +1078,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         -will verify delete on terminate set to True, and all volumes are deleted post instance termination
         '''
         errmsg = ""
+        e = None
         image = self.test_image1
         bdm_emptyvol_dev = '/dev/vdd'
         bdm_snapshot_dev = '/dev/vdc'
@@ -1138,18 +1167,22 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             self.status('Restarting instance:' + str(instance.id))
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
-        except Exception, e:
+        except Exception as e:
             tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
         finally:
-            instance.terminate_and_verify()
+            if self.args.no_clean and e:
+                self.log.info('Not cleaning due to no_clean flag and test error:{0}'.format(e))
+            elif instance:
+                instance.terminate_and_verify()
             if errmsg:
                 raise Exception(errmsg)
 
     def test7_run_time_image3_overwrite_all_non_root_w_no_device(self):
         errmsg = ""
+        e = None
         image = self.test_image3
         bdm_emptyvol_dev = '/dev/vdd'
         bdm_snapshot_dev = '/dev/vdc'
@@ -1194,18 +1227,22 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             self.status('Restarting instance:' + str(instance.id))
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
-        except Exception, e:
+        except Exception as e:
             tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
         finally:
-            instance.terminate_and_verify()
+            if self.args.no_clean and e:
+                self.log.info('Not cleaning due to no_clean flag and test error:{0}'.format(e))
+            elif instance:
+                instance.terminate_and_verify()
             if errmsg:
                 raise Exception(errmsg)
 
     def test8_run_time_image4_overwrite_misc_attributes_and_mixed_dot_at_run_time(self):
         errmsg = ""
+        e = None
         image = self.test_image4
         bdm_emptyvol_dev = '/dev/vdd'
         bdm_snapshot_dev = '/dev/vdc'
@@ -1289,13 +1326,16 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             instance.check_instance_meta_data_for_block_device_mapping(root_dev=image.root_device_name, bdm=meta_bdm)
 
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
-        except Exception, e:
+        except Exception as e:
             tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
         finally:
-            instance.terminate_and_verify()
+            if self.args.no_clean and e:
+                self.log.info('Not cleaning due to no_clean flag and test error:{0}'.format(e))
+            elif instance:
+                instance.terminate_and_verify()
             if errmsg:
                 raise Exception(errmsg)
 
@@ -1322,6 +1362,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         -will verify delete on terminate set to True, and all volumes are deleted post instance termination
         '''
         errmsg = ""
+        e = None
         image = self.test_image1
         bdm_emptyvol_dev = '/dev/vdd'
         bdm_snapshot_dev = '/dev/vdc'
@@ -1408,13 +1449,15 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             self.status('Restarting instance:' + str(instance.id))
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
-        except Exception, e:
+        except Exception as e:
             tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
         finally:
-            if instance:
+            if self.args.no_clean and e:
+                self.log.info('Not cleaning due to no_clean flag and test error:{0}'.format(e))
+            elif instance:
                 instance.terminate_and_verify()
             if errmsg:
                 raise Exception(errmsg)
@@ -1532,6 +1575,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
 
         '''
         errmsg = ""
+        e = None
         image = self.test_image1
         instance = None
         bdm_snapshot_dev = '/dev/vdc'
@@ -1625,13 +1669,15 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             self.status('Restarting instance:' + str(instance.id))
             instance.start_instance_and_verify(checkvolstatus=True)
             self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
-        except Exception, e:
+        except Exception as e:
             tb = get_traceback()
             errmsg = str(tb) + '\nTest Failed, err:' +str(e)
             self.endfailure(errmsg)
 
         finally:
-            if instance:
+            if self.args.no_clean and e:
+                self.log.info('Not cleaning due to no_clean flag and test error:{0}'.format(e))
+            elif instance:
                 instance.terminate_and_verify()
             if errmsg:
                 raise Exception(errmsg)
@@ -1669,7 +1715,8 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         instance.stop_instance_and_verify()
         self.status('Terminating instance and verifying correct volume states for both BDM volumes root + ' +
                     str(bdm_snapshot_dev))
-        instance.terminate_and_verify()
+        if not self.args.no_clean:
+            instance.terminate_and_verify()
 
     def test14_misc_run_image1_with_multiple_bdm_terminate_in_stopped_state(self, can_detach_block_dev_map=False):
         '''
@@ -1754,7 +1801,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
 
         finally:
             try:
-                if instance:
+                if instance and not self.args.no_clean:
                     self.status('Terminating instance, checking for delete on termination status for ebs block devs...')
                     instance.terminate_and_verify()
             except Exception, tv:
@@ -1783,6 +1830,10 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         return dev_dir
 
 if __name__ == "__main__":
-    test = Block_Device_Mapping_Tests()
-    result = test.run()
+    testcase = Block_Device_Mapping_Tests()
+    result = testcase.run()
+    if result:
+        testcase.log.error('TEST FAILED WITH RESULT:{0}'.format(result))
+    else:
+        testcase.status('TEST PASSED')
     exit(result)
