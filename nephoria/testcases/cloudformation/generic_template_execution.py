@@ -258,7 +258,7 @@ class GenericTemplateRun(CliTestRunner):
             decorrelated jitter exponential backoff for each
             request. If stack failed to create, raise error
             """
-            stacks = self.tc.user.cloudformation.describe_stacks(
+            stacks = self.tc.user.cloudformation.connection.describe_stacks(
                                    resp.stack_name)
             events_list = stacks[0].describe_events()
             events = '\n'.join(map(str, events_list[len(events_list)::-1]))
