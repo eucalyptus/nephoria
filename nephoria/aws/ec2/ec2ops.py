@@ -6893,6 +6893,8 @@ disable_root: false"""
         return self.get_vm_types()
 
     def get_vm_types(self):
+        if (self.service_url or "").strip().strip('/').endswith('amazonaws.com'):
+            return []
         params = {}
         usercontext = getattr(self, '_user_context', None)
         if usercontext:
@@ -6930,7 +6932,9 @@ disable_root: false"""
         return retlist
 
     def get_vm_type_info(self, vmtype):
-        for  vtype in self.get_vm_types():
+        if (self.service_url or "").strip().strip('/').endswith('amazonaws.com'):
+            return None
+        for vtype in self.get_vm_types():
             if vtype.name == vmtype:
                 return vtype
 
