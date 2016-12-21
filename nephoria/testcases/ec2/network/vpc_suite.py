@@ -933,6 +933,14 @@ class VpcSuite(CliTestRunner):
 
 
     def check_user_default_routes_present(self, user=None, vpc=None, check_igw=True):
+        """
+        Note:
+        route.origin - Describes how the route was created. create-route-table indicates that
+        the route was automatically created when the route table was created; create-route
+        indicates that the route was manually added to the route table;
+        enable-vgw-route-propagation indicates that the route was propagated by route propagation
+
+        """
         user = user or self.user
         vpc = vpc or self.check_user_default_vpcs(user=user)
         rt = self.check_user_default_route_table_present(user=user)
@@ -953,9 +961,9 @@ class VpcSuite(CliTestRunner):
                 default_cidr_route = True
             if check_igw:
                 if route.gateway_id == igw.id and route.destination_cidr_block == '0.0.0.0/0':
-                    if route.origin != 'CreateRouteTable':
+                    if route.origin != 'CreateRoute':
                         raise ValueError('Default IGW route has incorrect route origin:{0}, '
-                                         'should be:{1}'.format(route.origin, 'CreateRouteTable'))
+                                         'should be:{1}'.format(route.origin, 'CreateRoute'))
                     default_igw_route = True
             if default_igw_route and default_cidr_route:
                 break
