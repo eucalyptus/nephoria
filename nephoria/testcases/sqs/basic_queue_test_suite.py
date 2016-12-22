@@ -26,6 +26,14 @@ class BasicQueueTests(CliTestRunner):
                    'help': 'Name of the SQS Queue',
                    'default': None}}
 
+    _DEFAULT_CLI_ARGS['enable_boto_debug'] = {
+        'args': ['--enable-boto-debug'],
+        'kwargs': {'dest': 'enable_boto_debug',
+                   'help': ("Set to True to enable debugging for "
+                            "all boto/boto3 API calls. "
+                            "Default is False."),
+                   'action': 'store_true'}}
+
     @property
     def tc(self):
         tc = getattr(self, '__tc', None)
@@ -36,7 +44,7 @@ class BasicQueueTests(CliTestRunner):
                                 clouduser_account=self.args.test_account,
                                 log_level=self.args.log_level)
             setattr(self, '__tc', tc)
-            if self.args.log_level == 'DEBUG':
+            if self.args.enable_boto_debug:
                 self.tc.set_boto_logger_level('DEBUG')
                 self.tc.user.sqs.enable_boto2_connection_debug()
         return tc
@@ -73,6 +81,18 @@ class BasicQueueTests(CliTestRunner):
 
         setattr(self, '__queue_name', queue_name)
         return queue_name
+
+    @property
+    def enable_boto_debug(self):
+        """
+        Check to see if --enable-boto-debug is set to true.
+        If so, set to value appropriately
+        """
+        if self.args.enable_boto_debug is True:
+            enable_boto_debug = self.args.enable_boto_debug
+        else:
+            enable_boto_debug = None
+        return enable_boto_debug
 
     def test_create_queue(self):
         """
