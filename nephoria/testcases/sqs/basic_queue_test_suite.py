@@ -47,7 +47,8 @@ class BasicQueueTests(CliTestRunner):
                                 log_level=self.args.log_level)
             setattr(self, '__tc', tc)
             self.tc.set_boto_logger_level(level=self.args.boto_loglevel)
-            self.tc.user.sqs.enable_boto2_connection_debug(level=self.args.boto_loglevel)
+            self.tc.user.sqs.enable_boto2_connection_debug(
+                level=self.args.boto_loglevel)
         return tc
 
     @property
@@ -92,8 +93,28 @@ class BasicQueueTests(CliTestRunner):
         try:
             test_queue = self.tc.user.sqs.connection.create_queue(
                                            queue_name=self.queue_name)
+            self.log.debug("Created SQS Queue " +
+                           str(test_queue.name) +
+                           " successfully.")
         except BotoServerError as e:
             self.log.error("Error creating queue: " + e.error_message)
+            raise e
+
+    def test_queue_url(self):
+        """
+        Test Coverage:
+            - list queue URL
+        """
+        self.log.debug("Get SQS queue created for test..")
+        try:
+            queue = self.tc.user.sqs.connection.get_queue(self.queue_name)
+            self.log.debug("Located SQS queue " +
+                           str(queue.name) + "." +
+                           " Queue URL is " +
+                           str(queue.url) + ".")
+        except BotoServerError as e:
+            self.log.error("The following queue was not located: " +
+                           str(self.queue_name))
             raise e
 
     def clean_method(self):
@@ -101,13 +122,14 @@ class BasicQueueTests(CliTestRunner):
         Grab information about the queue just created,
         then delete the queue.
         """
+        self.log.debug("Get SQS queue created for test..")
         try:
             queue = self.tc.user.sqs.connection.get_queue(self.queue_name)
         except BotoServerError as e:
             self.log.error("The following queue was not located: " +
                            str(self.queue_name))
             raise e
-           
+
         self.log.debug("Deleting the following queue: " +
                        str(queue.name))
         try:
