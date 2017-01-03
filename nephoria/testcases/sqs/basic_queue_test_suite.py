@@ -26,6 +26,12 @@ class BasicQueueTests(CliTestRunner):
                    'help': 'Name of the SQS Queue',
                    'default': None}}
 
+    _DEFAULT_CLI_ARGS['domain'] = {
+        'args': ['--domain'],
+        'kwargs': {'dest': 'domain_name',
+                   'help': '(Optional) AWS/Eucalyptus Domain',
+                   'default': None}}
+
     _DEFAULT_CLI_ARGS['boto_loglevel'] = {
         'args': ['--boto-loglevel'],
         'kwargs': {'dest': 'boto_loglevel',
@@ -40,11 +46,23 @@ class BasicQueueTests(CliTestRunner):
     def tc(self):
         tc = getattr(self, '__tc', None)
         if not tc:
-            tc = TestController(self.args.clc,
-                                password=self.args.password,
-                                clouduser_name=self.args.test_user,
-                                clouduser_account=self.args.test_account,
-                                log_level=self.args.log_level)
+            if (
+                self.args.secret_key and
+                self.args.access_key
+               ):
+                tc = TestController(clouduser_accesskey=self.args.access_key,
+                                    clouduser_secretkey=self.args.secret_key,
+                                    clouduser_name=self.args.test_user,
+                                    clouduser_account=self.args.test_account,
+                                    region=self.args.region,
+                                    domain=self.args.domain_name)
+            else:
+                tc = TestController(self.args.clc,
+                                    password=self.args.password,
+                                    clouduser_name=self.args.test_user,
+                                    clouduser_account=self.args.test_account,
+                                    log_level=self.args.log_level)
+
             setattr(self, '__tc', tc)
             self.tc.set_boto_logger_level(level=self.args.boto_loglevel)
             self.tc.user.sqs.enable_boto2_connection_debug(
@@ -57,6 +75,8 @@ class BasicQueueTests(CliTestRunner):
         if not user:
             try:
                 user = self.tc.get_user_by_name(
+                                    region=self.args.region,
+                                    domain=self.args.domain_name,
                                     aws_account_name=self.args.test_account,
                                     aws_user_name=self.args.test_user)
             except:
@@ -107,13 +127,42 @@ class BasicQueueTests(CliTestRunner):
         """
         self.log.debug("Get SQS queue created for test..")
         try:
-            queue = self.tc.user.sqs.connection.get_queue(self.queue_name)
+            queue = self.tc.user.sqs.connection.get_queue(
+                                        queue_name=self.queue_name)
             self.log.debug("Located SQS queue " +
                            str(queue.name) + "." +
                            " Queue URL is " +
                            str(queue.url) + ".")
         except BotoServerError as e:
             self.log.error("The following queue was not located: " +
+                           str(self.queue_name))
+            raise e
+
+    def test_get_queue_attributes(self):
+        """
+        Test Coverage:
+            - list queue attributes
+        """
+        self.log.debug("Get SQS queue created for test..")
+        try:
+            queue = self.tc.user.sqs.connection.get_queue(
+                                        queue_name=self.queue_name)
+            self.log.debug("Located SQS queue " +
+                           str(queue.name) + ".")
+        except BotoServerError as e:
+            self.log.error("The following queue was not located: " +
+                           str(self.queue_name))
+            raise e
+
+        try:
+            attributes = self.tc.user.sqs.connection.get_queue_attributes(
+                                        queue)
+            self.log.debug("SQS queue " + str(self.queue_name) +
+                           " contains the following attributes: ")
+            for keys, values in attributes.items():
+                print ("\t" + keys + " => " + values)
+        except BotoServerError as e:
+            self.log.error("Error obtaining attributes for SQS queue: " +
                            str(self.queue_name))
             raise e
 
@@ -124,7 +173,8 @@ class BasicQueueTests(CliTestRunner):
         """
         self.log.debug("Get SQS queue created for test..")
         try:
-            queue = self.tc.user.sqs.connection.get_queue(self.queue_name)
+            queue = self.tc.user.sqs.connection.get_queue(
+                                        queue_name=self.queue_name)
         except BotoServerError as e:
             self.log.error("The following queue was not located: " +
                            str(self.queue_name))
