@@ -130,9 +130,9 @@ class BasicQueueTests(CliTestRunner):
             queue = self.tc.user.sqs.connection.get_queue(
                                         queue_name=self.queue_name)
             self.log.debug("Located SQS queue " +
-                           str(queue.name) + "." +
-                           " Queue URL is " +
-                           str(queue.url) + ".")
+                           str(queue.name))
+            self.log.debug("Test for presence of Queue URL")
+            assert queue.url, 'Queue URL is not present'
         except BotoServerError as e:
             self.log.error("The following queue was not located: " +
                            str(self.queue_name))
@@ -141,7 +141,20 @@ class BasicQueueTests(CliTestRunner):
     def test_get_queue_attributes(self):
         """
         Test Coverage:
-            - list queue attributes
+            - confirm presence of the following queue attributes:
+              * ApproximateNumberOfMessagesNotVisible
+              * MessageRetentionPeriod
+              * ApproximateNumberOfMessagesDelayed
+              * MaximumMessageSize
+              * CreatedTimestamp
+              * ApproximateNumberOfMessages
+              * ReceiveMessageWaitTimeSeconds
+              * DelaySeconds
+              * VisibilityTimeout
+              * LastModifiedTimestamp
+              * QueueArn
+            Reference: SQS API Reference - GetQueueAttributes
+                       https://goo.gl/TjWaFC
         """
         self.log.debug("Get SQS queue created for test..")
         try:
@@ -157,14 +170,58 @@ class BasicQueueTests(CliTestRunner):
         try:
             attributes = self.tc.user.sqs.connection.get_queue_attributes(
                                         queue)
-            self.log.debug("SQS queue " + str(self.queue_name) +
-                           " contains the following attributes: ")
-            for keys, values in attributes.items():
-                print ("\t" + keys + " => " + values)
+
         except BotoServerError as e:
             self.log.error("Error obtaining attributes for SQS queue: " +
                            str(self.queue_name))
             raise e
+
+        self.log.debug("Test for presence of " +
+                       "ApproximateNumberOfMessagesNotVisible attribute")
+        assert attributes['ApproximateNumberOfMessagesNotVisible'], \
+            ('ApproximateNumberOfMessagesNotVisible ' +
+             'attribute not present')
+        self.log.debug("Test for presence of " +
+                       "MessageRetentionPeriod attribute")
+        assert attributes['MessageRetentionPeriod'], \
+            'MessageRetentionPeriod attribute not present'
+        self.log.debug("Test for presence of " +
+                       "ApproximateNumberOfMessagesDelayed attribute")
+        assert attributes['ApproximateNumberOfMessagesDelayed'], \
+            ('ApproximateNumberOfMessagesDelayed ' +
+             'attribute not present')
+        self.log.debug("Test for presence of " +
+                       "MaximumMessageSize attribute")
+        assert attributes['MaximumMessageSize'], \
+            'MaximumMessageSize attribute not present'
+        self.log.debug("Test for presence of " +
+                       "CreatedTimestamp attribute")
+        assert attributes['CreatedTimestamp'], \
+            'CreatedTimestamp attribute not present'
+        self.log.debug("Test for presence of " +
+                       "ApproximateNumberOfMessages attribute")
+        assert attributes['ApproximateNumberOfMessages'], \
+            'ApproximateNumberOfMessages attribute not present'
+        self.log.debug("Test for presence of " +
+                       "ReceiveMessageWaitTimeSeconds attribute")
+        assert attributes['ReceiveMessageWaitTimeSeconds'], \
+            'ReceiveMessageWaitTimeSeconds attribute not present'
+        self.log.debug("Test for presence of " +
+                       "DelaySeconds attribute")
+        assert attributes['DelaySeconds'], \
+            'DelaySeconds attribute not present'
+        self.log.debug("Test for presence of " +
+                       "VisibilityTimeout attribute")
+        assert attributes['VisibilityTimeout'], \
+            'VisibilityTimeout attribute not present'
+        self.log.debug("Test for presence of " +
+                       "LastModifiedTimestamp attribute")
+        assert attributes['LastModifiedTimestamp'], \
+            'LastModifiedTimestamp attribute not present'
+        self.log.debug("Test for presence of " +
+                       "QueueArn attribute")
+        assert attributes['QueueArn'], \
+            'QueueArn attribute not present'
 
     def clean_method(self):
         """
