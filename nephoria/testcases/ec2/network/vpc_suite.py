@@ -4052,6 +4052,7 @@ class VpcSuite(CliTestRunner):
                             # reset ssh info...
                             vm.connect_to_instance()
                             # check testfile for unique instance id
+                            vm.sys('cat testfile')
                             vm.sys('cat testfile | grep {0}'.format(vm.id), code=0)
                         except CommandExitCodeException as CE:
                             self.log.warning('{0}\nError fetching instance id from test file. '
