@@ -48,6 +48,7 @@ from cloud_utils.net_utils.sshconnection import CommandExitCodeException, SshCon
     CommandTimeoutException
 from cloud_utils.log_utils import markup, printinfo, get_traceback, TextStyle, ForegroundColor, \
     BackGroundColor, yellow, red, cyan, blue
+from cloud_utils.system_utils import local
 from boto.exception import BotoServerError, EC2ResponseError
 from boto.vpc.subnet import Subnet
 from boto.vpc.vpc import VPC
@@ -4033,7 +4034,7 @@ class VpcSuite(CliTestRunner):
         vpc = self.test6b0_get_vpc_for_eni_tests()
         subnets = []
         group = self.get_test_security_groups(vpc=vpc, count=1, user=user)[0]
-        def check_tcp_status(vm, timeout=30):
+        def check_tcp_status(vm, timeout=120):
             vm.update()
             ip = vm.ip_address
             start = time.time()
@@ -4047,19 +4048,30 @@ class VpcSuite(CliTestRunner):
                     self.status('Success. TCP port 22 status is good. IP:{0}, Attempt:{1}, '
                                    'Elapsed:{2}'.format(ip, attempts, elapsed))
                     self.status('Checking instance ID in ssh login dir..')
-                    for retry in xrange(0, 2):
+                    while elapsed < timeout:
+                        elapsed = int(time.time() - start)
                         try:
                             # reset ssh info...
                             vm.connect_to_instance()
                             # check testfile for unique instance id
                             vm.sys('cat testfile')
                             vm.sys('cat testfile | grep {0}'.format(vm.id), code=0)
+                            self.status('Testfile and TCP check success after elapsed: {0}'
+                                        .format(elapsed))
+                            break
                         except CommandExitCodeException as CE:
+                            try:
+                                self.log.warning("LOCAL TEST MACHINE ARP INFO:\n{0}"
+                                                 .format("\n".join(local('arp -a') or [])))
+                            except Exception as ARPERROR:
+                                self.log.warning('Error dumping ARP table:{0}'.format(ARPERROR))
                             self.log.warning('{0}\nError fetching instance id from test file. '
-                                             'Attempt:"{1}", ERR:"{2}"'
-                                             .format(get_traceback(), attempts, CE))
-                            if retry:
+                                             'Elapsed:"{1}", ERR:"{2}"'
+                                             .format(get_traceback(), elapsed, CE))
+                            if elapsed > timeout:
                                 raise CE
+                            else:
+                                time.sleep(10)
 
                     return vm
                 except (socket.error, socket.timeout) as SE:
@@ -4131,7 +4143,7 @@ class VpcSuite(CliTestRunner):
                 vm1.show_enis()
                 eip1.associate(network_interface_id=vm1.interfaces[0].id)
                 vm1.update()
-                self.status('VM1 {0} after eip swap...')
+                self.status('VM1 {0} after eip {1} swap...'.format(vm1, eip1))
                 vm1.show_enis()
                 vm1 = check_tcp_status(vm1)
 
