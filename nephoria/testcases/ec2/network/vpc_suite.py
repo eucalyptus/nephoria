@@ -4019,7 +4019,7 @@ class VpcSuite(CliTestRunner):
                 user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
 
-    def test6h1_eni_eip_reassociate_toggle_basic_test(self):
+    def test6h1_eni_eip_reassociate_toggle_basic_test(self, clean=None):
         """
         Test running a VM with an eip associated with the primary ENI.
         Verify connectivity to the EIP using ssh/ping.
@@ -4027,6 +4027,8 @@ class VpcSuite(CliTestRunner):
         Move the EIP to another VM's ENI and verify connectivity to the new instance using
         ssh/ping.
         """
+        if clean is None:
+            clean = not self.args.no_clean
         user = self.user
         vpc = self.test6b0_get_vpc_for_eni_tests()
         subnets = []
@@ -4045,7 +4047,19 @@ class VpcSuite(CliTestRunner):
                     self.status('Success. TCP port 22 status is good. IP:{0}, Attempt:{1}, '
                                    'Elapsed:{2}'.format(ip, attempts, elapsed))
                     self.status('Checking instance ID in ssh login dir..')
-                    vm.sys('cat testfile | grep {0}'.format(vm.id), code=0)
+                    for retry in xrange(0, 2):
+                        try:
+                            # reset ssh info...
+                            vm.connect_to_instance()
+                            # check testfile for unique instance id
+                            vm.sys('cat testfile | grep {0}'.format(vm.id), code=0)
+                        except CommandExitCodeException as CE:
+                            self.log.warning('{0}\nError fetching instance id from test file. '
+                                             'Attempt:"{1}", ERR:"{2}"'
+                                             .format(get_traceback(), attempts, CE))
+                            if retry:
+                                raise CE
+
                     return vm
                 except (socket.error, socket.timeout) as SE:
                     self.log.debug('TCP port 22 status failed for ip:"{0}". Attempt:{1}, '
@@ -4089,17 +4103,17 @@ class VpcSuite(CliTestRunner):
                 for vm in [vm1, vm2]:
                     test_port_status(vm1.ip_address, port=22)
                     vm.sys('echo "{0}" > testfile'.format(vm.id))
-                self.status('Swapping in eip:{0} for test vm1: {1}'.format(eip2,
+                self.status('SWAP#1: Swapping in eip:{0} for test vm1: {1}'.format(eip2,
                                                                            vm1.interfaces[0].id))
                 self.status('vm1 {0} before eip {1} swap...'.format(vm1.id, eip2))
                 vm1.show_enis()
                 eip2.associate(network_interface_id=vm1.interfaces[0].id)
                 vm1.update()
-                self.status('VM1 {0} after eip swap...')
+                self.status('VM1 {0} after eip {1} swap...'.format(vm1.id, eip2))
                 vm1.show_enis()
                 vm1 = check_tcp_status(vm1)
 
-                self.status('Associating vm1:{0}s original eip:{1} with vm2:{2}...'
+                self.status('SWAP#2: Associating vm1:{0}s original eip:{1} with vm2:{2}...'
                             .format(vm1.id, eip1, vm2.id))
                 vm2.update()
                 self.status('vm2 {0} before ip {1} association...'.format(vm2.id, eip1))
@@ -4109,7 +4123,7 @@ class VpcSuite(CliTestRunner):
                 self.status('vm2 {0} after ip {1} association...'.format(vm2.id, eip1))
                 vm2.show_enis()
                 vm2 = check_tcp_status(vm2)
-                self.status('Associating vm1:{0} original eip:{1} nback to vm1:{0}'
+                self.status('SWAP#3: Associating vm1:{0} original eip:{1} back to vm1:{0}'
                             .format(vm1.id, eip1))
 
                 self.status('vm1 {0} before eip {1} swap...'.format(vm1.id, eip1))
@@ -4120,7 +4134,7 @@ class VpcSuite(CliTestRunner):
                 vm1.show_enis()
                 vm1 = check_tcp_status(vm1)
 
-                self.status('Associating vm1:{0}s original eip:{1} with vm2:{2} for the 2nd '
+                self.status('SWAP#4: Associating vm1:{0}s original eip:{1} with vm2:{2} for the 2nd '
                             'time...'.format(vm1.id, eip1, vm2.id))
                 vm2.update()
                 self.status('vm2 {0} before ip {1} association...'.format(vm2.id, eip1))
@@ -4131,7 +4145,7 @@ class VpcSuite(CliTestRunner):
                 vm2.show_enis()
                 vm2 = check_tcp_status(vm2)
 
-                self.status('Associating eip2:{0} with vm2:{1}...'
+                self.status('SWAP#5: Associating eip2:{0} with vm2:{1}...'
                             .format(eip2, vm2.id))
                 vm2.update()
                 self.status('vm2 {0} before ip {1} association...'.format(vm2.id, eip2))
@@ -4143,11 +4157,18 @@ class VpcSuite(CliTestRunner):
                 vm2 = check_tcp_status(vm2)
 
                 self.status('Success. EIP toggle tests have passed')
+        except Exception as E:
+            self.log.error(red('{0}\nError during eip_reassociate_toggle_basic_test:{1}'
+                               .format(get_traceback(), E)))
+            raise E
         finally:
+            self.log.debug('Attempting to clean up test artifacts now...')
             self.restore_vm_types()
-            for subnet in subnets:
-                self.status('Attempting to delete subnet and dependency artifacts from this test')
-                user.ec2.delete_subnet_and_dependency_artifacts(subnet)
+            if clean:
+                for subnet in subnets:
+                    self.status('Attempting to delete subnet and dependency artifacts from '
+                                'this test')
+                    user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
     def test6m1_eni_migration_test_with_secondary_eni(self, clean=True):
         """
