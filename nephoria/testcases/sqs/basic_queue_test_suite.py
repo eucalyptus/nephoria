@@ -223,6 +223,73 @@ class BasicQueueTests(CliTestRunner):
         assert attributes['QueueArn'], \
             'QueueArn attribute not present'
 
+    def test_purge_queue(self):
+        """
+        Test Coverage:
+            - purge queue of messages
+        """
+        self.log.debug("Get SQS queue created for test..")
+        try:
+            queue = self.tc.user.sqs.connection.get_queue(
+                                        queue_name=self.queue_name)
+            self.log.debug("Located SQS queue " +
+                           str(queue.name) + ".")
+        except BotoServerError as e:
+            self.log.error("The following queue was not located: " +
+                           str(self.queue_name))
+            raise e
+
+        try:
+            self.tc.user.sqs.connection.send_message(queue,
+                                                     "This is a test",
+                                                     delay_seconds=0)
+            self.log.debug("Added message to SQS queue " +
+                           str(queue.name) + ".")
+        except BotoServerError as e:
+            self.log.error("Unable to write message to queue " +
+                           str(self.queue_name))
+            raise e
+
+        try:
+            self.tc.user.sqs.connection.purge_queue(
+                queue)
+        except BotoServerError as e:
+            self.log.error("Error when purging queue " +
+                           str(queue.name))
+            raise e
+        """
+        Purging a queue can take up to 1 minute, therefore
+        we need to check the queue for up to a minute leveraging
+        decorrelated jitter exponential backoff for each request.
+        if the ApproximateNumberOfMessages attributes doesn't equal
+        zero at the end of the minute interval, raise an error
+        """
+        timeout = int(time.time()) + 60*int(1)
+        while True:
+            try:
+                attributes = self.tc.user.sqs.connection.get_queue_attributes(
+                                        queue)
+            except BotoServerError as e:
+                self.log.error("Error obtaining attributes for SQS queue: " +
+                               str(self.queue_name))
+                raise e
+
+            self.log.debug("Confirm ApproximateNumberOfMessages attribute " +
+                           "is equal to zero for queue " +
+                           str(self.queue_name))
+            if int(attributes['ApproximateNumberOfMessages']) == 0:
+                self.log.debug("Queue " + str(self.queue_name) +
+                               " was purged.")
+                break
+            elif int(time.time()) > timeout:
+                raise RuntimeError("Queue " + str(self.queue_name) +
+                                   " within the minute timeframe.")
+            sleep_time = min(int(timeout),
+                             random.uniform(2, 2*3))
+            self.log.debug("Sleep " + str(sleep_time) +
+                           " seconds before next request..")
+            time.sleep(sleep_time)
+
     def clean_method(self):
         """
         Grab information about the queue just created,
