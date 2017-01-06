@@ -5004,7 +5004,7 @@ disable_root: false"""
                                 checklist.remove(gw_id)
                             elif in_failed_state(gw):
                                 checklist.remove(gw_id)
-                                failed[gw] = "Gateway:{0} in defined failed state:{1}"\
+                                failed[gw_id] = "Gateway:{0} in defined failed state:{1}"\
                                     .format(gw_id, gw.get('State'))
                             else:
                                 waiting.append("{0}:{1}".format(gw_id, gw.get('State')))

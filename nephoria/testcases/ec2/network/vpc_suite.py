@@ -5284,9 +5284,15 @@ class VpcSuite(CliTestRunner):
                                                       subnet.id, subnet.vpc_id))
                 self.status('Attempt to fetch the NATGW with filters for id, state, vpc, '
                             'and subnet...')
-                gw = user.ec2.get_nat_gateways(gwid, state=natgw.get('State'),
+                gws = user.ec2.get_nat_gateways(gwid, state=natgw.get('State'),
                                                vpc=natgw.get('VpcId'),
-                                               subnet=natgw.get('SubnetId'))
+                                               subnet=natgw.get('SubnetId')) or []
+                if len(gws) != 1:
+                    raise ValueError('Expected "1" NatGw with filters: id:{0}, state:{1}, '
+                                     'vpc:{2}, subnet:{3}. Got:"{4}"'
+                                     .format(gwid, natgw.get('State'), natgw.get('VpcId'),
+                                             natgw.get('SubnetId')))
+                gw = gws[0]
                 if gwid != gw.get('NatGatewayId'):
                     raise ValueError('Describe NATGWs with filters for id, state, subnet and vpc '
                                      'failed to return the newly created natgw:{0}'.format(gwid))
@@ -5341,9 +5347,18 @@ class VpcSuite(CliTestRunner):
                                                         failed_states=['available', 'deleting',
                                                                        'deleted'])
                     if natgw:
-                        if not hasattr('FailureMessage', natgw):
-                            raise ValueError('NatGW:{0} failed but did not contain '
-                                             'FailureMessage attr?'.format(gwid))
+                        if not 'FailureMessage' in natgw:
+                            errmsg = red('NatGW failed with dup EIP but did not contain '
+                                     'FailureMessage attr?')
+                            self.log.error(errmsg)
+                            self.log.error(natgw)
+                            gw_id = None
+                            if isinstance(natgw, dict):
+                                gw_id = natgw.get('NatGatewayId', None)
+                                for key, value in natgw.iteritems():
+                                    self.log.error(red("{0} -> {1}".format(key, value)))
+                            raise ValueError('NatGW id:{0}, failed with dup EIP but did not contain '
+                                             'FailureMessage attr?'.format(gw_id))
                         if not re.search('already associated', natgw.get('FailureMessage')):
                             raise ValueError('NatGW:{0} Failure message did not contain '
                                              'expected text, got:"{1}"'
@@ -5354,9 +5369,10 @@ class VpcSuite(CliTestRunner):
                         raise ValueError('Create Failed as expected but did not return '
                                          'failed NATGW obj in response')
                 except Exception as E:
-                    self.log.error('GOT UNEXPECTED ERROR - creating an NATGW with an in-use EIP '
-                                   'should return the gw in pending or failed status w/o error '
-                                   'in the response')
+                    self.log.error(red('{0}\nGOT UNEXPECTED ERROR  - creating an NATGW with an in-use '
+                                   'EIP should return the gw in pending or failed status '
+                                   'w/o error in the response. ERR:{1}'
+                                       .format(get_traceback(), E)))
                     raise E
                 self.status('Test completed successfully for all zones')
         except Exception as E:
