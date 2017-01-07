@@ -5313,7 +5313,7 @@ class VpcSuite(CliTestRunner):
                     eip.delete()
         self.status('test complete')
 
-    def test_8e0_nat_gw_create_gw_with_in_use_eip(self, clean=None):
+    def test8e0_nat_gw_create_gw_with_in_use_eip(self, clean=None):
         """
         Attempt to create a NAT GW with an elastic IP which is already associated to a VM. This
         should not be allowed.
