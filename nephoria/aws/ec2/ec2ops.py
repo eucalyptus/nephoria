@@ -4918,7 +4918,7 @@ disable_root: false"""
         printmethod = printmethod or self.log.info
         printmethod(buf)
 
-    def delete_nat_gateways(self, gateways=None, timeout=180, desired_state='deleted',
+    def delete_nat_gateways(self, gateways=None, timeout=180, desired_states=None,
                             failed_states=None):
         """
         Deletes a single or list of NAT Gateways. If a no gateways are provided it will attempt to
@@ -4936,8 +4936,17 @@ disable_root: false"""
         Raises: Runtime Error for failed gws.
 
         """
+        if desired_states is None:
+            # todo remove state 'failed' once EUCA-13086 is fixed.
+            desired_states = ['deleted', 'failed']
+
+        if not isinstance(desired_states, list):
+            desired_states = [desired_states]
+
         if failed_states is None:
-            failed_states = ['pending', 'failed', 'available']
+            # todo add state 'failed' back to this list once EUCA-13086 is fixed.
+            #  failed_states = ['pending', 'failed', 'available']
+            failed_states = ['pending', 'available']
         gws_ids = []
         if not gateways:
             self.log.warning('No gateways provided to delete')
@@ -4952,8 +4961,8 @@ disable_root: false"""
             else:
                 gws_ids.append(gw.id)
         def in_desired_state(gw):
-            if desired_state:
-                if not gw.get('State') == desired_state:
+            if desired_states:
+                if not gw.get('State') in desired_states:
                     return False
             return True
 
@@ -5008,16 +5017,16 @@ disable_root: false"""
                                     .format(gw_id, gw.get('State'))
                             else:
                                 waiting.append("{0}:{1}".format(gw_id, gw.get('State')))
-                self.log.debug('Waiting on {0} NATGWs to enter desired state:{1} after '
-                               'elapsed:{2}/{3}'.format(len(checklist), desired_state,
+                self.log.debug('Waiting on {0} NATGWs to enter a desired state:{1} after '
+                               'elapsed:{2}/{3}'.format(len(checklist), desired_states,
                                                         elapsed, timeout))
                 if waiting:
                     self.log.debug('Waiting on GWS: "{0}"'.format(", ".join(waiting)))
                 if checklist:
                     time.sleep(5)
             for gw in checklist:
-                failed[gw] = "GW:{0} did not enter desired state:{1} after elapsed:{2}/{3}"\
-                    .format(gw, desired_state, elapsed, timeout)
+                failed[gw] = "GW:{0} did not enter a desired state:{1} after elapsed:{2}/{3}"\
+                    .format(gw, desired_states, elapsed, timeout)
         if failed:
             failmsg = "ERRORS detected with the following NAT GWs during delete:\n"
             for gwid, msg in failed.iteritems():
