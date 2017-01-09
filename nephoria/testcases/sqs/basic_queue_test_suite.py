@@ -16,7 +16,8 @@ class BasicQueueTests(CliTestRunner):
                         "This script utilizes the following "
                         "SQS API calls: "
                         "CreateQueue, GetQueueUrl, ListQueues, "
-                        "GetQueueAttributes, and SetQueueAttributes."
+                        "GetQueueAttributes, PurgeQueue "
+                        "and SetQueueAttributes."
                         )
     _DEFAULT_CLI_ARGS = copy.copy(CliTestRunner._DEFAULT_CLI_ARGS)
 
