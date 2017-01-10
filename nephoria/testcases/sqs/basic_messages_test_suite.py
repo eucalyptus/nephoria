@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import re
 from boto.exception import BotoServerError
+from boto.sqs.message import Message
 
 from nephoria.testcase_utils.cli_test_runner import CliTestRunner
 from nephoria.testcase_utils.cli_test_runner import SkipTestException
@@ -121,7 +122,6 @@ class BasicMessagesTests(CliTestRunner):
     def test_create_queue_message(self):
         """
         Test Coverage:
-            - create standard queue
             - send a message to the queue
         """
         self.log.debug("Creating SQS Queue for messages..")
@@ -148,7 +148,7 @@ class BasicMessagesTests(CliTestRunner):
             self.messages.append(message.id)
         except BotoServerError as e:
             self.log.error("Unable to write message to queue " +
-                           str(self.queue_name))
+                           str(queue.name))
             raise e
 
     def test_receive_delete_message(self):
@@ -162,6 +162,8 @@ class BasicMessagesTests(CliTestRunner):
         try:
             queue = self.tc.user.sqs.connection.get_queue(
                                         queue_name=self.queue_name)
+            self.log.debug("Located SQS queue " +
+                           str(queue.name))
         except BotoServerError as e:
             self.log.error("The following queue was not located: " +
                            str(self.queue_name))
@@ -175,17 +177,17 @@ class BasicMessagesTests(CliTestRunner):
                                     queue)
         except BotoServerError as e:
             self.log.error("Error obtaining attributes for SQS queue: " +
-                           str(self.queue_name))
+                           str(queue.name))
             raise e
 
         self.log.debug("Confirm ApproximateNumberOfMessages attribute " +
                        "is equal to zero for queue " +
-                       str(self.queue_name))
+                       str(queue.name))
         if int(attributes['ApproximateNumberOfMessages']) == 1:
-            self.log.debug("Queue " + str(self.queue_name) +
+            self.log.debug("Queue " + str(queue.name) +
                            "contains the message")
         else:
-            raise RuntimeError("Queue " + str(self.queue_name) +
+            raise RuntimeError("Queue " + str(queue.name) +
                                " does not contain the message.")
         """
         Retrieve message from queue and confirm contents
@@ -195,7 +197,7 @@ class BasicMessagesTests(CliTestRunner):
             messages = self.tc.user.sqs.connection.receive_message(queue)
         except BotoServerError as e:
             self.log.error("Error obtaining message from SQS queue: " +
-                           str(self.queue_name))
+                           str(queue.name))
             raise e
         for message in messages:
             """
@@ -203,7 +205,7 @@ class BasicMessagesTests(CliTestRunner):
             and display relevant content
             """
             self.log.debug("Verify if message retrieved from " +
-                           "queue " + str(self.queue_name) +
+                           "queue " + str(queue.name) +
                            " matches original message..")
             self.log.debug("Verify message ID")
             assert message.id in self.messages, \
@@ -222,26 +224,95 @@ class BasicMessagesTests(CliTestRunner):
                             message)
             except BotoServerError as e:
                 self.log.error("Failed to delete message from " +
-                               "queue " + str(self.queue_name))
+                               "queue " + str(queue.name))
                 raise e
             else:
                 if result:
                     self.log.debug("Message deleted from queue " +
-                                   str(self.queue_name))
+                                   str(queue.name))
                     self.messages.remove(message.id)
                 else:
                     self.log.error("Failed to delete message from " +
-                                   "queue " + str(self.queue_name))
+                                   "queue " + str(queue.name))
 
-    def clean_method(self):
+    def test_receive_delete_multiple_messages(self):
         """
-        Grab information about the queue just created,
-        purge all messages, then delete the queue.
+        Test Coverage:
+            - send batch messages
+            - delete batch messages
         """
         self.log.debug("Get SQS queue created for test..")
         try:
             queue = self.tc.user.sqs.connection.get_queue(
                                         queue_name=self.queue_name)
+            self.log.debug("Located SQS queue " +
+                           str(queue.name))
+        except BotoServerError as e:
+            self.log.error("The following queue was not located: " +
+                           str(self.queue_name))
+            raise e
+        # Create batch messages
+        batch_messages = [(x, 'This is message %d' % x, 0) for x in range(1, 11)]
+        try:
+            results = self.tc.user.sqs.connection.send_message_batch(
+                                    queue,
+                                    batch_messages)
+            self.log.debug("Added batch messages to SQS queue " +
+                           str(queue.name) + ".")
+        except BotoServerError as e:
+            self.log.error("Unable to send messages in batch request " +
+                           "to queue " + str(queue.name))
+            raise e
+        else:
+            self.log.debug("Verify all messeages were sent to the queue")
+            assert len(results.results) == 10, \
+                ("Not all messages were sent.")
+        """
+        Create a list of all the messages in
+        the queue in order to delete them.
+        """
+        while True:
+            try:
+                message = self.tc.user.sqs.connection.receive_message(
+                                            queue)
+                self.log.debug("Grabbing message from SQS queue " +
+                               str(queue.name))
+            except BotoServerError as e:
+                self.log.error("Unable to retrieve message from queue " +
+                               str(queue.name))
+                raise e
+            else:
+                if len(message) == 1:
+                    self.messages.append(message[0])
+                else:
+                    break
+        # Delete messages in batch
+        try:
+            delete_results = self.tc.user.sqs.connection.delete_message_batch(
+                                            queue,
+                                            self.messages)
+            self.log.debug("Deleted messages in batch request.")
+        except BotoServerError as e:
+            self.log.error("Unable to delete messages in batch request " +
+                           "to queue " + str(queue.name))
+            raise e
+        else:
+            self.log.debug("Verify delete response to confirm messages " +
+                           "were deleted")
+            assert len(delete_results.results) == 10, \
+                ("Not all messages were deleted.")
+
+    def clean_method(self):
+        """
+        Grab queue to purge all messages,
+        then delete the queue.
+        """
+        self.log.debug("Get SQS queue created for test..")
+        try:
+            queue = self.tc.user.sqs.connection.get_queue(
+                                        queue_name=self.queue_name)
+            self.log.debug("Located SQS queue " +
+                           str(queue.name))
         except BotoServerError as e:
             self.log.error("The following queue was not located: " +
                            str(self.queue_name))
@@ -268,18 +339,18 @@ class BasicMessagesTests(CliTestRunner):
                                         queue)
             except BotoServerError as e:
                 self.log.error("Error obtaining attributes for SQS queue: " +
-                               str(self.queue_name))
+                               str(queue.name))
                 raise e
 
             self.log.debug("Confirm ApproximateNumberOfMessages attribute " +
                            "is equal to zero for queue " +
-                           str(self.queue_name))
+                           str(queue.name))
             if int(attributes['ApproximateNumberOfMessages']) == 0:
-                self.log.debug("Queue " + str(self.queue_name) +
+                self.log.debug("Queue " + str(queue.name) +
                                " was purged.")
                 break
             elif int(time.time()) > timeout:
-                raise RuntimeError("Queue " + str(self.queue_name) +
+                raise RuntimeError("Queue " + str(queue.name) +
                                    " within the minute timeframe.")
             sleep_time = min(int(timeout),
                              random.uniform(2, 2*3))
