@@ -194,7 +194,9 @@ class BasicMessagesTests(CliTestRunner):
         match original message
         """
         try:
-            messages = self.tc.user.sqs.connection.receive_message(queue)
+            messages = self.tc.user.sqs.connection.receive_message(
+                                        queue,
+                                        attributes='All')
         except BotoServerError as e:
             self.log.error("Error obtaining message from SQS queue: " +
                            str(queue.name))
@@ -202,7 +204,7 @@ class BasicMessagesTests(CliTestRunner):
         for message in messages:
             """
             Confirm the initial message is in the queue,
-            and display relevant content
+            display relevant content and message attributes
             """
             self.log.debug("Verify if message retrieved from " +
                            "queue " + str(queue.name) +
@@ -214,6 +216,26 @@ class BasicMessagesTests(CliTestRunner):
             assert re.match("Nephoria Test",
                             message.get_body()), \
                 ("Message body doesn't match original")
+            self.log.debug("Verify ApproximateFirstReceiveTimestamp " +
+                           "attribute")
+            assert message.attributes['ApproximateFirstReceiveTimestamp'], \
+                ("ApproximateFirstReceiveTimestamp attribute " +
+                 "not present")
+            self.log.debug("Verify ApproximateReceiveCount " +
+                           "attribute")
+            assert message.attributes['ApproximateReceiveCount'], \
+                ("ApproximateReceiveCount attribute " +
+                 "not present")
+            self.log.debug("Verify SenderId " +
+                           "attribute")
+            assert message.attributes['SenderId'], \
+                ("SenderId attribute " +
+                 "not present")
+            self.log.debug("Verify SentTimestamp " +
+                           "attribute")
+            assert message.attributes['SentTimestamp'], \
+                ("SentTimestamp attribute " +
+                 "not present")
             """
             After verifying the message,
             delete the message from the queue
@@ -252,7 +274,7 @@ class BasicMessagesTests(CliTestRunner):
                            str(self.queue_name))
             raise e
         # Create batch messages
-        batch_messages = [(x, 'This is message %d' % x, 0) for x in range(1, 11)]
+        batch_messages = [(x, 'Message %d' % x, 0) for x in range(1, 11)]
         try:
             results = self.tc.user.sqs.connection.send_message_batch(
                                     queue,
