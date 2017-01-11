@@ -194,6 +194,7 @@ class Load_Pv_Image(CliTestRunner):
         self._user = None
         self._tc = None
         self._image_utils = None
+        self._run_image_user = None
 
         if not self.args.test_list and self.args.emi:
             if (not self.args.disk_image_url and not self.args.diskfilepath) or \
