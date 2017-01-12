@@ -23,12 +23,6 @@ class BasicMessagesTests(CliTestRunner):
                         )
     _DEFAULT_CLI_ARGS = copy.copy(CliTestRunner._DEFAULT_CLI_ARGS)
 
-    _DEFAULT_CLI_ARGS['queue_name'] = {
-        'args': ['--queue-name'],
-        'kwargs': {'dest': 'queue_name',
-                   'help': 'Name of the SQS Queue',
-                   'default': None}}
-
     _DEFAULT_CLI_ARGS['domain'] = {
         'args': ['--domain'],
         'kwargs': {'dest': 'domain_name',
@@ -92,18 +86,12 @@ class BasicMessagesTests(CliTestRunner):
     @property
     def queue_name(self):
         """
-        Make sure queue name is set.  If queue name not passed,
+        Make sure queue name is set. Each test will 
         generate queue name.
         """
         queue_name = getattr(self, '__queue_name', None)
-        if (
-               self.args.queue_name and
-               not queue_name
-           ):
-            queue_name = self.args.queue_name
-        elif not queue_name:
-            queue_name = "nephoria-queue-" + str(int(time.time()))
-
+        queue_name = "nephoria-queue-" + str(int(round(
+                                            time.time() * 10000)))
         setattr(self, '__queue_name', queue_name)
         return queue_name
 
@@ -122,6 +110,7 @@ class BasicMessagesTests(CliTestRunner):
     def test_create_queue_message(self):
         """
         Test Coverage:
+            - create queue
             - send a message to the queue
         """
         self.log.debug("Creating SQS Queue for messages..")
@@ -141,11 +130,6 @@ class BasicMessagesTests(CliTestRunner):
                                                                delay_seconds=0)
             self.log.debug("Added message to SQS queue " +
                            str(queue.name) + ".")
-            """
-            Store message to be used in verification in
-            test_receive_delete_message() method
-            """
-            self.messages.append(message.id)
         except BotoServerError as e:
             self.log.error("Unable to write message to queue " +
                            str(queue.name))
@@ -154,19 +138,36 @@ class BasicMessagesTests(CliTestRunner):
     def test_receive_delete_message(self):
         """
         Test Coverage:
-            - confirm queue has message
+            - create queue
+            - send message to queue
             - retrieve message, confirm contents, then delete message
               from queue
         """
-        self.log.debug("Get SQS queue created for test..")
+        self.log.debug("Create SQS queue for test..")
         try:
-            queue = self.tc.user.sqs.connection.get_queue(
-                                        queue_name=self.queue_name)
-            self.log.debug("Located SQS queue " +
-                           str(queue.name))
+            queue = self.tc.user.sqs.connection.create_queue(
+                                           queue_name=self.queue_name)
+            self.log.debug("Created SQS Queue " +
+                           str(queue.name) +
+                           " successfully.")
         except BotoServerError as e:
-            self.log.error("The following queue was not located: " +
-                           str(self.queue_name))
+            self.log.error("Error creating queue: " + e.error_message)
+            raise e
+        self.log.debug("Send message to queue " + str(queue.name))
+        try:
+            message = self.tc.user.sqs.connection.send_message(queue,
+                                                               "Nephoria Test",
+                                                               delay_seconds=0)
+            self.log.debug("Added message to SQS queue " +
+                           str(queue.name) + ".")
+            """
+            Store message to be used in verification in
+            later in test
+            """
+            self.messages.append(message.id)
+        except BotoServerError as e:
+            self.log.error("Unable to write message to queue " +
+                           str(queue.name))
             raise e
         """
         Check to see if message is recognized
@@ -260,18 +261,19 @@ class BasicMessagesTests(CliTestRunner):
     def test_receive_delete_multiple_messages(self):
         """
         Test Coverage:
-            - send batch messages
-            - delete batch messages
+            - create queue
+            - send batch messages to queue
+            - delete batch messages in queue
         """
-        self.log.debug("Get SQS queue created for test..")
+        self.log.debug("Create SQS queue for test..")
         try:
-            queue = self.tc.user.sqs.connection.get_queue(
-                                        queue_name=self.queue_name)
-            self.log.debug("Located SQS queue " +
-                           str(queue.name))
+            queue = self.tc.user.sqs.connection.create_queue(
+                                           queue_name=self.queue_name)
+            self.log.debug("Created SQS Queue " +
+                           str(queue.name) +
+                           " successfully.")
         except BotoServerError as e:
-            self.log.error("The following queue was not located: " +
-                           str(self.queue_name))
+            self.log.error("Error creating queue: " + e.error_message)
             raise e
         # Create batch messages
         batch_messages = [(x, 'Message %d' % x, 0) for x in range(1, 11)]
@@ -329,66 +331,65 @@ class BasicMessagesTests(CliTestRunner):
         Grab queue to purge all messages,
         then delete the queue.
         """
-        self.log.debug("Get SQS queue created for test..")
+        self.log.debug("Get all SQS queues created for tests..")
         try:
-            queue = self.tc.user.sqs.connection.get_queue(
-                                        queue_name=self.queue_name)
-            self.log.debug("Located SQS queue " +
-                           str(queue.name))
+            queues = self.tc.user.sqs.connection.get_all_queues(
+                                        prefix='nephoria')
+            self.log.debug("Located all SQS queues..")
         except BotoServerError as e:
-            self.log.error("The following queue was not located: " +
-                           str(self.queue_name))
+            self.log.error("Could not obtain all SQS queues")
             raise e
 
-        try:
-            self.tc.user.sqs.connection.purge_queue(
-                queue)
-        except BotoServerError as e:
-            self.log.error("Error when purging queue " +
-                           str(queue.name))
-            raise e
-        """
-        Purging a queue can take up to 1 minute, therefore
-        we need to check the queue for up to a minute leveraging
-        decorrelated jitter exponential backoff for each request.
-        if the ApproximateNumberOfMessages attributes doesn't equal
-        zero at the end of the minute interval, raise an error
-        """
-        timeout = int(time.time()) + 60*int(1)
-        while True:
+        for queue in queues:
             try:
-                attributes = self.tc.user.sqs.connection.get_queue_attributes(
-                                        queue)
+                self.tc.user.sqs.connection.purge_queue(
+                    queue)
             except BotoServerError as e:
-                self.log.error("Error obtaining attributes for SQS queue: " +
+                self.log.error("Error when purging queue " +
                                str(queue.name))
                 raise e
+            """
+            Purging a queue can take up to 1 minute, therefore
+            we need to check the queue for up to a minute leveraging
+            decorrelated jitter exponential backoff for each request.
+            if the ApproximateNumberOfMessages attributes doesn't equal
+            zero at the end of the minute interval, raise an error
+            """
+            timeout = int(time.time()) + 60*int(1)
+            while True:
+                try:
+                    attributes = self.tc.user.sqs.connection.get_queue_attributes(
+                                            queue)
+                except BotoServerError as e:
+                    self.log.error("Error obtaining attributes for SQS queue: " +
+                                   str(queue.name))
+                    raise e
 
-            self.log.debug("Confirm ApproximateNumberOfMessages attribute " +
-                           "is equal to zero for queue " +
-                           str(queue.name))
-            if int(attributes['ApproximateNumberOfMessages']) == 0:
-                self.log.debug("Queue " + str(queue.name) +
-                               " was purged.")
-                break
-            elif int(time.time()) > timeout:
-                raise RuntimeError("Queue " + str(queue.name) +
-                                   " within the minute timeframe.")
-            sleep_time = min(int(timeout),
-                             random.uniform(2, 2*3))
-            self.log.debug("Sleep " + str(sleep_time) +
-                           " seconds before next request..")
-            time.sleep(sleep_time)
+                self.log.debug("Confirm ApproximateNumberOfMessages attribute " +
+                               "is equal to zero for queue " +
+                               str(queue.name))
+                if int(attributes['ApproximateNumberOfMessages']) == 0:
+                    self.log.debug("Queue " + str(queue.name) +
+                                   " was purged.")
+                    break
+                elif int(time.time()) > timeout:
+                    raise RuntimeError("Queue " + str(queue.name) +
+                                       " within the minute timeframe.")
+                sleep_time = min(int(timeout),
+                                 random.uniform(2, 2*3))
+                self.log.debug("Sleep " + str(sleep_time) +
+                               " seconds before next request..")
+                time.sleep(sleep_time)
 
-        self.log.debug("Deleting the following queue: " +
-                       str(queue.name))
-        try:
-            self.tc.user.sqs.connection.delete_queue(
-                queue)
-        except BotoServerError as e:
-            self.log.error("Failed to delete queue " +
+            self.log.debug("Deleting the following queue: " +
                            str(queue.name))
-            raise e
+            try:
+                self.tc.user.sqs.connection.delete_queue(
+                    queue)
+            except BotoServerError as e:
+                self.log.error("Failed to delete queue " +
+                               str(queue.name))
+                raise e
 
 if __name__ == "__main__":
     test = BasicMessagesTests()
