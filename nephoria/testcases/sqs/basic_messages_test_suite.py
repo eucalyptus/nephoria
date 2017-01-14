@@ -86,7 +86,7 @@ class BasicMessagesTests(CliTestRunner):
     @property
     def queue_name(self):
         """
-        Make sure queue name is set. Each test will 
+        Make sure queue name is set. Each test will
         generate queue name.
         """
         queue_name = getattr(self, '__queue_name', None)
@@ -153,6 +153,7 @@ class BasicMessagesTests(CliTestRunner):
         except BotoServerError as e:
             self.log.error("Error creating queue: " + e.error_message)
             raise e
+
         self.log.debug("Send message to queue " + str(queue.name))
         try:
             message = self.tc.user.sqs.connection.send_message(queue,
@@ -258,7 +259,184 @@ class BasicMessagesTests(CliTestRunner):
                     self.log.error("Failed to delete message from " +
                                    "queue " + str(queue.name))
 
-    def test_receive_delete_multiple_messages(self):
+    def test_change_message_visibility(self):
+        """
+        Test Coverage:
+            - create queue
+            - send message to queue
+            - change message visibility, then receive message
+            - change message visibility that results
+              in the message not being accessible, even
+              if VisibilityTimeout has been reached (negative test)
+        """
+        self.log.debug("Create SQS queue for test..")
+        try:
+            queue = self.tc.user.sqs.connection.create_queue(
+                                           queue_name=self.queue_name)
+            self.log.debug("Created SQS Queue " +
+                           str(queue.name) +
+                           " successfully.")
+        except BotoServerError as e:
+            self.log.error("Error creating queue: " + e.error_message)
+            raise e
+
+        """
+        Change visibility timeout to a minute for queue to give more
+        flexibility for positive/negative tests
+        """
+        try:
+            queue.set_timeout(60)
+            self.log.debug("Set queue visibility timeout to 60 seconds")
+        except BotoServerError as e:
+            self.log.error("Error setting queue visibility timeout: " +
+                           e.error_message)
+            raise e
+        # Confirm timeout has been set to 60 seconds
+        try:
+            queue_timeout = queue.get_timeout()
+            self.log.debug("Get queue visibility timeout...")
+        except BotoServerError as e:
+            self.log.error("Error getting queue visibility timeout: " +
+                           e.error_message)
+            raise e
+        else:
+            if queue_timeout != 60:
+                self.log.error("Queue timeout not set to 60 seconds.")
+                raise ValueError("Queue timeout not set to 60 seconds")
+            else:
+                self.log.debug("Queue timeout set to 60 seconds")
+
+        self.log.info("Test message visibility")
+        self.log.debug("Send message to queue " + str(queue.name))
+        try:
+            message = self.tc.user.sqs.connection.send_message(queue,
+                                                               "Nephoria Test",
+                                                               delay_seconds=0)
+            self.log.debug("Added message to SQS queue " +
+                           str(queue.name) + ".")
+        except BotoServerError as e:
+            self.log.error("Unable to write message to queue " +
+                           str(queue.name))
+            raise e
+        """
+        Receive message from queue, then change
+        visibility timeout of message
+        """
+        try:
+            messages = self.tc.user.sqs.connection.receive_message(
+                                        queue,
+                                        attributes='All')
+            self.log.debug("Received message successfully from " +
+                           "queue " + str(queue.name))
+        except BotoServerError as e:
+            self.log.error("Error obtaining message from SQS queue: " +
+                           str(queue.name))
+            raise e
+        # Define visibility timeouts
+        timeout = 15
+        sec_timeout = 10
+        for message in messages:
+            try:
+                self.tc.user.sqs.connection.change_message_visibility(
+                                        queue,
+                                        message.receipt_handle,
+                                        timeout)
+                self.log.debug("Changed message visibility timeout " +
+                               "to " + str(timeout) + " seconds..")
+                self.messages.append(message.id)
+            except BotoServerError as e:
+                self.log.error("Unable to change message visibility " +
+                               "timeout in queue " + str(queue.name))
+                raise e
+        """
+        Wait seconds in timeout value, then try to re-receive the message.
+        Compare the messages to confirm they are the same.
+        """
+        self.log.debug("Sleep for " + str(timeout) + " seconds..")
+        time.sleep(timeout)
+        try:
+            sec_messages = self.tc.user.sqs.connection.receive_message(
+                                        queue,
+                                        attributes='All')
+            self.log.debug("Received message successfully from " +
+                           "queue " + str(queue.name))
+        except BotoServerError as e:
+            self.log.error("Error obtaining message from SQS queue: " +
+                           str(queue.name))
+            raise e
+
+        for message in sec_messages:
+            """
+            Confirm message received matches
+            the message received earlier
+            """
+            self.log.debug("Verify message ID")
+            assert message.id in self.messages, \
+                ("Message ID doesn't match original")
+            self.messages.remove(message.id)
+            """
+            - Negative test -
+            Sleep for original timeout,  
+            change message timeout, however
+            set the timeout to 10 seconds
+            """
+            self.log.info("Negative test for message visibility")
+            self.log.debug("Sleep for " + str(timeout) + " seconds..")
+            time.sleep(timeout)
+            try:
+                self.tc.user.sqs.connection.change_message_visibility(
+                                        queue,
+                                        message.receipt_handle,
+                                        sec_timeout)
+                self.log.debug("Changed message visibility timeout " +
+                               "to " + str(sec_timeout) + " seconds..")
+            except BotoServerError as e:
+                self.log.error("Unable to change message visibility " +
+                               "timeout in queue " + str(queue.name))
+                raise e
+        """
+        Sleep for the new timeout value, then
+        try to receive messages; this should work.
+        Sleep for 5 seconds, then receive messages again;
+        this should fail
+        """
+        self.log.debug("Sleep for " + str(sec_timeout) + " seconds..")
+        time.sleep(sec_timeout)
+        try:
+            thrd_messages = self.tc.user.sqs.connection.receive_message(
+                                        queue,
+                                        attributes='All')
+            self.log.debug("Received message successfully with new " +
+                           "timeout")
+        except BotoServerError as e:
+                self.log.error("Unable to receive message " +
+                               "from queue " + str(queue.name))
+                raise e
+        self.log.debug("Sleep for 5 seconds..")
+        time.sleep(5)
+        try:
+            fourth_messages = self.tc.user.sqs.connection.receive_message(
+                                        queue,
+                                        attributes='All')
+        except BotoServerError as e:
+            self.log.error("Error obtaining message from SQS queue: " +
+                           str(queue.name) + ". This is expected " +
+                           "behavior: {0}".format(e.error_message))
+            pass
+        else:
+            if len(fourth_messages) > 0:
+                self.log.error("Received message successfully from " +
+                               "queue " + str(queue.name) + "." +
+                               " This should have failed.")
+                raise ValueError("Messages should not have been returned")
+            else:
+                self.log.debug("Confirm no messages are returned.")
+                pass
+
+    def test_change_message_visibility_batch(self):
+        pass
+
+    def test_receive_delete_messages_batch(self):
         """
         Test Coverage:
             - create queue
@@ -358,17 +536,17 @@ class BasicMessagesTests(CliTestRunner):
             timeout = int(time.time()) + 60*int(1)
             while True:
                 try:
-                    attributes = self.tc.user.sqs.connection.get_queue_attributes(
+                    attrs = self.tc.user.sqs.connection.get_queue_attributes(
                                             queue)
                 except BotoServerError as e:
-                    self.log.error("Error obtaining attributes for SQS queue: " +
+                    self.log.error("Error obtaining attrs for SQS queue: " +
                                    str(queue.name))
                     raise e
 
-                self.log.debug("Confirm ApproximateNumberOfMessages attribute " +
+                self.log.debug("Confirm ApproximateNumberOfMessages " +
                                "is equal to zero for queue " +
                                str(queue.name))
-                if int(attributes['ApproximateNumberOfMessages']) == 0:
+                if int(attrs['ApproximateNumberOfMessages']) == 0:
                     self.log.debug("Queue " + str(queue.name) +
                                    " was purged.")
                     break
