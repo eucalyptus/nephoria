@@ -376,7 +376,7 @@ class BasicMessagesTests(CliTestRunner):
             self.messages.remove(message.id)
             """
             - Negative test -
-            Sleep for original timeout,  
+            Sleep for original timeout,
             change message timeout, however
             set the timeout to 10 seconds
             """
@@ -434,7 +434,206 @@ class BasicMessagesTests(CliTestRunner):
                 pass
 
     def test_change_message_visibility_batch(self):
-        pass
+        """
+        Test Coverage:
+            - create queue
+            - send message batch to queue
+            - change message batch visibility, then receive message batch
+            - change message batch visibility that results
+              in the messages not being accessible, even
+              if VisibilityTimeout has been reached (negative test)
+        """
+        self.log.debug("Create SQS queue for test..")
+        try:
+            queue = self.tc.user.sqs.connection.create_queue(
+                                           queue_name=self.queue_name)
+            self.log.debug("Created SQS Queue " +
+                           str(queue.name) +
+                           " successfully.")
+        except BotoServerError as e:
+            self.log.error("Error creating queue: " + e.error_message)
+            raise e
+
+        """
+        Change visibility timeout to a minute for queue to give more
+        flexibility for positive/negative tests
+        """
+        try:
+            queue.set_timeout(60)
+            self.log.debug("Set queue visibility timeout to 60 seconds")
+        except BotoServerError as e:
+            self.log.error("Error setting queue visibility timeout: " +
+                           e.error_message)
+            raise e
+        # Confirm timeout has been set to 60 seconds
+        try:
+            queue_timeout = queue.get_timeout()
+            self.log.debug("Get queue visibility timeout...")
+        except BotoServerError as e:
+            self.log.error("Error getting queue visibility timeout: " +
+                           e.error_message)
+            raise e
+        else:
+            if queue_timeout != 60:
+                self.log.error("Queue timeout not set to 60 seconds.")
+                raise ValueError("Queue timeout not set to 60 seconds")
+            else:
+                self.log.debug("Queue timeout set to 60 seconds")
+        self.log.info("Test message batch visibility")
+        self.log.debug("Send message batch to queue " + str(queue.name))
+        # Create batch messages
+        batch_messages = [(x, 'Message %d' % x, 0) for x in range(1, 11)]
+        try:
+            results = self.tc.user.sqs.connection.send_message_batch(
+                                    queue,
+                                    batch_messages)
+            self.log.debug("Added batch messages to SQS queue " +
+                           str(queue.name) + ".")
+        except BotoServerError as e:
+            self.log.error("Unable to send messages in batch request " +
+                           "to queue " + str(queue.name))
+            raise e
+        else:
+            self.log.debug("Verify all messeages were sent to the queue")
+            assert len(results.results) == 10, \
+                ("Not all messages were sent.")
+        """
+        Create a list of all the messages in
+        the queue in order to use them for changing
+        message visibility, confirming message visibility changes,
+        and message deletion.
+        """
+        master_batch = []
+        for i in range(len(batch_messages)):
+            try:
+                message = self.tc.user.sqs.connection.receive_message(
+                                            queue,
+                                            attributes='All')
+                self.log.debug("Grabbing messages from SQS queue " +
+                               str(queue.name))
+            except BotoServerError as e:
+                self.log.error("Unable to retrieve messages from queue " +
+                               str(queue.name))
+                raise e
+            else:
+                if len(message) == 1:
+                    master_batch.append(message[0])
+                    self.messages.append(message[0].id)
+        """
+        Define visibility timeouts and message batch
+        structures (list of tuples)
+        """
+        timeout = 15
+        sec_timeout = 10
+        first_batch = [(master_batch[x], timeout)
+                       for x in range(len(master_batch))]
+        sec_batch = [(master_batch[x], sec_timeout)
+                     for x in range(len(master_batch))]
+        try:
+            self.tc.user.sqs.connection.change_message_visibility_batch(
+                                    queue=queue,
+                                    messages=first_batch)
+            self.log.debug("Changed message batch visibility timeout " +
+                           "to " + str(timeout) + " seconds..")
+        except BotoServerError as e:
+            self.log.error("Unable to change message batch visibility " +
+                           "timeout in queue " + str(queue.name))
+            raise e
+        """
+        Wait seconds in timeout value, then try to re-receive the message.
+        Compare the messages to confirm they are the same.
+        """
+        self.log.debug("Sleep for " + str(timeout) + " seconds..")
+        time.sleep(timeout)
+        for i in range(len(batch_messages)):
+            try:
+                message = self.tc.user.sqs.connection.receive_message(
+                                            queue,
+                                            attributes='All')
+                self.log.debug("Grabbing messages from SQS queue " +
+                               str(queue.name))
+            except BotoServerError as e:
+                self.log.error("Unable to retrieve messages from queue " +
+                               str(queue.name))
+                raise e
+            else:
+                """
+                Confirm message received matches
+                the message received earlier
+                """
+                self.log.debug("Verify message ID")
+                assert message[0].id in self.messages, \
+                    ("Message ID doesn't match original")
+        """
+        - Negative test -
+        Sleep for original timeout,
+        change message timeout, however
+        set the timeout to 10 seconds
+        """
+        self.log.info("Negative test for message visibility")
+        self.log.debug("Sleep for " + str(timeout) + " seconds..")
+        time.sleep(timeout)
+        try:
+            self.tc.user.sqs.connection.change_message_visibility_batch(
+                                    queue=queue,
+                                    messages=sec_batch)
+            self.log.debug("Changed message batch visibility timeout " +
+                           "to " + str(timeout) + " seconds..")
+        except BotoServerError as e:
+            self.log.error("Unable to change message batch visibility " +
+                           "timeout in queue " + str(queue.name))
+            raise e
+        """
+        Sleep for the new timeout value, then
+        try to receive messages; this should work.
+        Sleep for 5 seconds, then receive messages again;
+        this should fail
+        """
+        self.log.debug("Sleep for " + str(sec_timeout) + " seconds..")
+        time.sleep(sec_timeout)
+        for i in range(len(batch_messages)):
+            try:
+                message = self.tc.user.sqs.connection.receive_message(
+                                       queue,
+                                       attributes='All')
+                self.log.debug("Grabbing message from SQS queue " +
+                               str(queue.name))
+            except BotoServerError as e:
+                self.log.error("Unable to retrieve message from queue " +
+                               str(queue.name))
+                raise e
+            else:
+                if len(message) > 0:
+                    """
+                    Confirm message received matches
+                    the message received earlier
+                    """
+                    self.log.debug("Verify message ID")
+                    assert message[0].id in self.messages, \
+                        ("Message ID doesn't match original")
+                    self.messages.remove(message[0].id)
+
+        self.log.debug("Sleep for 5 seconds..")
+        time.sleep(5)
+        try:
+            fourth_messages = self.tc.user.sqs.connection.receive_message(
+                                        queue,
+                                        number_messages=len(batch_messages),
+                                        attributes='All')
+        except BotoServerError as e:
+            self.log.error("Error obtaining message from SQS queue: " +
+                           str(queue.name) + ". This is expected " +
+                           "behavior: {0}".format(e.error_message))
+            pass
+        else:
+            if len(fourth_messages) > 0:
+                self.log.error("Received message successfully from " +
+                               "queue " + str(queue.name) + "." +
+                               " This should have failed.")
+                raise ValueError("Messages should not have been returned")
+            else:
+                self.log.debug("Confirm no messages are returned.")
+                pass
 
     def test_receive_delete_messages_batch(self):
         """
