@@ -35,11 +35,12 @@ from nephoria.testcase_utils.cli_test_runner import CliTestRunner, SkipTestExcep
 from nephoria.testcases.euca2ools.euca2ools_image_utils import Euca2oolsImageUtils
 from nephoria.usercontext import UserContext
 from nephoria.testcontroller import TestController
-from cloud_utils.log_utils import get_traceback
+from cloud_utils.log_utils import get_traceback, red
 from cloud_utils.system_utils import local
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 from boto.s3.bucket import Bucket
 from boto.ec2.keypair import KeyPair
+from boto.vpc.subnet import Subnet
 from boto.exception import S3ResponseError
 import copy
 from nephoria.aws.ec2.conversiontask import ConversionTask
@@ -195,6 +196,12 @@ class ImportInstanceTests(CliTestRunner):
                    'default': False,
                    'help': 'Use http instead of https'}}
 
+    _DEFAULT_CLI_ARGS['subnet'] = {
+        'args': ['--subnet'],
+        'kwargs': {'dest': 'subnet',
+                   'default': None,
+                   'help': 'Subnet to use to create the instance network'}}
+
     del _DEFAULT_CLI_ARGS['emi']
 
 
@@ -222,6 +229,7 @@ class ImportInstanceTests(CliTestRunner):
         self._group = None
         self._imagelocation = None
         self._keypair = None
+        self._subnet = None
         self._created_keypairs = []
         self._zone = None
         self.args_check = None
@@ -295,6 +303,25 @@ class ImportInstanceTests(CliTestRunner):
             if (self.args.clc or self.args.environment_file) and self.tc:
                 self._user = self.tc.user
         return self._user
+
+    @property
+    def subnet(self):
+        if self._subnet is None:
+            if self.args.subnet:
+                try:
+                    self._subnet = self.user.ec2.get_subnet(self.args.subnet)
+                except Exception as E:
+                    self.log.error(red('{0}\nFailed to fetch CLI provided subnet:"{1}", ERR:"{2}"'
+                                   .format(get_traceback(), self.args.subnet, E)))
+        return self._subnet
+
+    @subnet.setter
+    def subnet(self, subnet):
+        if subnet is None or isinstance(subnet, Subnet):
+            self._subnet = subnet
+        else:
+            self.log.error(red('Unsupported type for subnet:{0}/{1}, must be None or type Subnet'
+                               .format(subnet, type(subnet))))
 
 
     def check_url(self, url=None):
@@ -392,7 +419,19 @@ class ImportInstanceTests(CliTestRunner):
     def _get_security_group(self, group_name=None):
         group_name = group_name or 'import_instance_test_group'
         user = self.user
-        group = user.ec2.get_security_group(name=group_name)
+        vpc_id = None
+        if user.ec2.vpc_supported or self.subnet:
+            if self.subnet:
+                vpc_id = self.subnet.vpc_id
+            else:
+                defaultvpc = user.ec2.get_default_vpcs()
+                if defaultvpc:
+                    defaultvpc = defaultvpc[0]
+                else:
+                    raise ValueError('Can not fetch security group. Could not find Default vpc '
+                                     'and no subnet was provided to derive it.')
+                vpc_id = defaultvpc.id
+        group = user.ec2.get_security_group(name=group_name, vpc_id=vpc_id)
         if not group:
             setattr(self, '_created_group', True)
             group = user.ec2.add_group(group_name=group_name)
