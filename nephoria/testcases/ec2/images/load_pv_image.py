@@ -51,6 +51,21 @@ class Load_Pv_Image(CliTestRunner):
          'kwargs': {"help": "Cloud account name to use",
                     "default": "eucalyptus"}}
 
+    _DEFAULT_CLI_ARGS['run_image_account'] = {
+        'args': ['--run-account'],
+        'kwargs': {"help": "Cloud account name to use for running the created pv image",
+                   "default": "testrunner"}}
+
+    _DEFAULT_CLI_ARGS['run_access_key'] = {
+        'args': ['--run-access-key'],
+        'kwargs': {"help": "Access key to use for running the created pv image",
+                   "default": None}}
+
+    _DEFAULT_CLI_ARGS['run_secret_key'] = {
+        'args': ['--run-secret-key'],
+        'kwargs': {"help": "Secret key to use for running the created pv image",
+                   "default": None}}
+
     _DEFAULT_CLI_ARGS['kernel_image_url'] = {
         'args': ['--kernel-image-url'],
         'kwargs': { 'default': None,
@@ -179,6 +194,7 @@ class Load_Pv_Image(CliTestRunner):
         self._user = None
         self._tc = None
         self._image_utils = None
+        self._run_image_user = None
 
         if not self.args.test_list and self.args.emi:
             if (not self.args.disk_image_url and not self.args.diskfilepath) or \
@@ -256,6 +272,21 @@ class Load_Pv_Image(CliTestRunner):
         except Exception as UE:
             self.log.error('{0}\nFailed to create user: {1}'.format(get_traceback(), UE))
         return self._user
+
+    @property
+    def run_image_user(self):
+        try:
+            if not self._run_image_user:
+                if self.args.run_access_key and self.args.run_secret_key and self.args.region:
+                    self._run_image_user = UserContext(aws_access_key=self.args.run_access_key,
+                                                       aws_secret_key=self.args.run_secret_key,
+                                                       region=self.args.region)
+                if (self.args.clc or self.args.environment_file) and self.tc:
+                    self._run_image_user = self.tc.create_user_using_cloudadmin(
+                        aws_account_name=self.args.run_image_account)
+        except Exception as UE:
+            self.log.error('{0}\nFailed to create user: {1}'.format(get_traceback(), UE))
+        return self._run_image_user
 
     def test1_do_kernel_image(self):
         """
@@ -486,29 +517,30 @@ class Load_Pv_Image(CliTestRunner):
         Attempts to run an instance from the newly created PV image.
         Will attempt to ping/ssh into the instance once running and execute the 'uptime' command.
         """
+        user = self.run_image_user or self.user
         emi = self.emi
         if not emi:
             raise SkipTestException('No emi found or provided')
         if isinstance(emi, basestring):
-            emi = self.user.ec2.get_emi(emi, state=None)
+            emi = user.ec2.get_emi(emi, state=None)
         self.reservation = None
         ### Add and authorize a group for the instance
-        self.group = self.user.ec2.add_group('load_pv_image_test')
-        self.user.ec2.authorize_group(self.group, port=22, protocol='tcp')
-        self.user.ec2.authorize_group(self.group,  protocol='icmp', port=-1)
+        self.group = user.ec2.add_group('load_pv_image_test')
+        user.ec2.authorize_group(self.group, port=22, protocol='tcp')
+        user.ec2.authorize_group(self.group,  protocol='icmp', port=-1)
         ### Generate a keypair for the instance
-        localkeys = self.user.ec2.get_all_current_local_keys()
+        localkeys = user.ec2.get_all_current_local_keys()
         if localkeys:
             self.keypair = localkeys[0]
             self.keypair_name = self.keypair.name
         else:
             self.keypair_name = "load_pv_test_keypair" + str(int(time.time()))
-            self.keypair = self.user.ec2.get_keypair(key_name=self.keypair_name)
+            self.keypair = user.ec2.get_keypair(key_name=self.keypair_name)
         try:
             size = int(self.emi.tags.get('size', 0)) * int(self.args.time_per_gig)
             timeout = size or 300
-            instance = self.user.ec2.run_image(image=emi, keypair=self.keypair,
-                                             group=self.group, timeout=timeout)[0]
+            instance = user.ec2.run_image(image=emi, keypair=self.keypair,
+                                          group=self.group, timeout=timeout)[0]
             instance.sys('uptime', code=0)
             self.status("Run new PV image PASSED")
         finally:
