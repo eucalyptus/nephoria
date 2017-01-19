@@ -201,12 +201,9 @@ class NetTestsClassic(CliTestRunner):
         kp = getattr(self, '_keypair', None)
         if not kp:
             try:
-                keys = self.user.ec2.get_all_current_local_keys()
-                if keys:
-                    kp = keys[0]
-                else:
-                    kp = self.user.ec2.create_keypair_and_localcert(
-                        "{0}_key_{1}".format(self.name, time.time()))
+
+                kp = self.user.ec2.create_keypair_and_localcert(
+                    "{0}_key_{1}".format(self.name, time.time()))
                 setattr(self, '_keypair', kp)
             except Exception, ke:
                 raise Exception("Failed to find/create a keypair, error:" + str(ke))
@@ -405,6 +402,20 @@ class NetTestsClassic(CliTestRunner):
             except Exception as E:
                 errors.append(E)
                 self.log.error("{0}\n{1}".format(get_traceback(), E))
+
+            try:
+                keypair = getattr(self, '_keypair', None)
+                if keypair:
+                    self.user.ec2.delete_keypair(keypair)
+            except EC2ResponseError as ER:
+                if ER.status == 400:
+                    pass
+                else:
+                    raise
+            except Exception as E:
+                errors.append(E)
+                self.log.error("{0}\n{1}".format(get_traceback(), E))
+
 
             try:
                 self.user.ec2.delete_group(self.group1)
