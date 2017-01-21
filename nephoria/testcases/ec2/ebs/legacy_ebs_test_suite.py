@@ -73,6 +73,13 @@ class LegacyEbsTestSuite(CliTestRunner):
                    'default': None,
                    'help': 'Security group to use in test'}}
 
+    _DEFAULT_CLI_ARGS['md5_len'] = {
+        'args': ['--md5-len'],
+        'kwargs': {'dest': 'md5_len',
+                   'default': 32,
+                   'help': 'Length in bytes to read from volume to record checksum, '
+                           '0 will read in entire volume'}}
+
     _DEFAULT_CLI_ARGS['waitconnect'] = {
         'args': ['--waitconnect'],
         'kwargs': {'dest': 'waitconnect',
@@ -123,6 +130,7 @@ class LegacyEbsTestSuite(CliTestRunner):
         self._keypair_name = None
         self._user = None
         self._tc = None
+        self.md5len = int(self.args.md5_len) or None
         self.snaps = []
 
     @property
@@ -369,7 +377,8 @@ class LegacyEbsTestSuite(CliTestRunner):
                     for instance in zone.instances:
                         try:
                             # This should fail
-                            instance.attach_euvolume(volume, timeout=timeout)
+                            instance.attach_euvolume(volume, md5_len=self.md5len, write_len=self.md5len,
+                                                     timeout=timeout)
                         except Exception, e:
                             # If it failed were good
                             self.log.debug("negative_attach_in_use_volume_in_zones Passed. "
@@ -417,7 +426,8 @@ class LegacyEbsTestSuite(CliTestRunner):
                                        .format(i, zone.instances, zone))
                         instance = zone.instances[i]
                         try:
-                            instance.attach_euvolume(volume, timeout=timeout, overwrite=overwrite)
+                            instance.attach_euvolume(volume, timeout=timeout,
+                                                     md5_len=self.md5len, write_len=self.md5len, overwrite=overwrite)
                         except VolumeStateException, vse:
                             self.log.warning(
                                 red("This is a temp work around for testing, this is to avoid "
@@ -704,7 +714,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                             i = 0
                         instance = zone.instances[i]
                         try:
-                            instance.attach_euvolume(vol, timeout=timeout)
+                            instance.attach_euvolume(vol, md5_len=self.md5len, write_len=self.md5len, timeout=timeout)
                         except VolumeStateException, vse:
                             self.log.warning(red("This is a temp work around for testing, this "
                                                  "is to avoid bug euca-5297:\n{0}".format(vse)))
@@ -809,7 +819,8 @@ class LegacyEbsTestSuite(CliTestRunner):
                             "instance:" + str(instance.id) + " to verify md5s...")
                 for newvol in vols:
                     try:
-                        instance.attach_euvolume(newvol, timeout=attach_timeout)
+                        instance.attach_euvolume(newvol, md5_len=self.md5len, write_len=self.md5len,
+                                                 timeout=attach_timeout)
                     except VolumeStateException, vse:
                         self.log.warning(red("This is a temp work around for testing, this is "
                                              "to avoid bug euca-5297:\n{0}".format(vse)))
@@ -912,7 +923,8 @@ class LegacyEbsTestSuite(CliTestRunner):
                 for newvol in vols:
                     if newvol.zone == zone.name:
                         try:
-                            instance.attach_euvolume(newvol, timeout=attach_timeout)
+                            instance.attach_euvolume(newvol, md5_len=self.md5len, write_len=self.md5len,
+                                                     timeout=attach_timeout)
                         except VolumeStateException, vse:
                             self.status(red("This is a temp work around for testing, "
                                             "this is to avoid bug euca-5297:\n{0}".format(vse)))

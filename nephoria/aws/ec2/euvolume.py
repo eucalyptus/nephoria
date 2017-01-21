@@ -40,14 +40,23 @@ from boto.ec2.volume import Volume
 from boto.exception import EC2ResponseError
 import time
 from nephoria.euca.taggedresource import TaggedResource
+from cloud_utils.log_utils import eulogger
 from datetime import datetime, timedelta
 from prettytable import PrettyTable
 
 
 
 class EuVolume(Volume, TaggedResource):
+    # Define test tag key names...
     tag_md5_key = 'md5'
     tag_md5len_key = 'md5len'
+    tag_source_snapshot_id = 'source_snapshot_id'
+    tag_source_volume_zone = 'source_volume_zone'
+    tag_source_volume_id = 'source_volume_id'
+    tag_source_volume_size = 'source_volume_size'
+    tag_source_volume_md5 = 'source_volume_md5'
+    tag_source_volume_md5_len = 'source_volume_md5_len'
+    tag_source_volume_timestatmp = 'source_volume_timestamp'
     tag_instance_id_key = 'instance_id'
     tag_guestdev_key = 'guestdev'
 
@@ -61,11 +70,18 @@ class EuVolume(Volume, TaggedResource):
     def make_euvol_from_vol(cls, volume, ec2ops=None, cmdstart=None):
         newvol = EuVolume(volume.connection)
         newvol.__dict__ = volume.__dict__
-        newvol.ec2ops = ec2ops
-        newvol.guestdev = "" #the guest device name in use by this attached volume
-        newvol.clouddev = "" #the device name given to the cloud as a request to be used.
+        newvol._log = None
         newvol.md5 = None
-        newvol.md5len = 1024
+        newvol.md5len = None
+        # the guest device name in use by this attached volume
+        newvol.guestdev = ""
+        # the device name given to the cloud as a request to be used.
+        newvol.clouddev = ""
+        newvol.update_from_volume_tags()
+        newvol.init_tag_attrs()
+        newvol.ec2ops = ec2ops
+        #if newvol.md5len is None:
+        #    newvol.md5len = 1024
         newvol.eutest_failmsg = None
         newvol.eutest_laststatus = newvol.status
         newvol.eutest_ageatstatus = 0 
@@ -80,6 +96,41 @@ class EuVolume(Volume, TaggedResource):
         newvol.set_attached_status()
 
         return newvol
+
+    def __repr__(self):
+        return "{0}:{1}".format(self.__class__.__name__, getattr(self, 'id', None))
+
+    def init_tag_attrs(self):
+        for key, value in vars(self.__class__).iteritems():
+            if str(key).startswith('tag_'):
+                if not hasattr(self, value):
+                    setattr(self, value, None)
+
+
+    @property
+    def log(self):
+        if not self._log:
+            self._log = eulogger.Eulogger(identifier=str(self.id))
+        return self._log
+
+
+    def create_tags_dict(self):
+        ret_dict = {}
+        clsattrs = vars(self.__class__)
+        for key, value in clsattrs.iteritems():
+            if str(key).startswith('tag_'):
+                ret_dict[value] = getattr(self, value, "")
+        return ret_dict
+
+
+    def update_from_volume_tags(self, tags=None):
+        tags = tags or self.tags.iteritems()
+        for key, value in tags:
+            setattr(self, key, value)
+
+    def update_volume_tags_from_local_values(self):
+        self.create_tags(self.create_tags_dict())
+
 
     # imported from ec2ops
     def get_volume_time_created(self, volume):
@@ -128,8 +179,9 @@ class EuVolume(Volume, TaggedResource):
 
     def update(self):
         last_status = self.status
+        ret = last_status
         try:
-            super(EuVolume, self).update()
+            ret = super(EuVolume, self).update()
             if (self.tags.has_key(self.tag_md5_key) and
                     (self.md5 != self.tags[self.tag_md5_key])) or \
                     (self.tags.has_key(self.tag_md5len_key) and
@@ -142,7 +194,9 @@ class EuVolume(Volume, TaggedResource):
             else:
                 raise ER
         self.set_last_status()
-    
+        return ret
+
+
     def set_last_status(self,status=None):
         self.eutest_laststatus = status or self.status
         self.eutest_laststatustime = time.time()

@@ -40,8 +40,8 @@ class TaggedResource():
         pass
 
     def create_tags(self, tags, timeout=600):
-        self.tester.debug("Current tags: " + str(self.tags))
-        self.tester.create_tags([self.id], tags)
+        self.log.debug("Current tags: " + str(self.tags))
+        self.connection.create_tags([self.id], tags)
         self.wait_for_tags(tags, timeout=timeout)
 
     def wait_for_tags(self, tags, creation=True, timeout=60):
@@ -50,13 +50,13 @@ class TaggedResource():
         while elapsed < timeout:
             self.update()
             applied_tags = self.convert_tag_list_to_dict(
-                self.tester.ec2.get_all_tags(filters={u'resource_id': self.id}))
-            self.tester.debug("Current tags: " + str(applied_tags))
+                self.connection.get_all_tags(filters={u'resource_id': self.id}))
+            self.log.debug("Current tags: " + str(applied_tags))
             found_keys = 0
             for key, value in tags.iteritems():
                 if key in applied_tags:
                     found_keys += 1
-                    self.tester.debug(
+                    self.log.debug(
                         "Found key # " + str(found_keys) + " out of " + str(len(tags)) + ":" + key)
             if creation:
                 if found_keys == len(tags):
@@ -79,8 +79,8 @@ class TaggedResource():
         return new_dict
 
     def delete_tags(self, tags, timeout=600):
-        self.tester.debug("Current tags: " + str(self.tags))
-        self.tester.delete_tags([self.id], tags)
+        self.log.debug("Current tags: " + str(self.tags))
+        self.connection.delete_tags([self.id], tags)
         self.wait_for_tags(tags, creation=False, timeout=timeout)
 
     def show_tags(self, tags, printmethod=None, printme=True):

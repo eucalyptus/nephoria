@@ -968,7 +968,8 @@ class EuInstance(Instance, TaggedResource, Machine):
             retlist.append(line.strip())
         return retlist
 
-    def attach_volume(self, volume, dev=None, timeout=180, overwrite=False):
+    def attach_volume(self, volume, dev=None, timeout=180, write_len=32, md5_len=None,
+                      overwrite=False):
         '''
         Method used to attach a volume to an instance and track it's use by that instance
         required - euvolume - the euvolume object being attached
@@ -980,9 +981,11 @@ class EuInstance(Instance, TaggedResource, Machine):
         '''
         if not isinstance(volume, EuVolume):
             volume = EuVolume.make_euvol_from_vol(volume)
-        return self.attach_euvolume(volume, dev=dev, timeout=timeout, overwrite=overwrite)
+        return self.attach_euvolume(volume, dev=dev, timeout=timeout, write_len=write_len,
+                                    md5_len=md5_len, overwrite=overwrite)
 
-    def attach_euvolume(self, euvolume, dev=None, timeout=180, overwrite=False):
+    def attach_euvolume(self, euvolume, dev=None, srcdev='/dev/zero', write_len=32, md5_len=None,
+                        timeout=180, gb_timeout=120, overwrite=False):
         '''
         Method used to attach a volume to an instance and track it's use by that instance
         required - euvolume - the euvolume object being attached
@@ -991,12 +994,16 @@ class EuInstance(Instance, TaggedResource, Machine):
         optional - timeout - integer- time allowed before failing
         optional - overwrite - flag to indicate whether to overwrite head data of a non-zero
                   filled volume upon attach for md5
+        optional - write_len - int length in bytes to write signature into volume upon attach
+        optional - md5_len - int length in bytes to read for md5 of volume upon attach
+        optional - gb_timeout -int time to allow per gb to be written to volume
         '''
         if not isinstance(euvolume, EuVolume):
             raise Exception("Volume needs to be of type euvolume, try attach_volume() instead?")
 
         self.log.debug("Attempting to attach volume:" + str(euvolume.id) + " to instance:" +
                    str(self.id) + " to dev:" + str(dev))
+        md5_len = md5_len or write_len
         # grab a snapshot of our devices before attach for comparison purposes
         dev_list_before = self.get_dev_dir()
         dev_list_after = []
@@ -1049,7 +1056,9 @@ class EuInstance(Instance, TaggedResource, Machine):
             # Check to see if this volume has unique data in the head otherwise write some
             # and md5 it
             try:
-                self.vol_write_random_data_get_md5(euvolume, overwrite=overwrite)
+                self.vol_write_random_data_get_md5(euvolume, srcdev=srcdev, length=write_len,
+                                                   md5_len=md5_len, timepergig=gb_timeout,
+                                                   overwrite=overwrite)
                 return True
             except:
                 self.log.debug("\n" + str(get_traceback()) +
@@ -1177,7 +1186,12 @@ class EuInstance(Instance, TaggedResource, Machine):
             errors = "{0}\n{1}\n".format(get_traceback(), SE)
         if errors:
             self.log.error('{0}\n{1}Error closing instances fds'.format(errors, self.id))
-        super(EuInstance, self).terminate(dry_run=dry_run)
+        try:
+            super(EuInstance, self).terminate(dry_run=dry_run)
+        except EC2ResponseError as ERE:
+            if ERE.status == 400 and ERE.reason == 'InvalidInstanceID.NotFound':
+                self.log.debug('Caught 400 during terminate(). Assuming instance has already been '
+                               'terminated and removed from system: "{0}"'.format(ERE))
 
     def terminate_and_verify(self, verify_vols=True, verify_eni=True,
                              volto=180, timeout=300, poll_interval=10):
@@ -1443,7 +1457,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         return self.time_dd(fillcmd)
 
     @printinfo
-    def random_fill_volume(self, euvolume, srcdev=None, length=None, timepergig=90):
+    def random_fill_volume(self, euvolume, srcdev=None, length=None, timepergig=120):
         '''
         Attempts to fill the entire given euvolume with unique non-zero data.
         The srcdev is read from in a set size, and then used to write to the euvolume to
@@ -1457,26 +1471,31 @@ class EuInstance(Instance, TaggedResource, Machine):
         '''
         mb = 1048576
         gb = 1073741824
-        fsize = 10485760  # 10mb
+        fsize = 4096
         if euvolume not in self.attached_vols:
             raise Exception(self.id + " Did not find this in instance's attached list. "
                                       "Can not write to this euvolume")
 
         voldev = euvolume.guestdev.strip()
         self.assertFilePresent(voldev)
+        if srcdev:
+            self.assertFilePresent(srcdev)
+        randsrc = None
+
+        if self.found('ls /dev/urandom', 'urandom'):
+            randsrc = '/dev/urandom'
+        else:
+            # look for the another large device we can read from in random size increments
+            randsrc = "/dev/" + str(self.sys("ls -1 /dev | grep 'da$'")[0]).strip()
+            fsize = randint(1048576, 10485760)
         if srcdev is None:
-            if self.found('ls /dev/urandom', 'urandom'):
-                srcdev = '/dev/urandom'
-            else:
-                # look for the another large device we can read from in random size increments
-                srcdev = "/dev/" + str(self.sys("ls -1 /dev | grep 'da$'")[0]).strip()
-                fsize = randint(1048576, 10485760)
+            srcdev = randsrc
         if not length:
             timeout = int(euvolume.size) * timepergig
         else:
             timeout = timepergig * ((length / gb) or 1)
         # write the volume id into the volume for starters
-        ddcmd = 'echo ' + str(euvolume.id) + ' | dd of=' + str(voldev)
+        ddcmd = 'echo "{0} $(head -c 1000 {1})" | dd of={2}'.format(euvolume.id, randsrc, voldev)
         dd_res_for_id = self.dd_monitor(ddcmd=ddcmd, timeout=timeout, sync=False)
         if length is not None:
             len_remaining = length - int(dd_res_for_id['dd_bytes'])
@@ -1494,21 +1513,28 @@ class EuInstance(Instance, TaggedResource, Machine):
                                    ddseek=int(dd_res_for_id['dd_bytes']),
                                    timeout=timeout)
         else:
+            length = self.get_blockdev_size_in_bytes(voldev)
+            len_remaining = length - int(dd_res_for_id['dd_bytes'])
+            self.log.debug('length remaining to write after adding volumeid:' + str(len_remaining))
+            if len_remaining <= 0:
+                self.sys('sync')
+                return dd_res_for_id
             return self.dd_monitor(ddif=str(srcdev),
                                    ddof=str(voldev),
                                    ddbs=fsize,
+                                   ddbytes=len_remaining,
                                    ddseek=int(dd_res_for_id['dd_bytes']),
                                    timeout=timeout)
 
-    def time_dd(self, ddcmd, timeout=90, poll_interval=1, tmpfile=None):
+    def time_dd(self, ddcmd, timeout=120, poll_interval=1, tmpfile=None):
         '''
         Added for legacy support, use dd_monitor instead) Executes dd command on instance,
         parses and returns stats on dd outcome
         '''
         return self.dd_monitor(ddcmd=ddcmd, poll_interval=poll_interval, tmpfile=tmpfile)
 
-    def vol_write_random_data_get_md5(self, euvolume, srcdev=None, length=32, timepergig=90,
-                                      overwrite=False):
+    def vol_write_random_data_get_md5(self, euvolume, srcdev=None, length=32, md5_len=None,
+                                      timepergig=120, overwrite=False):
         '''
         Attempts to copy some amount of data into an attached volume, and return the md5sum of
         that volume.
@@ -1524,7 +1550,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         overwrite - optional - boolean. write to volume regardless of whether existing data
                     is found
         '''
-
+        md5_len = md5_len or length
         voldev = euvolume.guestdev.strip()
         if not isinstance(euvolume, EuVolume):
             raise Exception('EuVolume() type not passed to vol_write_random_data_get_md5, '
@@ -1534,21 +1560,26 @@ class EuInstance(Instance, TaggedResource, Machine):
                             ', euvolume.guestdev:' + str(euvolume.guestdev) +
                             ', voldev:' + str(voldev))
         # Check to see if there's existing data that we should avoid overwriting
-        if overwrite or (int(self.sys('head -c ' + str(length) + ' ' + str(voldev) +
+        # When length is None fallback to checking for existing data in just the first 10MB
+        check_length = length
+        if length is None:
+            check_length = 10000000
+        if overwrite or (int(self.sys('head -c ' + str(check_length) + ' ' + str(voldev) +
                                       ' | xargs -0 printf %s | wc -c')[0]) == 0):
 
-            self.random_fill_volume(euvolume, srcdev=srcdev, length=length)
+            wrote = self.random_fill_volume(euvolume, srcdev=srcdev, length=length,
+                                            timepergig=timepergig)
             # length = dd_dict['dd_bytes']
         else:
             self.log.debug("Volume has existing data, skipping random data fill")
         # Calculate checksum of euvolume attached device for given length
-        md5 = self.md5_attached_euvolume(euvolume, timepergig=timepergig, length=length)
+        md5 = self.md5_attached_euvolume(euvolume, timepergig=timepergig, length=md5_len)
         self.log.debug("Filled Volume:" + euvolume.id + " dev:" + voldev + " md5:" + md5)
         euvolume.md5 = md5
         euvolume.md5len = length
         return md5
 
-    def md5_attached_euvolume(self, euvolume, timepergig=90, length=None, updatevol=True):
+    def md5_attached_euvolume(self, euvolume, timepergig=120, length=None, updatevol=True):
         '''
         Calculates an md5sum of the first 'length' bytes of the dev representing the attached
         euvolume.
@@ -1575,15 +1606,19 @@ class EuInstance(Instance, TaggedResource, Machine):
             tb = get_traceback()
             print str(tb)
             raise Exception(str(self.id) + ": Failed to md5 attached volume: " + str(e))
+        euvolume.md5 = md5
+        euvolume.md5len = length
+        euvolume.create_tags({euvolume.tag_md5_key:md5, euvolume.tag_md5len_key: length})
         return md5
 
     def get_dev_md5(self, devpath, length, timeout=60):
         self.assertFilePresent(devpath)
-        if length == 0:
-            md5 = str(self.sys("md5sum " + devpath, timeout=timeout)[0]).split(' ')[0].strip()
+        if not length:
+            md5 = str(self.sys("md5sum " + devpath,
+                               timeout=timeout, code=0)[0]).split(' ')[0].strip()
         else:
             md5 = str(self.sys("head -c " + str(length) + " " + str(devpath) +
-                               " | md5sum")[0]).split(' ')[0].strip()
+                               " | md5sum", timeout=timeout, code=0 )[0]).split(' ')[0].strip()
         return md5
 
     def reboot_instance_and_verify(self,
@@ -1684,7 +1719,7 @@ class EuInstance(Instance, TaggedResource, Machine):
                            'elapsed:{1}'
                            .format(self.id, int(time.time() - start)))
 
-    def attach_euvolume_list(self, list, intervoldelay=0, timepervol=90, md5len=32):
+    def attach_euvolume_list(self, list, intervoldelay=0, timepervol=120, md5len=32):
         '''
         Attempts to attach a list of euvolumes. Due to limitations with KVM and detecting
         the location/device name of the volume as attached on the guest, MD5 sums are used...
@@ -1857,7 +1892,19 @@ class EuInstance(Instance, TaggedResource, Machine):
 
         md5 = md5 or euvolume.md5
         md5len = md5len or euvolume.md5len
-        for vdev in self.get_dev_dir():
+        if euvolume:
+            pt = self.ec2ops.show_volumes([euvolume], printme=False)
+            self.log.debug("Attempting to find block dev by md5. vol:{1}, md5:{1}. md5:{2}\n{3}\n"
+                           .format(euvolume.id, md5, md5len, pt))
+
+        vdevs = self.get_dev_dir()
+        # if the euvolume has a guest dev, try that first
+        if getattr(euvolume, 'guestdev', None):
+            for vdev in vdevs:
+                if str(euvolume.guestdev).endswith(vdev):
+                    vdevs.remove(vdev)
+                    vdevs.insert(0, vdev)
+        for vdev in vdevs:
             vdev = '/dev/' + str(vdev).replace('/dev/', '')
             self.log.debug('Checking ' + str(vdev) + " for a matching block device")
             block_md5 = self.get_dev_md5(vdev, md5len)
