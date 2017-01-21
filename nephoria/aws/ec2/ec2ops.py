@@ -3906,8 +3906,13 @@ disable_root: false"""
                                    maxsize=maxsize, eof=eof)[0]
 
         except Exception, e:
+
+            errmsg = "{0}\n{1}".format(get_traceback(), e)
             if eof:
+                self.log.error(red(errmsg))
                 raise e
+            else:
+                self.log.warning(red(errmsg))
         return vol
 
     @printinfo

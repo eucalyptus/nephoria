@@ -88,6 +88,7 @@ def wait_for_result(callback,
     start = time.time()
     elapsed = 0
     current_state = callback(**callback_kwargs)
+    elapsed = int(time.time() - start)
     while (elapsed < timeout and not oper(current_state, result)):
         debug(str(callback.func_name) + ' returned: "' + str(current_state) + '" after ' +
               str(elapsed / 60) + " minutes " + str(elapsed % 60) + " seconds.")
