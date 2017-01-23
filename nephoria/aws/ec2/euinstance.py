@@ -343,6 +343,8 @@ class EuInstance(Instance, TaggedResource, Machine):
         # Create a multi line field for the instance's state info
         if self.age:
             age = int(self.age)
+        else:
+            age = "??"
         state_string, state_len = multi_line(["STATE: " + state_markup(self.laststate),
                                               "{0} {1}".format(markup('AGE:'), age),
                                               "{0} {1}".format(markup("ZONE:"), self.placement),
@@ -2357,7 +2359,8 @@ class EuInstance(Instance, TaggedResource, Machine):
 
                     # Get MAC address...
                     mac_path = os.path.join(dev_path, 'address')
-                    mac_addr = self.sys('cat {0}'.format(mac_path), code=0)[0]
+                    mac_addr = self.sys('cat {0}'.format(mac_path), code=0) or [""]
+                    mac_addr = mac_addr[0]
                     search = re.search("^\w\w:\w\w:\w\w:\w\w:\w\w:\w\w$", mac_addr.strip())
                     if search:
                         dev['address'] = search.group()
@@ -2380,8 +2383,8 @@ class EuInstance(Instance, TaggedResource, Machine):
                     # Get the operation state...
                     oper_path = os.path.join(dev_path, 'operstate')
                     try:
-                        dev['operstate'] = self.sys('cat {0}'.format(oper_path), code=0,
-                                                    timeout=2)[0]
+                        dev['operstate'] = (self.sys('cat {0}'.format(oper_path), code=0,
+                                                     timeout=2) or [None])[0]
                     except (CommandTimeoutException, CommandExitCodeException) as TE:
                         self.log.debug(TE)
                         dev['operstate'] = None
@@ -2747,13 +2750,14 @@ class EuInstance(Instance, TaggedResource, Machine):
         while elapsed < local_dev_timeout and dev_found:
             elapsed = int(time.time() - start)
             attempts += 1
+            dev = None
+            info = None
             net_devs = self.get_network_device_info()
             for dev, info in net_devs.iteritems():
                 if info.get('address') == eni.mac_address:
                     break
                 else:
                     dev = None
-
             if not dev:
                 eth_info = ", ".join(["{0}:{1}"
                                      .format(x, y.get('address')) for x, y in net_devs.iteritems()])

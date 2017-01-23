@@ -749,6 +749,13 @@ disable_root: false"""
             )
 
     def revoke_all_rules(self, group, egress=False):
+        """
+        Attempts to revoke/remove all rules from the provided group.
+        Args:
+            group: security group or id
+            egress: boolean, if True will attempt to remove all egress rules in addition to ingress
+
+        """
 
         if isinstance(group, SecurityGroup):
             # fetch it since group obj does not have update() yet...
@@ -1136,12 +1143,64 @@ disable_root: false"""
                     self.connection.delete_route_table(route_table_id=rtb.id)
         if deps['enis']:
             self.log.debug('Attempting to delete vpc enis')
-            for eni in deps['enis']:
-                eni.delete()
+            enis = deps['enis'] or []
+            self.delete_enis(enis)
         self.log.debug('Attempting to delete subnet:{0}'.format(subnet))
         self.connection.delete_subnet(subnet)
         self.log.debug('Deleted SUBNET and dependency artifacts')
 
+
+    def delete_enis(self, enis, timeout=90):
+        delete_list = []
+        if not isinstance(enis, list):
+            enis = [enis]
+        for eni in enis:
+            if isinstance(eni, basestring):
+                delete_list.append(eni)
+            else:
+                delete_list.append(eni.id)
+        start = time.time()
+        elapsed = 0
+        good = []
+        while (elapsed < timeout) and delete_list:
+            elapsed = int(time.time() - start)
+            for eni in delete_list:
+                try:
+                    self.connection.delete_network_interface(eni)
+                    eniobj = self.connection.get_all_network_interfaces(eni)
+                    if eniobj.status == 'deleted':
+                        self.log.debug('ENI:{0} is properly deleted, after elapsed:{1}'
+                                       .format(eni, elapsed))
+                        good.append(eni)
+                    else:
+                        self.log.debug('eni:{0}:{1} not deleted after elapsed:{2}'
+                                       .format(self, eniobj.id, eniobj.status, elapsed))
+                except EC2ResponseError as E:
+                    if int(E.status) == 400:
+                        if E.reason == 'InvalidNetworkInterfaceID.NotFound':
+                            self.log.debug('ENI:{0} is properly deleted, after elapsed:{1}'
+                                           .format(eni, elapsed))
+                            good.append(eni)
+                        if E.reason == 'InvalidNetworkInterface.InUse':
+                            self.log.warning('ENI:{0} not deleted, ENI still in-use, '
+                                             'after elapsed:{1}'.format(eni, elapsed))
+                    else:
+                        self.log.error('Unexpected ec2 response error:{0}'.format(E))
+                        raise E
+            for eni in good:
+                if eni in delete_list:
+                    delete_list.remove(eni)
+            if delete_list:
+                dt = self.show_network_interfaces(enis=delete_list, printme=False)
+                self.log.debug('Elapsed:{0} Delete waiting and/or retrying the following '
+                               'ENIS:\n{0}\n'.format(elapsed, dt))
+                time.sleep(5)
+        if delete_list:
+            self.show_network_interfaces(enis=delete_list, printmethod=self.log.error)
+            errmsg = "Failed to delete the following ENIs after elapsed:{0}:".format(elapsed)
+            for eni in delete_list:
+                errmsg += ' {0},'.format(eni)
+            raise RuntimeError(errmsg)
 
 
     def get_vpc_dependency_artifacts(self, vpc):
@@ -1243,8 +1302,15 @@ disable_root: false"""
             for acl in deps['network_acls']:
                 for assoc in acl.associations:
                     if assoc.subnet_id in subnet_ids:
-                        self.connection.disassociate_network_acl(subnet_id=assoc.subnet_id,
-                                                                 vpc_id=vpc)
+                        # Find out what the default ACL is for the VPC, and associate
+                        # current subnet with the default network ACL
+                        acls = self.connection.get_all_network_acls( filters=[('vpc-id', vpc),
+                                                                              ('default', 'true')])
+                        if acls:
+                            default_acl_id = acls[0].id
+                            self.connection.associate_network_acl(default_acl_id, assoc.subnet_id)
+                        else:
+                            self.log.warning('Could not find default ACL for ')
                 if not acl.default:
                     self.connection.delete_network_acl(network_acl_id=acl.id)
         if deps['security_groups']:
@@ -5018,6 +5084,9 @@ disable_root: false"""
                                 failed[gw_id] = str(E)
                         else:
                             if in_desired_state(gw):
+                                self.log.debug('NATGW:{0}:{1} now in a desired state:{2}, '
+                                               'removing from monitor'
+                                               .format(gw_id, gw.get('State'), desired_states))
                                 checklist.remove(gw_id)
                             elif in_failed_state(gw):
                                 checklist.remove(gw_id)
