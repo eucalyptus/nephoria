@@ -1497,7 +1497,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         else:
             timeout = timepergig * ((length / gb) or 1)
         # write the volume id into the volume for starters
-        ddcmd = 'echo "{0} $(head -c 1000 {1})" | dd of={2}'.format(euvolume.id, randsrc, voldev)
+        ddcmd = 'echo "{0} $(head -c 32 {1})" | dd of={2}'.format(euvolume.id, randsrc, voldev)
         dd_res_for_id = self.dd_monitor(ddcmd=ddcmd, timeout=timeout, sync=False)
         if length is not None:
             len_remaining = length - int(dd_res_for_id['dd_bytes'])
