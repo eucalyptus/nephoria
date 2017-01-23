@@ -2405,6 +2405,7 @@ disable_root: false"""
                 self.log.debug( "Sending delete for volume: " +  str(volume.id))
                 if volume in self.test_resources['volumes']:
                     self.test_resources['volumes'].remove(volume)
+                previous_status = volume.status
                 volumes = self.connection.get_all_volumes([volume.id])
                 if len(volumes) == 1:
                     volume = volumes[0]
@@ -2416,12 +2417,14 @@ disable_root: false"""
                 previous_status = volume.status
                 self.delete_volume(volume.id)
             except EC2ResponseError, be:
-                err = "ERROR: " + str(volume.id) + ", " + str(be.status)+ ", " + str(be.reason) + \
-                          ", " +str(be.error_message) + "\n"
-                if previous_status == 'deleting':
-                    self.log.warning(str(volume.id)+ ":" + str(previous_status) + ', err:' +
-                                     str(err))
+                if be.status == 400 and be.reason == 'InvalidVolume.NotFound':
+                    self.log.debug('Caught error during volume delete, assuming volume:{0}, '
+                                   'previous status:"{1}" has since been deleted:\n{2}\n'
+                                   .format(volume.id, previous_status, get_traceback()))
                 else:
+                    err = "ERROR: " + str(volume.id) + ", " + str(be.status) + ", " + str(
+                        be.reason) + \
+                          ", " + str(be.error_message) + "\n"
                     errmsg += err
                     errlist.append(volume)
                     self.log.debug(err)

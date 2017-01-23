@@ -761,6 +761,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                     zone.volumes.append(newvol)
                     snap.eutest_volumes.append(newvol)
 
+
     def consecutive_snapshot_to_vol_verify_md5s(self,
                                                 zonelist=None,
                                                 count=5,
@@ -799,9 +800,10 @@ class LegacyEbsTestSuite(CliTestRunner):
             if vol.size > volmaxsize:
                 raise Exception("Could not find volume in zone " + str(zone.name) +
                                 " <= volmaxsize of:" + str(volmaxsize))
+            origvol = vol
             self.status("Attempting to create " + str(count) + " snapshots in zone:" +
                         str(zone.name) + "...")
-            snaps = self.user.ec2.create_snapshots(vol, count=count, delay=delay,
+            snaps = self.user.ec2.create_snapshots(origvol, count=count, delay=delay,
                                                    wait_on_progress=poll_progress)
             self.log.debug('Finished creating ' + str(count) + ' snapshots in zone:' +
                            str(zone.name) + ', now creating vols from them')
@@ -834,13 +836,13 @@ class LegacyEbsTestSuite(CliTestRunner):
                         self.log.debug("Failed to attach volume: " + str(newvol.id) +
                                        "to instance:" + str())
                         raise e
-                    if vol.md5 != newvol.md5:
-                        raise Exception("New volume's md5:" + str(newvol.md5) +
-                                        " !=  original volume md5:" + str(vol.md5))
+                    if origvol.md5 != newvol.md5:
+                        raise Exception('New volume:{0} md5:"{1}" != "{2}" original volume:{3}'
+                                        .format(newvol.id, newvol.md5, origvol.md5, origvol.id))
                     else:
                         self.log.debug("Success. New volume:" + str(newvol.id) +
                                        "'s md5:" + str(newvol.md5) + " ==  original volume:" +
-                                       str(vol.id) + "'s md5:" + str(vol.md5))
+                                       str(origvol.id) + "'s md5:" + str(origvol.md5))
                     instance.detach_euvolume(newvol)
             finally:
                 self.log.debug("Attempting to cleanup/delete snapshots and volumes "
@@ -859,10 +861,11 @@ class LegacyEbsTestSuite(CliTestRunner):
                 if delfail:
                     raise Exception(delfail)
 
+
     def concurrent_consecutive_volumes_from_snap_verify_md5(self,
                                                             zonelist=None,
                                                             snap=None,
-                                                            count=5,
+                                                            count=3,
                                                             volmaxsize=1,
                                                             delay=0,
                                                             tpg=300,
@@ -965,6 +968,7 @@ class LegacyEbsTestSuite(CliTestRunner):
             if delfail:
                 raise Exception(delfail)
 
+
     def test_multi_node(self, run=True, count=10, nodecount=2):
         testlist = []
         # create 4 volumes per zone
@@ -986,6 +990,36 @@ class LegacyEbsTestSuite(CliTestRunner):
         testlist.append(self.create_testunit_from_method(
             self.terminate_instances_in_zones_verify_volume_detach))
 
+        if run:
+            self.run(testlist)
+        else:
+            return testlist
+
+    def test_consecutive_concurrent(self, run=True, count=3, delay=0, tpg=300,
+                                        poll_progress=60,
+                                        delete_to=120, snap_attached=False):
+        testlist = []
+        # create 1 volume per zone
+        testlist.append(self.create_testunit_from_method(
+            self.create_vols_per_zone, volsperzone=1, eof=True))
+        # launch an instances to interact with ebs volumes per zone
+        testlist.append(self.create_testunit_from_method(
+            self.create_test_instances_for_zones, eof=True))
+        # attach first round of volumes
+        testlist.append(self.create_testunit_from_method(
+            self.attach_all_avail_vols_to_instances_in_zones, overwrite=True, eof=True))
+        if not snap_attached:
+            # detach 1 volume
+            testlist.append(self.create_testunit_from_method(self.detach_volumes_in_zones))
+
+        # Attempt to create multiple snapshots quickly then volumes from those snaps and
+        # verify the md5 against original volume's
+        testlist.append(self.create_testunit_from_method(
+            self.consecutive_snapshot_to_vol_verify_md5s, count=count, delay=delay, tpg=tpg,
+            delete_to=delete_to, poll_progress=poll_progress))
+        # attempt to create volumes from snaps, attach and verify md5 in same zone it was created in
+        testlist.append(self.create_testunit_from_method(self.create_snapshots_all_vols_in_zone))
+        # terminate each instance and verify that any attached volumes return to available state
         if run:
             self.run(testlist)
         else:
