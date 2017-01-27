@@ -1423,7 +1423,12 @@ class EuInstance(Instance, TaggedResource, Machine):
                 prefix = prefix + 'e'
             dev = "/dev/" + prefix + str(d)
             for avol in self.attached_vols:
-                if avol.attach_data.device == dev:
+                try:
+                    avol.update()
+                except EC2ResponseError as E:
+                    self.log.debug('{0}\nIgnoring error on volume update:{1}'
+                                   .format(get_traceback(), E))
+                if avol.attach_data and avol.attach_data.device == dev:
                     inuse = True
                     in_use_guest += str(avol.id) + ", "
                     continue
