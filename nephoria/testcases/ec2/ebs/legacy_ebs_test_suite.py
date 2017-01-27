@@ -123,6 +123,12 @@ class LegacyEbsTestSuite(CliTestRunner):
         'kwargs': {'dest': 'volumes',
                    'help': "Comma separated list of volumes to use in this test"}}
 
+    _DEFAULT_CLI_ARGS['test_count'] = {
+        'args': ['--test-count'],
+        'kwargs': {'dest': 'test_count',
+                   'default': 3,
+                   'help': 'Number of times to run consecutive tests'}}
+
     def post_init(self, *args, **kwargs):
         self._is_multicluster = None
         self._zonelist = []
@@ -132,6 +138,7 @@ class LegacyEbsTestSuite(CliTestRunner):
         self._user = None
         self._tc = None
         self.md5len = int(self.args.md5_len) or None
+        self.test_count = int(self.args.test_count) or 1
         self.snaps = []
 
     @property
@@ -627,7 +634,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                     self.user.ec2.delete_snapshot(snap, timeout=timeout)
                     snaplist.remove(snap)
 
-    def vol_snap_vol_repeat(self, zonelist=None, start_zone=None, count=50, time_per_gb=300,
+    def vol_snap_vol_repeat(self, zonelist=None, start_zone=None, count=None, time_per_gb=300,
                             wait_on_progress=None):
         """
         Definition: Attempts to test data integrity of snapshots and volumes over the provided
@@ -659,6 +666,7 @@ class LegacyEbsTestSuite(CliTestRunner):
         Returns:
 
         """
+        count = count or self.test_count
         gb = 1073741824
         dd_block_size = 1024
         zonelist = zonelist or self.zonelist
@@ -909,7 +917,7 @@ class LegacyEbsTestSuite(CliTestRunner):
 
     def consecutive_snapshot_to_vol_verify_md5s(self,
                                                 zonelist=None,
-                                                count=5,
+                                                count=None,
                                                 volmaxsize=1,
                                                 delay=0,
                                                 tpg=300,
@@ -925,6 +933,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                    each have a volume created, and attached to an instance to verify
                    the md5 against the original volume.
         """
+        count = count or self.test_count
         zonelist = zonelist or self.zonelist
         if not zonelist:
             raise Exception("Zone list was empty")
@@ -1010,7 +1019,7 @@ class LegacyEbsTestSuite(CliTestRunner):
     def concurrent_consecutive_volumes_from_snap_verify_md5(self,
                                                             zonelist=None,
                                                             snap=None,
-                                                            count=3,
+                                                            count=None,
                                                             volmaxsize=1,
                                                             delay=0,
                                                             tpg=300,
@@ -1025,6 +1034,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                    verify it's md5 sum matches the original volumes. If multiple zones are
                    specified will try in both zones at the same time.
         """
+        count = count or self.test_count
         zonelist = zonelist or self.zonelist
         if not zonelist:
             raise Exception("Zone list was empty")
@@ -1140,10 +1150,11 @@ class LegacyEbsTestSuite(CliTestRunner):
         else:
             return testlist
 
-    def test_consecutive_concurrent(self, run=True, count=3, delay=0, tpg=300,
+    def test_consecutive_concurrent(self, run=True, count=None, delay=0, tpg=300,
                                         poll_progress=60,
                                         delete_to=120, snap_attached=False):
         testlist = []
+        count = count or self.test_count
         # create 1 volume per zone
         testlist.append(self.create_testunit_from_method(
             self.create_vols_per_zone, volsperzone=1, eof=True))
@@ -1170,9 +1181,10 @@ class LegacyEbsTestSuite(CliTestRunner):
         else:
             return testlist
 
-    def test_consecutive_concurrent(self, run=True, count=5, delay=0, tpg=300, poll_progress=60,
+    def test_consecutive_concurrent(self, run=True, count=None, delay=0, tpg=300, poll_progress=60,
                                     delete_to=120, snap_attached=False):
         testlist = []
+        count = count or self.test_count
         # create 1 volume per zone
         testlist.append(self.create_testunit_from_method(
             self.create_vols_per_zone, volsperzone=1, eof=True))
