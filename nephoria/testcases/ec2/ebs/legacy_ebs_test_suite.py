@@ -44,6 +44,7 @@ from nephoria.usercontext import UserContext
 from boto.ec2.image import Image
 from boto.ec2.group import Group
 from boto.exception import EC2ResponseError
+from random import randint
 
 
 class TestZone():
@@ -137,13 +138,18 @@ class LegacyEbsTestSuite(CliTestRunner):
     def tc(self):
         tc = getattr(self, '_tc', None)
         if not tc:
-            tc = TestController(hostname=self.args.clc,
-                                environment_file=self.args.environment_file,
-                                password=self.args.password,
-                                clouduser_name=self.args.test_user,
-                                clouduser_account=self.args.test_account,
-                                log_level=self.args.log_level)
-            setattr(self, '_tc', tc)
+            try:
+                tc = TestController(hostname=self.args.clc,
+                                    environment_file=self.args.environment_file,
+                                    password=self.args.password,
+                                    clouduser_name=self.args.test_user,
+                                    clouduser_account=self.args.test_account,
+                                    log_level=self.args.log_level)
+                setattr(self, '_tc', tc)
+            except Exception as E:
+                self.log.errror(red('{0}\nError creating test controller: {1}'
+                                    .format(get_traceback(), E)))
+                raise E
         return tc
 
     @property
@@ -311,7 +317,7 @@ class LegacyEbsTestSuite(CliTestRunner):
             keypair = self.keypair
         instance_password = instance_password or self.args.instance_password
 
-        vmtype = vmtype or self.vmtype
+        vmtype = vmtype or self.args.vmtype
         if keypair:
             keyname = keypair.name
         else:
@@ -623,37 +629,85 @@ class LegacyEbsTestSuite(CliTestRunner):
 
     def vol_snap_vol_repeat(self, zonelist=None, start_zone=None, count=50, time_per_gb=300,
                             wait_on_progress=None):
+        """
+        Definition: Attempts to test data integrity of snapshots and volumes over the provided
+        'count' iterations. This test does the following...
+
+        - Creates a single starting volume and attaches it to an instance.
+        The test will repeat the following for the provided 'count' number of times...
+            - Uses the instance to write random unique data into the volume and md5 the entire
+              block device
+            - It then snapshots the volume
+            - The new snapshot is used to create new volumes in each zone provided (by default
+               all zones on the cloud)
+            - The new volumes are attached to an instance in each zone and the md5 of the entire
+              block device is read in to compare to the source volume's MD5.
+            - If the new volume's md5 != the original volume's md5 the test will error
+            - If the new volume's md5 == a previous md5 the test will error. The md5s should all
+              be unique.
+            - The test will attempt to cleanup by detaching and deleting the new volumes
+              associated with that round of testing.
+            (then repeat)
+
+        Args:
+            zonelist: zone objs
+            start_zone: zone object to create the initial volume in
+            count: number of times to run this test in loop
+            time_per_gb: time to allow for volume snapshot operations
+            wait_on_progress:
+
+        Returns:
+
+        """
+        gb = 1073741824
+        dd_block_size = 1024
         zonelist = zonelist or self.zonelist
-        if not self.instances:
+        wait_on_progress = wait_on_progress or self.args.wait_on_progress
+        start_zone = zonelist[0]
+        if not start_zone.instances:
             self.create_test_instances_for_zones(zonelist=zonelist)
-        wait_on_progress = wait_on_progress or self.wait_on_progress
-        start_instance = start_zone.zone.instances[0]
+        start_instance = start_zone.instances[0]
         start_volume = self.user.ec2.create_volume(zone=start_instance.placement)
-        start_instance.attach_euvolume(start_volume)
-        assert isinstance(start_instance, euinstance)
-        orig_md5 = start_volume.md5
+        start_instance.attach_euvolume(start_volume, write_len=32, md5_len=None)
+        self.status('Writing some unique data to the starting volume...')
+
+        def write_random_stuff_to_original_volume(rand_seek=False):
+            if not rand_seek:
+                ddcmd = 'echo "{0} $(head -c 1000 {1})" | dd of={2}'\
+                    .format(start_volume.id, '/dev/urandom', start_volume.guestdev.strip())
+            else:
+                end = int((start_volume.size * gb) / dd_block_size)
+                seek = randint(0, end)
+                ddcmd = 'echo "{0} $(head -c 1000 {1})" | dd of={2} seek={3} bs={4}' \
+                    .format(start_volume.id, '/dev/urandom', start_volume.guestdev.strip(), seek,
+                            dd_block_size)
+            dd_res_for_id = start_instance.dd_monitor(ddcmd=ddcmd, timeout=60, sync=True)
+            start_volume.md5 = None
+            start_volume.md5len = None
+            start_instance.sys('sync', code=0)
+            start_instance.md5_attached_euvolume(start_volume, timepergig=300, length=None)
+            self.status('Wrote to original volume: {0}...'.format(start_volume.id))
+            self.user.ec2.show_volumes([start_volume])
+        write_random_stuff_to_original_volume()
         previous_md5s = []
         test_volumes = [start_volume]
         for test_num in xrange(0, count):
-            self.status('Starting test iteration:{0}'.format(test_num))
+            self.status('Starting test iteration:{0}/{1}'.format(test_num, count))
             try:
                 self.user.ec2.show_volumes(test_volumes)
             except Exception as E:
                 self.log.warning(red('{0}\nIgnoring the following error while showing volumes: '
                                      '{1}'.format(get_traceback(), E)))
             self.status('Writing data to original volume for test iteration:{0}'.format(test_num))
-            start_instance.vol_write_random_data_get_md5(start_volume, srcdev="/dev/urandom",
-                                                         length=1000, md5_len=None,
-                                                         timepergig= time_per_gb,
-                                                         overwrite=True)
-
+            write_random_stuff_to_original_volume(rand_seek=True)
             self.status('Start volume md5:{0} for iteration:{1}'.format(start_volume.md5,
                                                                         test_num))
             new_snap = self.user.ec2.create_snapshot_from_volume(
                 start_volume, description="ebstest", wait_on_progress=wait_on_progress)
             newvols = []
             for zone in zonelist:
-                self.status('Beginning ZONE:{0} test iteration:{0}'.format(zone, test_num))
+                self.status('Beginning ZONE{0}/{1}: zone name:{2}, test iteration:{3}'
+                            .format(zonelist.index(zone) + 1 , len(zonelist), zone, test_num))
                 instance = zone.instances[0]
                 self.log.debug("Creating volume from snap:" + str(new_snap.id))
                 newvol = self.user.ec2.create_volume(zone.name, size=0, snapshot=new_snap,
@@ -665,22 +719,45 @@ class LegacyEbsTestSuite(CliTestRunner):
                 zone.volumes.append(newvol)
                 new_snap.eutest_volumes.append(newvol)
                 instance.attach_euvolume(newvol)
-                instance.md5_attached_euvolume(newvol)
+                newvol.md5 = None
+                newvol.md5len = None
+                instance.md5_attached_euvolume(newvol, timepergig=300, length=None)
+                self.status('MD5 volume:{0} for test zone:{1}, iteration:{2}'
+                            .format(newvol.id, zone, test_num))
                 self.user.ec2.show_volumes([start_volume, newvol])
                 if newvol.md5 != start_volume.md5:
+                    self.log.status('head for new vol...')
+                    instance.sys('head -100 {0}'.format(newvol.guest_dev))
+                    self.log.status('head for new starting vol...')
+                    start_instance.sys('head -100 {0}'.format(start_volume.guest_dev))
                     raise ValueError('Newvol:{0} md5:{1} != origvol:{2} md5:{3}'
                                      .format(newvol.id, newvol.md5, start_volume.id,
                                              start_volume.md5))
                 if newvol.md5 in previous_md5s:
+                    self.log.status('head for new vol...')
+                    instance.sys('head -100 {0}'.format(newvol.guest_dev))
+                    self.log.status('head for new starting vol...')
+                    start_instance.sys('head -100 {0}'.format(start_volume.guest_dev))
                     raise ValueError('test#{0}, current vol:{1} md5sum matches a previous '
                                      'test:{2}, md5:{3}'
                                      .format(newvol.md5, previous_md5s.index(newvol.md5)))
+                self.status('Zone:{0} iteration:{1} PASSED '.format(zone, test_num))
+
+            self.status('Deleting volumes from this test iteration #{0}...'.format(test_num))
+            for vol in newvols:
+                try:
+                    self.user.ec2.detach_volume(vol)
+                except Exception as E:
+                    self.log.warning(
+                        red('{0}\nIgnoring the following error while detaching volumes: '
+                            '{1}'.format(get_traceback(), E)))
             try:
-                self.status('Deleting volumes from this test iteration #{0}...'.format(test_num))
                 self.user.ec2.delete_volumes(newvols)
             except Exception as E:
-                self.log.warning(red('{0}\nIgnoring the following error while deleting volumes: '
+                self.log.warning(red('{0}\nIgnoring the following error '
+                                     'while deleting volumes: '
                                      '{1}'.format(get_traceback(), E)))
+
             self.status('Done with test iteration:{0}, storing md5:{0} in list now'
                         .format(test_num, start_volume.md5))
             previous_md5s.append(start_volume.md5)

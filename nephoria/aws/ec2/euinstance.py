@@ -1459,7 +1459,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         return self.time_dd(fillcmd)
 
     @printinfo
-    def random_fill_volume(self, euvolume, srcdev=None, length=None, timepergig=120):
+    def random_fill_volume(self, euvolume, srcdev=None, seek=0, length=None, timepergig=120):
         '''
         Attempts to fill the entire given euvolume with unique non-zero data.
         The srcdev is read from in a set size, and then used to write to the euvolume to
