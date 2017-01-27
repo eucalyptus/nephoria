@@ -2267,6 +2267,12 @@ class EuInstance(Instance, TaggedResource, Machine):
             self.attached_vols.append(volume)
         return local_dev
 
+    def show_block_device_mapping(self, printmethod=None, printme=True):
+        if printme and not printmethod:
+            printmethod = self.log.info
+        return self.ec2ops.show_block_device_map(self.block_device_mapping,
+                                                 printmethod=printmethod, printme=printme)
+
     def check_instance_meta_data_for_block_device_mapping(self, root_dev=None, bdm=None):
         '''
         Checks current instances meta data against a provided block device map & root_dev, or

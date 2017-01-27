@@ -621,6 +621,74 @@ class LegacyEbsTestSuite(CliTestRunner):
                     self.user.ec2.delete_snapshot(snap, timeout=timeout)
                     snaplist.remove(snap)
 
+    def vol_snap_vol_repeat(self, zonelist=None, start_zone=None, count=50, time_per_gb=300,
+                            wait_on_progress=None):
+        zonelist = zonelist or self.zonelist
+        if not self.instances:
+            self.create_test_instances_for_zones(zonelist=zonelist)
+        wait_on_progress = wait_on_progress or self.wait_on_progress
+        start_instance = start_zone.zone.instances[0]
+        start_volume = self.user.ec2.create_volume(zone=start_instance.placement)
+        start_instance.attach_euvolume(start_volume)
+        assert isinstance(start_instance, euinstance)
+        orig_md5 = start_volume.md5
+        previous_md5s = []
+        test_volumes = [start_volume]
+        for test_num in xrange(0, count):
+            self.status('Starting test iteration:{0}'.format(test_num))
+            try:
+                self.user.ec2.show_volumes(test_volumes)
+            except Exception as E:
+                self.log.warning(red('{0}\nIgnoring the following error while showing volumes: '
+                                     '{1}'.format(get_traceback(), E)))
+            self.status('Writing data to original volume for test iteration:{0}'.format(test_num))
+            start_instance.vol_write_random_data_get_md5(start_volume, srcdev="/dev/urandom",
+                                                         length=1000, md5_len=None,
+                                                         timepergig= time_per_gb,
+                                                         overwrite=True)
+
+            self.status('Start volume md5:{0} for iteration:{1}'.format(start_volume.md5,
+                                                                        test_num))
+            new_snap = self.user.ec2.create_snapshot_from_volume(
+                start_volume, description="ebstest", wait_on_progress=wait_on_progress)
+            newvols = []
+            for zone in zonelist:
+                self.status('Beginning ZONE:{0} test iteration:{0}'.format(zone, test_num))
+                instance = zone.instances[0]
+                self.log.debug("Creating volume from snap:" + str(new_snap.id))
+                newvol = self.user.ec2.create_volume(zone.name, size=0, snapshot=new_snap,
+                                                     timepergig=time_per_gb)
+                newvols.append(newvol)
+                test_volumes.append(newvol)
+                newvol.add_tag('ebstestsuite_created_test#{0}'.format(test_num))
+                newvol.md5len = None
+                zone.volumes.append(newvol)
+                new_snap.eutest_volumes.append(newvol)
+                instance.attach_euvolume(newvol)
+                instance.md5_attached_euvolume(newvol)
+                self.user.ec2.show_volumes([start_volume, newvol])
+                if newvol.md5 != start_volume.md5:
+                    raise ValueError('Newvol:{0} md5:{1} != origvol:{2} md5:{3}'
+                                     .format(newvol.id, newvol.md5, start_volume.id,
+                                             start_volume.md5))
+                if newvol.md5 in previous_md5s:
+                    raise ValueError('test#{0}, current vol:{1} md5sum matches a previous '
+                                     'test:{2}, md5:{3}'
+                                     .format(newvol.md5, previous_md5s.index(newvol.md5)))
+            try:
+                self.status('Deleting volumes from this test iteration #{0}...'.format(test_num))
+                self.user.ec2.delete_volumes(newvols)
+            except Exception as E:
+                self.log.warning(red('{0}\nIgnoring the following error while deleting volumes: '
+                                     '{1}'.format(get_traceback(), E)))
+            self.status('Done with test iteration:{0}, storing md5:{0} in list now'
+                        .format(test_num, start_volume.md5))
+            previous_md5s.append(start_volume.md5)
+
+
+
+
+
     def create_snapshots_all_vols_in_zone(self, zonelist=None, volstate="all",
                                           wait_on_progress=None):
         """

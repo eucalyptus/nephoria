@@ -497,12 +497,10 @@ disable_root: false"""
         keys = []
         if key_name:
             # log warning if key is not found
-            keys = self.connection.get_key_pair(key_name)
-            if keys:
-                keys = [keys]
-            else:
+            keys = self.connection.get_all_key_pairs(key_name)
+            if not keys:
                 self.log.warning('key: {0} not found by this user'.format(key_name))
-                keys = []
+                return(keys)
         else:
             keys = self.connection.get_all_key_pairs()
         keyfile = None
@@ -522,6 +520,7 @@ disable_root: false"""
                 keyfile.close()
                 if fingerprint == k.fingerprint:
                     self.log.debug('Found file with matching finger print for key:' + k.name)
+                    setattr(k, 'key_path', os.path.realpath(keyfile.name))
                     keylist.append(k)
             except Exception as KE:
                 self.log.debug('Did not find local match for key:"{0}". Err:{1}'
@@ -5769,8 +5768,8 @@ disable_root: false"""
         reservation.instances = euinstance_list
         return reservation
 
-    def convert_instance_to_euinstance(self, instance, keypair=None,
-                                       username=None, password=None,
+    def convert_instance_to_euinstance(self, instance, keypair=None, local_key_dir=None,
+                                       key_extension='.pem', username=None, password=None,
                                        reservation=None, auto_connect=True,
                                        systemconnection=None,
                                        timeout=120):
@@ -5784,21 +5783,38 @@ disable_root: false"""
         if not isinstance(instance, Instance):
             raise ValueError('Expected type Instance or str(id) for instance, got: {0}/{1}'
                              .format(instance, type(instance)))
+
+        keypath = None
+        if auto_connect:
+            # see if there's a local file for this keypair we can use to ssh...
+            keys_in_local_dir = self.get_all_current_local_keys(instance.key_name,
+                                                                path=local_key_dir,
+                                                                extension=key_extension)
+            if keys_in_local_dir:
+                key = keys_in_local_dir[0]
+                keypath = key.key_path
+            else:
+                local_dir = local_key_dir or './'
+                self.log.warning('Could not find local keyfile:{0}{1} for instance:{2} in {3}'
+                                 .format(instance.key_name, key_extension,  instance.id,
+                                         local_dir))
         if instance.platform == 'windows':
             username = username or 'Administrator'
             instance = WinInstance.make_euinstance_from_instance(
-                instance,
-                self,
-                keypair=keypair,
-                username = username,
-                password=password,
-                reservation=reservation,
-                auto_connect=auto_connect,
-                timeout=timeout)
+                            instance,
+                            self,
+                            keypair=keypair,
+                            username = username,
+                            password=password,
+                            reservation=reservation,
+                            auto_connect=auto_connect,
+                            timeout=timeout,
+                            keypath=keypath)
         else:
             username = username or 'root'
             instance = EuInstance.make_euinstance_from_instance(instance, self,
                                                                 keypair=keypair,
+                                                                keypath=keypath,
                                                                 password=password,
                                                                 username=username,
                                                                 auto_connect=auto_connect,
