@@ -1413,6 +1413,7 @@ class EuInstance(Instance, TaggedResource, Machine):
         dev = None
         if prefix is None:
             prefix = self.block_device_prefix
+        self.update()
         cloudlist = self.ec2ops.get_volumes(attached_instance=self.id)
 
         for x in xrange(0, maxdevs):
