@@ -734,17 +734,17 @@ class LegacyEbsTestSuite(CliTestRunner):
                             .format(newvol.id, zone, test_num))
                 self.user.ec2.show_volumes([start_volume, newvol])
                 if newvol.md5 != start_volume.md5:
-                    self.log.status('head for new vol...')
+                    self.status('head for new vol...')
                     instance.sys('head -100 {0}'.format(newvol.guest_dev))
-                    self.log.status('head for new starting vol...')
+                    self.status('head for new starting vol...')
                     start_instance.sys('head -100 {0}'.format(start_volume.guest_dev))
                     raise ValueError('Newvol:{0} md5:{1} != origvol:{2} md5:{3}'
                                      .format(newvol.id, newvol.md5, start_volume.id,
                                              start_volume.md5))
                 if newvol.md5 in previous_md5s:
-                    self.log.status('head for new vol...')
+                    self.status('head for new vol...')
                     instance.sys('head -100 {0}'.format(newvol.guest_dev))
-                    self.log.status('head for new starting vol...')
+                    self.status('head for new starting vol...')
                     start_instance.sys('head -100 {0}'.format(start_volume.guest_dev))
                     raise ValueError('test#{0}, current vol:{1} md5sum matches a previous '
                                      'test:{2}, md5:{3}'
