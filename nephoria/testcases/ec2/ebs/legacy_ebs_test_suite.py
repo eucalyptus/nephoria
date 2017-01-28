@@ -738,7 +738,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                     self.status('head for new vol...')
                     instance.sys('head -100 {0}'.format(newvol.guest_dev))
                     self.status('head for new starting vol...')
-                    start_instance.sys('head -100 {0}'.format(start_volume.guest_dev))
+                    start_instance.sys('head -100 {0}'.format(start_volume.guestdev))
                     raise ValueError('Newvol:{0} md5:{1} != origvol:{2} md5:{3}'
                                      .format(newvol.id, newvol.md5, start_volume.id,
                                              start_volume.md5))
@@ -747,7 +747,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                     self.status('head for new vol...')
                     instance.sys('head -100 {0}'.format(newvol.guest_dev))
                     self.status('head for new starting vol...')
-                    start_instance.sys('head -100 {0}'.format(start_volume.guest_dev))
+                    start_instance.sys('head -100 {0}'.format(start_volume.guestdev))
                     raise ValueError('test#{0}, current vol:{1} md5sum matches a previous '
                                      'test:{2}, md5:{3}'
                                      .format(newvol.md5, previous_md5s.index(newvol.md5)))
