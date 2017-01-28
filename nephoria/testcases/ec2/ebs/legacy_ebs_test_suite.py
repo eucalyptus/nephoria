@@ -734,6 +734,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                             .format(newvol.id, zone, test_num))
                 self.user.ec2.show_volumes([start_volume, newvol])
                 if newvol.md5 != start_volume.md5:
+                    self.log.error(red('Error md5 does not match, printing debug...'))
                     self.status('head for new vol...')
                     instance.sys('head -100 {0}'.format(newvol.guest_dev))
                     self.status('head for new starting vol...')
@@ -742,6 +743,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                                      .format(newvol.id, newvol.md5, start_volume.id,
                                              start_volume.md5))
                 if newvol.md5 in previous_md5s:
+                    self.log.error(red('Error md5 is a dup, printing debug...'))
                     self.status('head for new vol...')
                     instance.sys('head -100 {0}'.format(newvol.guest_dev))
                     self.status('head for new starting vol...')
