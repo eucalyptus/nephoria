@@ -970,6 +970,73 @@ class EuInstance(Instance, TaggedResource, Machine):
             retlist.append(line.strip())
         return retlist
 
+    def get_serials_for_block_devices(self, retries=3):
+        devs = []
+        serials = {}
+        E = None
+        for retry in xrange(0, retries):
+            cmd = 'ls -1 /sys/class/block | grep "^sd\|^vd\|^xd\|^xvd"'
+            try:
+                devs = self.sys(cmd, code=0)
+            except Exception as E:
+                self.log.warning('{0}\nFailed to execute cmd:"{1}", attempt:{2}/{3}, err:"{4}"'
+                                 .format(get_traceback(), cmd, retry, retries, E))
+                self.log.debug('retrying cmd: "{0}"'.format(cmd))
+                time.sleep(1)
+        if not devs and E:
+            raise E
+        for dev in devs:
+            try:
+                out = self.sys('cat /sys/class/block/{0}/device/block/{0}/serial'
+                               .format(dev), code=0)
+                if out:
+                    serials[dev] = out[0]
+            except CommandExitCodeException as CE:
+                self.log.debug(CE)
+        return serials
+
+    def get_serial_for_block_device(self, block_dev, retries=3):
+        block_dev = os.path.basename(block_dev)
+        E = None
+        for x in xrange(0, retries):
+            try:
+                serials = self.get_serials_for_block_devices()
+            except Exception as E:
+                self.log.debug('{0}\nError fetching serial for block dev:{1} , attempt:{2}/{3}. '
+                               'ERR:{4}'
+                               .format(get_traceback(), block_dev, x, retries, E))
+            if block_dev not in serials:
+                self.log.debug('Block dev:{0} not found in serial dict:{1}, attempt:{2}/{3}'
+                               .format(block_dev, serials, x, retries))
+
+            else:
+                return serials[block_dev]
+        if E:
+            self.log.error("{0}\nError fetching serial for block dev:{1}"
+                           .format(get_traceback(), block_dev))
+            raise E
+        else:
+            raise ValueError('No serial found for block device:{0}'.format(block_dev))
+
+    def find_block_dev_by_serial(self, serial, partial_match=True, retries=2):
+        if partial_match:
+            search_method = re.search
+        else:
+            search_method = re.match
+        for dev, value in self.get_serials_for_block_devices(retries=retries).iteritems():
+            if value and search_method(serial, value):
+                self.log.debug('Found device:{0} for serial:{1}'.format(dev, serial))
+                return dev
+        self.log.debug('No device found for serial string:{0}'.format(serial))
+        return None
+
+    def get_volume_guest_dev_by_serial(self, volume):
+        if isinstance(volume, basestring):
+            volume_id = volume
+        else:
+            volume_id = volume.id
+        return self.find_block_dev_by_serial(volume_id)
+
     def attach_volume(self, volume, dev=None, timeout=180, write_len=32, md5_len=None,
                       overwrite=False):
         '''
@@ -985,6 +1052,7 @@ class EuInstance(Instance, TaggedResource, Machine):
             volume = EuVolume.make_euvol_from_vol(volume)
         return self.attach_euvolume(volume, dev=dev, timeout=timeout, write_len=write_len,
                                     md5_len=md5_len, overwrite=overwrite)
+
 
     def attach_euvolume(self, euvolume, dev=None, srcdev='/dev/zero', write_len=32, md5_len=None,
                         timeout=180, gb_timeout=120, overwrite=False):
@@ -1027,20 +1095,33 @@ class EuInstance(Instance, TaggedResource, Machine):
                            str(elapsed) + ")")
                 dev_list_after = self.get_dev_dir()
                 self.log.debug("dev_list_after:" + " ".join(dev_list_after))
-                diff = list(set(dev_list_after) - set(dev_list_before))
-                if len(diff) > 0:
-                    devlist = str(diff[0]).split('/')
-                    attached_dev = '/dev/' + devlist[len(devlist) - 1]
-                    euvolume.guestdev = attached_dev.strip()
-                    self.log.debug(
-                        "Volume:" + str(euvolume.id) + " guest device:" + str(euvolume.guestdev))
-                    self.attached_vols.append(euvolume)
-                    self.log.debug(euvolume.id + " Requested dev:" +
-                               str(euvolume.attach_data.device) +
-                               ", attached to guest device:" + str(euvolume.guestdev))
-                    break
+                if self.is_dir('/sys/class/block/'):
+                    guest_dev = self.get_volume_guest_dev_by_serial(euvolume)
+                    if guest_dev:
+                        attached_dev = os.path.join('/dev/', guest_dev)
+                        euvolume.guestdev = attached_dev
+                        self.log.debug("Volume:{0} ,guest device:{1}"
+                                       .format(euvolume.id, euvolume.guestdev))
+                        self.attached_vols.append(euvolume)
+                        self.log.debug(euvolume.id + " Requested dev:" +
+                                      str(euvolume.attach_data.device) +
+                                      ", attached to guest device:" + str(euvolume.guestdev))
+                        break
                 elapsed = int(time.time() - start)
                 time.sleep(2)
+            if not euvolume.guestdev or not attached_dev:
+                if not self.is_dir('/sys/class/block/'):
+                    diff = list(set(dev_list_after) - set(dev_list_before))
+                    if len(diff) > 0:
+                        devlist = str(diff[0]).split('/')
+                        attached_dev = '/dev/' + devlist[len(devlist) - 1]
+                        euvolume.guestdev = attached_dev.strip()
+                        self.log.debug(
+                            "Volume:" + str(euvolume.id) + " guest device:" + str(euvolume.guestdev))
+                        self.attached_vols.append(euvolume)
+                        self.log.debug(euvolume.id + " Requested dev:" +
+                                   str(euvolume.attach_data.device) +
+                                   ", attached to guest device:" + str(euvolume.guestdev))
             if not euvolume.guestdev or not attached_dev:
                 raise Exception('Device not found on guest after ' + str(elapsed) + ' seconds')
             self.log.debug(str(euvolume.id) + "Found attached to guest at dev:" +
