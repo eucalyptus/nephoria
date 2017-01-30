@@ -767,6 +767,13 @@ class LegacyEbsTestSuite(CliTestRunner):
                 self.log.warning(red('{0}\nIgnoring the following error '
                                      'while deleting volumes: '
                                      '{1}'.format(get_traceback(), E)))
+            self.status('Deleting Delta snapshot from this test iteration #{0}...'
+                        .format(test_num))
+            try:
+                new_snap.delete()
+            except Exception as SE:
+                self.log.error('{0}\nIgnoring error during snapshot:{1} delete, err:{2}'.
+                               format(get_traceback(), new_snap.id, SE))
 
             self.status('Done with test iteration:{0}, storing md5:{0} in list now'
                         .format(test_num, start_volume.md5))
