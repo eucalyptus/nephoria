@@ -26,6 +26,10 @@
 from nephoria.baseops.botobaseops import BotoBaseOps
 import boto.swf.layer2 as boto2_swf
 
+def swf_connection_generator(**conn_kwargs):
+    pass
+
+
 
 class SWFops(BotoBaseOps):
     SERVICE_PREFIX = 'swf'
@@ -34,3 +38,5 @@ class SWFops(BotoBaseOps):
 
     def setup_resource_trackers(self):
         pass
+
+
