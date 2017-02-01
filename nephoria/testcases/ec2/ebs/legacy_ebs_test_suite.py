@@ -685,7 +685,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                     .format(start_volume.id, '/dev/urandom', start_volume.guestdev.strip())
             else:
                 end = int((start_volume.size * gb) / dd_block_size)
-                seek = randint(0, end)
+                seek = randint(0, end) or 0
                 ddcmd = 'echo "{0} $(head -c 1000 {1})" | dd of={2} seek={3} bs={4}' \
                     .format(start_volume.id, '/dev/urandom', start_volume.guestdev.strip(), seek,
                             dd_block_size)
@@ -696,8 +696,9 @@ class LegacyEbsTestSuite(CliTestRunner):
                                .format(get_traceback(), start_volume.id, E)))
                 try:
                     for logfile in ['messages', 'syslog', 'dmesg', 'kern.log']:
+                        logfile = "/var/log/{0}".format(logfile)
                         if start_instance.is_file(logfile):
-                            start_instance.sys('tail -100 /var/log/{0}'.format(logfile))
+                            start_instance.sys('tail -100 {0}'.format(logfile))
                     start_instance.sys('ls -la {0}'.format(start_volume.guestdev))
                     start_instance.get_blockdev_size_in_bytes(start_volume.guestdev)
                 except Exception as DE:
