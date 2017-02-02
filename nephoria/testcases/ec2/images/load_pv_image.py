@@ -56,6 +56,12 @@ class Load_Pv_Image(CliTestRunner):
         'kwargs': {"help": "Cloud account name to use for running the created pv image",
                    "default": "testrunner"}}
 
+    _DEFAULT_CLI_ARGS['run_image_user'] = {
+        'args': ['--run-user'],
+        'kwargs': {"help": "Cloud user name under the 'run_image_account' to use for "
+                           "running the created pv image",
+                   "default": "admin"}}
+
     _DEFAULT_CLI_ARGS['run_access_key'] = {
         'args': ['--run-access-key'],
         'kwargs': {"help": "Access key to use for running the created pv image",
@@ -283,9 +289,9 @@ class Load_Pv_Image(CliTestRunner):
                                                        region=self.args.region)
                 if (self.args.clc or self.args.environment_file) and self.tc:
                     self._run_image_user = self.tc.create_user_using_cloudadmin(
-                        aws_account_name=self.args.run_image_account)
+                        aws_account_name=self.args.run_account, aws_user_name=self.args.run_user)
         except Exception as UE:
-            self.log.error('{0}\nFailed to create user: {1}'.format(get_traceback(), UE))
+            self.log.error(red('{0}\nFailed to create user: {1}'.format(get_traceback(), UE)))
         return self._run_image_user
 
     def test1_do_kernel_image(self):
