@@ -685,11 +685,27 @@ class LegacyEbsTestSuite(CliTestRunner):
                     .format(start_volume.id, '/dev/urandom', start_volume.guestdev.strip())
             else:
                 end = int((start_volume.size * gb) / dd_block_size)
-                seek = randint(0, end)
+                seek = randint(0, end) or 0
                 ddcmd = 'echo "{0} $(head -c 1000 {1})" | dd of={2} seek={3} bs={4}' \
                     .format(start_volume.id, '/dev/urandom', start_volume.guestdev.strip(), seek,
                             dd_block_size)
-            dd_res_for_id = start_instance.dd_monitor(ddcmd=ddcmd, timeout=60, sync=True)
+            try:
+                dd_res_for_id = start_instance.dd_monitor(ddcmd=ddcmd, timeout=60, sync=True)
+            except Exception as E:
+                self.log.error(red('{0}\nError writing to volume:{1}, err:{2}'
+                               .format(get_traceback(), start_volume.id, E)))
+                try:
+                    for logfile in ['messages', 'syslog', 'dmesg', 'kern.log']:
+                        logfile = "/var/log/{0}".format(logfile)
+                        if start_instance.is_file(logfile):
+                            start_instance.sys('tail -100 {0}'.format(logfile))
+                    start_instance.sys('ls -la {0}'.format(start_volume.guestdev))
+                    start_instance.get_blockdev_size_in_bytes(start_volume.guestdev)
+                except Exception as DE:
+                    self.log.warning('{0}\nError while fetching debug post test failure, '
+                                     'ignoring secondary error:{0}'.format(DE))
+                raise E
+
             start_volume.md5 = None
             start_volume.md5len = None
             start_instance.sys('sync', code=0)
