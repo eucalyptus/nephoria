@@ -1700,15 +1700,26 @@ class EuInstance(Instance, TaggedResource, Machine):
         euvolume.create_tags({euvolume.tag_md5_key:md5, euvolume.tag_md5len_key: length})
         return md5
 
-    def get_dev_md5(self, devpath, length, timeout=60):
+    def get_dev_md5(self, devpath, length, retries=3, timeout=60):
         self.assertFilePresent(devpath)
-        if not length:
-            md5 = str(self.sys("md5sum " + devpath,
-                               timeout=timeout, code=0)[0]).split(' ')[0].strip()
-        else:
-            md5 = str(self.sys("head -c " + str(length) + " " + str(devpath) +
-                               " | md5sum", timeout=timeout, code=0 )[0]).split(' ')[0].strip()
-        return md5
+        err = ""
+        for retry in xrange(0, retries):
+            try:
+                if not length:
+                    md5 = self.sys("md5sum {0}".format(devpath),timeout=timeout, code=0)
+                else:
+                    md5 = self.sys("head -c {0} {1} | md5sum".format(length, devpath),
+                                       timeout=timeout, code=0) or ['']
+                if md5:
+                    md5 = str(md5[0]).split(' ')[0].strip()
+                    return md5
+                raise RuntimeError('md5sum cmd on guest returned 0, but no output')
+            except Exception as E:
+                err = red('Error to fetch md5 from: {0}, length:{1}. Attempts:{2}/{3}. Error:{4}'
+                          .format(devpath, length, retry+1, retries, E))
+                self.log.error("{0}\n{1}".format(get_traceback(), err))
+                time.sleep(2)
+        raise RuntimeError('get_dev_md5 error:{0}'.format(err))
 
     def reboot_instance_and_verify(self,
                                    waitconnect=30,
