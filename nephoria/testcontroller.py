@@ -10,6 +10,7 @@ from cloud_utils.system_utils.machine import Machine
 from nephoria.usercontext import UserContext
 from nephoria import __DEFAULT_API_VERSION__
 from boto3 import set_stream_logger
+from boto.exception import BotoServerError
 
 
 def set_boto_logger_level(level='NOTSET', format_string=None):
@@ -247,7 +248,7 @@ class TestController(object):
         self._cloudadmin = None
         self._test_user = None
 
-    def get_user_by_name(self, aws_account_name, aws_user_name,
+    def get_user_by_name(self, aws_account_name, aws_user_name, aws_account_id=None,
                          machine=None, service_connection=None, region=None, domain=None,
                          validate_certs=False, path='/',
                          https=None, log_level=None, boto2_api_version=None):
@@ -258,8 +259,19 @@ class TestController(object):
         boto2_api_version = boto2_api_version or \
                             self._test_user_connection_info.get('boto2_api_version', None)
         try:
-            user = self.admin.iam.get_user_info(user_name=aws_user_name,
-                                                delegate_account=aws_account_name)
+            account_info = self.admin.iam.get_account(account_name=aws_account_name,
+                                                      account_id=aws_account_id)
+
+            if account_info:
+                aws_account_id = account_info.get('account_id')
+                if aws_account_name and aws_account_name != account_info.get('account_name'):
+                    raise ValueError('Account id incorrect:{0} for provided account name:{1}'
+                                     .format(aws_account_id, aws_account_name))
+                user = self.admin.iam.get_user_info(user_name=aws_user_name,
+                                                    delegate_account=aws_account_id)
+            else:
+                raise ValueError('Account not found using id:"{0}", name:"{1}"'
+                                 .format(aws_account_id, aws_account_name))
         except Exception:
             self.log.error('Error fetching "account:{0}, user:{1}" has this user been created '
                            'already?'.format(aws_account_name, aws_user_name))
@@ -267,6 +279,7 @@ class TestController(object):
         if user:
             return self.create_user_using_cloudadmin(aws_account_name=aws_account_name,
                                                      aws_user_name=aws_user_name,
+                                                     aws_account_id=aws_account_id,
                                                      region=region, domain=domain,
                                                      validate_certs=validate_certs,
                                                      machine=machine,
@@ -279,6 +292,7 @@ class TestController(object):
 
 
     def create_user_using_cloudadmin(self, aws_account_name=None, aws_user_name='admin',
+                                     aws_account_id=None,
                                      aws_access_key=None, aws_secret_key=None,
                                      credpath=None, eucarc=None,
                                      machine=None, service_connection=None, path='/',
@@ -312,6 +326,8 @@ class TestController(object):
                 eucarc.user_name = aws_user_name
             if aws_account_name:
                 eucarc.account_name = aws_account_name
+            if aws_account_id:
+                eucarc.account_id = aws_account_id
 
             return UserContext(eucarc=eucarc,
                                region=region,
@@ -339,16 +355,29 @@ class TestController(object):
                                log_level=log_level,
                                boto2_api_version=boto2_api_version)
 
-        info = self.admin.iam.create_account(account_name=aws_account_name,
-                                                  ignore_existing=True)
-        if info:
+        user = {}
+        info = self.admin.iam.get_account(account_name=aws_account_name,
+                                          account_id=aws_account_id) or {}
+        if not info:
+            info = self.admin.iam.create_account(account_name=aws_account_name,
+                                                 ignore_existing=True)
+        aws_account_id = aws_account_id or info.get('account_id', None)
+        try:
+            user = self.admin.iam.get_user(user_name=aws_user_name,
+                                           delegate_account=aws_account_id)
+        except BotoServerError as BE:
+            if int(E.status) == 404:
+                self.log.debug('User not found, attempting to create...')
+        if not user:
             user = self.admin.iam.create_user(user_name=aws_user_name,
                                               delegate_account=info.get('account_name'),
                                               path=path)
-            info.update(user)
-        else:
+        if not user:
             raise RuntimeError('Failed to create and/or fetch Account:"{0}", for User:"{1}"'
                                .format(aws_account_name, aws_user_name))
+        else:
+            info.update(user)
+
         ak = self.admin.iam.get_aws_access_key(user_name=info.get('user_name'),
                                                delegate_account=info.get('account_name'))
         if not ak:
