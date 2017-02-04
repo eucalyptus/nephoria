@@ -111,8 +111,10 @@ class IAMops(BotoBaseOps):
         for account in response:
             if account_name is not None:
                 if not search:
-                    account_name = "^{0}$".format(account_name.strip())
-                if not re_meth(account_name, account['account_name']):
+                    # escape "(" and ")" in name
+                    clean_name = re.sub(r"([\(\)])", r"\\\1", account_name)
+                    account_regex = "^{0}$".format(clean_name)
+                if not re_meth(account_regex, account['account_name']):
                     continue
             if account_id is not None:
                 if not search:
