@@ -497,7 +497,11 @@ disable_root: false"""
         keys = []
         if key_name:
             # log warning if key is not found
-            keys = self.connection.get_all_key_pairs(key_name)
+            try:
+                keys = self.connection.get_all_key_pairs(key_name)
+            except EC2ResponseError as E:
+                if int(E.status) == 400:
+                    self.log.warning('Key {0} not found, err:{1}'.format(key_name, E))
             if not keys:
                 self.log.warning('key: {0} not found by this user'.format(key_name))
                 return(keys)
