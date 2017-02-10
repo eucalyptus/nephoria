@@ -193,6 +193,7 @@ class Load_Pv_Image(CliTestRunner):
 
 
     def post_init(self, *args, **kwargs):
+        self.instances = []
         self._emi = None
         self.eki = None
         self.eri = None
@@ -547,6 +548,7 @@ class Load_Pv_Image(CliTestRunner):
             timeout = size or 300
             instance = user.ec2.run_image(image=emi, keypair=self.keypair,
                                           group=self.group, timeout=timeout)[0]
+            self.instances.append(instance)
             instance.sys('uptime', code=0)
             self.status("Run new PV image PASSED")
         finally:
@@ -561,7 +563,12 @@ class Load_Pv_Image(CliTestRunner):
         This method will not clean up the images created in this
         test. Will attempt to delete/terminate instances, keypairs, etc..
         """
-        pass
+        if self.instances:
+            self.user.ec2.terminate_instances(self.instances)
+        if self.keypair:
+            self.user.ec2.delete_keypair(self.keypair)
+        if self.group:
+            self.user.ec2.delete_group(group)
 
 if __name__ == "__main__":
     testcase = Load_Pv_Image()
