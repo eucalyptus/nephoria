@@ -568,7 +568,7 @@ class Load_Pv_Image(CliTestRunner):
         if self.keypair:
             self.user.ec2.delete_keypair(self.keypair)
         if self.group:
-            self.user.ec2.delete_group(group)
+            self.user.ec2.delete_group(self.group)
 
 if __name__ == "__main__":
     testcase = Load_Pv_Image()
