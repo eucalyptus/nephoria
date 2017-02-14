@@ -150,8 +150,16 @@ class NetTestsClassic(CliTestRunner):
 
     '''
     self._vpc_backend = None
-
     '''
+
+    _DEFAULT_CLI_ARGS = copy.copy(CliTestRunner._DEFAULT_CLI_ARGS)
+
+    _DEFAULT_CLI_ARGS['enable_mido_debug'] = {
+        'args': ['--enable-mido-debug'],
+        'kwargs': {'action': 'store_true',
+                   'default': False,
+                   'help': 'If set, will attempt to dump mido client debug for failures'}}
+
     def post_init(self, *args, **kwargs):
         self.cc_last_checked = time.time()
 
@@ -220,7 +228,9 @@ class NetTestsClassic(CliTestRunner):
             else:
                 zones = self.user.ec2.get_zone_names()
             if not zones:
-                raise RuntimeError('No zones found to run this test?')
+                err = 'No zones found to run this test?'
+                self.log.error(err)
+                raise RuntimeError(err)
             self.log.debug('Running test against zones:' + ",".join(zones))
             setattr(self, '_zones', zones)
         return zones
@@ -337,7 +347,7 @@ class NetTestsClassic(CliTestRunner):
 
     @property
     def vpc_backend(self):
-        if not self.is_vpc_mode():
+        if not self.is_vpc_mode() or not self.args.enable_mido_debug:
             return None
         if not hasattr(self, '_vpc_backend'):
             self._vpc_backend = None
@@ -1844,7 +1854,7 @@ class NetTestsClassic(CliTestRunner):
 
 if __name__ == "__main__":
     nettests = NetTestsClassic()
-    if not nettests.args.test_list:
+    if not nettests.args.test_list and not nettests.args.test_regex:
         exit(nettests._run_suite())
     else:
         exit(nettests.run())
