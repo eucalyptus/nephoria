@@ -1844,7 +1844,7 @@ class NetTestsClassic(CliTestRunner):
 
 if __name__ == "__main__":
     nettests = NetTestsClassic()
-    if not nettests.args.test_list:
+    if not nettests.args.test_list and not nettests.args.test_regex:
         exit(nettests._run_suite())
     else:
         exit(nettests.run())
