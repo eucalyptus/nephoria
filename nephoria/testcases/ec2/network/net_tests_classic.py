@@ -347,7 +347,7 @@ class NetTestsClassic(CliTestRunner):
 
     @property
     def vpc_backend(self):
-        if not self.is_vpc_mode() and self.args.enable_mido_debug:
+        if not self.is_vpc_mode() or not self.args.enable_mido_debug:
             return None
         if not hasattr(self, '_vpc_backend'):
             self._vpc_backend = None
