@@ -2422,6 +2422,7 @@ disable_root: false"""
         start = time.time()
         elapsed = 0
         volume_id = volume_id
+        chk_volume = None
         while elapsed < timeout:
             try:
                 try:
@@ -2450,7 +2451,7 @@ disable_root: false"""
                 self.test_resources['volumes'].remove(volume)
             return True
 
-        if volume.status != 'deleted':
+        if chk_volume and chk_volume.status != 'deleted':
             self.log.error(str(volume) + " left in " +  volume.status + ',elapsed:' + str(elapsed))
             return False
         return True
@@ -2469,6 +2470,20 @@ disable_root: false"""
             vollist = copy.copy(volume_list)
         else:
             raise Exception("delete_volumes: volume_list was empty")
+        # Quickly send a delete request for all the volumes in the provided list to speed this up.
+        # Ignore/log the errors as the request to delete and checks are done per volume
+        # immediately after this...
+        for volume in vollist:
+            try:
+                self.log.debug('DeleteVolume request for:{0}'.format(volume))
+                if isinstance(volume, Volume):
+                    volume.delete()
+                else:
+                    self.connection.delete_volume(volume)
+            except Exception as E:
+                self.log.debug('Ignoring error deleting volume, will be attempting to delete '
+                               'this volume again shortly. Err:{0}'.format(E))
+
         for volume in vollist:
             try:
                 self.log.debug( "Sending delete for volume: " +  str(volume.id))
@@ -2523,9 +2538,12 @@ disable_root: false"""
                     if volume in self.test_resources['volumes']:
                         self.test_resources['volumes'].remove(volume)
                 elapsed = int(time.time()-start)
-            time.sleep(poll_interval)
-            self.log.debug("---Waiting for:"+str(len(vollist))+" volumes to delete. Sleeping:"+
-                       str(poll_interval)+", elapsed:"+str(elapsed)+"/"+str(timeout)+"---")
+            if vollist:
+                time.sleep(poll_interval)
+                self.log.debug("---Waiting for:" + str(len(vollist)) + " volumes to delete. Sleeping:" +
+                           str(poll_interval)+", elapsed:"+str(elapsed)+"/"+str(timeout)+"---")
+            else:
+                self.log.debug('Done waiting for volumes to delete...')
         if vollist or errmsg:
                 for volume in vollist:
 

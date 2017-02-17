@@ -130,6 +130,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                    'help': 'Number of times to run consecutive tests'}}
 
     def post_init(self, *args, **kwargs):
+        self.testid = "{0}:{1}:{2}".format(self.__class__.__name__, time.ctime(), randint(0, 1000))
         self._is_multicluster = None
         self._zonelist = []
         self._group = None
@@ -171,6 +172,7 @@ class LegacyEbsTestSuite(CliTestRunner):
         key = getattr(self, '_keypair', None)
         if not key:
             key = self.user.ec2.get_keypair(key_name=self.keypair_name)
+            setattr(self, '_created_keypair', key)
             setattr(self, '_keypair', key)
         return key
 
@@ -345,6 +347,7 @@ class LegacyEbsTestSuite(CliTestRunner):
 
             for inst in instances:
                 testzone.instances.append(inst)
+                self.user.ec2.create_tags(inst.id, {'TESTID': self.testid})
             self.log.debug('Created instance: ' + str(inst.id)+" in zone:"+str(zone))
 
     def terminate_test_instances_for_zones(self, zonelist=None, timeout=480):
@@ -478,7 +481,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                 self.log.debug('syncing volumes for instance:' + str(instance.id))
                 badvols = instance.get_unsynced_volumes()
                 if (badvols is not None) and (badvols != []):
-                    self.log.error("negative_delete_attached_volumes_in_zones, failed")
+                    self.log.error(red("negative_delete_attached_volumes_in_zones, failed"))
                     errmsg = ""
                     try:
                         for badvol in badvols:
@@ -728,6 +731,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                                                                         test_num))
             new_snap = self.user.ec2.create_snapshot_from_volume(
                 start_volume, description="ebstest", wait_on_progress=wait_on_progress)
+            self.user.ec2.create_tags(new_snap.id, {'TESTID': self.testid})
             newvols = []
             for zone in zonelist:
                 self.status('Beginning ZONE{0}/{1}: zone name:{2}, test iteration:{3}'
@@ -736,6 +740,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                 self.log.debug("Creating volume from snap:" + str(new_snap.id))
                 newvol = self.user.ec2.create_volume(zone.name, size=0, snapshot=new_snap,
                                                      timepergig=time_per_gb)
+                self.user.ec2.create_tags(newvol.id, {'TESTID': self.testid})
                 newvols.append(newvol)
                 test_volumes.append(newvol)
                 newvol.add_tag('ebstestsuite_created_test#{0}'.format(test_num))
@@ -820,6 +825,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                     new_snap = self.user.ec2.create_snapshot_from_volume(
                         volume, description="ebstest", wait_on_progress=wait_on_progress)
                     new_snap.add_tag('ebstestsuite_created')
+                    self.user.ec2.create_tags(new_snap.id, {'TESTID': self.testid})
                     self.snaps.append(new_snap)
 
     def create_vols_from_snap_in_same_zone(self, zonelist=None, timepergig=300):
@@ -845,6 +851,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                 newvol = self.user.ec2.create_volume(zone.name, size=0, snapshot=snap,
                                                      timepergig=timepergig)
                 newvol.add_tag('ebstestsuite_created')
+                self.user.ec2.create_tags(newvol.id, {'TESTID': self.testid})
                 zone.volumes.append(newvol)
                 snap.eutest_volumes.append(newvol)
 
@@ -936,6 +943,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                     newvol = self.user.ec2.create_volume(zone.name, size=0, snapshot=snap,
                                                          timepergig=timepergig)
                     newvol.add_tag('ebstestsuite_created')
+                    self.user.ec2.create_tags(newvol.id, {'TESTID': self.testid})
                     zone.volumes.append(newvol)
                     snap.eutest_volumes.append(newvol)
 
@@ -984,6 +992,8 @@ class LegacyEbsTestSuite(CliTestRunner):
                         str(zone.name) + "...")
             snaps = self.user.ec2.create_snapshots(origvol, count=count, delay=delay,
                                                    wait_on_progress=poll_progress)
+            for snap in snaps:
+                self.user.ec2.create_tags(snap.id, {'TESTID': self.testid})
             self.log.debug('Finished creating ' + str(count) + ' snapshots in zone:' +
                            str(zone.name) + ', now creating vols from them')
             try:
@@ -992,6 +1002,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                                                             monitor_to_state=False)
                     for vol in new_vols:
                         vol.add_tag('ebstestsuite_created')
+                        self.user.ec2.create_tags(vol.id, {'TESTID': self.testid})
                     createdvols.extend(new_vols)
                 vols.extend(self.user.ec2.monitor_created_euvolumes_to_state(createdvols,
                                                                              timepergig=tpg))
@@ -1095,6 +1106,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                                                         timepergig=tpg)
                 for vol in new_vols:
                     vol.add_tag('ebstestsuite_created')
+                    self.user.ec2.create_tags(vol.id, {'TESTID': self.testid})
                 vols.extend(new_vols)
             vols = self.user.ec2.monitor_created_euvolumes_to_state(vols, timepergig=tpg)
             self.user.ec2.show_volumes(vols)
@@ -1256,15 +1268,19 @@ class LegacyEbsTestSuite(CliTestRunner):
             vols = self.user.ec2.create_volumes(testzone, size=size, count=volsperzone)
             for vol in vols:
                 vol.add_tag('ebstestsuite_created')
+                self.user.ec2.create_tags(vol.id, {'TESTID': self.testid})
             testzone.volumes.extend(vols)
             snapshots = []
             for volume in vols:
-                snapshots.append(self.user.ec2.create_snapshot_from_volume(volume))
+                snap = self.user.ec2.create_snapshot_from_volume(volume)
+                self.user.ec2.create_tags(snap.id, {'TESTID': self.testid})
+                snapshots.append(snap)
             larger_volumes = []
             for snaphot in snapshots:
                 larger_volume = self.user.ec2.create_volume(testzone, snapshot=snaphot,
                                                             size=size+1)
                 larger_volume.add_tag('ebstestsuite_created')
+                self.user.ec2.create_tags(larger_volume.id, {'TESTID': self.testid})
                 larger_volumes.append(larger_volume)
             for volume in larger_volumes:
                 assert volume.size > size
@@ -1339,15 +1355,51 @@ class LegacyEbsTestSuite(CliTestRunner):
         Definition:
         Attempts to clean up test artifacts created during this test
         """
-        for zone in self.zonelist:
-            if zone.instances:
-                self.user.ec2.terminate_instances(zone.instances)
-            if zone.volumes:
-                self.user.ec2.delete_volumes(zone.volumes)
-            if self.snaps:
-                self.user.ec2.delete_snapshots(self.snaps)
-        self.user.ec2.delete_keypair(self.keypair)
+        errors = []
 
+        try:
+            tagged_instances = self.user.ec2.connection.get_all_instances(
+                filters={'tag-key':'TESTID', 'tag-value': self.testid})
+            if tagged_instances:
+                self.user.ec2.terminate_instances(tagged_instances)
+        except Exception as E:
+            self.log.error('{0}\nException cleaning up instances:"{1}"'
+                           .format(get_traceback(), E))
+            errors.append(str(E))
+        try:
+            volumes = self.user.ec2.connection.get_all_volumes(
+                filters={'tag-key':'TESTID', 'tag-value': self.testid})
+            if volumes:
+                self.user.ec2.delete_volumes(volumes)
+        except Exception as E:
+            self.log.error('{0}\nException cleaning up volumes:"{1}"'
+                           .format(get_traceback(), E))
+            errors.append(str(E))
+        try:
+            snaps = self.user.ec2.connection.get_all_snapshots(
+                filters={'tag-key': 'TESTID', 'tag-value': self.testid})
+            if snaps:
+                self.user.ec2.delete_snapshots(snaps)
+        except Exception as E:
+            self.log.error('{0}\nException cleaning up snapshots:"{1}"'
+                           .format(get_traceback(), E))
+            errors.append(str(E))
+        try:
+            # Only delete the key if this test created it
+            keypair = getattr(self, '_created_keypair', None)
+            if keypair:
+                self.user.ec2.delete_keypair(keypair)
+                key_filename = "{0}.pem".format(keypair.name)
+                if os.path.isfile(key_filename):
+                    os.remove(key_filename)
+        except Exception as E:
+            self.log.error('{0}\nException cleaning up keypair:"{1}"'
+                           .format(get_traceback(), E))
+            errors.append(str(E))
+        if errors:
+            errmsg = "Found {0} errors during cleanup:\n{1}".format(len(errors), "\n".join(errors))
+            self.log.error(errmsg)
+            raise RuntimeError(errmsg)
 
 if __name__ == "__main__":
     # If given command line arguments, use them as test names to launch

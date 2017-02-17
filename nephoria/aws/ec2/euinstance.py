@@ -1711,13 +1711,33 @@ class EuInstance(Instance, TaggedResource, Machine):
                     md5 = self.sys("head -c {0} {1} | md5sum".format(length, devpath),
                                        timeout=timeout, code=0) or ['']
                 if md5:
+                    orig_string = md5
                     md5 = str(md5[0]).split(' ')[0].strip()
-                    return md5
+                    if not md5:
+                        raise RuntimeError('md5sum cmd on guest returned 0, but checksum empty '
+                                           'after parsing from string:"{0}"'.format(orig_string))
+                    elif len(md5) != 32:
+                        raise RuntimeError('Invalid md5 checksum:"{0}", failed to '
+                                           'parse md5 from string:"{1}"'.format(md5, orig_string))
+                    else:
+                        return md5
                 raise RuntimeError('md5sum cmd on guest returned 0, but no output')
             except Exception as E:
-                err = red('Error to fetch md5 from: {0}, length:{1}. Attempts:{2}/{3}. Error:{4}'
-                          .format(devpath, length, retry+1, retries, E))
-                self.log.error("{0}\n{1}".format(get_traceback(), err))
+                try:
+                    debug_msg = '\nGathering debug related to md5 failure of dev:"{0}"...\n'\
+                        .format(devpath)
+                    debug_msg += "\n".join(self.sys('ls -la {0}'.format(devpath)) or [])
+                    debug_msg += '\nBlock dev size in bytes:"{0}" = "{1}\n'\
+                        .format(devpath, self.get_blockdev_size_in_bytes(devpath=devpath))
+                    debug_msg+= "\ntail -50 dmesg...\n"
+                    debug_msg += "\n".join(self.sys('dmesg | tail -50') or [])
+                    self.log.error(red(debug_msg))
+                except Exception as DE:
+                    self.log.warning('{0}\nIgnoring error while gathering debug info. Err:"{1}"'
+                                     .format(get_traceback(), DE))
+                err = 'Error to fetch md5 from: {0}, length:{1}. Attempts:{2}/{3}. Error:{4}'\
+                    .format(devpath, length, retry + 1, retries, E)
+                self.log.error(red("{0}\n{1}".format(get_traceback(), err)))
                 time.sleep(2)
         raise RuntimeError('get_dev_md5 error:{0}'.format(err))
 
@@ -1890,24 +1910,87 @@ class EuInstance(Instance, TaggedResource, Machine):
                             this check when virtio_blk is in use.
         '''
         bad_list = []
-        vol_list = []
+        attached_vol_list = []
         checked_vdevs = []
         poll_count = 0
         dev_list = self.get_dev_dir()
         found = False
+        self.log.debug("Checking for volumes whos state is not in sync with our instance's "
+                       "test state...")
+        guest_volumes = []
+        serials = self.get_serials_for_block_devices() or {}
+        # parse out the cloud volume ids into a list to check against the cloud's view...
+        for dev, serial in serials.iteritems():
+            m = re.match("^euca-(vol-\w.*)-", serial)
+            if m:
+                guest_vol = str(m.groups()[0]).strip()
+                guest_volumes.append(guest_vol)
 
         if euvol_list is not None:
-            vol_list.extend(euvol_list)
+            attached_vol_list.extend(euvol_list)
         else:
-            vol_list = self.attached_vols
-        self.log.debug("Checking for volumes whos state is not in sync with our instance's "
-                   "test state...")
-        for vol in vol_list:
+            # Use the volumes from the attached list as well as the clouds response for attached
+            attached_vol_list = copy.copy(self.attached_vols)
+            for vol in self.connection.get_all_volumes(
+                    filters={'attachment.instance-id': self.id}) or []:
+                found = False
+                for avol in attached_vol_list:
+                    if avol.id == vol.id:
+                        found = True
+                        break
+                if not found:
+                    attached_vol_list.append(vol)
+            attached_vol_list = copy.copy(self.attached_vols)
+            self.log.debug('Checking the devices the guests believes are attached against '
+                           'our attached_vols list which represents the cloud or test view of '
+                           'the attachments...')
+            GUEST_ERR = None
+            retries = 6
+            start = time.time()
+            elapsed = 0
+            for retry in xrange(0, retries):
+                good = False
+                if GUEST_ERR:
+                    time.sleep(5)
+                GUEST_ERR = None
+                elapsed = int(time.time() - start)
+                self.log.debug('Checking Guest Block Devs vs Cloud Volume attachments. '
+                               'Attempt:{0}, Elapsed:{1}'.format(retry, elapsed))
+                try:
+                    for vol_id in guest_volumes:
+                        found = False
+                        for vol in attached_vol_list:
+                            if vol.id == vol_id:
+                                found = True
+                                break
+                        if not found:
+                            raise RuntimeError('Guest thinks volume:{0} is still attached but this '
+                                               'device is not in the clouds attached list:{1}'
+                                               .format(vol_id, attached_vol_list))
+                    good = True
+                except Exception as GUEST_ERR:
+                    self.log.error('{0}\nError in vol sync check, attempt:{1}/{2}, elapsed:{3}. '
+                                   'Err:{4}'
+                                   .format(get_traceback(), retry, retries, elapsed, GUEST_ERR))
+
+            if GUEST_ERR:
+                raise GUEST_ERR
+        self.log.debug('Checking the clouds attached volumes list to see if these are still '
+                       'present on the guest...')
+        for vol in attached_vol_list:
+            self.log.debug("Checking volume:" + str(vol.id))
+            try:
+                vol.update()
+            except EC2ResponseError as E:
+                if int(E.status) == 400:
+                    self.log.info('Got a "400" looking up vol:{0}. Assuming volume has been '
+                                  'deleted(?). Skipping the guest check for vol.'.format(vol.id))
+                    self.attached_vols.remove(vol)
+                    continue
             # First see if the cloud believes this volume is still attached.
             try:
-                self.log.debug("Checking volume:" + str(vol.id))
-                if (vol.attach_data.instance_id == self.id):  # Verify the cloud status is
-                    # Still attached to this instance
+                # Verify the cloud status is still attached to this instance
+                if vol.attach_data and (vol.attach_data.instance_id == self.id):
                     self.log.debug("Cloud beleives volume:" + str(vol.id) + " is attached to:" +
                                str(self.id) + ", check for guest dev...")
                     found = False
@@ -1918,6 +2001,20 @@ class EuInstance(Instance, TaggedResource, Machine):
                     # the guest. ie attaching
                     while (not found) and ((elapsed <= timepervol) or (poll_count < min_polls)):
                         try:
+                            try:
+                                vol.update()
+                            except EC2ResponseError as E:
+                                if int(E.status) == 400:
+                                    self.log.info(
+                                        'Got a "400" looking up vol:{0}. Assuming volume has been '
+                                        'deleted(?). Skipping the guest check for vol.'.format(
+                                            vol.id))
+                                    if vol.attach_data:
+                                        vol.attach_data = None
+                                    self.attached_vols.remove(vol)
+                                    found = True
+                                    break
+
                             poll_count += 1
                             # Ugly... :-(
                             # handle virtio and non virtio cases differently (KVM case needs
@@ -1926,7 +2023,13 @@ class EuInstance(Instance, TaggedResource, Machine):
                                 self.log.debug('Checking any new devs for md5:' + str(vol.md5))
                                 # Do some detective work to see what device name the previously
                                 # attached volume is using
-                                devlist = self.get_dev_dir()
+                                dev = self.get_volume_guest_dev_by_serial(vol)
+                                self.log.debug('Got device:{0} by serial id for:{1}'
+                                               .format(dev, vol.id))
+                                if dev:
+                                    devlist = [dev]
+                                else:
+                                    devlist = self.get_dev_dir()
                                 for vdev in devlist:
                                     vdev = "/dev/" + str(vdev)
 
@@ -1984,7 +2087,20 @@ class EuInstance(Instance, TaggedResource, Machine):
                            "instance:" + str(self.id) + ", error:" + str(e))
                 bad_list.append(vol)
                 pass
+        if bad_list:
+            try:
+                debug_msg = "GATHERING DEBUG INFO FROM GUEST FOR UNSYNCED VOLS:{0}\n"\
+                    .format(self.id)
+                debug_msg += "\n".join(self.sys('tail -100 /var/log/messages') or [])
+                debug_msg += "\n".join(self.sys('tail -100 /var/log/syslog') or [])
+                debug_msg += "\n".join(self.sys('dmesg | tail -100') or [])
+                debug_msg += "\n----Done gathering info related to unsynced volumes.-----"
+                self.log.error(red(debug_msg))
+            except Exception as E:
+                self.log.warning('{0}\nIgnoring error while gathering debug:{1}'.format(E))
+
         return bad_list
+
 
     def find_blockdev_by_md5(self, md5=None, md5len=None, euvolume=None,
                              add_to_attached_list=False):
