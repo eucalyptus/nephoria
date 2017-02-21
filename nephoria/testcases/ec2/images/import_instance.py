@@ -500,7 +500,26 @@ class ImportInstanceTests(CliTestRunner):
                 worker.sys('ls ' + src_img, code=0)
             except CommandExitCodeException:
                 #File not found at destpath download it...
-                worker.wget_remote_image(url=url, dest_file_name=src_img)
+                good = False
+                errmsg = "Error in wget portion of test"
+                E = None
+                retries = 3
+                for x in xrange(0, retries):
+                    try:
+                        worker.wget_remote_image(url=url, dest_file_name=src_img)
+                        good = True
+                    except Exception as E:
+                        errmsg = 'Caught error trying to wget.Attempt:{0}/{1}, SRC:"{2}", ' \
+                                 'DST:"{3}", ERR:"{4}"'.format(x, retries, url, src_img, E)
+                        self.log.error("[0}\n{1}".format(get_traceback(), errmsg))
+                        time.sleep(5)
+                if not good:
+                    self.log.error(errmsg)
+                    if E:
+                        raise(E)
+                    else:
+                        raise RuntimeError(errmsg)
+
             if re.search('\.tar|\.gz|\.xz', src_img):
                 src_img = self.unzip_image(image_path=src_img, img_utils=img_utils)
                 self.log.debug('Got src image after unzip operation:"{0}"'.format(src_img   ))
