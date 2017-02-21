@@ -301,6 +301,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                                                 snapshot=snapshot, timepergig=timepergig)
             for vol in vols:
                 vol.add_tag('ebstestsuite_created')
+                self.user.ec2.create_tags(vol.id, {'TESTID': self.testid})
             testzone.volumes.extend(vols)
             self.log.debug('create_vols_per_zone created vols('+str(len(vols))+') zone:'+str(zone))
 
@@ -679,6 +680,7 @@ class LegacyEbsTestSuite(CliTestRunner):
             self.create_test_instances_for_zones(zonelist=zonelist)
         start_instance = start_zone.instances[0]
         start_volume = self.user.ec2.create_volume(zone=start_instance.placement)
+        self.user.ec2.create_tags(start_volume.id, {'TESTID': self.testid})
         start_instance.attach_euvolume(start_volume, write_len=32, md5_len=None)
         self.status('Writing some unique data to the starting volume...')
 
