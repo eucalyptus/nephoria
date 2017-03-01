@@ -508,6 +508,7 @@ class ImportInstanceTests(CliTestRunner):
                     try:
                         worker.wget_remote_image(url=url, dest_file_name=src_img)
                         good = True
+                        break
                     except Exception as E:
                         errmsg = 'Caught error trying to wget.Attempt:{0}/{1}, SRC:"{2}", ' \
                                  'DST:"{3}", ERR:"{4}"'.format(x, retries, url, src_img, E)
