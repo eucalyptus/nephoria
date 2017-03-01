@@ -366,7 +366,7 @@ class TestController(object):
             user = self.admin.iam.get_user(user_name=aws_user_name,
                                            delegate_account=aws_account_id)
         except BotoServerError as BE:
-            if int(E.status) == 404:
+            if int(BE.status) == 404:
                 self.log.debug('User not found, attempting to create...')
         if not user:
             user = self.admin.iam.create_user(user_name=aws_user_name,
