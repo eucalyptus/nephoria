@@ -1052,7 +1052,7 @@ class WinInstance(Instance, TaggedResource):
 
 
 
-    def update_system_info(self):
+    def update_system_info(self, max_retries=3):
         '''
         Gather basic system info for this windows instance object and store in self.system_info
         Example:
@@ -1061,7 +1061,19 @@ class WinInstance(Instance, TaggedResource):
         '''
         currentkey = None
         swap = re.compile('([!@#$%^&*. ])')
-        info = self.sys('systeminfo')
+        max_retries = max_retries or 1
+        E = "Unknown?"
+        info = None
+        for x in xrange(0, max_retries):
+            try:
+                info = self.sys('systeminfo')
+                if info:
+                    break
+            except Exception as E:
+                self.log.error('{0}\nError attempting to collect system info. Attempt:{1}/{2}. '
+                               'Error:"{3}"'.format(get_traceback(), x, max_retries, E))
+        if not info:
+            raise RuntimeError('Failed to gather system info. Error:"{0}"'.format(E))
         if self.system_info:
             system_info = self.system_info
         else:
@@ -1764,7 +1776,7 @@ class WinInstance(Instance, TaggedResource):
         return md5
 
 
-    def update_cygwin_windows_device_map(self, prefix='/dev/*', force_update=False):
+    def update_cygwin_windows_device_map(self, prefix='/dev/*', force_update=False, max_retries=3):
         cygwin_dev_map = {}
         if not force_update:
             if self.cygwin_dev_map:
@@ -1772,8 +1784,22 @@ class WinInstance(Instance, TaggedResource):
                     cygwin_dev_map = self.cygwin_dev_map
         if not cygwin_dev_map:
             self.debug('Updating cygwin to windows device mapping...')
-            output = self.cygwin_cmd("for DEV in " + prefix + " ; do printf $DEV=$(cygpath -w $DEV); echo ''; done",
-                                     verbose=False, code=0)
+            output = None
+            E = None
+            for x in xrange(0, max_retries):
+                try:
+                    output = self.cygwin_cmd("for DEV in {0} ; "
+                                             "do printf $DEV=$(cygpath -w $DEV); "
+                                             "echo ''; done".format(prefix),
+                                             verbose=False, code=0)
+                    if output:
+                        break
+                except Exception as E:
+                    self.log.error("{0}\nError fetching device mapping. Attempt:{1}/{2}. "
+                                   "Err:{3}".format(get_traceback(), x, max_retries, E))
+            if not output:
+                raise RuntimeError("Error fetching device mapping after {0} attempts. "
+                                   "Error:{3}".format(max_retries, E))
             for line in output:
                 if re.match(prefix, line):
                     split = line.split('=')
