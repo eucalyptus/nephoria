@@ -59,6 +59,7 @@ from cloud_utils.net_utils import test_port_status
 from boto.ec2.instance import InstanceState
 from datetime import datetime
 from cloud_utils.net_utils import winrm_connection
+from requests.exceptions import ConnectionError
 
 termline = get_line()
 
@@ -918,7 +919,8 @@ class WinInstance(Instance, TaggedResource):
         if ( self.verbose is True ):
             self.debugmethod(msg)
 
-    def sys(self, cmd, verbose=True, code=None, include_stderr=False, enable_debug=False, timeout=None):
+    def sys(self, cmd, verbose=True, code=None, include_stderr=False, enable_debug=False,
+            timeout=None, connection_retries=2):
         '''
         Issues a command against the ssh connection to this instance
         Returns a list of the lines from stdout+stderr as a result of the command
@@ -928,7 +930,23 @@ class WinInstance(Instance, TaggedResource):
         '''
         if (self.winrm is None):
             raise Exception("WinInstance winrm connection is None")
-        return self.winrm.sys(command=cmd, include_stderr=include_stderr, timeout=timeout, verbose=verbose, code=code)
+        connection_retries = connection_retries or 1
+        ret = None
+        CE = None
+        for x in xrange(0, connection_retries):
+            try:
+                ret = self.winrm.sys(command=cmd, include_stderr=include_stderr, timeout=timeout,
+                                     verbose=verbose, code=code)
+                CE = None
+                break
+            except ConnectionError as CE:
+                self.log.error('{0}\nConnection error attempt:{1}/{2}. cmd:{3}'
+                               .format(get_traceback(), x, connection_retries, cmd))
+        if CE:
+            raise CE
+        return ret
+
+
 
 
 
