@@ -2222,6 +2222,29 @@ class WinInstance(Instance, TaggedResource):
         else:
             return buf
 
+    def check_eni_attachments(self, verbose=True, local_dev_timeout=60):
+        """
+        Checks all eni attached ENI using the list currenntly in self.interfaces.
+        If local_dev_timeout is not None then the local guest is polled for a device with
+        matching mac address until found or timeout is reached.
+
+        Args:
+            local_dev_timeout: The time to wait for the device to show up on the guest before
+                               erroring out. If this timeout is None, this check is not performed.
+
+        Returns: list of updated eni objs
+
+
+        if verbose:
+            self.show_enis()
+        enis = []
+        for eni in self.interfaces:
+            enis.append(self.check_eni_attachment(eni, local_dev_timeout=local_dev_timeout))
+        return enis
+        """
+        self.log.warning('Check eni attachments for windows not implemented')
+        return self.interfaces
+
 
 
 
