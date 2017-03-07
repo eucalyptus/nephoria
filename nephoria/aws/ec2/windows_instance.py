@@ -1190,7 +1190,7 @@ class WinInstance(Instance, TaggedResource):
         printmethod(buf)
 
 
-    def update_disk_info(self , forceupdate=False):
+    def update_disk_info(self , forceupdate=False, max_retries=3):
         if self.diskdrives:
             if not forceupdate and (time.time() - self.diskdrives[0].last_updated) <= self.disk_update_interval:
                 return
@@ -1198,11 +1198,24 @@ class WinInstance(Instance, TaggedResource):
         self.diskdrives = []
         self.disk_partitions = []
         self.logicaldisks = []
-        self.diskdrives =  self.get_updated_diskdrive_info()
-        self.disk_partitions = self.get_updated_partition_info()
-        self.logicaldisks = self.get_updated_logicaldisk_info()
-        self.associate_diskdrives_to_partitions()
-        self.associate_partitions_to_logicaldrives()
+        max_retries = max_retries or 1
+        E = None
+        for x in xrange(0, max_retries):
+            try:
+                self.diskdrives =  self.get_updated_diskdrive_info()
+                self.disk_partitions = self.get_updated_partition_info()
+                self.logicaldisks = self.get_updated_logicaldisk_info()
+                self.associate_diskdrives_to_partitions()
+                self.associate_partitions_to_logicaldrives()
+                E = None
+                break
+            except Exception as E:
+                self.log.error('{0}\nError updating disk info. Attempt:{1}/{2}. Error:{3}'
+                               .format(get_traceback(), x, max_retries, E))
+                time.sleep((x * 5) or 5)
+        if E:
+            raise E
+
 
     def get_updated_diskdrive_info(self):
         '''
