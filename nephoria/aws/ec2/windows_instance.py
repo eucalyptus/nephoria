@@ -532,8 +532,9 @@ class WinInstance(Instance, TaggedResource):
         self.laststate = self.state
         self.laststatetime = time.time()
         self.age_at_state = self.ec2ops.get_instance_time_launched(self)
-        #Also record age from user's perspective, ie when they issued the run instance request (if this is available)
-        if self.cmdstart:
+        # Also record age from user's perspective, ie when they issued the run instance
+        # request (if this is available)
+        if hasattr(self, "cmdstart") and self.cmdstart:
             self.age_from_run_cmd = "{0:.2f}".format(time.time() - self.cmdstart)
         else:
             self.age_from_run_cmd = None
@@ -920,7 +921,7 @@ class WinInstance(Instance, TaggedResource):
             self.debugmethod(msg)
 
     def sys(self, cmd, verbose=True, code=None, include_stderr=False, enable_debug=False,
-            timeout=None, connection_retries=2):
+            timeout=None, connection_retries=3):
         '''
         Issues a command against the ssh connection to this instance
         Returns a list of the lines from stdout+stderr as a result of the command
@@ -942,6 +943,7 @@ class WinInstance(Instance, TaggedResource):
             except ConnectionError as CE:
                 self.log.error('{0}\nConnection error attempt:{1}/{2}. cmd:{3}'
                                .format(get_traceback(), x, connection_retries, cmd))
+                time.sleep(x + 1)
         if CE:
             raise CE
         return ret
@@ -1090,6 +1092,7 @@ class WinInstance(Instance, TaggedResource):
             except Exception as E:
                 self.log.error('{0}\nError attempting to collect system info. Attempt:{1}/{2}. '
                                'Error:"{3}"'.format(get_traceback(), x, max_retries, E))
+                time.sleep((x * 5) or 5)
         if not info:
             raise RuntimeError('Failed to gather system info. Error:"{0}"'.format(E))
         if self.system_info:
@@ -1815,6 +1818,7 @@ class WinInstance(Instance, TaggedResource):
                 except Exception as E:
                     self.log.error("{0}\nError fetching device mapping. Attempt:{1}/{2}. "
                                    "Err:{3}".format(get_traceback(), x, max_retries, E))
+                    time.sleep((x * 5) or 5)
             if not output:
                 raise RuntimeError("Error fetching device mapping after {0} attempts. "
                                    "Error:{3}".format(max_retries, E))
