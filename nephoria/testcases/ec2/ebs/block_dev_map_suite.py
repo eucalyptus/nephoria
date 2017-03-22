@@ -1426,7 +1426,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             if not meta_bdm.has_key(bdm_ephemeral_dev):
                 self.resulterr('Ephemeral disk not reported in instance block dev mapping: see euca-6048')
                 meta_bdm[bdm_ephemeral_dev] = eph_dev
-            new_vol = self.user.ec2.create_volume(zone=self.zone,size=1, timepergig=180)
+            new_vol = self.user.ec2.create_volume(zone=instance.placement, size=1, timepergig=180)
             self.user.ec2.create_tags(new_vol.id, {self.my_test_id: ''})
             self.status('Attaching new test volume to this running instance...')
             instance.attach_euvolume(new_vol, timeout=120, overwrite=False)
@@ -1476,8 +1476,15 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         prop_name = "{0}.storage.maxvolumesizeingb".format(self.zone)
         maxprop = self.tc.sysadmin.get_property(prop_name)
         orig_maxsize = maxprop.value
+        max_value = 1
         try:
-            maxprop.modify_value(1)
+            maxprop.show()
+            maxprop.modify_value(max_value)
+            maxprop.update()
+            self.status('Setting {0} to {1}'.format(maxprop.name, max_value))
+            maxprop.show()
+            if int(maxprop.value) != max_value:
+                raise ValueError('Was unable to set {0} to {1}'.format(maxprop.name, max_value))
             image = self.test_image1
             self.status('Using image:' +str(self.test_image1.id)+ ", ephemeral, and snapshot ebs devices added at run time..")
             self.status('Original Image block device map:')
@@ -1522,8 +1529,15 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         prop_name = "{0}.storage.maxtotalvolumesizeingb".format(self.zone)
         maxtotal_prop = self.tc.sysadmin.get_property(prop_name)
         orig_maxtotal = maxtotal_prop.value
+        max_value = 5
         try:
-            maxtotal_prop.modify_value(5)
+            maxtotal_prop.show()
+            maxtotal_prop.modify_value(max_value)
+            maxtotal_prop.update()
+            maxtotal_prop.show()
+            if int(maxtotal_prop.value) != max_value:
+                raise ValueError('Was unable to set {0} to {1}'.format(maxtotal_prop.name,
+                                                                       max_value))
             image = self.test_image1
             self.status('Using image:' +str(self.test_image1.id)+ ", ephemeral, and snapshot ebs devices added at run time..")
             self.status('Original Image block device map:')
