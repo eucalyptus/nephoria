@@ -23,6 +23,7 @@ import types
 import httplib
 import copy
 import math
+import random
 import re
 
 
@@ -170,7 +171,8 @@ class Block_Device_Mapping_Tests(CliTestRunner):
                           "specify zone"
                     self.log.error("{0}\n{1}".format(get_traceback(), msg))
                     raise RuntimeError(None)
-                self._zone = zonelist[0]
+                self._zone = random.choice(zonelist)
+                self.status('No Zone was provided so choosing zone:"{0}"'.format(self._zone))
         return self._zone
 
     @property
@@ -1426,7 +1428,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             if not meta_bdm.has_key(bdm_ephemeral_dev):
                 self.resulterr('Ephemeral disk not reported in instance block dev mapping: see euca-6048')
                 meta_bdm[bdm_ephemeral_dev] = eph_dev
-            new_vol = self.user.ec2.create_volume(zone=self.zone,size=1, timepergig=180)
+            new_vol = self.user.ec2.create_volume(zone=instance.placement, size=1, timepergig=180)
             self.user.ec2.create_tags(new_vol.id, {self.my_test_id: ''})
             self.status('Attaching new test volume to this running instance...')
             instance.attach_euvolume(new_vol, timeout=120, overwrite=False)
@@ -1476,8 +1478,15 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         prop_name = "{0}.storage.maxvolumesizeingb".format(self.zone)
         maxprop = self.tc.sysadmin.get_property(prop_name)
         orig_maxsize = maxprop.value
+        max_value = 1
         try:
-            maxprop.modify_value(1)
+            maxprop.show()
+            maxprop.modify_value(max_value)
+            maxprop.update()
+            self.status('Setting {0} to {1}'.format(maxprop.name, max_value))
+            maxprop.show()
+            if int(maxprop.value) != max_value:
+                raise ValueError('Was unable to set {0} to {1}'.format(maxprop.name, max_value))
             image = self.test_image1
             self.status('Using image:' +str(self.test_image1.id)+ ", ephemeral, and snapshot ebs devices added at run time..")
             self.status('Original Image block device map:')
@@ -1490,7 +1499,8 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             self.user.ec2.show_block_device_map(bdm)
             try:
                 instance = self.user.ec2.run_image(image=image,block_device_map=bdm,
-                                                   keypair=self.keypair, group=self.group)[0]
+                                                   zone=self.zone, keypair=self.keypair,
+                                                   group=self.group)[0]
                 self.user.ec2.create_tags(instance.id, {self.my_test_id: ''})
                 self.current_test_instance = instance
             except:
@@ -1506,6 +1516,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             self.endfailure(errmsg)
 
         finally:
+            self.log.debug('setting property back to original value...')
             maxprop.modify_value(orig_maxsize)
             if errmsg:
                 raise Exception(errmsg)
@@ -1522,8 +1533,15 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         prop_name = "{0}.storage.maxtotalvolumesizeingb".format(self.zone)
         maxtotal_prop = self.tc.sysadmin.get_property(prop_name)
         orig_maxtotal = maxtotal_prop.value
+        max_value = 5
         try:
-            maxtotal_prop.modify_value(5)
+            maxtotal_prop.show()
+            maxtotal_prop.modify_value(max_value)
+            maxtotal_prop.update()
+            maxtotal_prop.show()
+            if int(maxtotal_prop.value) != max_value:
+                raise ValueError('Was unable to set {0} to {1}'.format(maxtotal_prop.name,
+                                                                       max_value))
             image = self.test_image1
             self.status('Using image:' +str(self.test_image1.id)+ ", ephemeral, and snapshot ebs devices added at run time..")
             self.status('Original Image block device map:')
@@ -1536,6 +1554,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             self.user.ec2.show_block_device_map(bdm)
             try:
                 instance = self.user.ec2.run_image(image=image,block_device_map=bdm,
+                                                   zone=self.zone,
                                                    keypair=self.keypair, group=self.group)[0]
                 self.user.ec2.create_tags(instance.id, {self.my_test_id: ''})
                 self.current_test_instance = instance
@@ -1552,6 +1571,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             self.endfailure(errmsg)
 
         finally:
+            self.log.debug('setting property back to original value...')
             maxtotal_prop.modify_value(orig_maxtotal)
             if errmsg:
                 raise Exception(errmsg)
@@ -1594,6 +1614,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             self.status('Running instance with previously displayed block device mapping...')
             instance = self.user.ec2.run_image(image=image,
                                              block_device_map=bdm,
+                                             zone=self.zone,
                                              keypair=self.keypair,
                                              password=self.instance_password,
                                              group=self.group)[0]
@@ -1704,7 +1725,7 @@ class Block_Device_Mapping_Tests(CliTestRunner):
         self.status('Applying the following block device map:')
         self.user.ec2.show_block_device_map(bdm)
         self.status('Running instance with previously displayed block device mapping...')
-        instance = self.user.ec2.run_image(image=image,block_device_map=bdm,
+        instance = self.user.ec2.run_image(image=image,block_device_map=bdm, zone=self.zone,
                                            keypair=self.keypair, group=self.group)[0]
         self.user.ec2.create_tags(instance.id, {self.my_test_id: ''})
         self.current_test_instance = instance
@@ -1751,10 +1772,11 @@ class Block_Device_Mapping_Tests(CliTestRunner):
             self.user.ec2.show_block_device_map(bdm)
             self.status('Running instance with previously displayed block device mapping...')
             instance = self.user.ec2.run_image(image=image,
-                                             block_device_map=bdm,
-                                             keypair=self.keypair,
-                                             password=self.instance_password,
-                                             group=self.group)[0]
+                                               block_device_map=bdm,
+                                               zone=self.zone,
+                                               keypair=self.keypair,
+                                               password=self.instance_password,
+                                               group=self.group)[0]
             self.user.ec2.create_tags(instance.id, {self.my_test_id: ''})
             self.current_test_instance = instance
             self.status('Instance now running. Resulting in the instance block device map:')
@@ -1763,9 +1785,10 @@ class Block_Device_Mapping_Tests(CliTestRunner):
                          record the volume id, md5 and guest device within the instance for later stop, start, and detach \
                          operations...')
             self.status('Getting guest device for block dev map root device...')
-            guest_root_dev = instance.get_guest_dev_for_block_device_map_device(md5=self.build_image_snapshot.eutest_volume_md5,
-                                                                                md5len=self.build_image_snapshot.eutest_volume_md5len,
-                                                                                map_device=instance.root_device_name)
+            guest_root_dev = instance.get_guest_dev_for_block_device_map_device(
+                md5=self.build_image_snapshot.eutest_volume_md5,
+                md5len=self.build_image_snapshot.eutest_volume_md5len,
+                map_device=instance.root_device_name)
             self.status('Checking device(s) size(s) on guest vs requested in bdm for root device ...')
             root_dev_size = instance.get_blockdev_size_in_bytes(guest_root_dev) / self.gig
             if root_dev_size != bdm_root_size:
