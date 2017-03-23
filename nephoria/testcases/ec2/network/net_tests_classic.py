@@ -119,6 +119,7 @@ from boto.exception import EC2ResponseError
 from cloud_utils.net_utils import test_port_status
 from cloud_utils.log_utils import get_traceback
 import copy
+import json
 import socket
 import time
 import os
@@ -475,8 +476,10 @@ class NetTestsClassic(CliTestRunner):
                 gw_machine = self.sysadmin.clc_machine
             return gw_machine
 
-        prop = self.sysadmin.get_property('{0}.cluster.networkmode'.format(instance.placement))
-        if prop.value.lower() == "edge":
+        prop = self.sysadmin.get_property('cloud.network.network_configuration')
+        j = json.loads(prop.value)
+        network_mode = str(j['Mode']).upper()
+        if network_mode == "EDGE":
             proxy_machine = self.get_active_nc_for_instance(instance)
         else:
             proxy_machine = self.get_active_cc_for_instance(instance)
