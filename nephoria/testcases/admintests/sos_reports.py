@@ -128,7 +128,7 @@ class SOSReports(CliTestRunner):
                 failed += 1
         if failed:
             raise RuntimeError('{0}/{1} hosts had errors during install sos and plugin packages'
-                               .format(failed/len(rc.ips)))
+                               .format(failed, len(rc.ips)))
 
 
     def test2_run(self):
