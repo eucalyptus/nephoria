@@ -66,12 +66,16 @@ class SeLinuxAudit(CliTestRunner):
                 else:
                     start = time.time() - (60*60*start_hours)
                     ts = time.localtime(start)
+                    minutes = ts.tm_min
+                    # Minutes must be two digits for ausearch...
+                    if minutes < 10:
+                        minutes = "0{0}".format(minutes)
                     self.start_time = " --start {0}/{1}/{2} {3}:{4}:{5} ".format(ts.tm_mon,
-                                                                               ts.tm_mday,
-                                                                               ts.tm_year,
-                                                                               ts.tm_hour,
-                                                                               ts.tm_min,
-                                                                               ts.tm_sec)
+                                                                                 ts.tm_mday,
+                                                                                 ts.tm_year,
+                                                                                 ts.tm_hour,
+                                                                                 minutes,
+                                                                                 ts.tm_sec)
         self._ip_list = []
 
 
