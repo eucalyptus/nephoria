@@ -4277,11 +4277,13 @@ class VpcSuite(CliTestRunner):
                                 'this test')
                     user.ec2.delete_subnet_and_dependency_artifacts(subnet)
 
-    def test6m1_eni_migration_test_with_secondary_eni(self, clean=True):
+    def test6m1_eni_migration_test_with_secondary_eni(self, clean=None):
         """
         Attempts to migrate an instance in each zone with a secondary ENI attached and
         verify the VMs and their ENIs migrate correctly.
         """
+        if clean is None:
+            clean = not(self.args.no_clean)
         if len(self.tc.sysadmin.get_all_node_controller_services()) <= 1:
             raise SkipTestException('This test requires 2 or more Node Controllers')
 
@@ -4293,7 +4295,8 @@ class VpcSuite(CliTestRunner):
             if not start_node:
                 nodes = self.tc.sysadmin.get_hosts_for_node_controllers(instanceid=vm_id)
                 if not nodes:
-                    raise RuntimeError('Node Controller for vm:{0} not found before migration?')
+                    raise RuntimeError('Node Controller for vm:"{0}" not found before migration?'
+                                       .format(vm_id))
                 start_node = nodes[0]
             self.status('Sending migrate request for:{0}, starting on node:{1}'
                         .format(vm_id, start_node))
