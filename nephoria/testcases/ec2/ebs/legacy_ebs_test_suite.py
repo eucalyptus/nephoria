@@ -240,7 +240,7 @@ class LegacyEbsTestSuite(CliTestRunner):
                 self._zonelist.append(TestZone(self.args.zone))
                 self.multicluster = False
             else:
-                for zone in self.tc.sysadmin.get_all_cluster_names():
+                for zone in self.user.ec2.get_zone_names():
                     self._zonelist.append(TestZone(zone))
             if not self._zonelist:
                 raise Exception("Could not discover an availability zone to "
