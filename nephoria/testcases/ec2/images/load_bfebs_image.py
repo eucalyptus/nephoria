@@ -112,7 +112,7 @@ class LoadBfebsImage(CliTestRunner):
             raise Exception("No image url passed to run BFEBS tests")
 
         zone = self.args.zone
-        zones = self.tc.sysadmin.get_all_cluster_names() or []
+        zones = self.user.ec2.get_zone_names() or []
         if not zone:
             zone = zones[random.randint(0, len(zones) - 1)]
         else:
