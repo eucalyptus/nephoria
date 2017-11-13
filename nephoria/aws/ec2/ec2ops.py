@@ -913,8 +913,8 @@ disable_root: false"""
             return self.get_all_vpcs(vpc_ids=vpc_ids)
         return []
 
-    def get_all_vpcs(self, vpc_ids=None, filters=None, dry_run=False, verbose=True):
-         if verbose:
+    def get_all_vpcs(self, vpc_ids=None, filters=None, dry_run=False, verbose=None):
+        if verbose or (verbose is None and self._use_verbose_requests):
             if vpc_ids is not None:
                 if not isinstance(vpc_ids, list):
                     if vpc_ids != 'verbose':
@@ -923,7 +923,7 @@ disable_root: false"""
                     vpc_ids.append('verbose')
             else:
                 vpc_ids = ['verbose']
-         return self.connection.get_all_vpcs(vpc_ids=vpc_ids, filters=filters, dry_run=dry_run)
+        return self.connection.get_all_vpcs(vpc_ids=vpc_ids, filters=filters, dry_run=dry_run)
 
     get_all_vpcs.__doc__ = "{0}".format(VPCConnection.get_all_vpcs.__doc__)
 
@@ -3107,7 +3107,7 @@ disable_root: false"""
         snapshot_list = []
         if snapid:
             snapshot_list.append(snapid)
-        ec2_snaps =  self.connection.get_all_snapshots(snapshot_ids=snapshot_list, filters=filters,
+        ec2_snaps = self.connection.get_all_snapshots(snapshot_ids=snapshot_list, filters=filters,
                                                        owner=owner_id)
         for snap in ec2_snaps:
             if snap not in snapshots:
