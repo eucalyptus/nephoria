@@ -158,6 +158,7 @@ class B3Session(object):
 class BotoBaseOps(BaseOps):
     EUCARC_URL_NAME = None
     SERVICE_PREFIX = None
+    SERVICE_NAME = None
     CONNECTION_CLASS = None
 
     def create_connection_kwargs(self, **kwargs):
@@ -203,7 +204,7 @@ class BotoBaseOps(BaseOps):
                     break
 
         # This needs to be re-visited due to changes in Eucalyptus and Boto regarding certs...
-        connection_kwargs = {'service_name': self.SERVICE_PREFIX,
+        connection_kwargs = {'service_name': self.service_name,
                                    'aws_access_key_id': self.eucarc.aws_access_key,
                                    'aws_secret_access_key': self.eucarc.aws_secret_key,
                                    'is_secure': is_secure,

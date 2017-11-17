@@ -27,6 +27,8 @@ class BaseOps(object):
     EUCARC_URL_NAME = None
     # The service prefix used with the region (ie ec2, iam, s3, etc)
     SERVICE_PREFIX = None
+    # The name of the service, by default service prefix will be used if this is not defined
+    SERVICE_NAME = None
     # The underlying class used to connect to the cloud (ie boto.VPCConnection)
     CONNECTION_CLASS = None
     # Default port to use to connect to Eucalyptus services
@@ -133,7 +135,10 @@ class BaseOps(object):
 
     @property
     def service_name(self):
-        return self.SERVICE_PREFIX
+        if self.SERVICE_NAME is not None:
+            return self.SERVICE_NAME
+        else:
+            return self.SERVICE_PREFIX
 
     @property
     def service_url(self):

@@ -83,6 +83,7 @@ EbsMetricsArray = [
 
 class CWops(BotoBaseOps):
     SERVICE_PREFIX = 'monitoring'
+    SERVICE_NAME = 'cloudwatch'
     EUCARC_URL_NAME = 'cloudwatch_url'
     CONNECTION_CLASS = CloudWatchConnection
 
