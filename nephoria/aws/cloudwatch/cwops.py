@@ -87,6 +87,14 @@ class CWops(BotoBaseOps):
     EUCARC_URL_NAME = 'cloudwatch_url'
     CONNECTION_CLASS = CloudWatchConnection
 
+    @property
+    def logs(self):
+        logs = getattr(self, '_logs', None)
+        if not logs:
+            logs = self.boto3._session.client('logs')
+            setattr(self, '_logs', logs)
+        return logs
+
     def get_cw_connection_args(self, endpoint=None, aws_access_key_id=None,
                                aws_secret_access_key=None, is_secure=True,
                                host=None, region=None, path='/', port=443, boto_debug=0):
